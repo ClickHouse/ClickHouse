@@ -204,6 +204,11 @@ extern "C" void * __wrap_malloc(size_t size) // NOLINT
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace);
     void * ptr = __real_malloc(size);
+    if unlikely(!ptr)
+    {
+        Memory::untrackMemory(ptr, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }
@@ -217,6 +222,11 @@ extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(real_size, trace);
     void * res = __real_calloc(number_of_members, size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
@@ -232,6 +242,11 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_realloc(ptr, size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
@@ -241,6 +256,11 @@ extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t si
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     int res = __real_posix_memalign(memptr, alignment, size);
+    if unlikely(res != 0)
+    {
+        Memory::untrackMemory(*memptr, trace, actual_size);
+        return res;
+    }
     trace.onAlloc(*memptr, actual_size);
     return res;
 }
@@ -250,6 +270,11 @@ extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     void * res = __real_aligned_alloc(alignment, size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
@@ -259,6 +284,11 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_valloc(size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
@@ -268,6 +298,11 @@ extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     void * res = __real_memalign(alignment, size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
@@ -295,6 +330,11 @@ extern "C" void * __wrap_pvalloc(size_t size) // NOLINT
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_pvalloc(size);
+    if unlikely(!res)
+    {
+        Memory::untrackMemory(res, trace, actual_size);
+        return nullptr;
+    }
     trace.onAlloc(res, actual_size);
     return res;
 }
