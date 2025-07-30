@@ -1146,3 +1146,57 @@ def test_failed_startup(started_cluster):
     )
 
     assert len(zk.get(f"{keeper_path}")) > 0
+
+
+def test_create_or_replace_table(started_cluster):
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_rename_table_2_{uuid.uuid4().hex[:8]}"
+    db_name = f"db_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    node1.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
+        },
+        database_name=db_name,
+    )
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        replace=True,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 0,
+        },
+        database_name=db_name,
+    )
+
+    create_mv(node1, f"{db_name}.{table_name}", dst_table_name, mv_name=mv_name)
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")

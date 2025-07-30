@@ -35,6 +35,8 @@ void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
     const bool inserted = storages.emplace(storage).second;
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+
+    LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
 }
 
 void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool if_exists)
@@ -58,6 +60,7 @@ void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool 
             "Table with storage id {} is not registered", storage.getNameForLogs());
     }
     storages.erase(it);
+    LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
 }
 
 void ObjectStorageQueueFactory::renameTable(const StorageID & from, const StorageID & to)
@@ -70,12 +73,16 @@ void ObjectStorageQueueFactory::renameTable(const StorageID & from, const Storag
     if (from_it == storages.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
 
-    auto to_it = storages.find(to);
-    if (to_it != storages.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is already registered", to.getNameForLogs());
-
     storages.erase(from_it);
-    storages.emplace(to);
+
+    auto to_it = storages.find(to);
+    if (to_it == storages.end())
+    {
+        storages.emplace(to);
+        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
+    }
+    else
+        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
 }
 
 void ObjectStorageQueueFactory::shutdown()
@@ -87,7 +94,6 @@ void ObjectStorageQueueFactory::shutdown()
         shutdown_storages = std::vector<StorageID>(storages.begin(), storages.end());
     }
 
-    auto log = getLogger("ObjectStorageFactory::shutdown");
     if (shutdown_storages.empty())
     {
         LOG_DEBUG(log, "There are no queue storages to shutdown");

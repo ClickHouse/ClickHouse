@@ -30,6 +30,7 @@ public:
     void shutdown();
 
 private:
+    const LoggerPtr log = getLogger("ObjectStorageQueueFactory");
     bool shutdown_called = false;
     std::mutex mutex;
     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storages;
