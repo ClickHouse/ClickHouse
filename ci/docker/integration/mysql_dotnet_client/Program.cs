@@ -1,5 +1,6 @@
 using System;
 using MySql.Data.MySqlClient;
+using CommandLine;
 
 class Program
 {
@@ -14,7 +15,7 @@ class Program
 
     [Option('p', "password", HelpText = "Password")]
     public string Password { get; set; }
-    static void Main()
+    static void Main(string[] args)
     {
         var parsed = Parser.Default.ParseArguments<Program>(args);
         var options = parsed.Value;
@@ -37,10 +38,18 @@ class Program
                     }
                 }
 
+                string dropTableSql = @"
+                    DROP TABLE IF EXISTS test_table;";
+
+                using (var cmd = new MySqlCommand(dropTableSql, connection))
+                {
+                    cmd.ExecuteNonQuery();
+                    Console.WriteLine("Table dropped");
+                }
+
                 string createTableSql = @"
                     CREATE TABLE IF NOT EXISTS test_table (
-                        id UInt32,
-                        name String
+                        id UInt32
                     ) ENGINE = Memory";
 
                 using (var cmd = new MySqlCommand(createTableSql, connection))
@@ -49,7 +58,7 @@ class Program
                     Console.WriteLine("Table created or exists");
                 }
 
-                string insertSql = "INSERT INTO test_table (id, name) VALUES (1, 'Alice'), (2, 'Bob')";
+                string insertSql = "INSERT INTO test_table (id) VALUES (1), (2)";
 
                 using (var cmd = new MySqlCommand(insertSql, connection))
                 {
@@ -57,7 +66,7 @@ class Program
                     Console.WriteLine($"{rows} rows inserted");
                 }
 
-                string selectSql = "SELECT id, name FROM test_table";
+                string selectSql = "SELECT id FROM test_table";
 
                 using (var cmd = new MySqlCommand(selectSql, connection))
                 using (var reader = cmd.ExecuteReader())
@@ -65,8 +74,7 @@ class Program
                     while (reader.Read())
                     {
                         uint id = (uint)reader.GetInt32(0);
-                        string name = reader.GetString(1);
-                        Console.WriteLine($"id={id}, name={name}");
+                        Console.WriteLine($"id={id}");
                     }
                 }
             }
