@@ -257,8 +257,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},
        {"zero_copy_concurrent_part_removal_max_split_times", highRangeSetting}};
 
-static std::unordered_map<String, CHSetting> logTableSettings = {};
-
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
@@ -396,8 +394,7 @@ const std::unordered_map<String, CHSetting> mySQLTableSettings
        {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
-    = {{"min_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)},
-       {"max_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}};
+    = {{"min_compress_block_size", CHSetting(highRange, {}, false)}, {"max_compress_block_size", CHSetting(highRange, {}, false)}};
 
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
@@ -406,6 +403,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     std::unordered_map<String, CHSetting> s3QueueTableSettings;
     std::unordered_map<String, CHSetting> azureBlobStorageSettings;
     std::unordered_map<String, CHSetting> azureQueueSettings;
+    std::unordered_map<String, CHSetting> logTableSettings;
 
     if (!fc.storage_policies.empty())
     {
