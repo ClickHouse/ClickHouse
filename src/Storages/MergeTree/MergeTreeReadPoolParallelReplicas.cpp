@@ -72,9 +72,11 @@ size_t chooseSegmentSize(
 
 size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
 {
-    const auto min_across_parts = std::ranges::min(
+    /// For each part the value of `min_marks_per_task` is capped by `sum_marks / (threads * total_query_nodes) / 2` (see calculateMinMarksPerTask()),
+    /// unless `merge_tree_min_read_task_size` or `min_*_for_concurrent_read` settings are set too high. So, we can safely take the maximum of all parts.
+    const auto max_across_parts = std::ranges::max(
         per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
-    min_marks_per_task = std::max(min_marks_per_task, min_across_parts->min_marks_per_task);
+    min_marks_per_task = std::max(min_marks_per_task, max_across_parts->min_marks_per_task);
 
     if (min_marks_per_task == 0)
         throw DB::Exception(
