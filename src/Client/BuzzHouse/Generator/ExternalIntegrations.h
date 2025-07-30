@@ -327,6 +327,8 @@ public:
     {
     }
 
+    void setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
     void setBackupDetails(const String & filename, BackupRestore * br);
@@ -411,6 +413,14 @@ public:
 
     bool hasMinIOConnection() const { return minio != nullptr; }
 
+    bool hasGlueCatalog() const { return hasMinIOConnection() && minio->sc.glue_catalog.has_value(); }
+
+    bool hasHiveCatalog() const { return hasMinIOConnection() && minio->sc.hive_catalog.has_value(); }
+
+    bool hasRestCatalog() const { return hasMinIOConnection() && minio->sc.rest_catalog.has_value(); }
+
+    bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog(); }
+
     bool hasAzuriteConnection() const { return azurite != nullptr; }
 
     bool hasHTTPConnection() const { return http != nullptr; }
@@ -429,6 +439,8 @@ public:
 
     void createExternalDatabaseTable(
         RandomGenerator & rg, IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+
+    void createExternalDatabase(RandomGenerator & rg, IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);

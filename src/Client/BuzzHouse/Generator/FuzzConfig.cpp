@@ -18,6 +18,35 @@ namespace BuzzHouse
 
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
+static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
+{
+    String client_hostname = "localhost";
+    String server_hostname = "localhost";
+    String endpoint = "test";
+    String region = default_region;
+    uint32_t port = default_port;
+
+    static const SettingEntries configEntries
+        = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
+           {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
+           {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
+           {"region", [&](const JSONObjectType & value) { region = static_cast<uint32_t>(value.getUInt64()); }},
+           {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
+
+    for (const auto [key, value] : jobj.getObject())
+    {
+        const String & nkey = String(key);
+
+        if (configEntries.find(nkey) == configEntries.end())
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown catalog option: {}", nkey);
+        }
+        configEntries.at(nkey)(value);
+    }
+
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, endpoint, region, port));
+}
+
 static std::optional<ServerCredentials> loadServerCredentials(
     const JSONParserImpl::Element & jobj, const String & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
@@ -32,6 +61,9 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String database = "test";
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
+    std::optional<Catalog> glue_catalog;
+    std::optional<Catalog> hive_catalog;
+    std::optional<Catalog> rest_catalog;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
@@ -44,7 +76,10 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
            {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
-           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }}};
+           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
+           {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
+           {"hive", [&](const JSONObjectType & value) { hive_catalog = loadCatalog(value, "", 9083); }},
+           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
@@ -68,7 +103,10 @@ static std::optional<ServerCredentials> loadServerCredentials(
         password,
         database,
         user_files_dir,
-        query_log_file));
+        query_log_file,
+        glue_catalog,
+        hive_catalog,
+        rest_catalog));
 }
 
 static PerformanceMetric
@@ -227,7 +265,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"externaldistributed", allow_external_distributed},
            {"materializedpostgresql", allow_materialized_postgresql},
            {"replicated", allow_replicated},
-           {"shared", allow_shared}};
+           {"shared", allow_shared},
+           {"datalakecatalog", allow_datalakecatalog}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",

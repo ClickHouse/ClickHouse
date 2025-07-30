@@ -1534,7 +1534,59 @@ bool MinIOIntegration::sendRequest(const String & resource)
 
 String MinIOIntegration::getConnectionURL(const bool client)
 {
-    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + sc.database + "/";
+    return fmt::format("http://{}:{}{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, sc.database);
+}
+
+void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+{
+    const Catalog * cat = nullptr;
+    SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+    SetValue * sv2 = svs->add_other_values();
+    SetValue * sv3 = svs->add_other_values();
+
+    const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
+    const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
+    const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
+
+    const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    sv1->set_property("catalog_type");
+    sv2->set_property("warehouse");
+    sv2->set_value(d.getName());
+    if (glue_cat && (nopt < glue_cat + 1))
+    {
+        cat = &sc.glue_catalog.value();
+        SetValue * sv4 = svs->add_other_values();
+
+        de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
+        sv1->set_value("glue");
+        sv4->set_property("region");
+        sv4->set_value(cat->region);
+    }
+    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+    {
+        cat = &sc.hive_catalog.value();
+
+        de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+        sv1->set_value("hive");
+    }
+    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+    {
+        cat = &sc.rest_catalog.value();
+
+        de->add_params()->set_svalue(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
+        sv1->set_value("rest");
+    }
+    else
+    {
+        chassert(0);
+    }
+    de->add_params()->set_svalue(sc.user);
+    de->add_params()->set_svalue(sc.password);
+    sv3->set_property("storage_endpoint");
+    sv3->set_value(fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, cat->endpoint));
 }
 
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
@@ -1630,6 +1682,20 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     if (fc.clickhouse_server.has_value())
     {
         clickhouse = MySQLIntegration::testAndAddMySQLConnection(fc, fc.clickhouse_server.value(), fc.read_log, "ClickHouse");
+    }
+}
+
+void ExternalIntegrations::createExternalDatabase(
+    RandomGenerator & rg, const IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+{
+    switch (dc)
+    {
+        case IntegrationCall::MinIO:
+            minio->setDatabaseDetails(rg, d, de, svs);
+            break;
+        default:
+            chassert(0);
+            break;
     }
 }
 

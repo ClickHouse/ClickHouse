@@ -202,61 +202,6 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
     }
 }
 
-DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
-{
-    chassert(this->ids.empty());
-    this->ids.emplace_back(DAtomic);
-    if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
-    {
-        this->ids.emplace_back(DMemory);
-    }
-    if (replica_setup && (fc.engine_mask & allow_replicated) != 0)
-    {
-        this->ids.emplace_back(DReplicated);
-    }
-    if (supports_cloud_features && (fc.engine_mask & allow_shared) != 0)
-    {
-        this->ids.emplace_back(DShared);
-    }
-    const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
-    this->ids.clear();
-    return res;
-}
-
-void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
-{
-    SQLDatabase next;
-    const uint32_t dname = this->database_counter++;
-    DatabaseEngine * deng = cd->mutable_dengine();
-
-    next.deng = this->getNextDatabaseEngine(rg);
-    deng->set_engine(next.deng);
-    if (next.isReplicatedDatabase())
-    {
-        next.zoo_path_counter = this->zoo_path_counter++;
-    }
-    if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
-    {
-        next.cluster = rg.pickRandomly(fc.clusters);
-        cd->mutable_cluster()->set_cluster(next.cluster.value());
-    }
-    next.dname = dname;
-    next.finishDatabaseSpecification(deng);
-    next.setName(cd->mutable_database());
-    if (rg.nextSmallNumber() < 3)
-    {
-        cd->set_comment(nextComment(rg));
-    }
-    if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
-    {
-        SetValue * sv = cd->mutable_setting_values()->mutable_set_value();
-
-        sv->set_property("disk");
-        sv->set_value("'" + rg.pickRandomly(fc.disks) + "'");
-    }
-    this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
-}
-
 void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf)
 {
     SQLFunction next;

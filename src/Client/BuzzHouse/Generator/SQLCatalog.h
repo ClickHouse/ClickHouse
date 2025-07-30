@@ -129,6 +129,8 @@ public:
 
     bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
 
+    bool isDataLakeCatalogDatabase() const { return deng == DatabaseEngineValues::DDataLakeCatalog; }
+
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
     const std::optional<String> & getCluster() const { return cluster; }
