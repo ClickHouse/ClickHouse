@@ -1,11 +1,11 @@
 #pragma once
 #include <vector>
 #include <Common/ColumnsHashing.h>
-
 #include <Columns/ColumnString.h>
+
 namespace DB
 {
-class IColumn;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -295,7 +295,6 @@ struct AggregationMethodSerialized
     static const bool one_key_nullable_optimization = false;
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
-
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
 
@@ -307,6 +306,5 @@ using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, f
 
 template <typename TData>
 using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true>;
-
 
 }
