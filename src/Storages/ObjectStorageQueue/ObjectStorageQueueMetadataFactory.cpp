@@ -44,7 +44,10 @@ void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool 
     std::lock_guard lock(mutex);
 
     if (shutdown_called)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+    {
+        /// We can call unregisterTable from table shutdown.
+        return;
+    }
 
     auto it = storages.find(storage);
     if (it == storages.end())
