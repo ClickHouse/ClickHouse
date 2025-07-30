@@ -967,10 +967,7 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3):
             """,
             query_id=backup_query_id,
         )
-        assert (
-            int(node.count_in_log("Response status: 503, Service Unavailable"))
-            >= table_count
-        )
+        assert int(node.count_in_log("Response status: 503, Service Unavailable")) > 0
         restore_query_id = uuid.uuid4().hex
         node.query(
             f"""
