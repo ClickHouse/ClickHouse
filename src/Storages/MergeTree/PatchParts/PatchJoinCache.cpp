@@ -96,7 +96,9 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
 {
     std::vector<std::shared_future<void>> futures;
     std::vector<std::shared_ptr<std::promise<void>>> promises;
+
     MarkRanges ranges_to_read;
+    bool has_ranges_to_read = false;
 
     {
         std::shared_lock lock(mutex);
@@ -106,14 +108,20 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
             auto it = ranges_futures.find(range);
 
             if (it != ranges_futures.end())
+            {
                 futures.push_back(it->second);
+            }
             else
-                ranges_to_read.push_back(range);
+            {
+                has_ranges_to_read = true;
+                break;
+            }
         }
     }
 
-    if (!ranges_to_read.empty())
+    if (has_ranges_to_read)
     {
+        futures.clear();
         std::lock_guard lock(mutex);
 
         for (const auto & range : ranges)
