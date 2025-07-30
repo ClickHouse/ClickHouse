@@ -28,220 +28,6 @@ CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
-class ClickHouseLight:
-    def __init__(self):
-        self.path = temp_dir
-        self.config_path = f"{temp_dir}/config"
-        self.pid_file = "/tmp/pid"
-        self.start_cmd = f"{self.path}/clickhouse-server --config-file={self.config_path}/config.xml --pid-file {self.pid_file}"
-        self.log_file = f"{temp_dir}/server.log"
-        self.port = 9000
-        self.pid = None
-
-    def install(self):
-        Utils.add_to_PATH(self.path)
-        commands = [
-            f"mkdir -p {self.config_path}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {self.config_path}",
-            # make it ipv4 only
-            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {self.config_path}/config.xml',
-            f"cp -r --dereference ./programs/server/config.d {self.config_path}",
-            f"chmod +x {self.path}/clickhouse",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-server",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-client",
-        ]
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def clickbench_config_tweaks(self):
-        content = """
-profiles:
-    default:
-        allow_introspection_functions: 1
-"""
-        file_path = f"{self.config_path}/users.d/allow_introspection_functions.yaml"
-        with open(file_path, "w") as file:
-            file.write(content)
-        return True
-
-    def fuzzer_config_tweaks(self):
-        # TODO figure out which ones are needed
-        commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.config_path}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.config_path}/config.d",
-        ]
-
-        c1 = """
-<clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
-</clickhouse>
-"""
-        c2 = """
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-    since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-"""
-        file_path = (
-            f"{self.config_path}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        )
-        with open(file_path, "w") as file:
-            file.write(c1)
-
-        file_path = f"{self.config_path}/config.d/core.xml"
-        with open(file_path, "w") as file:
-            file.write(c2)
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def create_log_export_config(self):
-        print("Create log export config")
-        config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
-
-        self.log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        self.log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
-            CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
-            CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
-        )
-
-        with open(config_file, "w") as f:
-            f.write(config_content)
-
-    def start_log_exports(self, check_start_time):
-        print("Start log export")
-        info = Info()
-        os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
-        )
-
-        Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
-            verbose=True,
-            strict=True,
-        )
-
-    def start(self):
-        print(f"Starting ClickHouse server")
-        print("Command: ", self.start_cmd)
-        self.log_fd = open(self.log_file, "w")
-        self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print(f"ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print(f"ClickHouse server ready")
-        else:
-            print(f"ClickHouse server NOT ready")
-        return res
-
-    def wait_ready(self):
-        res, out, err = 0, "", ""
-        attempts = 30
-        delay = 2
-        for attempt in range(attempts):
-            res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
-            )
-            if out.strip() == "1":
-                print("Server ready")
-                break
-            else:
-                print(f"Server not ready, wait")
-            Utils.sleep(delay)
-        else:
-            Utils.print_formatted_error(
-                f"Server not ready after [{attempts * delay}s]", out, err
-            )
-            return False
-        self.pid = int(Shell.get_output(f"cat {self.pid_file}").strip())
-        return True
-
-    def attach_gdb(self):
-        assert self.pid, "ClickHouse not started"
-        rtmin = Shell.get_output("kill -l SIGRTMIN", strict=True)
-        script = f"""
-    set follow-fork-mode parent
-    handle SIGHUP nostop noprint pass
-    handle SIGINT nostop noprint pass
-    handle SIGQUIT nostop noprint pass
-    handle SIGPIPE nostop noprint pass
-    handle SIGTERM nostop noprint pass
-    handle SIGUSR1 nostop noprint pass
-    handle SIGUSR2 nostop noprint pass
-    handle SIG{rtmin} nostop noprint pass
-    info signals
-    continue
-    backtrace full
-    info registers
-    disassemble /s
-    up
-    disassemble /s
-    up
-    disassemble /s
-    p "done"
-    detach
-    quit
-"""
-        script_path = f"./script.gdb"
-        with open(script_path, "w") as file:
-            file.write(script)
-
-        self.proc = subprocess.Popen(
-            f"gdb -batch -command {script_path} -p {self.pid}", shell=True
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to attaach gdb", stdout, stderr)
-            return False
-
-        # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-        Shell.check(
-            "time clickhouse-client --query \"SELECT 'Connected to clickhouse-server after attaching gdb'\"",
-            verbose=True,
-        )
-
-        # Check connectivity after we attach gdb, because it might cause the server
-        # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
-        res = self.wait_ready()
-        if res:
-            print("GDB attached successfully")
-        return res
-
-
 class ClickHouseProc:
     BACKUPS_XML = """
 <clickhouse>
@@ -410,9 +196,118 @@ class ClickHouseProc:
             "10000"
         )
 
+    def _install_light(self):
+        """
+        Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
+        To be used only with start_light(). This method is suitable for jobs that do not require complex configuration, such as clickbench.
+        Jobs like functional tests are hard/not-reasonable to adapt to use this way of installation, thus they have to mount config and other directories into default directories.
+        """
+        Utils.add_to_PATH(temp_dir)
+        commands = [
+            f"mkdir -p {temp_dir}/users.d",
+            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}",
+            # make it ipv4 only
+            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {temp_dir}/config.xml',
+            f"cp -r --dereference ./programs/server/config.d {temp_dir}",
+            f"chmod +x {temp_dir}/clickhouse",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
+        ]
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        if not res:
+            print("Failed to install ClickHouse config")
+        return res
+
+    def start_light(self):
+        """
+        Start ClickHouse server with config installed with _install_config()
+        """
+        print(f"Starting ClickHouse server")
+        self.pid_file = f"{temp_dir}/clickhouse-server.pid"
+        self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
+        print("Command: ", self.start_cmd)
+        self.log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
+        self.proc = subprocess.Popen(
+            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+        )
+        time.sleep(2)
+        retcode = self.proc.poll()
+        if retcode is not None:
+            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
+            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
+            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            return False
+        print(f"ClickHouse server process started -> wait ready")
+        res = self.wait_ready()
+        if res:
+            print(f"ClickHouse server ready")
+        else:
+            print(f"ClickHouse server NOT ready")
+        return res
+
+    def install_clickbench_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+
+        # tweak for clickbench
+        content = """
+profiles:
+    default:
+        allow_introspection_functions: 1
+"""
+        file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
+        with open(file_path, "w") as file:
+            file.write(content)
+        return True
+
+    def install_fuzzer_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+        # TODO figure out which ones are needed
+        commands = [
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
+        ]
+
+        c1 = """
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        c2 = """
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+    since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+"""
+        file_path = (
+            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        )
+        with open(file_path, "w") as file:
+            file.write(c1)
+
+        file_path = f"{self.ch_config_dir}/config.d/core.xml"
+        with open(file_path, "w") as file:
+            file.write(c2)
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.log_export_host = Secret.Config(
             name="clickhouse_ci_logs_host",
@@ -462,17 +357,14 @@ class ClickHouseProc:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1
             run_path = self.run_path1
-            proc = self.proc_1
         elif replica_num == 2:
             pid_file = self.pid_file_replica_2
             command = self.replica_command_2
             run_path = self.run_path2
-            proc = self.proc_2
         elif replica_num == 0:
             pid_file = self.pid_file
             command = self.command
             run_path = self.run_path0
-            proc = self.proc
         else:
             assert False
 
@@ -589,7 +481,19 @@ class ClickHouseProc:
             err_log = f"{self.log_dir}/clickhouse-server.err.log"
         else:
             assert False
-        self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
+        i = 0
+        self.pid = None
+        while i < 30:
+            # can take some time if decompressing
+            try:
+                self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
+                break
+            except Exception as e:
+                Utils.sleep(1)
+            i += 1
+        if self.pid is None:
+            print(f"Failed to get pid from fs [{pid_file}]")
+            return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
                 f'clickhouse-client --port {port} --query "select 1"', verbose=True
@@ -785,56 +689,56 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Sanitizer assert (in stderr.log)",
-                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
+                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -a -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Killed by signal (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Fatal messages (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
-                command=f"cd {self.log_dir} && ! grep -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="No lost s3 keys",
-                command=f"cd {self.log_dir} && ! grep 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
-                command=f"cd {self.log_dir} && ! grep 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         if Shell.check(f"dmesg > {self.DMESG_LOG}"):
             results.append(
                 Result.from_commands_run(
                     name="OOM in dmesg",
-                    command=f"! cat {self.DMESG_LOG} | grep -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
                 )
             )
         else:
@@ -842,7 +746,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Found signal in gdb.log",
-                command=f"! cat {self.GDB_LOG} | grep -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+                command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
             )
         )
         # convert statuses to CH tests notation
