@@ -2858,7 +2858,8 @@ Result:
 
 ## nowInBlock {#nowInBlock}
 
-Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data.
+In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
 
@@ -2900,7 +2901,8 @@ Result:
 
 ## nowInBlock64 {#nowInBlock64}
 
-Returns the current date and time at the moment of processing of each block of data in milliseconds. In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data in milliseconds.
+In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
 
@@ -2912,7 +2914,7 @@ nowInBlock([scale[, timezone]])
 
 **Arguments**
 
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically, are used - 3(milliseconds), 6 (microseconds), 9 (nanoseconds) (optional).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typical values used: 3 (milliseconds), 6 (microseconds), 9 (nanoseconds) (optional).
 
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
@@ -2942,8 +2944,8 @@ Result:
 └─────────────────────────┴─────────────────────────┴──────────┘
 ```
 
-
 **Example with parameters**
+
 ```sql
 SELECT
     nowInBlock64(6),

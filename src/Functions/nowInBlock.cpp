@@ -1,10 +1,10 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
 
 
@@ -39,46 +39,24 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
-    }
-
-    /// Optional timezone argument.
-    bool isVariadic() const override { return true; }
-
+    String getName() const override { return name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; } /// Optional timezone argument.
     size_t getNumberOfArguments() const override { return 0; }
-
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0 or 1", getName());
-        }
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0 or 1 arguments", getName());
+
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be String or FixedString", getName());
+
         if (arguments.size() == 1)
-        {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
-        }
+
         return std::make_shared<DataTypeDateTime>();
     }
 
@@ -86,6 +64,7 @@ public:
     {
         return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }
+
 private:
     const bool allow_nonconst_timezone_arguments;
 };

@@ -1,51 +1,40 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/nowSubsecond.h>
 #include <Interpreters/Context.h>
-#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
 {
 
+/** Returns current time at calculation of every block.
+* In contrast to 'now64' function, it's not a constant expression and is not a subject of constant folding.
+*/
 class FunctionNowInBlock64 : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock64";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNowInBlock64>(context); }
-    explicit FunctionNowInBlock64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
-    {
+    static FunctionPtr create(ContextPtr /*context*/) {
+        return std::make_shared<FunctionNowInBlock64>();
     }
 
     String getName() const override { return name; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    /// Optional timezone argument.
-    bool isVariadic() const override { return true; }
-
+    bool isVariadic() const override { return true; } /// Optional timezone argument.
     size_t getNumberOfArguments() const override { return 0; }
-
     bool isDeterministic() const override { return false; }
-
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -54,42 +43,38 @@ public:
             return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
         if (arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 1 or 2", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0, 1 or 2 arguments", getName());
 
         if (!isInteger(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be Integer", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be (U)Int*", getName());
 
-        const auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
+        auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
 
         if (arguments.size() == 1)
             return std::make_shared<DataTypeDateTime64>(scale);
 
         if (!isStringOrFixedString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "2nd argument of function {} should be String or FixedString", getName());
 
-        return std::make_shared<DataTypeDateTime64>(
-            scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, allow_nonconst_timezone_arguments));
+        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, false));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
     {
-        const auto * dataType64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
+        const auto * data_type_datetime64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
 
-        if (!dataType64)
+        if (!data_type_datetime64)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected DataTypeDateTime64, got {}", type->getName());
 
-        auto column_pointer = ColumnDateTime64::create(input_rows_count, dataType64->getScale());
-        auto & vec_res = column_pointer->getData();
-        const auto now_decimal = nowSubsecond(dataType64->getScale()).safeGet<Decimal64>();
+        auto col_res = ColumnDateTime64::create(input_rows_count, data_type_datetime64->getScale());
+        auto & vec_res = col_res->getData();
 
+        auto now = nowSubsecond(data_type_datetime64->getScale()).safeGet<Decimal64>();
         for (size_t i = 0; i < input_rows_count; ++i)
-            vec_res[i] = now_decimal.getValue();
+            vec_res[i] = now.getValue();
 
-        return column_pointer;
+        return col_res;
     }
-
-private:
-    const bool allow_nonconst_timezone_arguments;
 };
 
 }

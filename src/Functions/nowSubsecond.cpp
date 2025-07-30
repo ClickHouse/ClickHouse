@@ -1,14 +1,14 @@
-#include <Functions/nowSubsecond.h>
+#include <Common/intExp10.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Common/intExp10.h>
+#include <Functions/nowSubsecond.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int CANNOT_CLOCK_GETTIME;
+    extern const int CANNOT_CLOCK_GETTIME;
 }
 
 Field nowSubsecond(UInt32 scale)
