@@ -163,12 +163,21 @@ namespace DB
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
-    Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/engines/table-engines/mergetree-family/mergetree) documentation.
+    Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
+
+    :::note
+    Recommendations for using object storage as `tmp_policy`:
+    - Use separate `bucket:path` on each server
+    - Use `metadata_type=plain`
+    - You may also want to set TTL for this bucket
+    :::
 
     :::note
     - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
     - `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
-    - Policy should have exactly *one volume* with *local* disks.
+    - Policy should have exactly *one volume*
+
+    For more information see the [MergeTree Table Engine](/engines/table-engines/mergetree-family/mergetree) documentation.
     :::
 
     **Example**
