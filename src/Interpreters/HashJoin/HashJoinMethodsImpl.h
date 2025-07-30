@@ -620,6 +620,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             }
         }
 
+        // std::cout << "known_rows.size() = " << known_rows.size() << std::endl;
+
         if (!right_row_found)
         {
             if constexpr (join_features.is_anti_join && join_features.left)

@@ -6,6 +6,7 @@
 #include <Interpreters/RowRefs.h>
 #include <Common/HashTable/HashMap.h>
 
+#include <sparsehash/dense_hash_set>
 namespace DB
 {
 
@@ -19,12 +20,22 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = PairNoInit<const Columns *, DB::RowRef::SizeT>;
+    using Type = PairNoInit<const Columns *, RowRef::SizeT>;
 
 private:
+    struct PairHash
+    {
+        std::size_t operator()(const Type & p) const
+        {
+            auto h1 = std::hash<const Columns *>{}(p.first);
+            auto h2 = std::hash<RowRef::SizeT>{}(p.second);
+            return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+        }
+    };
+
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
     using ArrayHolder = std::array<Type, MAX_LINEAR>;
-    using SetHolder = std::set<Type>;
+    using SetHolder = google::dense_hash_set<Type, PairHash>;
     using SetHolderPtr = std::unique_ptr<SetHolder>;
 
     ArrayHolder array_holder;
@@ -37,6 +48,8 @@ public:
         : items(0)
     {
     }
+
+    size_t size() const { return items; }
 
     template<class InputIt>
     void add(InputIt from, InputIt to)
@@ -51,6 +64,7 @@ public:
             if (items <= MAX_LINEAR)
             {
                 set_holder_ptr = std::make_unique<SetHolder>();
+                set_holder_ptr->set_empty_key(Type(nullptr, 0));
                 set_holder_ptr->insert(std::cbegin(array_holder), std::cbegin(array_holder) + items);
             }
             set_holder_ptr->insert(from, to);
@@ -75,6 +89,8 @@ public:
     void add(InputIt, InputIt)
     {
     }
+
+    size_t size() const { return 0; }
 
     template<class Needle>
     static bool isKnown(const Needle &)
