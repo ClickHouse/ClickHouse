@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 
 #if USE_DELTA_KERNEL_RS
+#include <Analyzer/Utils.h>
 #include <Common/logger_useful.h>
 
 #include <Functions/IFunction.h>
@@ -32,6 +33,11 @@ namespace
         return node->type == DB::ActionsDAG::ActionType::INPUT;
     }
 
+    bool isFunctionNode(const DB::ActionsDAG::Node * node)
+    {
+        return node->type == DB::ActionsDAG::ActionType::FUNCTION;
+    }
+
     DB::TypeIndex getTypeIndex(const DB::ActionsDAG::Node * node)
     {
         if (!node->result_type->isNullable())
@@ -39,6 +45,15 @@ namespace
 
         const auto * nullable = assert_cast<const DB::DataTypeNullable *>(node->result_type.get());
         return nullable->getNestedType()->getTypeId();
+    }
+
+    DB::DataTypePtr getTypeOrNestedType(const DB::ActionsDAG::Node * node)
+    {
+        if (!node->result_type->isNullable())
+            return node->result_type;
+
+        const auto * nullable = assert_cast<const DB::DataTypeNullable *>(node->result_type.get());
+        return nullable->getNestedType();
     }
 }
 
@@ -118,7 +133,8 @@ private:
                 return nullptr;
             }
 
-            LOG_TEST(iterator_data->log(), "Node name: {}, node type: {}", node->result_name, node->type);
+            LOG_TEST(iterator_data->log(), "Node name: {}, node type: {}, column type: {}",
+                     node->result_name, node->type, node->column ? toString(node->column->getDataType()) : "None");
 
             auto result = getNextImpl(*iterator_data, node);
             if (result && result != VISITOR_FAILED_OR_UNSUPPORTED)
@@ -151,8 +167,11 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
 static uintptr_t visitLiteralValue(
     const DB::Field & value,
     DB::TypeIndex type_index,
+    DB::DataTypePtr data_type,
     ffi::KernelExpressionVisitorState * state)
 {
+    LOG_TEST(getLogger("EnginePredicate"), "Type index: {}, data type: {}", type_index, data_type->getName());
+
     switch (type_index)
     {
         case DB::TypeIndex::String:
@@ -173,8 +192,16 @@ static uintptr_t visitLiteralValue(
         }
         case DB::TypeIndex::UInt8:
         {
-            auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+            if (isBool(data_type))
+            {
+                bool result = value.safeGet<Int16>();
+                return ffi::visit_expression_literal_bool(state, result); /// Accepts bool
+            }
+            else
+            {
+                auto result = value.safeGet<Int16>();
+                return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+            }
         }
         case DB::TypeIndex::Int16:
         {
@@ -220,6 +247,9 @@ static uintptr_t visitLiteralValue(
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
 {
+    if (iterator_data.hasException())
+        return VISITOR_FAILED_OR_UNSUPPORTED;
+
     switch (node->type)
     {
         case DB::ActionsDAG::ActionType::FUNCTION:
@@ -255,6 +285,18 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         ffi::visit_expression_column(iterator_data.state,
                                                      column_name,
                                                      &KernelUtils::allocateError), "visit_expression_column");
+                    return ffi::visit_predicate_not(iterator_data.state, column);
+                }
+
+                if (isFunctionNode(node->children[0]))
+                {
+                    EngineIteratorData current_iterator_data(
+                            iterator_data.state,
+                            node->children,
+                            iterator_data.predicate);
+
+                    EngineIterator current_engine_iterator(current_iterator_data);
+                    auto column = ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
                     return ffi::visit_predicate_not(iterator_data.state, column);
                 }
             }
@@ -303,6 +345,34 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
+                    /// If literal node has a different type from column's,
+                    /// cast one to another.
+                    if (!column_node->result_type->equals(*literal_node->result_type))
+                    {
+                        DB::ColumnWithTypeAndName column;
+                        column.name = column_node->result_type->getName();
+                        column.column = DB::DataTypeString().createColumnConst(0, column.name);
+                        column.type = std::make_shared<DB::DataTypeString>();
+
+                        DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.filter);
+
+                        const auto * right_arg = &dag.addColumn(std::move(column));
+                        const auto * left_arg = literal_node;
+
+                        DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
+                        DB::ColumnWithTypeAndName left_column{nullptr, literal_node->result_type, {}};
+                        auto func_base_cast = DB::createInternalCast(
+                            /* from */std::move(left_column),
+                            /* to */column_node->result_type,
+                            DB::CastType::nonAccurate,
+                            std::move(diagnostic));
+
+                        DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
+                        literal_node = &dag.addFunction(func_base_cast, std::move(children), {});
+
+                        print_node_info(literal_node);
+                    }
+
                     const auto column_name = KernelUtils::toDeltaString(column_node->result_name);
                     uintptr_t column = KernelUtils::unwrapResult(
                         ffi::visit_expression_column(iterator_data.state,
@@ -311,18 +381,22 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
+                    //auto value = DB::getFieldFromColumnForASTLiteral(literal_node->column, 0, getTypeOrNestedType(column_node));
                     DB::Field value;
                     literal_node->column->get(0, value);
 
                     uintptr_t constant = visitLiteralValue(
-                        value, comparison_type_index, iterator_data.state);
+                        value,
+                        comparison_type_index,
+                        getTypeOrNestedType(column_node),
+                        iterator_data.state);
+
                     if (!constant || constant == VISITOR_FAILED_OR_UNSUPPORTED)
                     {
                         LOG_TEST(iterator_data.log(), "Unsupported literal type: {}", comparison_type_index);
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    LOG_TEST(getLogger("KSSENII"), "KSSENII HERE");
                     if (func_name == DB::NameEquals::name)
                         return ffi::visit_predicate_eq(iterator_data.state, column, constant);
                     if (func_name == DB::NameNotEquals::name)

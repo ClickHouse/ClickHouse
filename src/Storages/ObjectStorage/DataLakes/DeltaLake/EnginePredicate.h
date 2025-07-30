@@ -40,7 +40,6 @@ public:
 
     const LoggerPtr log = getLogger("EnginePredicate");
 
-private:
     /// Predicate expression.
     const DB::ActionsDAG & filter;
     /// Exception which will be set during EnginePredicate execution.
