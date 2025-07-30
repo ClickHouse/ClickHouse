@@ -1467,21 +1467,18 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
+    /// Check if we are interested in a particular disk
+    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto look_on_disk =
         [this](DiskPtr disk, std::shared_ptr<MergeTreeData> tbl)
     {
-        LOG_TRACE(log, "Top of look_for_detached_parts for {}", disk->getName());
         if (!tbl)
-        {
-            LOG_TRACE(log, "look_for_detached_parts: no tbl - returning true");
+            /// Not a MergeTree - don't skip
             return true;
-        }
 
         if (tbl->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-        {
-            LOG_TRACE(log, "look_for_detached_parts: disk {} belongs to table policy", disk->getName());
+            /// Disk is actually used - don't skip
             return true;
-        }
 
         auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
@@ -1489,7 +1486,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         bool is_look_needed = mode == SearchDetachedPartsDrives::ANY
             || (mode == SearchDetachedPartsDrives::LOCAL && is_local_metadata());
 
-        LOG_INFO(log, "look_for_detached_parts: mode {}, is_look_needed {}", mode, is_look_needed);
+        LOG_TRACE(log, "look_on_disk: mode {}, is_look_needed {}", mode, is_look_needed);
         return is_look_needed;
     };
 

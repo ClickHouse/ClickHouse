@@ -1829,7 +1829,7 @@ namespace ErrorCodes
     Default value: an empty string (not defined).
     )", 0) \
     DECLARE(SearchDetachedPartsDrives, search_detached_parts_drives, SearchDetachedPartsDrives::ANY, R"(
-    ClickHouse looks for detached parts upon any ATTACH or CREATE table.
+    ClickHouse looks for parts (may be detached) upon any ATTACH, CREATE or DROP table.
     This setting limits scope of drives to search by traits of the drives.
 
     Possible values:
