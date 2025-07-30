@@ -104,9 +104,7 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
         *object_info.data_lake_metadata->transform);
 
     if (partition_values.empty())
-    {
         return false;
-    }
 
     DB::Row partition_key_values;
     partition_key_values.reserve(partition_values.size());

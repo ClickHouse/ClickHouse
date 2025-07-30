@@ -255,13 +255,6 @@ public:
                 continue;
             }
 
-            //if (object->data_lake_metadata->transformm)
-            //{
-            //    LOG_TRACE(log, "Parsing transform");
-            //    auto parsed_transform = visitScanCallbackExpression(object->data_lake_metadata->transformm, expression_schema);
-            //    LOG_TRACE(log, "Parsed transform: {}", parsed_transform->dumpNames());
-            //}
-
             object->metadata = object_storage->getObjectMetadata(object->getPath());
 
             if (callback)
@@ -328,10 +321,6 @@ public:
 
         if (transform && !context->partition_columns.empty())
         {
-            //auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema);
-
-            //object->data_lake_metadata = DB::DataLakeObjectMetadata{};
-            //object->data_lake_metadata->transform = parsed_transform;
             auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema, context->enable_expression_visitor_logging);
             object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
 
@@ -436,18 +425,9 @@ void TableSnapshot::initSnapshot() const
     initSnapshotImpl();
 }
 
-static void tracingCallback(struct ffi::Event event)
-{
-    LOG_TEST(getLogger("DeltaKernelTracing"),
-             "Level: {}, message: {}",
-             event.level, std::string_view(event.message.ptr, event.message.len));
-}
-
 void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
-
-    ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
