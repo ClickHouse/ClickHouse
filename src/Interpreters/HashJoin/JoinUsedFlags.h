@@ -1,10 +1,10 @@
 #pragma once
 #include <vector>
 #include <atomic>
-#include <unordered_map>
+#include <sparsehash/dense_hash_map>
+
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
-#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -40,7 +40,6 @@ class JoinUsedFlags
     using RawColumnsPtr = const Columns *;
 
     /// For multiple disjuncts each entry in hashmap stores flags for particular block
-    // std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
     google::dense_hash_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
