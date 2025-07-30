@@ -225,6 +225,8 @@ class ClickHouseProc:
         Start ClickHouse server with config installed with _install_config()
         """
         print(f"Starting ClickHouse server")
+        # check binary available and do decompression in the meantime
+        assert Shell.check("clickhouse --version", verbose=True)
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
         self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
         print("Command: ", self.start_cmd)
@@ -267,10 +269,8 @@ profiles:
         res = self._install_light()
         if not res:
             return False
-        # TODO figure out which ones are needed
         commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
         ]
 
         c1 = """
@@ -290,13 +290,11 @@ profiles:
     <core_path>$PWD</core_path>
 </clickhouse>
 """
-        file_path = (
-            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        )
+        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{self.ch_config_dir}/config.d/core.xml"
+        file_path = f"{temp_dir}/config.d/core.xml"
         with open(file_path, "w") as file:
             file.write(c2)
         res = True
