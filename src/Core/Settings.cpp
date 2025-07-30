@@ -6973,6 +6973,9 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
