@@ -39,7 +39,7 @@ import urllib.parse
 import zlib
 from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
-from contextlib import redirect_stdout, contextmanager
+from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
 from errno import ESRCH
 from ssl import SSLEOFError
@@ -71,7 +71,7 @@ MESSAGES_TO_RETRY = [
 IGNORED_SANITIZER_ERRORS = [
     "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
-    #"LLVM ERROR: IO failure on output stream: Broken pipe",
+    # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
 
 MAX_RETRIES = 3
@@ -566,13 +566,21 @@ def kill_process_group(pgid, fatal_log):
             try:
                 if fatal_log and os.path.exists(fatal_log):
                     with open(fatal_log, "rb") as f:
-                        if b'This is a signal used for debugging purposes by the user' in f.read():
+                        if (
+                            b"This is a signal used for debugging purposes by the user"
+                            in f.read()
+                        ):
                             client_printed_stacktrace = True
             except:
                 print(f"Cannot read {fatal_log}. Ignoring.")
 
             if not client_printed_stacktrace:
-                pgrep = subprocess.run(f"pgrep --pgroup {pgid} clickhouse", shell=True, capture_output=True, text=False)
+                pgrep = subprocess.run(
+                    f"pgrep --pgroup {pgid} clickhouse",
+                    shell=True,
+                    capture_output=True,
+                    text=False,
+                )
                 processes = pgrep.stdout.decode("utf-8").strip().split("\n")
                 processes = map(lambda x: x.strip(), processes)
                 processes = filter(lambda x: len(x) > 0, processes)
@@ -1617,7 +1625,7 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        if "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
+        if "no-flaky-check" in tags and args.test_runs > 1:
             return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
@@ -1631,7 +1639,8 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                if "no-" + build_flag in tags:
+                # We ignore no-buildflag for flaky tests
+                if "no-" + build_flag in tags and args.test_runs == 1:
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
@@ -1647,7 +1656,9 @@ class TestCase:
             if proc.returncode is None:
                 f = io.StringIO()
                 with redirect_stdout(f):
-                    kill_process_group(os.getpgid(proc.pid), self.fatal_sanitizer_prefix)
+                    kill_process_group(
+                        os.getpgid(proc.pid), self.fatal_sanitizer_prefix
+                    )
                 kill_output = f.getvalue()
 
         description = ""
@@ -1668,9 +1679,21 @@ class TestCase:
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
+
                 def ignore_sanitizer_line(line):
-                    return any(filter(lambda exception: exception in line, IGNORED_SANITIZER_ERRORS))
-                content = "\n".join(filter(lambda line: not ignore_sanitizer_line(line), content.splitlines())).strip()
+                    return any(
+                        filter(
+                            lambda exception: exception in line,
+                            IGNORED_SANITIZER_ERRORS,
+                        )
+                    )
+
+                content = "\n".join(
+                    filter(
+                        lambda line: not ignore_sanitizer_line(line),
+                        content.splitlines(),
+                    )
+                ).strip()
                 if content:
                     stderr += f"Path: {path}\n"
                     stderr += content
@@ -2565,9 +2588,8 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return (
-            ("no-parallel" in self.all_tags[test_name])
-            or ("sequential" in self.all_tags[test_name])
+        return ("no-parallel" in self.all_tags[test_name]) or (
+            "sequential" in self.all_tags[test_name]
         )
 
     def get_selected_tests(self, filter_func):
@@ -3753,7 +3775,7 @@ def parse_args():
         default=1,
         nargs="?",
         type=int,
-        help="Run each test many times (useful for e.g. flaky check)",
+        help="Run each test many times (run is considered as flaky check)",
     )
     parser.add_argument(
         "--long-test-runs-ratio",
@@ -4208,7 +4230,9 @@ if __name__ == "__main__":
         args.s3_storage = True
 
     if args.encrypted_storage and not args.s3_storage and not args.azure_blob_storage:
-        print("Disabling encrypted storage. To run tests with encrypted storage, either s3_storage or azure_blob_storage should be enabled.")
+        print(
+            "Disabling encrypted storage. To run tests with encrypted storage, either s3_storage or azure_blob_storage should be enabled."
+        )
         args.encrypted_storage = False
 
     try:
