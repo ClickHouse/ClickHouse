@@ -152,6 +152,12 @@ struct JoinCondition
     /// Residual conditions depend on data from both tables and must be evaluated after the join has been performed.
     /// Unlike the join predicates, these conditions can be arbitrary expressions.
     std::vector<JoinActionRef> residual_conditions;
+    
+    /// Flags to indicate if filter conditions should be combined with OR semantics (disjunctive)
+    /// or AND semantics (conjunctive). Default is false (AND semantics).
+    bool left_filter_disjunctive = false;
+    bool right_filter_disjunctive = false;
+    bool residual_disjunctive = false;
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);

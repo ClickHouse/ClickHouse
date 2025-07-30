@@ -272,15 +272,24 @@ JoinActionRef concatConditionsWithFunction(
     return JoinActionRef(&result_node, actions_dag.get());
 }
 
-JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
+JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-    return concatConditionsWithFunction(conditions, actions_dag, and_function);
+    if (use_or_semantics)
+    {
+        FunctionOverloadResolverPtr or_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+        return concatConditionsWithFunction(conditions, actions_dag, or_function);
+    }
+    else
+    {
+        FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return concatConditionsWithFunction(conditions, actions_dag, and_function);
+    }
 }
 
-JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
+JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    auto condition = concatConditions(conditions, actions_dag);
+    // Use OR semantics for table filters when processing OR predicates
+    auto condition = concatConditions(conditions, actions_dag, use_or_semantics);
     conditions.clear();
     if (condition)
         conditions = {condition};
@@ -604,12 +613,12 @@ JoinPtr JoinStepLogical::convertToPhysical(
         }
     }
 
-    if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+    if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions, join_expression.condition.left_filter_disjunctive))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
-    if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+    if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions, join_expression.condition.right_filter_disjunctive))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
@@ -648,9 +657,9 @@ JoinPtr JoinStepLogical::convertToPhysical(
         if (!has_keys)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                 formatJoinCondition(join_condition));
-        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions, join_condition.left_filter_disjunctive))
             table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions, join_condition.right_filter_disjunctive))
             table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 

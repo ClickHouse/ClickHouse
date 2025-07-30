@@ -569,11 +569,69 @@ JoinClauses buildJoinClauses(
             JoinClauses result;
             if (function_name == "or")
             {
+                std::vector<JoinClause> left_table_clauses;
+                std::vector<JoinClause> right_table_clauses;
+                std::vector<JoinClause> cross_table_clauses;
+
+                // collect and analyze all OR branch clauses
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
-                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+
+                    for (auto & clause : child_res)
+                    {
+                        bool references_left = !clause.getLeftFilterConditionNodes().empty() || !clause.getLeftKeyNodes().empty();
+                        bool references_right = !clause.getRightFilterConditionNodes().empty() || !clause.getRightKeyNodes().empty();
+
+                        if (references_left && !references_right)
+                            left_table_clauses.push_back(std::move(clause));
+                        else if (references_right && !references_left)
+                            right_table_clauses.push_back(std::move(clause));
+                        else if (references_left && references_right)
+                            cross_table_clauses.push_back(std::move(clause));
+                    }
                     child_res.clear();
+                }
+
+                // if we have predicates that can be decomposed to individual tables, create enhanced join clause
+                if (!left_table_clauses.empty() || !right_table_clauses.empty())
+                {
+                    result.emplace_back();
+                    auto & enhanced_clause = result.back();
+
+                    if (!left_table_clauses.empty())
+                    {
+                        for (const auto & left_clause : left_table_clauses)
+                        {
+                            for (const auto * filter_node : left_clause.getLeftFilterConditionNodes())
+                                enhanced_clause.addCondition(JoinTableSide::Left, filter_node);
+                        }
+                    }
+
+                    if (!right_table_clauses.empty())
+                    {
+                        for (const auto & right_clause : right_table_clauses)
+                        {
+                            for (const auto * filter_node : right_clause.getRightFilterConditionNodes())
+                                enhanced_clause.addCondition(JoinTableSide::Right, filter_node);
+                        }
+                    }
+
+                    for (auto & cross_clause : cross_table_clauses)
+                    {
+                        // for cross-table clauses, we still need to handle them as separate join conditions
+                        // but we can optimize by combining them when possible
+                        result.push_back(std::move(cross_clause));
+                    }
+                }
+                else
+                {
+                    for (auto & argument : arguments)
+                    {
+                        auto & child_res = get_and_check_built_clause(argument.get());
+                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                        child_res.clear();
+                    }
                 }
 
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions

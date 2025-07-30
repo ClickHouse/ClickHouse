@@ -435,6 +435,15 @@ void JoinCondition::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAG
     serializeJoinActions(out, left_filter_conditions, dags);
     serializeJoinActions(out, right_filter_conditions, dags);
     serializeJoinActions(out, residual_conditions, dags);
+    
+    UInt8 flags = 0;
+    if (left_filter_disjunctive)
+        flags |= 1;
+    if (right_filter_disjunctive)
+        flags |= 2;
+    if (residual_disjunctive)
+        flags |= 4;
+    writeIntBinary(flags, out);
 }
 
 JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags)
@@ -443,11 +452,21 @@ JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::A
     auto left_filter_conditions = deserializeJoinActions(in, dags);
     auto right_filter_conditions = deserializeJoinActions(in, dags);
     auto residual_conditions = deserializeJoinActions(in, dags);
+    
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+    bool left_filter_disjunctive = (flags & 1) != 0;
+    bool right_filter_disjunctive = (flags & 2) != 0;
+    bool residual_disjunctive = (flags & 4) != 0;
+    
     return {
         std::move(predicates),
         std::move(left_filter_conditions),
         std::move(right_filter_conditions),
-        std::move(residual_conditions)
+        std::move(residual_conditions),
+        left_filter_disjunctive,
+        right_filter_disjunctive,
+        residual_disjunctive
     };
 }
 
@@ -481,6 +500,10 @@ JoinCondition JoinCondition::clone(const JoinExpressionActions & expression_acti
     {
         copy.residual_conditions.emplace_back(condition.clone(expression_actions.post_join_actions.get()));
     }
+    
+    copy.left_filter_disjunctive = left_filter_disjunctive;
+    copy.right_filter_disjunctive = right_filter_disjunctive;
+    copy.residual_disjunctive = residual_disjunctive;
 
     return copy;
 }
