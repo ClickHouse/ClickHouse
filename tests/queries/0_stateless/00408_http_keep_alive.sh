@@ -35,20 +35,20 @@ do
 
     echo "wait_for_async_insert=$wait_for_async_insert"
 
-    settings="wait_for_async_insert=$wait_for_async_insert&async_insert=1&async_insert_busy_timeout_ms=600000&async_insert_max_query_number=3&async_insert_deduplicate=0&async_insert_use_adaptive_busy_timeout=0"
+    settings="wait_for_async_insert=$wait_for_async_insert&async_insert=1&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_ms=600000"
+    # async_insert_max_query_number does not work without async_insert_deduplicate=1
+    settings="${settings}&async_insert_max_query_number=3&async_insert_deduplicate=1"
 
-    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_1" -d 'INSERT INTO async_inserts FORMAT CSV
-    1,"a"
-    2,"b"' |& grep 'Connection:' > $file_1 &
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_1" -d "INSERT INTO async_inserts FORMAT CSV
+    1,\"a-$wait_for_async_insert\"
+    2,\"b-$wait_for_async_insert\"" |& grep 'Connection:' > $file_1 &
 
-    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_2" -d 'INSERT INTO async_inserts FORMAT CSV
-    qqqqqqqqqqq' |& grep 'Connection:' > $file_2  &
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_2" -d "INSERT INTO async_inserts FORMAT CSV
+    qqqqqqqqqqq-$wait_for_async_insert" |& grep 'Connection:' > $file_2  &
 
-    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_3" -d 'INSERT INTO async_inserts FORMAT CSV
-    4,"c"
-    3,"d"' |& grep 'Connection:' > $file_3 &
-
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-$file_3" -d "INSERT INTO async_inserts FORMAT CSV
+    4,\"c-$wait_for_async_insert\"
+    3,\"d-$wait_for_async_insert\"" |& grep 'Connection:' > $file_3 &
 
     wait
 
@@ -58,4 +58,6 @@ do
     cat $file_2
     echo "good async insert"
     cat $file_3
+
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
 done
