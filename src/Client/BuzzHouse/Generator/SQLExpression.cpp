@@ -426,7 +426,13 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             }
         }
         this->generateSelect(
-            rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
+            rg,
+            true,
+            false,
+            1,
+            std::numeric_limits<uint32_t>::max(),
+            std::nullopt,
+            eq->mutable_inner_query()->mutable_select()->mutable_sel());
         this->current_level--;
     }
 }

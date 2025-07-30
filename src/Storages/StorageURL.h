@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -182,7 +183,8 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -194,7 +196,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -229,7 +231,8 @@ private:
     std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;

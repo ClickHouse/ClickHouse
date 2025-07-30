@@ -478,7 +478,7 @@ def main():
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
         if not Path(f"{db_path}/.done").is_file():
-            Shell.check(f"mkdir -p {db_path}", verbose=True)
+            Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
