@@ -206,7 +206,7 @@ def create_clickhouse_glue_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
     settings = {
-        "iceberg_catalog_type": "glue",
+        "storage_catalog_type": "glue",
         "iceberg_warehouse": "test",
         "iceberg_storage_endpoint": "http://minio:9000/warehouse-glue",
         "iceberg_region": "us-east-1",

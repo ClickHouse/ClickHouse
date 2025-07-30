@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
-    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType iceberg_catalog_type;
+    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern DataLakeStorageSettingsString iceberg_storage_endpoint;
     extern DataLakeStorageSettingsString iceberg_aws_access_key_id;
     extern DataLakeStorageSettingsString iceberg_aws_secret_access_key;
@@ -211,10 +211,10 @@ public:
         return current_metadata->getColumnMapper();
     }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context) const override
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, bool is_attach) const override
     {
 #if USE_AWS_S3 && USE_AVRO
-        if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
             auto catalog_parameters = DataLake::CatalogSettings{
                 .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
@@ -230,7 +230,9 @@ public:
                 /* table_engine_definition */nullptr
             );
         }
-        if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST)
+        /// Attach condition is provided for compatibility.
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST ||
+            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE))
         {
             return std::make_shared<DataLake::RestCatalog>(
                 (*settings)[DataLakeStorageSetting::iceberg_warehouse].value,

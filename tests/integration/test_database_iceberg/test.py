@@ -149,7 +149,7 @@ def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
     settings = {
-        "iceberg_catalog_type": "rest",
+        "storage_catalog_type": "rest",
         "iceberg_warehouse": "demo",
         "iceberg_storage_endpoint": "http://minio:9000/warehouse-rest",
         "iceberg_region": "us-east-1",
