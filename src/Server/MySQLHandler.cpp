@@ -501,7 +501,7 @@ void MySQLHandler::run()
         packet_endpoint->sendPacket(ok_packet);
 
         setupSystemTables();
-    
+
         while (tcp_server.isOpen())
         {
             packet_endpoint->resetSequenceId();
