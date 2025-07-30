@@ -62,8 +62,6 @@ public:
     using StreamType = Pipe::StreamType;
 
     /// Add transform with simple input and simple output for each port.
-    void addSimpleTransform(const Pipe::ProcessorGetter & getter);
-    void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     void addSimpleTransform(const Pipe::ProcessorGetterSharedHeader & getter);
     void addSimpleTransform(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
@@ -85,7 +83,7 @@ public:
     void addExtremesTransform();
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
-    void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
 
     /// Add totals which returns one chunk with single row with defaults.
     void addDefaultTotals();
@@ -127,7 +125,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
-        const Block & output_header,
+        SharedHeader & output_header,
         size_t max_block_size,
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
@@ -139,7 +137,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
-        const Block & output_header,
+        SharedHeader & output_header,
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
@@ -148,7 +146,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr table_join,
-        const Block & out_header,
+        SharedHeader & out_header,
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
@@ -156,7 +154,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr table_join,
-        const Block & out_header,
+        SharedHeader & out_header,
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
@@ -166,7 +164,7 @@ public:
     void addPipelineBefore(QueryPipelineBuilder pipeline);
 
     void addCreatingSetsTransform(
-        const Block & res_header,
+        SharedHeader res_header,
         SetAndKeyPtr set_and_key,
         StoragePtr external_table,
         const SizeLimits & limits,
@@ -179,6 +177,7 @@ public:
     bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
 
     const Block & getHeader() const { return pipe.getHeader(); }
+    const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);

@@ -115,7 +115,7 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 }
 
 
-Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls)
+Block AggregatingStep::appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls)
 {
     if (!has_grouping)
         return block;
@@ -124,7 +124,7 @@ Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, boo
 }
 
 AggregatingStep::AggregatingStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
@@ -141,7 +141,7 @@ AggregatingStep::AggregatingStep(
     bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
         input_header_,
-        appendGroupingColumn(params_.getHeader(input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
+        std::make_shared<const Block>(appendGroupingColumn(params_.getHeader(*input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_)),
         getTraits(should_produce_results_in_order_of_bucket_number_),
         false)
     , params(std::move(params_))
@@ -283,7 +283,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    const auto src_header = pipeline.getHeader();
+    const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
     if (!grouping_sets_params.empty())
@@ -292,7 +292,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         const size_t streams = pipeline.getNumStreams();
 
-        auto input_header = pipeline.getHeader();
+        auto input_header = std::make_shared<const Block>(pipeline.getHeader());
 
         if (grouping_sets_size > 1)
         {
@@ -359,7 +359,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (size_t i = 0; i < grouping_sets_size; ++i)
                 {
                     size_t output_it = i;
-                    auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
+                    auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getSharedHeader(), streams, 1);
                     auto & inputs = resize->getInputs();
 
                     for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += grouping_sets_size, ++input_it)
@@ -378,9 +378,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
             {
-                const auto & header = ports[set_counter]->getHeader();
+                const auto & header = ports[set_counter]->getSharedHeader();
 
-                auto dag = makeCreatingMissingKeysForGroupingSetDAG(header, output_header, grouping_sets_params, set_counter, group_by_use_nulls);
+                auto dag = makeCreatingMissingKeysForGroupingSetDAG(*header, output_header, grouping_sets_params, set_counter, group_by_use_nulls);
                 auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
@@ -419,7 +419,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
             size_t counter = 0;
-            pipeline.addSimpleTransform([&](const Block & header)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
                 /// We want to merge aggregated data in batches of size
                 /// not greater than 'aggregation_in_order_max_block_bytes'.
@@ -433,7 +433,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             if (skip_merging)
             {
-                pipeline.addSimpleTransform([&](const Block & header)
+                pipeline.addSimpleTransform([&](const SharedHeader & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
                 pipeline.resize(params.max_threads);
                 aggregating_in_order = collector.detachProcessors(0);
@@ -443,7 +443,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             aggregating_in_order = collector.detachProcessors(0);
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
-                pipeline.getHeader(),
+                pipeline.getSharedHeader(),
                 pipeline.getNumStreams(),
                 transform_params,
                 group_by_sort_description,
@@ -457,7 +457,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
             pipeline.addSimpleTransform(
-                [&](const Block &)
+                [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
 
             if (memoryBoundMergingWillBeUsed())
@@ -470,7 +470,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         }
         else
         {
-            pipeline.addSimpleTransform([&](const Block & header)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
@@ -478,7 +478,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     max_block_size, aggregation_in_order_max_block_bytes);
             });
 
-            pipeline.addSimpleTransform([&](const Block & header)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
             });
@@ -502,7 +502,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
-            [&](const Block & header)
+            [&](const SharedHeader & header)
             {
                 return std::make_shared<AggregatingTransform>(
                     header,
@@ -521,7 +521,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
+        pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 
@@ -570,7 +570,7 @@ bool AggregatingStep::canUseProjection() const
     return grouping_sets_params.empty() && sort_description_for_merging.empty();
 }
 
-void AggregatingStep::requestOnlyMergeForAggregateProjection(const Header & input_header)
+void AggregatingStep::requestOnlyMergeForAggregateProjection(const SharedHeader & input_header)
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
@@ -579,29 +579,29 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const Header & inpu
     input_headers.front() = input_header;
     params.only_merge = true;
     updateOutputHeader();
-    assertBlocksHaveEqualStructure(output_header, getOutputHeader(), "AggregatingStep");
+    assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
 }
 
-std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const Header & input_header) const
+std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const SharedHeader & input_header) const
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
     auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
-        Headers{input_headers.front(), input_header},
+        SharedHeaders{input_headers.front(), input_header},
         params,
         final,
         merge_threads,
         temporary_data_merge_threads
     );
 
-    assertBlocksHaveEqualStructure(getOutputHeader(), aggregating_projection->getOutputHeader(), "AggregatingStep");
+    assertBlocksHaveEqualStructure(*getOutputHeader(), *aggregating_projection->getOutputHeader(), "AggregatingStep");
     return aggregating_projection;
 }
 
 void AggregatingStep::updateOutputHeader()
 {
-    output_header = appendGroupingColumn(params.getHeader(input_headers.front(), final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
+    output_header = std::make_shared<const Block>(appendGroupingColumn(params.getHeader(*input_headers.front(), final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls));
 }
 
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const
@@ -611,7 +611,7 @@ bool AggregatingStep::memoryBoundMergingWillBeUsed() const
 }
 
 AggregatingProjectionStep::AggregatingProjectionStep(
-    Headers input_headers_,
+    SharedHeaders input_headers_,
     Aggregator::Params params_,
     bool final_,
     size_t merge_threads_,
@@ -632,13 +632,13 @@ void AggregatingProjectionStep::updateOutputHeader()
             "AggregatingProjectionStep is expected to have two input streams, got {}",
             input_headers.size());
 
-    auto normal_parts_header = params.getHeader(input_headers.front(), final);
+    auto normal_parts_header = params.getHeader(*input_headers.front(), final);
     params.only_merge = true;
-    auto projection_parts_header = params.getHeader(input_headers.back(), final);
+    auto projection_parts_header = params.getHeader(*input_headers.back(), final);
     params.only_merge = false;
 
     assertBlocksHaveEqualStructure(normal_parts_header, projection_parts_header, "AggregatingProjectionStep");
-    output_header = std::move(normal_parts_header);
+    output_header = std::make_shared<const Block>(std::move(normal_parts_header));
 }
 
 QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
@@ -680,7 +680,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 
         pipeline.resize(pipeline.getNumStreams(), true);
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AggregatingTransform>(
                 header, transform_params, many_data, counter++, new_merge_threads, new_temporary_data_merge_threads);
@@ -693,7 +693,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
     for (auto & cur_pipeline : pipelines)
-        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputHeader(), "AggregatingProjectionStep");
+        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader(), "AggregatingProjectionStep");
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
     pipeline->resize(1);
@@ -892,6 +892,38 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         false);
 
     return aggregating_step;
+}
+
+QueryPlanStepPtr AggregatingStep::clone() const
+{
+    return std::make_unique<AggregatingStep>(
+        input_headers.front(),
+        params,
+        grouping_sets_params,
+        final,
+        max_block_size,
+        aggregation_in_order_max_block_bytes,
+        merge_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        group_by_use_nulls,
+        sort_description_for_merging,
+        group_by_sort_description,
+        should_produce_results_in_order_of_bucket_number,
+        memory_bound_merging_of_aggregation_results_enabled,
+        explicit_sorting_required_for_aggregation_in_order
+    );
+}
+
+void AggregatingStep::setFinal(bool new_value)
+{
+    if (new_value == final)
+        return;
+
+    final = new_value;
+
+    /// Output header is different for partial and final result, so it needs to be updated when we switch between them.
+    updateOutputHeader();
 }
 
 void registerAggregatingStep(QueryPlanStepRegistry & registry)

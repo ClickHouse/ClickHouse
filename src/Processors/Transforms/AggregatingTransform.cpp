@@ -58,7 +58,7 @@ namespace
     class SourceFromNativeStream final : public ISource
     {
     public:
-        explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
+        explicit SourceFromNativeStream(SharedHeader header, TemporaryBlockStreamReaderHolder tmp_stream_)
             : ISource(header)
             , tmp_stream(std::move(tmp_stream_))
         {}
@@ -71,7 +71,7 @@ namespace
                 return {};
 
             auto block = tmp_stream->read();
-            if (!block)
+            if (block.empty())
             {
                 tmp_stream.reset();
                 return {};
@@ -110,7 +110,7 @@ public:
 
     ConvertingAggregatedToChunksWithMergingSource(
         AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, Arena * arena_)
-        : ISource(params_->getHeader(), false)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
@@ -151,7 +151,7 @@ class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
     ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(params_->getHeader(), false), params(params_), variant(variant_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
     {
     }
 
@@ -587,7 +587,7 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
+AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
         std::move(header),
         std::move(params_),
@@ -601,7 +601,7 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 }
 
 AggregatingTransform::AggregatingTransform(
-    Block header,
+    SharedHeader header,
     AggregatingTransformParamsPtr params_,
     ManyAggregatedDataPtr many_data_,
     size_t current_variant,
@@ -836,7 +836,7 @@ void AggregatingTransform::initGenerate()
                     if (params->final)
                     {
                         pipe.addSimpleTransform(
-                            [this](const Block & header)
+                            [this](const SharedHeader & header)
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
@@ -888,7 +888,7 @@ void AggregatingTransform::initGenerate()
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
                 uncompressed_size += stat.uncompressed_size;
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream.getHeader(), tmp_stream.getReadStream())));
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
             }
         }
 

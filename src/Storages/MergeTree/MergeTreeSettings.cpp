@@ -27,10 +27,8 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = false;
 #else
 constexpr UInt64 default_min_bytes_for_wide_part = 1024lu * 1024lu * 1024lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = true; /// TODO: Fix
 #endif
 
 namespace DB
@@ -66,9 +64,6 @@ namespace ErrorCodes
     DECLARE(UInt64, index_granularity, 8192, R"(
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
-    )", 0) \
-    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
-    Max number of bytes to digest per segment to build GIN index.
     )", 0) \
     \
     /** Data storing format settings. */ \
@@ -252,7 +247,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
+    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
     )", 0) \
@@ -990,8 +985,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage and
-    `allow_remote_fs_zero_copy_replication` is enabled.
+    the merge immediately if merged part on shared storage.
 
     :::note
     Zero-copy replication is not ready for production
@@ -1607,9 +1601,9 @@ namespace ErrorCodes
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
     Time to wait before/after moving parts between shards.
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_remote_fs_zero_copy_replication, default_allow_remote_fs_zero_copy_replication, R"(
+    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
     Don't use this setting in production, because it is not ready.
-    )", BETA) \
+    )", EXPERIMENTAL) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
     ZooKeeper path for zero-copy table-independent info.
     )", EXPERIMENTAL) \
@@ -2324,6 +2318,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     }
 }
 
+void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
+{
+    static constexpr const char * MERGE_TREE_SETTING_CONTEXT = "merge tree setting";
+    for (const auto & setting : impl->all())
+    {
+        const auto & setting_name = setting.getName();
+        res_columns[0]->insert(setting_name);
+        res_columns[1]->insert(MERGE_TREE_SETTING_CONTEXT);
+        res_columns[2]->insertDefault();
+    }
+}
 
 namespace
 {

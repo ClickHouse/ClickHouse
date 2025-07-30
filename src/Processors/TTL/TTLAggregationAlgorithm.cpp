@@ -82,7 +82,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
     bool some_rows_were_aggregated = false;
     MutableColumns result_columns = header.cloneEmptyColumns();
 
-    if (!block) /// Empty block -- no more data, but we may still have some accumulated rows
+    if (block.empty()) /// Empty block -- no more data, but we may still have some accumulated rows
     {
         if (!aggregation_result.empty()) /// Still have some aggregated data, let's update TTL
         {

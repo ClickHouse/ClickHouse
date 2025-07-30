@@ -31,7 +31,7 @@ namespace ErrorCodes
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
     UInt64 client_revision_,
-    const Block & header_,
+    SharedHeader header_,
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
