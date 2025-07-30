@@ -278,7 +278,7 @@ jobs:
    strategy:
      fail-fast: false
      matrix:
-      ONLY: [replace, attach, move]
+      ONLY: [replace, move]
       include:
         - ONLY: attach
           PART: 1
@@ -502,7 +502,7 @@ jobs:
           ref: ${{ inputs.commit }}
       - name: Set envs
         run: |
-          if [ "$PART" -eq 1 ]; then
+          if [ ${{ matrix.PART }} -eq 1 ]; then
             echo ICEBERG_ONLY='"/iceberg/iceberg engine/rest catalog/*" "/iceberg/s3 table function/*" "/iceberg/icebergS3 table function/*" "/iceberg/iceberg cache"' >> "$GITHUB_ENV"
           else
             echo ICEBERG_ONLY='"/iceberg/iceberg engine/glue catalog/*" "/iceberg/iceberg table engine/*"' >> "$GITHUB_ENV"
