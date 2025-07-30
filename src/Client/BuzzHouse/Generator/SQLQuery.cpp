@@ -291,10 +291,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 sfunc->set_format(t.file_format.value());
             }
-            structure = sfunc->mutable_structure();
-            if (!t.file_comp.empty())
+            structure = rg.nextMediumNumber() < 96 ? sfunc->mutable_structure() : nullptr;
+            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
-                sfunc->set_fcomp(t.file_comp);
+                sfunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
             }
         }
         else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
@@ -324,10 +324,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 afunc->set_format(t.file_format.value());
             }
-            structure = afunc->mutable_structure();
-            if (!t.file_comp.empty())
+            structure = rg.nextMediumNumber() < 96 ? afunc->mutable_structure() : nullptr;
+            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
-                afunc->set_fcomp(t.file_comp);
+                afunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
             }
         }
         else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
@@ -351,10 +351,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ffunc->set_inoutformat(t.file_format.value());
             }
-            structure = ffunc->mutable_structure();
-            if (!t.file_comp.empty())
+            structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
+            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
-                ffunc->set_fcomp(t.file_comp);
+                ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
             }
         }
         else if (t.isURLEngine())
@@ -375,7 +375,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ufunc->set_inoutformat(t.file_format.value());
             }
-            structure = ufunc->mutable_structure();
+            structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
         }
         else if (t.isRedisEngine())
         {
@@ -384,7 +384,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
 
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             setRandomShardKey(rg, t, rfunc->mutable_key());
-            structure = rfunc->mutable_structure();
+            structure = rg.nextMediumNumber() < 96 ? rfunc->mutable_structure() : nullptr;
             if (rg.nextBool())
             {
                 rfunc->set_db_index(rg.randomInt<uint32_t>(0, 15));
@@ -402,7 +402,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             mfunc->set_collection(t.getTableName());
             mfunc->set_user(sc.user);
             mfunc->set_password(sc.password);
-            structure = mfunc->mutable_structure();
+            structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }
         else if (t.isDictionaryEngine())
         {

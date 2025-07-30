@@ -2013,8 +2013,11 @@ CONV_FN(RedisFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     ExprToString(ret, rfunc.key());
-    ret += ", ";
-    ExprToString(ret, rfunc.structure());
+    if (rfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, rfunc.structure());
+    }
     if (rfunc.has_db_index())
     {
         ret += ", ";
@@ -2046,8 +2049,12 @@ CONV_FN(MongoDBFunc, mfunc)
     ret += mfunc.user();
     ret += "', '";
     ret += mfunc.password();
-    ret += "', ";
-    ExprToString(ret, mfunc.structure());
+    ret += "'";
+    if (mfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.structure());
+    }
     ret += ")";
 }
 
@@ -2068,8 +2075,12 @@ CONV_FN(S3Func, sfunc)
     ret += sfunc.password();
     ret += "', '";
     ret += InOutFormat_Name(sfunc.format()).substr(6);
-    ret += "', ";
-    ExprToString(ret, sfunc.structure());
+    ret += "'";
+    if (sfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, sfunc.structure());
+    }
     if (sfunc.has_fcomp())
     {
         ret += ", '";
