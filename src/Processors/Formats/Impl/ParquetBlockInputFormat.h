@@ -320,7 +320,6 @@ private:
     // Wakes up the read() call, if any.
     std::condition_variable condvar;
 
-    Block header;
     std::vector<RowGroupBatchState> row_group_batches;
     std::vector<int> row_group_batches_skipped_rows;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;

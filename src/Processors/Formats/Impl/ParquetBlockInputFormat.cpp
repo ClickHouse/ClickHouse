@@ -582,7 +582,6 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , parser_group(std::move(parser_group_))
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , header(*header_)
     , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
