@@ -9,10 +9,4 @@
 			<pool_size>4</pool_size>
 		</redis>
 	</query_cache>
-	<query_log>
-		<database>system</database>
-		<table>query_log</table>
-		<partition_by>toYYYYMM(event_date)</partition_by>
-		<flush_interval_milliseconds>7500</flush_interval_milliseconds>
-	</query_log>
 </clickhouse>
