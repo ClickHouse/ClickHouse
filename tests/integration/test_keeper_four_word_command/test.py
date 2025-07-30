@@ -749,7 +749,8 @@ def test_cmd_lgrq(started_cluster):
         reset_conn_stats()
 
         zk = get_fake_zk(node1.name, timeout=30.0)
-        zk.create('/test_lgrq')
+        if not zk.exists('/test_lgrq'):
+            zk.create('/test_lgrq')
 
         assert not node1.contains_in_log('Received request:')
 
