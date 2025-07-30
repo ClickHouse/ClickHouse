@@ -104,7 +104,8 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
 const std::unordered_map<String, CHSetting> icebergSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
-       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
+       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)},
+       {"write_full_path_in_iceberg_metadata", CHSetting(trueOrFalse, {}, false)}}; /// Leave it duplicated
 
 const std::unordered_map<String, CHSetting> dataLakeSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
