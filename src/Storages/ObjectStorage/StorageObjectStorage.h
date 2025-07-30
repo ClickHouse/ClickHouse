@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #include <memory>
 
@@ -48,6 +49,7 @@ public:
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
         bool if_not_exists_,
         bool is_datalake_query,
         bool distributed_processing_ = false,
@@ -155,6 +157,9 @@ protected:
     ColumnsDescription file_columns;
 
     LoggerPtr log;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID storage_id;
 };
 
 }

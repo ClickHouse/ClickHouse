@@ -1,6 +1,11 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -10,8 +15,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -71,6 +74,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
+        configuration->getCatalog(context),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
