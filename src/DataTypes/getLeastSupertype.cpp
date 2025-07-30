@@ -640,11 +640,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     {
         size_t have_time = type_ids.count(TypeIndex::Time);
         size_t have_time64 = type_ids.count(TypeIndex::Time64);
-        
+
         if (have_time || have_time64)
         {
             bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
-            
+
             if (!all_time_or_time64)
                 return throwOrReturn<on_error>(types,
                     "because some of them are Time/Time64 and some of them are not",
@@ -666,7 +666,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
                 {
                     const auto scale = time64_type->getScale();
-                    
+
                     if (scale >= max_scale)
                     {
                         max_scale_time64_index = i;
@@ -674,16 +674,16 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     }
                 }
             }
-            
+
             if (have_time && have_time64)
             {
                 return std::make_shared<DataTypeTime64>(max_scale);
             }
-                
+
             return types[max_scale_time64_index];
         }
     }
-    
+
     /// Decimals
     {
         size_t have_decimal32 = type_ids.count(TypeIndex::Decimal32);
