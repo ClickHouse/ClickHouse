@@ -26,9 +26,7 @@ class FunctionNowInBlock64 : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock64";
-    static FunctionPtr create(ContextPtr /*context*/) {
-        return std::make_shared<FunctionNowInBlock64>();
-    }
+    static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionNowInBlock64>(); }
 
     String getName() const override { return name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
