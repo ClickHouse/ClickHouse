@@ -3,13 +3,8 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include "Common/Exception.h"
-#include "Common/SharedMutex.h"
-#include "base/defines.h"
 #include <libdivide.h>
 
-#include <mutex>
-#include <shared_mutex>
 #include <vector>
 
 
@@ -83,40 +78,5 @@ public:
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
-
-
-using BloomFilterConstPtr = std::shared_ptr<const BloomFilter>;
-class BloomFilterLookup
-{
-public:
-    void add(const String & name, std::unique_ptr<BloomFilter> bloom_filter)
-    {
-        std::lock_guard g(rw_lock);
-        auto & filter = filters_by_name[name];
-        if (!filter)
-            filter.reset(bloom_filter.release());   /// Save new filter
-        else
-            mergeFilter(*filter, *bloom_filter);    /// Add all new keys to a existing filter
-    }
-
-    BloomFilterConstPtr find(const String & name) const
-    {
-        std::shared_lock g(rw_lock);
-        auto it = filters_by_name.find(name);
-        if (it == filters_by_name.end())
-            return nullptr;
-        else
-            return it->second;
-    }
-
-private:
-    static void mergeFilter(BloomFilter & destination, const BloomFilter & source);
-
-    mutable SharedMutex rw_lock;
-    std::unordered_map<String, BloomFilterPtr> filters_by_name;
-};
-
-
-extern BloomFilterLookup g_bloom_filter_lookup; /// FIXME: get rid of this hack with global map, move it to per-query
 
 }

@@ -6,9 +6,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/BloomFilter.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -43,7 +45,7 @@ public:
                             "Number of arguments for function {} can't be {}, should be 2",
                             getName(), arguments.size());
 
-        /// TODO: check that 1st agrument is const string
+        /// TODO: check that 1st argument is const string
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -64,7 +66,11 @@ public:
                             getName());
 
         const auto filter_name = filter_name_column->getDataAt(0);
-        auto filter = g_bloom_filter_lookup.find(filter_name.toString());
+        /// Query context contains filter lookup where per-query filters are stored
+        /// TODO: Is this the right way to get query context?
+        auto query_context = CurrentThread::get().getQueryContext();
+        auto filter_lookup = query_context->getRuntimeFilterLookup();
+        auto filter = filter_lookup->find(filter_name.toString());
 
         /// FIXME: properly handle
 //        if (!filter)
@@ -91,7 +97,7 @@ public:
 
 REGISTER_FUNCTION(FilterContains)
 {
-    factory.registerFunction<FunctionFilterContains>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionFilterContains>({}, FunctionFactory::Case::Sensitive);
 }
 
 }

@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 static constexpr UInt64 SEED_GEN_A = 845897321;
@@ -170,22 +169,5 @@ ColumnPtr BloomFilter::getPrimitiveColumn(const ColumnPtr & column)
 
     return column;
 }
-
-
-/// Add all keys from one filter to the other so that destination filter "contains" the union of both filters.
-void BloomFilterLookup::mergeFilter(BloomFilter & destination, const BloomFilter & source)
-{
-    auto & destination_bytes = destination.getFilter();
-    const auto & source_bytes = source.getFilter();
-    if (destination_bytes.size() != source_bytes.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot merge Bloom Filters of different sizes: {} and {}",
-            destination_bytes.size(), source_bytes.size());
-
-    for (size_t i = 0; i < destination_bytes.size(); ++i)
-        destination_bytes[i] |= source_bytes[i];
-}
-
-BloomFilterLookup g_bloom_filter_lookup;
 
 }

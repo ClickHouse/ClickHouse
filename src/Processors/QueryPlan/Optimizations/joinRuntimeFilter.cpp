@@ -24,7 +24,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column, const ContextPtr & context)
+const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column)
 {
     const auto & filter_name_node = actions_dag.addColumn(
         ColumnWithTypeAndName(
@@ -34,7 +34,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
 
     const auto & key_column_node = actions_dag. findInOutputs(key_column.name);
 
-    auto filter_function = FunctionFactory::instance().get("filterContains", context);
+    auto filter_function = FunctionFactory::instance().get("filterContains", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, &key_column_node}, {});
     return condition;
 }
@@ -97,7 +97,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// Add filter lookup to the left subtree
             {
                 const auto & join_key = join_keys_a[i];
-                all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key, Context::getGlobalContextInstance()));
+                all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key));
             }
 
             /// Add building filter to the right subtree of join
