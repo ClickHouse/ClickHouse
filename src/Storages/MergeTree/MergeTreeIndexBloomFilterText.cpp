@@ -391,7 +391,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                 if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out))
                     return true;
             }
-            else if (left_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+            else if (left_argument.tryGetConstant(const_value, const_type) &&
+                (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
             {
                 if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out))
                     return true;
@@ -511,7 +512,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         // When map_key_index is set, we shouldn't use ngram/token bf for other functions
         return false;
     }
-
     if (map_value_index)
     {
         if (function_name == "mapContainsValue")
@@ -535,7 +535,26 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         // When map_value_index is set, we shouldn't use ngram/token bf for other functions
         return false;
     }
+    if ((function_name == "has" && value_data_type.isArray()) || function_name == "hasAny" || function_name == "hasAll")
+    {
+        out.key_column = *key_index;
+        out.function = function_name == "hasAll" ? RPNElement::FUNCTION_HAS_ALL : RPNElement::FUNCTION_HAS_ANY;
 
+        // 2d vector is not needed here but is used because already exists for FUNCTION_IN
+        std::vector<std::vector<BloomFilter>> bloom_filters;
+        bloom_filters.emplace_back();
+        for (const auto & element : const_value.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                return false;
+
+            bloom_filters.back().emplace_back(params);
+            const auto & value = element.safeGet<String>();
+            token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
+        }
+        out.set_bloom_filters = std::move(bloom_filters);
+        return true;
+    }
     if (function_name == "has")
     {
         out.key_column = *key_index;
@@ -545,7 +564,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-
     if (function_name == "notEquals")
     {
         out.key_column = *key_index;
@@ -600,12 +618,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
-    if (function_name == "multiSearchAny" || function_name == "hasAny" || function_name == "hasAll")
+    if (function_name == "multiSearchAny")
     {
         out.key_column = *key_index;
-        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH
-                     : function_name == "hasAny"         ? RPNElement::FUNCTION_HAS_ANY
-                                                         : RPNElement::FUNCTION_HAS_ALL;
+        out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
@@ -617,15 +633,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             bloom_filters.back().emplace_back(params);
             const auto & value = element.safeGet<String>();
-
-            if (function_name == "multiSearchAny")
-            {
-                token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
-            }
-            else
-            {
-                token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
-            }
+            token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
         }
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
