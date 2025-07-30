@@ -294,7 +294,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
     if (base->result_name == alias)
         return *base;
 
-    /// create exactly one layer alias
+    /// create exactly one-layer alias
     Node node;
     node.type = ActionType::ALIAS;
     node.result_type = base->result_type;
@@ -2573,10 +2573,18 @@ DisjunctionNodes getDisjunctionNodes(
             if (nondet)
                 LOG_TRACE(disjunction_logger, "Node {} is non-deterministic", f.node->result_name);
 
+            /// A node is pushable when it is deterministic *and*
+            /// every child was pushable.
+            bool subtree_local =
+                !nondet &&
+                (f.node->children.empty()
+                 ? allowed_nodes.contains(f.node)
+                 : f.ok_children == f.node->children.size());
+
             if (leaves.contains(f.node))
             {
                 LOG_TRACE(disjunction_logger, "Node {} is a leaf", f.node->result_name);
-                auto & vec = allowed_nodes.contains(f.node)
+                auto & vec = subtree_local
                         ? disjunction.allowed
                         : disjunction.rejected;
 
@@ -2584,12 +2592,16 @@ DisjunctionNodes getDisjunctionNodes(
                 {
                     vec.push_back(f.node);
                     LOG_TRACE(disjunction_logger, "Added node {} to {} list", f.node->result_name, 
-                              allowed_nodes.contains(f.node) ? "allowed" : "rejected");
+                              subtree_local ? "allowed" : "rejected");
                 }
             }
 
             LOG_TRACE(disjunction_logger, "Popping node {} from stack", f.node->result_name);
             dfs.pop();
+
+            /// propagate the flag to the parent on the stack
+            if (!dfs.empty() && subtree_local)
+                ++dfs.top().ok_children;
         }
     }
     LOG_TRACE(disjunction_logger, "getDisjunctionNodes() completed - allowed: {}, rejected: {}", 
