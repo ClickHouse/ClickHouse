@@ -100,12 +100,4 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
             }
         });
 }
-
-FormatFilterInfoPtr FormatFilterInfo::cloneWithoutFilterDag() const
-{
-    auto clone = std::make_shared<FormatFilterInfo>();
-    clone->column_mapper = column_mapper;
-    clone->opaque = opaque;
-    return clone;
-}
 }

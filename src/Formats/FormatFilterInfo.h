@@ -43,7 +43,7 @@ struct FormatFilterInfo
     FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_);
 
     FormatFilterInfo();
-    /// Total limits across all readers in the group.
+
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
     ContextWeakPtr context; // required only if `filter_actions_dag` is set
     /// TODO: std::optional<const ExpressionActions> prewhere_actions;
@@ -69,8 +69,6 @@ public:
     /// Does std::call_once(init_flag, ...).
     /// If a previous init attempt threw exception, rethrows it instead retrying.
     void initOnce(std::function<void()> f);
-
-    FormatFilterInfoPtr cloneWithoutFilterDag() const;
 };
 
 }
