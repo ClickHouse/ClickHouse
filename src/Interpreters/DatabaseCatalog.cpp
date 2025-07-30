@@ -1483,12 +1483,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
             return true;
         }
 
-        auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
         auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
         SearchDetachedPartsDrives mode = (*tbl->getSettings())[MergeTreeSetting::search_detached_parts_drives];
-        bool is_look_needed = mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
-            || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata());
+        bool is_look_needed = mode == SearchDetachedPartsDrives::ANY
+            || (mode == SearchDetachedPartsDrives::LOCAL && is_local_metadata());
 
         LOG_INFO(log, "look_for_detached_parts: mode {}, is_look_needed {}", mode, is_look_needed);
         return is_look_needed;

@@ -2075,18 +2075,12 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
-bool MergeTreeData::lookForDetachedParts(DiskPtr disk, std::string_view disk_name) const
+bool MergeTreeData::lookForDetachedParts(DiskPtr disk, std::string_view) const
 {
-    auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
     auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
     SearchDetachedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_detached_parts_drives];
-
-    // SearchDetachedPartsDrives mode = getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
-    LOG_DEBUG(log, "search_detached_parts_drives {} is_writeble {} for {}", mode, is_writeable(), disk_name);
-    return (
-        mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
-        || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata()));
+    return (mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::LOCAL && is_local_metadata()));
 }
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)

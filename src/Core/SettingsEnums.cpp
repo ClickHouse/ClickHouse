@@ -331,7 +331,6 @@ IMPLEMENT_SETTING_ENUM(
     SearchDetachedPartsDrives,
     ErrorCodes::BAD_ARGUMENTS,
     {{"any", SearchDetachedPartsDrives::ANY},
-     {"writeable", SearchDetachedPartsDrives::WRITEABLE},
      {"local", SearchDetachedPartsDrives::LOCAL},
      {"none", SearchDetachedPartsDrives::NONE}})
 }

@@ -23,28 +23,9 @@ def start_cluster():
 
 def test_search_detached_parts():
     table_name = 't1'
-    storage_policy = 's3_plain_rewritable'
-    search_mode='any'
-    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node1.query(
-        f"""
-        CREATE TABLE {table_name} (
-        id Int64,
-        data String
-        ) ENGINE=MergeTree()
-        PARTITION BY id % 10
-        ORDER BY id
-        SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
-        """)
-    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
-    search_mode='none'
-    with PartitionManager() as pm:
-        pm.push_rules([{
-                "source": node1.ip_address,
-                "destination": cluster.get_instance_ip("minio1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }])
+    for storage_policy in ["no_s3", "local_cache"]:
+        search_mode='any'
         node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         node1.query(
             f"""
@@ -58,13 +39,7 @@ def test_search_detached_parts():
             """)
         node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
-    search_mode='local'
-    with PartitionManager() as pm:
-        pm.push_rules([{
-                "source": node1.ip_address,
-                "destination": cluster.get_instance_ip("minio1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }])
+        search_mode='none'
         node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         node1.query(
             f"""
@@ -76,45 +51,56 @@ def test_search_detached_parts():
             ORDER BY id
             SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
             """)
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+        # To drop when minio is not available
 
-    search_mode='writeable'
-    with PartitionManager() as pm:
-        pm.push_rules([{
+
+        with PartitionManager() as pm:
+            isolation_rules=[{
                 "source": node1.ip_address,
                 "destination": cluster.get_instance_ip("minio1"),
                 "action": "REJECT --reject-with tcp-reset",
-            }])
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-        node1.query(
-            f"""
-            CREATE TABLE {table_name} (
-            id Int64,
-            data String
-            ) ENGINE=MergeTree()
-            PARTITION BY id % 10
-            ORDER BY id
-            SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
-            """)
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            }]
+            pm.push_rules(isolation_rules)
 
-    search_mode='any'
-    with PartitionManager() as pm:
-        pm.push_rules([{
-                "source": node1.ip_address,
-                "destination": cluster.get_instance_ip("minio1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }])
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-        assert "Code: 499. DB::Exception" in node1.query_and_get_error(
-            f"""
-            CREATE TABLE {table_name} (
-            id Int64,
-            data String
-            ) ENGINE=MergeTree()
-            PARTITION BY id % 10
-            ORDER BY id
-            SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
-            """)
-        # assert "Code: 499. DB::Exception" in node1.query_and_get_error(f"DROP TABLE IF EXISTS {table_name} SYNC")
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            search_mode='none'
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            node1.query(
+                f"""
+                CREATE TABLE {table_name} (
+                id Int64,
+                data String
+                ) ENGINE=MergeTree()
+                PARTITION BY id % 10
+                ORDER BY id
+                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                """)
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+            search_mode='local'
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            node1.query(
+                f"""
+                CREATE TABLE {table_name} (
+                id Int64,
+                data String
+                ) ENGINE=MergeTree()
+                PARTITION BY id % 10
+                ORDER BY id
+                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                """)
+            node1.query(f"ALTER TABLE {table_name} ADD COLUMN nc Int32 SETTINGS alter_sync = 1")
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+            search_mode='any'
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            assert "Code: 499. DB::Exception" in node1.query_and_get_error(
+                f"""
+                CREATE TABLE {table_name} (
+                id Int64,
+                data String
+                ) ENGINE=MergeTree()
+                PARTITION BY id % 10
+                ORDER BY id
+                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                """)
+            node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
