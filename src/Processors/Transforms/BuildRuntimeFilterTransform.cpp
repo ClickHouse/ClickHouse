@@ -60,7 +60,7 @@ void BuildRuntimeFilterTransform::doTransform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    /// Save the filter
+    g_bloom_filter_lookup.add(filter_name, std::move(built_filter));
 }
 
 }
