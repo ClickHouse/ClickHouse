@@ -1,29 +1,18 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
-
-#include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Columns/IColumn.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 
 namespace ProfileEvents
 {
-    extern const Event FilterTransformPassedRows;
-    extern const Event FilterTransformPassedBytes;
+// TODO:
+//    extern const Event FilterTransformPassedRows;
+//    extern const Event FilterTransformPassedBytes;
 }
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-}
 
 IProcessor::Status BuildRuntimeFilterTransform::prepare()
 {
@@ -39,14 +28,7 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
     return status;
 }
 
-
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
-{
-//    auto chunk_rows_before = chunk.getNumRows();
-    doTransform(chunk);
-}
-
-void BuildRuntimeFilterTransform::doTransform(Chunk & chunk)
 {
     ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
     const size_t num_rows = chunk.getNumRows();
@@ -60,7 +42,11 @@ void BuildRuntimeFilterTransform::doTransform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    g_bloom_filter_lookup.add(filter_name, std::move(built_filter));
+    /// Query context contains filter lookup where per-query filters are stored
+    /// TODO: Is this the right way to get query context?
+    auto query_context = CurrentThread::get().getQueryContext();
+    auto filter_lookup = query_context->getRuntimeFilterLookup();
+    filter_lookup->add(filter_name, std::move(built_filter));
 }
 
 }

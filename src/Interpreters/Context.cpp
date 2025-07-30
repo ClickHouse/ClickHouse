@@ -6637,6 +6637,16 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
+void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
+{
+    runtime_filter_lookup = filter_lookup;
+}
+
+RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
+{
+    return runtime_filter_lookup;
+}
+
 UInt64 Context::getClientProtocolVersion() const
 {
     return client_protocol_version;

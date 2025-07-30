@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Interpreters/BloomFilter.h>
 
 namespace DB
@@ -27,13 +28,11 @@ public:
     void transform(Chunk & chunk) override;
 
 private:
-    String filter_column_name;
-    String filter_name;
-    size_t filter_column_position = -1;
+    const String filter_column_name;
+    const String filter_name;
+    const size_t filter_column_position = -1;
 
     std::unique_ptr<BloomFilter> built_filter;
-
-    void doTransform(Chunk & chunk);
 
     void finish();
 };
