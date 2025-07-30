@@ -6,13 +6,7 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class ActionsDAG;
-class QueryConditionCache;
-
-/// Implements building a Bloom Filter from all values of the specified column. When builidng is finished the filter is saved into
+/// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
 /// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
 /// a special function 'filterContains'
 class BuildRuntimeFilterTransform : public ISimpleTransform
@@ -23,7 +17,7 @@ public:
         , filter_column_name(filter_column_name_)
         , filter_name(filter_name_)
         , filter_column_position(header_->getPositionByName(filter_column_name))
-        , built_filter(std::make_shared<BloomFilter>(10*1024, 4, 42))
+        , built_filter(std::make_unique<BloomFilter>(512*1024, 3, 845897321))
     {}
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
@@ -37,7 +31,7 @@ private:
     String filter_name;
     size_t filter_column_position = -1;
 
-    std::shared_ptr<BloomFilter> built_filter;
+    std::unique_ptr<BloomFilter> built_filter;
 
     void doTransform(Chunk & chunk);
 
