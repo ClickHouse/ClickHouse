@@ -302,7 +302,6 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
 
-
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
         .path = path,

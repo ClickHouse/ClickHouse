@@ -491,7 +491,7 @@ class JobConfigs:
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
         command=f"python3 ./ci/jobs/unit_tests_job.py",
-        run_in_docker="clickhouse/fasttest",
+        run_in_docker="clickhouse/fasttest+--privileged",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
@@ -925,7 +925,7 @@ class JobConfigs:
                 "**/*.md",
                 "./docs",
                 "./ci/jobs/docs_job.py",
-                "CHANGELOG.md"
+                "CHANGELOG.md",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",

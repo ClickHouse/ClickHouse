@@ -60,7 +60,9 @@ public:
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
-        bool if_not_exists);
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
