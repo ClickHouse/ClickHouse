@@ -7,6 +7,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Formats/FormatParserGroup.h>
 
 namespace DB
 {
@@ -37,9 +38,9 @@ public:
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
@@ -49,7 +50,7 @@ public:
     virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
     virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /* object_info */,
-        const Block & /* header */,
+        const SharedHeader & /* header */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /*context*/) const
     {
@@ -69,6 +70,10 @@ public:
 
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+
+    /// Some data lakes specify information for reading files from disks.
+    /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
 protected:
     virtual ObjectIterator createKeysIterator(

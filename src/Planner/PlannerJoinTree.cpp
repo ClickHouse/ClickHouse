@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -380,10 +381,10 @@ bool applyTrivialCountIfPossible(
             argument_types.push_back(source_header.getByName(column_name).type);
     }
 
-    Block block_with_count{
+    auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), argument_types, Array{}),
-         columns_names.front()}};
+         columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
@@ -653,9 +654,9 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
-    std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const Header & current_header)
+    std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const SharedHeader & current_header)
 {
-    ActionsDAG merged_alias_columns_actions_dag(current_header.getColumnsWithTypeAndName());
+    ActionsDAG merged_alias_columns_actions_dag(current_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
     for (auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
@@ -674,6 +675,37 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     return alias_column_step;
 }
 
+bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const QueryProcessingStage::Enum processed_stage,
+    Names & extracted_column_names)
+{
+    if (processed_stage != QueryProcessingStage::FetchColumns)
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    if (has_table_virtual_column && extracted_column_names.empty())
+        extracted_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+    return has_table_virtual_column;
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -687,7 +719,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::Enum::FetchColumns;
+    QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
 
     if (wrap_read_columns_in_subquery)
     {
@@ -830,7 +862,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         if (is_trivial_count_applied)
         {
-            from_stage = QueryProcessingStage::WithMergeableState;
+            till_stage = QueryProcessingStage::WithMergeableState;
         }
         else
         {
@@ -872,8 +904,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    bool has_table_virtual_column =
+                        filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
                     if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
-                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
+                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
+                        && !has_table_virtual_column)
                     {
                         if (!prewhere_info)
                         {
@@ -933,12 +968,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     add_filter(*additional_filters_info, "additional filter");
 
                 if (!select_query_options.build_logical_plan)
-                    from_stage = storage->getQueryProcessingStage(
+                    till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                Names extracted_column_names;
+                bool has_table_virtual_column
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, till_stage, extracted_column_names);
+                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
 
                 if (select_query_options.build_logical_plan)
                 {
-                    auto sample_block = storage_snapshot->getSampleBlockForColumns(columns_names);
+                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(storage_column_names));
 
                     if (table_node)
                     {
@@ -963,7 +1003,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         WriteBufferFromOwnString out;
                         IAST::FormatSettings format_settings(
                             /*one_line=*/true,
-                            /*hilite=*/false,
                             IdentifierQuotingRule::WhenNecessary,
                             IdentifierQuotingStyle::Backticks,
                             /*show_secrets_=*/false);
@@ -994,11 +1033,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             std::move(mutable_context),
-                            from_stage,
+                            till_stage,
                             max_block_size,
                             max_streams);
                     }
@@ -1006,11 +1045,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             query_context,
-                            from_stage,
+                            till_stage,
                             max_block_size,
                             max_streams);
                     }
@@ -1056,7 +1095,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
                             modified_query_info.cluster = std::move(cluster);
-                            from_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+                            till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
@@ -1064,7 +1103,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 modified_query_info,
                                 storage->getInMemoryMetadataPtr()->getColumns(),
                                 storage_snapshot,
-                                from_stage,
+                                till_stage,
                                 table_expression_query_info.query_tree,
                                 query_context);
                             query_plan = std::move(query_plan_parallel_replicas);
@@ -1137,13 +1176,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         // (3) if parallel replicas still enabled - replace reading step
                         if (planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            from_stage = QueryProcessingStage::WithMergeableState;
+                            till_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
                             QueryPlanStepPtr reading_step = std::move(node->step);
                             ClusterProxy::executeQueryWithParallelReplicas(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
-                                from_stage,
+                                till_stage,
                                 table_expression_query_info.query_tree,
                                 table_expression_query_info.planner_context,
                                 query_context,
@@ -1156,11 +1195,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             QueryPlan query_plan_no_parallel_replicas;
                             storage->read(
                                 query_plan_no_parallel_replicas,
-                                columns_names,
+                                storage_column_names,
                                 storage_snapshot,
                                 table_expression_query_info,
                                 query_context,
-                                from_stage,
+                                till_stage,
                                 max_block_size,
                                 max_streams);
                             query_plan = std::move(query_plan_no_parallel_replicas);
@@ -1168,8 +1207,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
+                if (has_table_virtual_column && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    const auto & data_header = query_plan.getCurrentHeader();
+                    if (!data_header->findByName(static_cast<std::string_view>("_table")))
+                    {
+                        const auto & table_name = storage->getStorageID().getTableName();
+                        ColumnWithTypeAndName column;
+                        column.name = "_table";
+                        column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                        column.column = column.type->createColumnConst(0, Field(table_name));
+
+                        auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                        auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        query_plan.addStep(std::move(expression_step));
+                    }
+                }
+
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-                if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
+                if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
                 {
                     auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
                     query_plan.addStep(std::move(alias_column_step));
@@ -1178,7 +1234,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&
-                        from_stage == QueryProcessingStage::FetchColumns)
+                        till_stage == QueryProcessingStage::FetchColumns)
                     {
                         auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
                             std::move(filter_info.actions),
@@ -1217,7 +1273,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 /// Create step which reads from empty source if storage has no data.
                 const auto & column_names = table_expression_data.getColumnNames();
-                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+                auto source_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
@@ -1242,7 +1298,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             for (auto & projection_column : projection_columns)
                 source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
 
-            Pipe pipe(std::make_shared<NullSource>(source_header));
+            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             read_from_pipe->setStepDescription("Read from NullSource");
             query_plan.addStep(std::move(read_from_pipe));
@@ -1266,7 +1322,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-        if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
+        if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
         {
             auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
             query_plan.addStep(std::move(alias_column_step));
@@ -1278,9 +1334,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_expression->formatASTForErrorMessage());
     }
 
-    if (from_stage == QueryProcessingStage::FetchColumns)
+    if (till_stage == QueryProcessingStage::FetchColumns)
     {
-        ActionsDAG rename_actions_dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
+        ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
 
         for (auto & output_node : rename_actions_dag.getOutputs())
@@ -1329,7 +1385,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
-        SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
+        SelectQueryOptions analyze_query_options = SelectQueryOptions(till_stage).analyze();
         Planner planner(select_query_info.query_tree,
             analyze_query_options,
             select_query_info.planner_context);
@@ -1337,13 +1393,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
 
-        if (!blocksHaveEqualStructure(query_plan.getCurrentHeader(), expected_header))
+        if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
         {
-            materializeBlockInplace(expected_header);
+            auto expected_block = *expected_header;
+            materializeBlockInplace(expected_block);
 
             auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
-                expected_header.getColumnsWithTypeAndName(),
+                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                expected_block.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position,
                 true /*ignore_constant_values*/);
             auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
@@ -1355,7 +1412,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     return JoinTreeQueryPlan{
         .query_plan = std::move(query_plan),
-        .from_stage = from_stage,
+        .stage = till_stage,
         .used_row_policies = std::move(used_row_policies),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
     };
@@ -1363,7 +1420,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
 void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
 {
-    ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentHeader().getColumnsWithTypeAndName());
+    ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentHeader()->getColumnsWithTypeAndName());
 
     for (auto & output_node : cast_actions_dag.getOutputs())
     {
@@ -1378,7 +1435,7 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
         }
     }
 
-    cast_actions_dag.appendInputsForUnusedColumns(plan_to_add_cast.getCurrentHeader());
+    cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());
     auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentHeader(), std::move(cast_actions_dag));
     cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
@@ -1463,11 +1520,11 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     PlannerContextPtr & planner_context,
     const SelectQueryInfo & select_query_info)
 {
-    const Block & left_header = left_plan.getCurrentHeader();
-    const Block & right_header = right_plan.getCurrentHeader();
+    const auto & left_header = left_plan.getCurrentHeader();
+    const auto & right_header = right_plan.getCurrentHeader();
 
-    auto columns_from_left_table = left_header.getNamesAndTypesList();
-    auto columns_from_right_table = right_header.getNamesAndTypesList();
+    auto columns_from_left_table = left_header->getNamesAndTypesList();
+    auto columns_from_right_table = right_header->getNamesAndTypesList();
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1581,8 +1638,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
             /// Note: it's also doesn't work with the read-in-order optimization.
             /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-            bool has_non_const_keys = has_non_const(left_plan.getCurrentHeader(), join_clause.key_names_left)
-                && has_non_const(right_plan.getCurrentHeader(), join_clause.key_names_right);
+            bool has_non_const_keys = has_non_const(*left_plan.getCurrentHeader(), join_clause.key_names_left)
+                && has_non_const(*right_plan.getCurrentHeader(), join_clause.key_names_right);
 
             if (settings[Setting::max_rows_in_set_to_optimize_join] > 0 && join_type_allows_filtering && has_non_const_keys)
             {
@@ -1612,10 +1669,10 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
         if (required_columns_after_join.empty())
         {
-            if (left_header.columns() > 1)
-                required_columns_after_join.insert(left_header.getByPosition(0).name);
-            else if (right_header.columns() > 1)
-                required_columns_after_join.insert(right_header.getByPosition(0).name);
+            if (left_header->columns() > 1)
+                required_columns_after_join.insert(left_header->getByPosition(0).name);
+            else if (right_header->columns() > 1)
+                required_columns_after_join.insert(right_header->getByPosition(0).name);
         }
 
         auto join_step = std::make_unique<JoinStep>(
@@ -1651,7 +1708,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 output column in JOIN actions, got {}",
                 join_clauses_and_actions.residual_join_expressions_actions->dumpDAG());
 
-        join_clauses_and_actions.residual_join_expressions_actions->appendInputsForUnusedColumns(result_plan.getCurrentHeader());
+        join_clauses_and_actions.residual_join_expressions_actions->appendInputsForUnusedColumns(*result_plan.getCurrentHeader());
         for (const auto * input_node : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
             join_clauses_and_actions.residual_join_expressions_actions->addOrReplaceInOutputs(*input_node);
 
@@ -1667,9 +1724,9 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     }
 
     const auto & header_after_join = result_plan.getCurrentHeader();
-    if (header_after_join.columns() > outer_scope_columns.size())
+    if (header_after_join->columns() > outer_scope_columns.size())
     {
-        auto drop_unused_columns_after_join_actions_dag = createStepToDropColumns(header_after_join, outer_scope_columns, planner_context);
+        auto drop_unused_columns_after_join_actions_dag = createStepToDropColumns(*header_after_join, outer_scope_columns, planner_context);
         if (drop_unused_columns_after_join_actions_dag)
         {
             auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(*drop_unused_columns_after_join_actions_dag));
@@ -1691,11 +1748,11 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
     auto & cross_join_node = join_table_expression->as<CrossJoinNode &>();
     for (const auto & plan : plans)
     {
-        if (plan.from_stage != QueryProcessingStage::FetchColumns)
+        if (plan.stage != QueryProcessingStage::FetchColumns)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "JOIN {} table expression expected to process query to fetch columns stage. Actual {}",
                 cross_join_node.formatASTForErrorMessage(),
-                QueryProcessingStage::toString(plan.from_stage));
+                QueryProcessingStage::toString(plan.stage));
     }
 
     const auto & query_context = planner_context->getQueryContext();
@@ -1741,7 +1798,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
 
         left_join_tree_query_plan =  JoinTreeQueryPlan{
             .query_plan = std::move(result_plan),
-            .from_stage = QueryProcessingStage::FetchColumns,
+            .stage = QueryProcessingStage::FetchColumns,
             .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
             .useful_sets = std::move(left_join_tree_query_plan.useful_sets),
             .query_node_to_plan_step_mapping = std::move(mapping),
@@ -1762,15 +1819,15 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
     auto & join_node = join_table_expression->as<JoinNode &>();
 
     auto left_plan = std::move(left_join_tree_query_plan.query_plan);
-    auto left_plan_output_columns = left_plan.getCurrentHeader().getColumnsWithTypeAndName();
-    if (right_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+    auto left_plan_output_columns = left_plan.getCurrentHeader()->getColumnsWithTypeAndName();
+    if (right_join_tree_query_plan.stage != QueryProcessingStage::FetchColumns)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "JOIN {} right table expression expected to process query to fetch columns stage. Actual {}",
             join_node.formatASTForErrorMessage(),
-            QueryProcessingStage::toString(right_join_tree_query_plan.from_stage));
+            QueryProcessingStage::toString(right_join_tree_query_plan.stage));
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
-    auto right_plan_output_columns = right_plan.getCurrentHeader().getColumnsWithTypeAndName();
+    auto right_plan_output_columns = right_plan.getCurrentHeader()->getColumnsWithTypeAndName();
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
@@ -1810,7 +1867,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
 
         auto add_pre_filter = [can_move_out_residuals](ActionsDAG & join_expressions_actions, QueryPlan & plan, UsefulSets & useful_sets, const auto & pre_filters)
         {
-            join_expressions_actions.appendInputsForUnusedColumns(plan.getCurrentHeader());
+            join_expressions_actions.appendInputsForUnusedColumns(*plan.getCurrentHeader());
             appendSetsFromActionsDAG(join_expressions_actions, useful_sets);
 
             QueryPlanStepPtr join_expressions_actions_step;
@@ -1868,7 +1925,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
 
     auto join_cast_plan_output_nodes = [&](QueryPlan & plan_to_add_cast, std::unordered_map<std::string, DataTypePtr> & plan_column_name_to_cast_type)
     {
-        ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentHeader().getColumnsWithTypeAndName());
+        ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentHeader()->getColumnsWithTypeAndName());
 
         for (auto & output_node : cast_actions_dag.getOutputs())
         {
@@ -1880,7 +1937,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
         }
 
-        cast_actions_dag.appendInputsForUnusedColumns(plan_to_add_cast.getCurrentHeader());
+        cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());
         auto cast_join_columns_step
             = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentHeader(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN USING columns");
@@ -2087,7 +2144,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
 
     return JoinTreeQueryPlan{
         .query_plan = std::move(result_plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
+        .stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
         .useful_sets = std::move(left_join_tree_query_plan.useful_sets),
         .query_node_to_plan_step_mapping = std::move(mapping),
@@ -2128,7 +2185,7 @@ JoinTreeQueryPlan joinPlansWithStep(
 
     return JoinTreeQueryPlan{
         .query_plan = std::move(result_plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
+        .stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(result_used_row_policies),
         .useful_sets = std::move(result_useful_sets),
         .query_node_to_plan_step_mapping = std::move(result_mapping),
@@ -2144,15 +2201,15 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const SelectQueryInfo & select_query_info)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
-    if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+    if (left_join_tree_query_plan.stage != QueryProcessingStage::FetchColumns)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "JOIN {} left table expression expected to process query to fetch columns stage. Actual {}",
             join_node.formatASTForErrorMessage(),
-            QueryProcessingStage::toString(left_join_tree_query_plan.from_stage));
+            QueryProcessingStage::toString(left_join_tree_query_plan.stage));
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::query_plan_use_new_logical_join_step] || settings[Setting::allow_experimental_parallel_reading_from_replicas])
+    if (!settings[Setting::query_plan_use_new_logical_join_step])
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 
@@ -2182,14 +2239,14 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     PlannerContextPtr & planner_context)
 {
     auto & array_join_node = array_join_table_expression->as<ArrayJoinNode &>();
-    if (join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+    if (join_tree_query_plan.stage != QueryProcessingStage::FetchColumns)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "ARRAY JOIN {} table expression expected to process query to fetch columns stage. Actual {}",
             array_join_node.formatASTForErrorMessage(),
-            QueryProcessingStage::toString(join_tree_query_plan.from_stage));
+            QueryProcessingStage::toString(join_tree_query_plan.stage));
 
     auto plan = std::move(join_tree_query_plan.query_plan);
-    auto plan_output_columns = plan.getCurrentHeader().getColumnsWithTypeAndName();
+    auto plan_output_columns = plan.getCurrentHeader()->getColumnsWithTypeAndName();
 
     ActionsDAG array_join_action_dag(plan_output_columns);
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
@@ -2215,14 +2272,14 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         }
     }
 
-    array_join_action_dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+    array_join_action_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
 
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(array_join_action_dag));
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     appendSetsFromActionsDAG(array_join_actions->getExpression(), join_tree_query_plan.useful_sets);
     plan.addStep(std::move(array_join_actions));
 
-    ActionsDAG drop_unused_columns_before_array_join_actions_dag(plan.getCurrentHeader().getColumnsWithTypeAndName());
+    ActionsDAG drop_unused_columns_before_array_join_actions_dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs drop_unused_columns_before_array_join_actions_dag_updated_outputs;
     std::unordered_set<std::string_view> drop_unused_columns_before_array_join_actions_dag_updated_outputs_names;
 
@@ -2263,7 +2320,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     return JoinTreeQueryPlan{
         .query_plan = std::move(plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
+        .stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
         .useful_sets = std::move(join_tree_query_plan.useful_sets),
         .query_node_to_plan_step_mapping = std::move(join_tree_query_plan.query_node_to_plan_step_mapping),
@@ -2357,7 +2414,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         planner_context,
         is_single_table_expression,
         false /*wrap_read_columns_in_subquery*/);
-    if (left_table_expression_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+    if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
         return left_table_expression_query_plan;
 
     for (Int64 i = static_cast<Int64>(table_expressions_stack_size) - 1; i >= 0; --i)

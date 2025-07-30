@@ -31,10 +31,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
@@ -70,6 +71,16 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_read_buffers.push_back(StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, context, log));
 
+        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
+        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
+        std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
+        std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
+        {
+            if (actions.has_value())
+                return std::make_shared<const ActionsDAG>(std::move(actions.value()));
+            return std::shared_ptr<const ActionsDAG>();
+        }();
+
         auto delete_format = FormatFactory::instance().getInput(
             delete_object_format,
             *delete_read_buffers.back(),
@@ -77,15 +88,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            1,
-            std::nullopt,
+            std::make_shared<FormatParserGroup>(context->getSettingsRef(), 1, actions_dag_ptr, context),
             true /* is_remote_fs */,
             compression_method);
-
-        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
-        const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-        delete_format->setKeyCondition(actions, context);
 
         delete_sources.push_back(std::move(delete_format));
     }

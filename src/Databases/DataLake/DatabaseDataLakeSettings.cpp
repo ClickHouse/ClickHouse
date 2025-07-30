@@ -12,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -21,6 +22,7 @@ namespace ErrorCodes
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0)             \
+    DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
     DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
@@ -73,12 +75,17 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
 {
     if (storage_def.settings)
     {
         try
         {
+            for (const auto & change : storage_def.settings->changes)
+            {
+                if (!is_attach && change.name.starts_with("iceberg_"))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
+            }
             impl->applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)

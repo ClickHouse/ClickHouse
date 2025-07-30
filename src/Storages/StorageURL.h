@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
@@ -103,6 +104,8 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 
     virtual std::string getReadMethod() const;
 
@@ -146,7 +149,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public SourceWithKeyCondition, WithContext
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -154,7 +157,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -179,7 +182,7 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        size_t max_parsing_threads,
+        FormatParserGroupPtr parser_group_,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -189,12 +192,9 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
-    {
-        setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
-    }
-
     Chunk generate() override;
+
+    void onFinish() override { parser_group->finishStream(); }
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -229,9 +229,11 @@ private:
     std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
+    FormatParserGroupPtr parser_group;
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
 

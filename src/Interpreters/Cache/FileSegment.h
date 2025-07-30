@@ -67,7 +67,7 @@ public:
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::IteratorPtr queue_iterator_ = nullptr);
 
-    ~FileSegment() = default;
+    ~FileSegment();
 
     State state() const;
 

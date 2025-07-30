@@ -17,7 +17,7 @@ public:
     static constexpr const char * data_file_path_column_name = "file_path";
 
     IcebergPositionDeleteTransform(
-        const Block & header_,
+        const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
@@ -45,7 +45,7 @@ protected:
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
-    Block header;
+    SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
@@ -62,7 +62,7 @@ class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransfo
 {
 public:
     IcebergBitmapPositionDeleteTransform(
-        const Block & header_,
+        const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
