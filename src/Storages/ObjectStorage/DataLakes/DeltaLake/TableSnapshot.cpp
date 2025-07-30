@@ -371,6 +371,7 @@ size_t TableSnapshot::getVersion() const
 
 bool TableSnapshot::update()
 {
+    helper->update();
     if (!snapshot.get())
     {
         /// Snapshot is not yet created,
