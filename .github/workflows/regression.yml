@@ -104,7 +104,7 @@ env:
     --no-colors
     --local
     --collect-service-logs
-    --output classic
+    --output new-fails
     --parallel 1
     --log raw.log
     --with-analyzer
