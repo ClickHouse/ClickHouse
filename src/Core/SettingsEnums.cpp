@@ -301,7 +301,8 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+    {{"none", DatabaseDataLakeCatalogType::NONE},
+     {"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})

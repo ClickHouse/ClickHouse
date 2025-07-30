@@ -64,7 +64,7 @@ Get latest metadata path from version-hint.text file.
     DECLARE(Int64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
-    DECLARE(DatabaseDataLakeCatalogType, iceberg_catalog_type, DatabaseDataLakeCatalogType::ICEBERG_REST, "Catalog type", 0) \
+    DECLARE(DatabaseDataLakeCatalogType, iceberg_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, iceberg_catalog_credential, "", "", 0)             \
     DECLARE(Bool, iceberg_vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, iceberg_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
