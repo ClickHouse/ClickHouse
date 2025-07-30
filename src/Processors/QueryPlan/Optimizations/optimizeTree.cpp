@@ -153,9 +153,10 @@ void optimizeTreeSecondPass(
 
         auto & frame = stack.back();
 
-        if (frame.next_child == 0)
+        if (optimization_settings.enable_join_runtime_filters && frame.next_child == 0)
         {
             tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
+            /// Re-run filter push down optimizations to move runtime filter as deep in the tree as possible
             tryMergeExpressions(frame.node, nodes, {});
             tryMergeFilters(frame.node, nodes, {});
             tryPushDownFilter(frame.node, nodes, {});
