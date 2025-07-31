@@ -101,7 +101,7 @@ REGISTER_FUNCTION(FilterContains)
     FunctionDocumentation::Syntax syntax = "filterContains(filter_name, key)";
     FunctionDocumentation::Arguments arguments = {
         {"filter_name", "Internal name of runtime filter. It is built by BuildRuntimeFilterStep.", {"String"}},
-        {"key", "Value of any type that is checked to be present in the filter", {"Any type"}}
+        {"key", "Value of any type that is checked to be present in the filter", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"True if the key was found in the filter", {"Bool"}};
     FunctionDocumentation::Examples examples = {{"Example", "This function is not supposed to be used in user queries. It might be added to query plan during optimization. ", ""}};
