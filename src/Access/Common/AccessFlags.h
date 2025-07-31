@@ -59,6 +59,7 @@ public:
         TABLE_ENGINE,
         NAMED_COLLECTION,
         USER_NAME,
+        DEFINER,
     };
     ParameterType getParameterType() const;
     std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
@@ -107,6 +108,9 @@ public:
 
     /// Returns all the flags related to a user.
     static AccessFlags allUserNameFlags();
+
+    /// Returns all the flags related to a definer.
+    static AccessFlags allDefinerFlags();
 
     /// Returns all the flags related to a table engine.
     static AccessFlags allTableEngineFlags();
