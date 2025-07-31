@@ -965,7 +965,7 @@ void KeeperStateMachine<Storage>::shutdownStorage()
 template<typename Storage>
 std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    LockGuardWithStats<true> lock(storage_mutex);
     return storage->getDeadSessions();
 }
 
