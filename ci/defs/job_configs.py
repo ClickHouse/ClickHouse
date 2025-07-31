@@ -415,7 +415,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
+                runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
             for total_batches in (2,)
@@ -449,7 +449,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, s3 storage, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
+                runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (2,)
