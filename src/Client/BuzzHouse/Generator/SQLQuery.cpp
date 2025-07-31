@@ -265,12 +265,14 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             || t.isURLEngine() || t.isRedisEngine()))
     {
         Expr * structure = nullptr;
-        SettingValues * svs = nullptr;
+        S3Func * sfunc = nullptr;
+        FileFunc * ffunc = nullptr;
+        AzureBlobStorageFunc * afunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
         if (t.isIcebergS3Engine() || t.isDeltaLakeS3Engine() || t.isAnyS3Engine())
         {
-            S3Func * sfunc = tfunc->mutable_s3();
+            sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
             S3Func_FName val = t.isAnyS3Engine()
                 ? S3Func_FName::S3Func_FName_s3
@@ -293,7 +295,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 sfunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? sfunc->mutable_structure() : nullptr;
-            svs = rg.nextMediumNumber() < 86 ? sfunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 sfunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -301,7 +302,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
         {
-            AzureBlobStorageFunc * afunc = tfunc->mutable_azure();
+            afunc = tfunc->mutable_azure();
             const ServerCredentials & sc = fc.azurite_server.value();
             AzureBlobStorageFunc_FName val = t.isAnyAzureEngine()
                 ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
@@ -327,7 +328,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 afunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? afunc->mutable_structure() : nullptr;
-            svs = rg.nextMediumNumber() < 86 ? afunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 afunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -335,7 +335,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
         {
-            FileFunc * ffunc = tfunc->mutable_file();
+            ffunc = tfunc->mutable_file();
             FileFunc_FName val = t.isFileEngine()
                 ? FileFunc_FName::FileFunc_FName_file
                 : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
@@ -355,7 +355,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 ffunc->set_inoutformat(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
-            svs = rg.nextMediumNumber() < 86 ? ffunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -437,24 +436,25 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             this->remote_entries.clear();
             structure->mutable_lit_val()->set_string_lit(std::move(buf));
         }
-        if (svs)
+        if ((sfunc || afunc || ffunc) && rg.nextMediumNumber() < 86)
         {
+            SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
 
             if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
             {
+                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : ffunc->mutable_setting_values());
                 generateSettingValues(rg, engineSettings, svs);
             }
             if (t.has_metadata && rg.nextSmallNumber() < 9)
             {
+                svs = svs ? svs
+                          : (sfunc ? sfunc->mutable_setting_values()
+                                   : (afunc ? afunc->mutable_setting_values() : ffunc->mutable_setting_values()));
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
                 sv->set_property("iceberg_metadata_file_path");
                 sv->set_value("'" + t.getMetadataPath(fc, false) + "'");
-            }
-            if (!svs->has_set_value() || rg.nextSmallNumber() < 3)
-            {
-                generateSettingValues(rg, serverSettings, svs);
             }
         }
     }
