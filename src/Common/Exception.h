@@ -118,8 +118,8 @@ protected:
     Exception(MessageMasked && msg_masked, int code, bool remote_);
 
     // delegating constructor to mask sensitive information from the message
-    Exception(const std::string & msg, int code, std::string && format_string = "", bool remote_ = false): Exception(MessageMasked(msg, std::move(format_string)), code, remote_) {}
-    Exception(std::string && msg, int code, std::string && format_string = "", bool remote_ = false): Exception(MessageMasked(std::move(msg), std::move(format_string)), code, remote_) {}
+    Exception(const std::string & msg, int code, std::string format_string = "", bool remote_ = false): Exception(MessageMasked(msg, std::move(format_string)), code, remote_) {}
+    Exception(std::string && msg, int code, std::string format_string = "", bool remote_ = false): Exception(MessageMasked(std::move(msg), std::move(format_string)), code, remote_) {}
 
 public:
     /// This creator is for exceptions that should format a message using fmt::format from the variadic ctor Exception(code, fmt, ...),
