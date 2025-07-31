@@ -45,7 +45,7 @@ public:
         capture_thread_frame_pointers = getThreadFramePointers();
     }
 
-    Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
+    Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code, std::string(msg.format_string))
     {
         if (terminate_on_any_exception)
             std::terminate();
@@ -54,7 +54,7 @@ public:
         message_format_string_args = msg.format_string_args;
     }
 
-    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code, std::string(msg.format_string))
     {
         if (terminate_on_any_exception)
             std::terminate();
@@ -118,7 +118,7 @@ protected:
     Exception(MessageMasked && msg_masked, int code, bool remote_);
 
     // delegating constructor to mask sensitive information from the message
-    Exception(const std::string & msg, int code, const std::string & format_string = "", bool remote_ = false): Exception(MessageMasked(msg, format_string), code, remote_) {}
+    Exception(const std::string & msg, int code, std::string && format_string = "", bool remote_ = false): Exception(MessageMasked(msg, std::move(format_string)), code, remote_) {}
     Exception(std::string && msg, int code, std::string && format_string = "", bool remote_ = false): Exception(MessageMasked(std::move(msg), std::move(format_string)), code, remote_) {}
 
 public:
@@ -137,7 +137,7 @@ public:
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code, std::string(fmt.message_format_string)) {}
+    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code) {}
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};
