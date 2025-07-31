@@ -19,6 +19,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace QueryPlanOptimizations
@@ -143,10 +144,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (storage_prewhere_info)
         return;
 
-    /// Vector index lookup and exact row seeks is a more targeted optimization, hence priority for that.
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
-        return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
@@ -166,6 +163,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & storage_metadata = storage_snapshot->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
+        return;
+
+    /// Vector index lookup and exact row seeks is a more targeted optimization, hence priority for that.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
     /// Extract column compressed sizes
