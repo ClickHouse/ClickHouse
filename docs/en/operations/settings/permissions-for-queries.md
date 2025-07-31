@@ -49,7 +49,6 @@ When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `
 Setting `readonly = 1` prohibits the user from changing settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
 :::
 
-
 ## allow_ddl {#allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
@@ -64,7 +63,6 @@ Default value: 1
 :::note
 You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 :::
-
 
 :::note KILL QUERY
 `KILL QUERY` can be performed with any combination of readonly and allow_ddl settings.

@@ -1537,9 +1537,9 @@ String MinIOIntegration::getConnectionURL(const bool client)
     return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + sc.database + "/";
 }
 
-void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
+void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(b.getTablePath(fc, false));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
@@ -1557,11 +1557,11 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
-void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname);
     te->add_params()->set_svalue(sc.container);
-    te->add_params()->set_svalue("file" + tname.substr(1));
+    te->add_params()->set_svalue(b.getTablePath(fc, false));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
@@ -1581,14 +1581,9 @@ bool AzuriteIntegration::performIntegration(
     return true;
 }
 
-String HTTPIntegration::getConnectionURL(const bool client)
+void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
-    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + "/";
-}
-
-void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
-{
-    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1));
+    te->add_params()->set_svalue(b.getTablePath(fc, false));
 }
 
 bool HTTPIntegration::performIntegration(

@@ -188,6 +188,7 @@ namespace Setting
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -222,6 +223,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
+        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
     };
 }
 
@@ -1704,12 +1706,10 @@ static void buildIndexes(
     const ActionsDAG * filter_actions_dag,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
-    const StorageMetadataPtr & metadata_snapshot,
-    const LoggerPtr & log)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
 
@@ -1780,8 +1780,6 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
-    auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
-
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
@@ -1792,24 +1790,6 @@ static void buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (!all_updated_columns.empty())
-        {
-            auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-            auto required_columns_names = index_helper->getColumnsRequiredForIndexCalc();
-            auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
-
-            auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
-            {
-                return all_updated_columns.contains(column.getNameInStorage());
-            });
-
-            if (it != required_columns_list.end())
-            {
-                LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
-                continue;
-            }
-        }
 
         if (index_helper->isMergeable())
         {
@@ -1852,7 +1832,11 @@ static void buildIndexes(
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
         if (l_is_minmax == r_is_minmax)
-            return false;
+        {
+            const auto l_granularity = l.index->getGranularity();
+            const auto r_granularity = r.index->getGranularity();
+            return l_granularity > r_granularity;
+        }
 
 #if USE_USEARCH
         // A vector similarity index (if present) is the most selective, hence move it to front
@@ -1891,12 +1875,10 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info.filter_actions_dag.get(),
             data,
             getParts(),
-            mutations_snapshot,
             vector_search_parameters,
             context,
             query_info,
-            storage_snapshot->metadata,
-            log);
+            storage_snapshot->metadata);
     }
 }
 
@@ -1939,12 +1921,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.filter_actions_dag.get(),
             data,
             parts,
-            mutations_snapshot,
             vector_search_parameters,
             context_,
             query_info_,
-            metadata_snapshot,
-            log);
+            metadata_snapshot);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -2011,6 +1991,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,
+            mutations_snapshot,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,
