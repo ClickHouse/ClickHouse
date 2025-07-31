@@ -351,8 +351,6 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 14. │                 _distance Float32                                                                       │
     └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-Rescoring using a _multiplier_ could improve search quality if the vector index is a quantized index (e.g 'i8' type).
-ClickHouse provides a setting to specify that additional results need to be fetched from the vector index and then rescoring & re-ranking will be executed using the corresponding base vectors, see setting [vector_search_rescoring_multiplier](../../../operations/settings/settings#vector_search_rescoring_multiplier).
 
 :::note
 A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.

@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 
--- Test for setting 'vector_search_with_rescoring' with filters and multiplier
+-- Test for setting 'vector_search_with_rescoring' with filters.
 
 SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -63,13 +63,13 @@ ORDER BY L2Distance(vector, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring=1;
 
-SELECT 'With rescoring = ON and multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17';
+SELECT 'With rescoring = ON and using post filter multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17';
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vector, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring=1, vector_search_rescoring_multiplier=3;
+SETTINGS vector_search_with_rescoring=1, vector_search_postfilter_multiplier=3;
 
 SELECT 'Ensure that explicit PREWHERE disables the optimization, _distance should not be seen';
 SELECT trimLeft(explain) AS explain FROM (

@@ -30,7 +30,7 @@ With rescoring = ON, 18 and 17 will also be printed for above query because they
 19
 18
 17
-With rescoring = ON and multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17
+With rescoring = ON and using post filter multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17
 16
 19
 12

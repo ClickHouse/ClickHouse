@@ -39,10 +39,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsFloat vector_search_postfilter_multiplier;
-    extern const SettingsFloat vector_search_rescoring_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
 }
 
@@ -420,23 +418,17 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
     , postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
-    , rescoring_multiplier(context->getSettingsRef()[Setting::vector_search_rescoring_multiplier])
-    , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
 {
-    static constexpr auto MAX_SEARCH_K_MULTIPLIER = 1000.0;
+    static constexpr auto MAX_POSTFILTER_MULTIPLIER = 1000.0;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(postfilter_multiplier)
-        || postfilter_multiplier <= 0.0 || postfilter_multiplier > MAX_SEARCH_K_MULTIPLIER
+        || postfilter_multiplier <= 0.0 || postfilter_multiplier > MAX_POSTFILTER_MULTIPLIER
         || (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be greater than 0.0 and less than {}", MAX_SEARCH_K_MULTIPLIER);
-    if (!std::isfinite(rescoring_multiplier)
-        || rescoring_multiplier <= 0.0 || rescoring_multiplier > MAX_SEARCH_K_MULTIPLIER
-        || (parameters && !std::isfinite(rescoring_multiplier * parameters->limit)))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_rescoring_multiplier' must be greater than 0.0 and less than {}", MAX_SEARCH_K_MULTIPLIER);
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be greater than 0.0 and less than {}", MAX_POSTFILTER_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -481,10 +473,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present)
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
-        limit = std::min(static_cast<size_t>(parameters->limit * postfilter_multiplier), max_limit);
-    if (is_rescoring)
-        /// If rescoring is ON and user wants to fetch more neighbours from the index (could be a quantized index), use the multiplier.
-        limit = std::max(limit, std::min(static_cast<size_t>(parameters->limit * rescoring_multiplier), max_limit));
+        limit = std::min(static_cast<size_t>(limit * postfilter_multiplier), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
