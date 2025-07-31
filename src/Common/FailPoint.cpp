@@ -91,7 +91,8 @@ static struct InitFiu
     ONCE(keeper_leader_sets_invalid_digest) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(database_replicated_delay_recovery) \
-    REGULAR(database_replicated_delay_entry_execution)
+    REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay)
 
 
 namespace FailPoints
