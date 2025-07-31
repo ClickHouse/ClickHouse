@@ -81,19 +81,23 @@ static size_t handle_error_code(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    LOG_FATAL(getLogger("stetsyuk"), "format string: '{}'", format_string);
+
+    return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, const std::string & format_string_)
     : msg(msg_)
+    , format_string(format_string_)
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string && format_string_)
     : msg(std::move(msg_))
+    , format_string(format_string_)
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
@@ -108,6 +112,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -118,6 +123,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
