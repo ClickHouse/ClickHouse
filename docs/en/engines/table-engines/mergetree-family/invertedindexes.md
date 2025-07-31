@@ -116,28 +116,28 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 
 Like for other secondary indices, each column part has its own text index.
 
-### Functions support {#functions-support}
+### Supported functions {#functions-support}
 
 The conditions in the `WHERE` clause contains calls of the functions that operate with columns.
 If the column is a part of an index, ClickHouse tries to use this index when performing the functions.
 ClickHouse supports different subsets of functions for the `text` index.
 
-#### [equals](/sql-reference/functions/comparison-functions.md/#equals) and [notEquals](/sql-reference/functions/comparison-functions.md/#notEquals) functions {#functions-example-equals-notequals}
+#### equals and notEquals {#functions-example-equals-notequals}
 
-Functions `=` (equals) and `!=` (notEquals) check if the column contains rows which match the entire search term.
+Functions `=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals) ) check if the column contains rows which match the entire search term.
 
-#### [in](/sql-reference/functions/in-functions) and [notIn](/sql-reference/functions/in-functions) functions {#functions-example-in-notin}
+#### in and notIn {#functions-example-in-notin}
 
-Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
+Functions `IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` respectively.
 Instead of matching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
-#### [like](/sql-reference/functions/string-search-functions.md/#like), [notLike](/sql-reference/functions/string-search-functions.md/#notlike) and [match](/sql-reference/functions/string-search-functions.md/#match) functions {#functions-example-like-notlike-match}
+#### like, notLike and match {#functions-example-like-notlike-match}
 
 :::note
 Currently, these functions use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
 :::
 
-In order to use functions `like`, `notLike`, and `match` with the `text` index, the search term should be in a way that complete tokens can be extracted from it.
+In order to use functions `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and [match](/sql-reference/functions/string-search-functions.md/#match) with the `text` index, the search term should be in a way that complete tokens can be extracted from it.
 
 Example:
 
@@ -149,9 +149,9 @@ In the example, only `clickhouse` is a complete token.
 As `support` is followed by a `%`, it could match `support`, `supports`, `supporting` etc.
 As a result, the lookup in the text index will only consider token `clickhouse`.
 
-#### [startsWith](/sql-reference/functions/string-functions.md/#startswith) and [endsWith](/sql-reference/functions/string-functions.md/#endswith) {#functions-example-startswith-endswith}
+#### startsWith and endsWith {#functions-example-startswith-endswith}
 
-Similar to `like`, the search term should be in a way that complete tokens can be extracted from it.
+Similar to `like`, the search term for functions [startsWith](/sql-reference/functions/string-functions.md/#startswith) and [endsWith](/sql-reference/functions/string-functions.md/#endswith) should be in a way that complete tokens can be extracted from it.
 
 Example:
 
@@ -172,9 +172,9 @@ Similarly, if you like to search a column value ending with `olap engine`, use s
 Index lookups for functions `startsWith` and `endWidth` are generally less efficient than for functions `like`/`notLike`/`match`.
 :::
 
-#### [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany) {#functions-example-multisearchany}
+#### multiSearchAny {#functions-example-multisearchany}
 
-Function `multiSearchAny` searches the provided search term as a substring in the column value.
+Function [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany) searches the provided search term as a substring in the column value.
 As a result, search term should be a complete token to use with the `text` index.
 This can be achieved by putting a space before and after the input needle.
 
@@ -184,9 +184,9 @@ Example:
 SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
 ```
 
-#### [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull) {#functions-example-hastoken-hastokenornull}
+#### hasToken and hasTokenOrNull {#functions-example-hastoken-hastokenornull}
 
-Functions `hasToken` and `hasTokenOrNull` check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`).
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull) check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`).
 
 Compared to other functions, `hasToken` and `hasTokenOrNull` do not tokenize the search term, i.e. they assume the input is a single token.
 
@@ -198,9 +198,9 @@ SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
 
 These functions are the most performant options to use with the `text` index.
 
-#### [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) {#functions-example-searchany-searchall}
+#### searchAny and searchAll {#functions-example-searchany-searchall}
 
-Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
+Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) check if the column contains rows which match any or all of search terms.
 
 Compared to `hasToken`, these functions accept multiple search terms.
 
