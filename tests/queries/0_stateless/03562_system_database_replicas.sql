@@ -18,12 +18,12 @@ CREATE DATABASE db_6 ENGINE = Replicated('/test/db_6', '{shard}', '{replica}');
 SELECT sleep(1) FORMAT Null;
 SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY database;
 
-SELECT database FROM system.database_replicas ORDER BY database;
+SELECT database FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY database;
 SELECT DISTINCT is_readonly FROM system.database_replicas WHERE database LIKE 'db_%';
 
 SELECT '-----------------------';
 SELECT 'count';
-SELECT count(*) FROM system.database_replicas;
+SELECT count(*) FROM system.database_replicas WHERE database LIKE 'db_%';
 
 SELECT '-----------------------';
 SELECT 'SELECT with LIMIT';
@@ -34,24 +34,24 @@ SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY datab
 SELECT '-----------------------';
 SELECT 'SELECT with max_block';
 SET max_block_size=2;
-SELECT * FROM system.database_replicas ORDER BY database;
+SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY database;
 
 SET max_block_size=6;
-SELECT * FROM system.database_replicas ORDER BY database;
+SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY database;
 
 SELECT '-----------------------';
 SELECT 'SELECT with WHERE';
 SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' AND is_readonly=0 ORDER BY database;
 SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' AND is_readonly=1 ORDER BY database;
 SELECT is_readonly FROM system.database_replicas WHERE database='db_2' ORDER BY database;
-SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' AND database='db_11' ORDER BY database;
+SELECT * FROM system.database_replicas WHERE database='db_11' ORDER BY database;
 
 SELECT '-----------------------';
 SELECT 'DROP DATABASE';
 DROP DATABASE db_1;
-SELECT * FROM system.database_replicas ORDER BY database;
+SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY database;
 
 SELECT '-----------------------';
 SELECT 'SELECT max_log_ptr';
 CREATE TABLE db_2.test_table (n Int64) ENGINE=MergeTree ORDER BY n;
-SELECT database, max_log_ptr FROM system.database_replicas WHERE max_log_ptr > 1;
+SELECT database, max_log_ptr FROM system.database_replicas WHERE database LIKE 'db_%' AND max_log_ptr > 1;
