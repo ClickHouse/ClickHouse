@@ -141,7 +141,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     }
 }
 
-template <int UNROLL_TIMES>
+template <size_t copy_size>
 static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
@@ -172,8 +172,6 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-            static constexpr size_t copy_size = 16 * UNROLL_TIMES;
-
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + copy_size <= data.capacity() && istr.position() + size + copy_size <= istr.buffer().end())
             {
@@ -249,13 +247,13 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     offsets.reserve(offsets.size() + limit);
 
     if (avg_chars_size >= 64)
-        deserializeBinaryImpl<4>(data, offsets, istr, limit);
+        deserializeBinaryImpl<64>(data, offsets, istr, limit);
     else if (avg_chars_size >= 48)
-        deserializeBinaryImpl<3>(data, offsets, istr, limit);
+        deserializeBinaryImpl<48>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
-        deserializeBinaryImpl<2>(data, offsets, istr, limit);
+        deserializeBinaryImpl<32>(data, offsets, istr, limit);
     else
-        deserializeBinaryImpl<1>(data, offsets, istr, limit);
+        deserializeBinaryImpl<16>(data, offsets, istr, limit);
 }
 
 
