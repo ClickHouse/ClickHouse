@@ -51,8 +51,27 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
 {
     if (isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine())
     {
+        const Catalog * cat = nullptr;
         const ServerCredentials & sc = fc.minio_server.value();
 
+        switch (catalog)
+        {
+            case CatalogTable::Glue:
+                cat = &sc.glue_catalog.value();
+                break;
+            case CatalogTable::Hive:
+                cat = &sc.hive_catalog.value();
+                break;
+            case CatalogTable::REST:
+                cat = &sc.rest_catalog.value();
+                break;
+            default:
+                break;
+        }
+        if (cat)
+        {
+            return fmt::format("http://{}:{}/{}/cat{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname);
+        }
         return fmt::format(
             "http://{}:{}{}/file{}{}",
             client ? sc.client_hostname : sc.server_hostname,

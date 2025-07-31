@@ -325,7 +325,7 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     return nullptr;
 }
 
-void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
+void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
 {
     if (b.isExternalDistributedEngine())
     {
@@ -567,7 +567,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     return nullptr;
 }
 
-void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
+void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
 {
     if (b.isExternalDistributedEngine())
     {
@@ -756,7 +756,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     }
 }
 
-void SQLiteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
     te->add_params()->set_svalue(tname);
@@ -836,7 +836,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 }
 #endif
 
-void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
+void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
@@ -903,7 +903,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     }
 }
 
-void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -1526,7 +1526,7 @@ String MinIOIntegration::getConnectionURL(const bool client)
     return fmt::format("http://{}:{}{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, sc.database);
 }
 
-void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1543,7 +1543,6 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
     sv1->set_property("catalog_type");
     sv2->set_property("warehouse");
-    sv2->set_value(d.getName());
     if (glue_cat && (nopt < glue_cat + 1))
     {
         cat = &sc.glue_catalog.value();
@@ -1551,6 +1550,7 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
         sv1->set_value("glue");
+        sv2->set_value("gtest");
         sv4->set_property("region");
         sv4->set_value(cat->region);
     }
@@ -1560,6 +1560,7 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
         de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
         sv1->set_value("hive");
+        sv2->set_value("htest");
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
@@ -1567,6 +1568,7 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
         sv1->set_value("rest");
+        sv2->set_value("rtest");
     }
     else
     {
@@ -1578,11 +1580,67 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     sv3->set_value(fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, cat->endpoint));
 }
 
-void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
+    const Catalog * cat = nullptr;
+
     te->add_params()->set_svalue(b.getTablePath(fc, false));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
+
+    switch (b.catalog)
+    {
+        case CatalogTable::Glue:
+            cat = &sc.glue_catalog.value();
+            break;
+        case CatalogTable::Hive:
+            cat = &sc.hive_catalog.value();
+            break;
+        case CatalogTable::REST:
+            cat = &sc.rest_catalog.value();
+            break;
+        default:
+            break;
+    }
+    if (cat)
+    {
+        SettingValues * svs = te->mutable_setting_values();
+        SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv2 = svs->add_other_values();
+        SetValue * sv3 = svs->add_other_values();
+        SetValue * sv4 = svs->add_other_values();
+
+        sv1->set_property("iceberg_catalog_type");
+        sv2->set_property("iceberg_warehouse");
+        sv3->set_property("iceberg_storage_endpoint");
+        sv4->set_property("iceberg_catalog_url");
+        sv3->set_value(fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, cat->endpoint));
+        switch (b.catalog)
+        {
+            case CatalogTable::Glue: {
+                SetValue * sv5 = svs->add_other_values();
+
+                sv1->set_value("glue");
+                sv2->set_value("gtest");
+                sv4->set_value(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
+                sv5->set_property("iceberg_region");
+                sv5->set_value(cat->region);
+            }
+            break;
+            case CatalogTable::Hive:
+                sv1->set_value("hive");
+                sv2->set_value("htest");
+                sv4->set_value(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+                break;
+            case CatalogTable::REST:
+                sv1->set_value("rest");
+                sv2->set_value("rtest");
+                sv4->set_value(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
@@ -1592,12 +1650,44 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
     br->add_out_params(sc.password);
 }
 
-bool MinIOIntegration::performIntegration(RandomGenerator &, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
+bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
 {
-    return sendRequest(sc.database + "/file" + std::to_string(b.tname));
+    const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
+    const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
+    const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
+    const uint32_t no_cat = 15;
+
+    const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (glue_cat && (nopt < glue_cat + 1))
+    {
+        b.catalog = CatalogTable::Glue;
+        return true;
+    }
+    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+    {
+        b.catalog = CatalogTable::Hive;
+        return true;
+    }
+    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+    {
+        b.catalog = CatalogTable::REST;
+        return true;
+    }
+    else if (no_cat && (nopt < glue_cat + hive_cat + rest_cat + no_cat + 1))
+    {
+        return sendRequest(sc.database + "/file" + std::to_string(b.tname));
+    }
+    else
+    {
+        chassert(0);
+        return false;
+    }
 }
 
-void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname);
     te->add_params()->set_svalue(sc.container);
@@ -1620,7 +1710,7 @@ bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase &, const 
     return true;
 }
 
-void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void HTTPIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
     te->add_params()->set_svalue(b.getTablePath(fc, false));
 }
@@ -1719,7 +1809,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performIntegration(rg, b, true, entries));
-    next->setEngineDetails(rg, b, "t" + std::to_string(b.tname), te);
+    next->setTableEngineDetails(rg, b, "t" + std::to_string(b.tname), te);
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const
