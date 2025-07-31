@@ -207,9 +207,9 @@ Compared to `hasToken`, these functions accept multiple search terms.
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
+SELECT count() FROM hackernews WHERE searchAny(lower(comment), ['clickhouse', 'chdb']);
 
-SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
+SELECT count() FROM hackernews WHERE searchAll(lower(comment), ['clickhouse', 'chdb']);
 ```
 
 ## Full text search of the hacker news dataset {#full-text-search-of-the-hacker-news-dataset}

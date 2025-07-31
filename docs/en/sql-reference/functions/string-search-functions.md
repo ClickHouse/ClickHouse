@@ -779,9 +779,8 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+The provided array of needles (each string needle<sub>i</sub>) should be tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 :::
 
 **Returned value**
@@ -838,9 +837,8 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+The provided array of needles (each string needle<sub>i</sub>) should be tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
 :::
 
 **Returned value**
