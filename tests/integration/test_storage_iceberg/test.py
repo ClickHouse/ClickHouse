@@ -4812,20 +4812,18 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
         CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
             a INT NOT NULL
         ) using iceberg
-        TBLPROPERTIES ('format-version' = '2');
+        TBLPROPERTIES ('format-version' = '2',
+            'commit.manifest.min-count-to-merge' = '1',
+            'commit.manifest-merge.enabled' = 'true');
         """
     )
 
-    for i in range(3):
-        values_list = ", ".join(["(1)" for _ in range(5)])
-        spark.sql(f"""
-            INSERT INTO {TABLE_NAME} VALUES (1);
-        """)
-        spark.sql(
-            f"""
-            INSERT INTO {TABLE_NAME} VALUES {values_list};
-            """
-        )
+    values_list = ", ".join(["(1)" for _ in range(5)])
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
+        """
+    )
 
     spark.sql(
     f"""
@@ -4833,19 +4831,14 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     """
     )
 
-    for i in range(3):
-        values_list = ", ".join(["(1, 2)" for _ in range(5)])
-        spark.sql(f"""
-            INSERT INTO {TABLE_NAME} VALUES (1, 2);
-        """) 
-        spark.sql(
-            f"""
-            INSERT INTO {TABLE_NAME} VALUES {values_list};
-            """
-        )
+    values_list = ", ".join(["(1, 2)" for _ in range(5)])
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
+        """
+    )
 
-    spark.sql(f"CALL system.rewrite_data_files('{TABLE_NAME}')")
-
+    spark.sql(f"CALL system.rewrite_manifests('{TABLE_NAME}')")
 
     default_upload_directory(
         started_cluster,
@@ -4854,6 +4847,7 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+
     table_creation_expression = get_creation_expression(
         storage_type,
         TABLE_NAME,
@@ -4861,6 +4855,5 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
         table_function=True,
     )
 
-    instance.query(f"SELECT * FROM {table_creation_expression}", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
-
+    instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
