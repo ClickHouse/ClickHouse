@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import csv
 import glob
 import json
@@ -9,7 +7,6 @@ import random
 import re
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -19,12 +16,9 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import yaml  # type: ignore[import-untyped]
 
-from ci_utils import kill_ci_runner
-from env_helper import IS_CI
-from integration_test_images import IMAGES
-from report import JOB_TIMEOUT_TEST_NAME
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
+from ci.jobs.scripts.integration_test_images import IMAGES
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -247,8 +241,6 @@ class ClickhouseIntegrationTestsRunner:
                 continue
         message = "Pulling images failed for 5 attempts. Will fail the worker."
         logging.error(message)
-        kill_ci_runner(message)
-        # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
         sys.exit(13)
 
     @staticmethod
@@ -582,11 +574,7 @@ class ClickhouseIntegrationTestsRunner:
             log_basename = f"{test_group_str}_{i}.log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
-            # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            _ret_code = Shell.run(command=cmd, log_file=log_path)
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -779,7 +767,6 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, tests_log_paths
 
     def run_impl(self):
-        stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
                 self.run_flaky_check(should_fail=self.bugfix_validate_check)
@@ -799,10 +786,10 @@ class ClickhouseIntegrationTestsRunner:
             )
             status_text = "Job timeout expired, " + status_text
             result_state = "failure"
-            # add mock test case to make timeout visible in job report and in ci db
-            test_result.insert(
-                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
-            )
+            # # add mock test case to make timeout visible in job report and in ci db
+            # test_result.insert(
+            #     0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
+            # )
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
@@ -976,7 +963,7 @@ def write_results(results_file, status_file, results, status):
 
 
 def run():
-    signal.signal(signal.SIGTERM, handle_sigterm)
+    # signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH", "")
@@ -991,7 +978,8 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    is_ci = not Info().is_local_run
+    if is_ci:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -999,7 +987,7 @@ def run():
     state, description, test_results, _test_log_paths = runner.run_impl()
     logging.info("Tests finished")
 
-    if IS_CI:
+    if is_ci:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)
@@ -1011,18 +999,22 @@ def run():
     logging.info("Result written")
 
 
+# TODO:
 timeout_expired = False
-runner_subprocess = None  # type:Optional[TeePopen]
-
-
-def handle_sigterm(signum, _frame):
-    # TODO: think on how to process it without globals?
-    print(f"WARNING: Received signal {signum}")
-    global timeout_expired  # pylint:disable=global-statement
-    timeout_expired = True
-    if runner_subprocess:
-        runner_subprocess.terminate()
+# runner_subprocess = None  # type:Optional[TeePopen]
+#
+#
+# def handle_sigterm(signum, _frame):
+#     # TODO: think on how to process it without globals?
+#     print(f"WARNING: Received signal {signum}")
+#     global timeout_expired  # pylint:disable=global-statement
+#     timeout_expired = True
+#     if runner_subprocess:
+#         runner_subprocess.terminate()
 
 
 if __name__ == "__main__":
     run()
+
+
+# docker run --rm --name clickhouse_integration_tests_c6o8k4 --privileged --dns-search='.' --memory=64183418880 --security-opt seccomp=unconfined --cap-add=SYS_PTRACE --volume=./tests/ci/tmp/build/clickhouse:/clickhouse --volume=./programs/server:/clickhouse-config  --volume=./tests/integration:/ClickHouse/tests/integration --volume=./utils/backupview:/ClickHouse/utils/backupview --volume=./utils/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 --volume=/run:/run/host:ro --volume=clickhouse_integration_tests_volume:/var/lib/docker -e DOCKER_DOTNET_CLIENT_TAG=e7a502a8ddfb733e8385_amd -e DOCKER_HELPER_TAG=634724fd9222266fa470_amd -e DOCKER_BASE_TAG=d3293a3d3930868fc6ed_amd -e DOCKER_KERBEROS_KDC_TAG=310561e6eb756c8311b1_amd -e DOCKER_MYSQL_GOLANG_CLIENT_TAG=39a23040cfe9d3812ed6_amd -e DOCKER_MYSQL_JAVA_CLIENT_TAG=b4115cf4c3aca56554c7_amd -e DOCKER_MYSQL_JS_CLIENT_TAG=5b36e32bc9986c0450b2_amd -e DOCKER_MYSQL_PHP_CLIENT_TAG=eea6d6b26729e3dd1966_amd -e DOCKER_NGINX_DAV_TAG=aa33b6ad5665b723c6e4_amd -e DOCKER_POSTGRESQL_JAVA_CLIENT_TAG=d9f9b9f1e1e0ad109355_amd -e DOCKER_PYTHON_BOTTLE_TAG=99f2b69441b7f2d22ecd_amd -e DOCKER_BASE_WITH_UNITY_CATALOG_TAG=0c418778395b14610072_amd -e DOCKER_BASE_WITH_HMS_TAG=b74680d8502d49f1a62a_amd   -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600   -e PYTHONUNBUFFERED=1 -e PYTEST_ADDOPTS="--dist=loadfile -n 5  -rfEps --run-id=0 --color=no --durations=0 --report-log=test_storage_kafka_test_batch_slow_1_py_0.jsonl --report-log-exclude-logs-on-passed-tests test_storage_kafka/test_batch_slow_1.py  -vvv " clickhouse/integration-tests-runner:307fc9a680c19fcae0ac_amd
