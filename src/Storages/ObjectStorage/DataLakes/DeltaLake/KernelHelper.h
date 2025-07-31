@@ -34,9 +34,6 @@ public:
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
-
-    /// Reload credentials, etc.
-    virtual bool update() { return false; }
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;

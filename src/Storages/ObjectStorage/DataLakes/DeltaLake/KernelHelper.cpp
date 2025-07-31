@@ -37,11 +37,6 @@ public:
         if (url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
 
-        const auto & credentials = client->getCredentials();
-        access_key_id = credentials.GetAWSAccessKeyId();
-        secret_access_key = credentials.GetAWSSecretKey();
-        token = credentials.GetSessionToken();
-
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -52,24 +47,6 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return url.key; }
-
-    bool update() override
-    {
-        const auto & credentials = client->getCredentials();
-        if (credentials.GetAWSAccessKeyId() == access_key_id
-            && credentials.GetAWSSecretKey() == secret_access_key
-            && credentials.GetSessionToken() == token)
-        {
-            return false;
-        }
-
-        access_key_id = credentials.GetAWSAccessKeyId();
-        secret_access_key = credentials.GetAWSSecretKey();
-        token = credentials.GetSessionToken();
-
-        LOG_DEBUG(log, "Updated credentials");
-        return true;
-    }
 
     ffi::EngineBuilder * createBuilder() const override
     {
@@ -83,6 +60,11 @@ public:
         {
             ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
+
+        const auto & credentials = client->getCredentials();
+        auto access_key_id = credentials.GetAWSAccessKeyId();
+        auto secret_access_key = credentials.GetAWSSecretKey();
+        auto token = credentials.GetSessionToken();
 
         /// The delta-kernel-rs integration is currently under experimental flag,
         /// because we wait for delta-kernel maintainers to provide ffi api
@@ -128,10 +110,6 @@ private:
     const std::string table_location;
     const std::shared_ptr<const DB::S3::Client> client;
     const LoggerPtr log = getLogger("S3KernelHelper");
-
-    std::string access_key_id;
-    std::string secret_access_key;
-    std::string token;
 
     std::string region;
     bool no_sign;
