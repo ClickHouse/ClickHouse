@@ -347,6 +347,7 @@ public:
         unsigned int s3_max_redirects,
         unsigned int s3_retry_attempts,
         bool s3_slow_all_threads_after_network_error,
+        bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
