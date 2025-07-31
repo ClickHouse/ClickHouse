@@ -294,13 +294,25 @@ ManifestFileContent::ManifestFileContent(
             /// If we don't have column characteristics, bounds don't have any sense.
             /// This happens if the subfield is inside map ot array, because we don't support
             /// name generation for such subfields (we support names of nested subfields in structs only).
+            if (!field_characteristics)
+            {
+                continue;
+            }
             const auto & name_and_type = *field_characteristics;
             String left_str;
             String right_str;
             /// lower_bound and upper_bound may be NULL.
+            if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+            {
+                continue;
+            }
 
             auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
             auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+            if (!left || !right)
+            {
+                continue;
+            }
 
             columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
         }
