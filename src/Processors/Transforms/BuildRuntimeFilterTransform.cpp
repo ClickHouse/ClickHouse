@@ -4,12 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 
-namespace ProfileEvents
-{
-// TODO:
-//    extern const Event FilterTransformPassedRows;
-//    extern const Event FilterTransformPassedBytes;
-}
+
+// TODO: add profile events for filtered rows
 
 namespace DB
 {
