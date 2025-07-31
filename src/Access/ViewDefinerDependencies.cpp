@@ -18,6 +18,7 @@ ViewDefinerDependencies & ViewDefinerDependencies::instance()
         {
             global_instance = std::unique_ptr<ViewDefinerDependencies>(new ViewDefinerDependencies());
         });
+
     return *global_instance;
 }
 
@@ -74,7 +75,7 @@ std::vector<StorageID> ViewDefinerDependencies::getViewsForDefiner(const String 
     auto it = definer_to_views.find(definer);
     if (it == definer_to_views.end())
         return {};
-    
+
     return {it->second.begin(), it->second.end()};
 }
 
