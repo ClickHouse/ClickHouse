@@ -18,8 +18,13 @@
 #include <unordered_map>
 #include <algorithm>
 
-#include <codecfactory.h>
-#include <fastpfor.h>
+#include "config.h"
+
+/// TODO guard the compilation of different file formats by this ifdef
+#if USE_FASTPFOR
+#  include <codecfactory.h>
+#  include <fastpfor.h>
+#endif
 
 namespace DB
 {
