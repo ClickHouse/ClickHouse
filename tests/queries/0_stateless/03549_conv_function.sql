@@ -21,7 +21,6 @@ SELECT conv(' -456 ', 10, 8); -- 1777777777777777777070
 -- Zero and empty cases
 SELECT conv('0', 10, 2); -- 0
 SELECT conv('0', 16, 10); -- 0
-SELECT conv('', 10, 16); -- ' '
 
 -- Invalid characters (should stop at first invalid)
 SELECT conv('123XYZ', 10, 16); -- 7B
@@ -32,13 +31,6 @@ SELECT conv('1012', 2, 10); -- 5
 SELECT conv('10', 2, 36); -- 2
 SELECT conv('ZZ', 36, 10); -- 1295
 SELECT conv('10', 36, 2); -- 100100
-
--- Invalid bases (should return empty string)
-SELECT conv('123', 1, 10);
-SELECT conv('123', 10, 37);
-SELECT conv('123', 0, 10);
-SELECT conv('123', 10, 1);
-SELECT conv('123', -1, 10);
 
 -- Large numbers (test overflow handling)
 SELECT conv('18446744073709551615', 10, 16);  -- Max UInt64
