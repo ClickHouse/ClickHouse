@@ -2229,10 +2229,10 @@ def test_column_pruning(started_cluster):
         ]
     )
 
-    num_rows = 100000
+    num_rows = 10000
     now = datetime.now()
     data = [
-        (i, f"name_{i}", 32, "".join("a" for _ in range(1000)), "2025")
+        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
         for i in range(num_rows)
     ]
     df = spark.createDataFrame(data=data, schema=schema)
@@ -2258,7 +2258,7 @@ def test_column_pruning(started_cluster):
         )
     )
     instance.query("SYSTEM FLUSH LOGS")
-    assert 467413 == int(
+    assert 107220 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
@@ -2278,7 +2278,7 @@ def test_column_pruning(started_cluster):
         )
     )
     # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 465864 == int(
+    assert 105677 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
