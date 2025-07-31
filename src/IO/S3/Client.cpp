@@ -765,13 +765,14 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
         return;
 
     auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-    /// Set the time other s3 requests must wait until.
+    /// Other S3 requests must wait until this time.
     UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     UInt64 next_time_ms = current_time_ms + sleep_ms;
-    /// next_time_to_retry_after_network_error = std::max(next_time_to_retry_after_network_error, next_time_ms)
-    for (UInt64 stored_next_time = next_time_to_retry_after_network_error;
-         (stored_next_time < next_time_ms) && !next_time_to_retry_after_network_error.compare_exchange_weak(stored_next_time, next_time_ms);)
+    UInt64 stored_next_time = next_time_to_retry_after_retryable_error;
+    while (stored_next_time < next_time_ms
+           && !next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
     {
+        /// Atomically update to a later retry time, but only if it's further in the future.
     }
 }
 
@@ -780,11 +781,11 @@ void Client::slowDownAfterRetryableError() const
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
 
-    /// Wait until `next_time_to_retry_after_network_error`.
+    /// Wait until `next_time_to_retry_after_retryable_error`.
     for (;;)
     {
         UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        UInt64 next_time_ms = next_time_to_retry_after_network_error.load();
+        UInt64 next_time_ms = next_time_to_retry_after_retryable_error.load();
         if (current_time_ms >= next_time_ms)
             break;
         UInt64 sleep_ms = next_time_ms - current_time_ms;

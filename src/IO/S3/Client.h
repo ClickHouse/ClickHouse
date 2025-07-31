@@ -315,8 +315,8 @@ private:
 
     const size_t max_redirects;
 
-    /// S3 requests must wait until this time because some s3 request fails with a retryable network error.
-    mutable std::atomic<UInt64> next_time_to_retry_after_network_error = 0;
+    /// S3 requests must wait until this time because some s3 request fails with a retryable error.
+    mutable std::atomic<UInt64> next_time_to_retry_after_retryable_error = 0;
 
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
