@@ -1810,6 +1810,23 @@ CONV_FN(JoinClause, jc)
     }
 }
 
+CONV_FN(SetValue, setv)
+{
+    ret += setv.property();
+    ret += " = ";
+    ret += setv.value();
+}
+
+CONV_FN(SettingValues, setv)
+{
+    SetValueToString(ret, setv.set_value());
+    for (int i = 0; i < setv.other_values_size(); i++)
+    {
+        ret += ", ";
+        SetValueToString(ret, setv.other_values(i));
+    }
+}
+
 CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
@@ -1849,6 +1866,11 @@ CONV_FN(FileFunc, ff)
         ret += ", '";
         ret += ff.fcomp();
         ret += "'";
+    }
+    if (ff.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, ff.setting_values());
     }
     ret += ")";
 }
@@ -2087,6 +2109,11 @@ CONV_FN(S3Func, sfunc)
         ret += sfunc.fcomp();
         ret += "'";
     }
+    if (sfunc.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, sfunc.setting_values());
+    }
     ret += ")";
 }
 
@@ -2134,6 +2161,11 @@ CONV_FN(AzureBlobStorageFunc, azure)
     {
         ret += ", ";
         ExprToString(ret, azure.structure());
+    }
+    if (azure.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, azure.setting_values());
     }
     ret += ")";
 }
@@ -2757,23 +2789,6 @@ CONV_FN(CTEs, cteq)
         SingleCTEToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
-}
-
-CONV_FN(SetValue, setv)
-{
-    ret += setv.property();
-    ret += " = ";
-    ret += setv.value();
-}
-
-CONV_FN(SettingValues, setv)
-{
-    SetValueToString(ret, setv.set_value());
-    for (int i = 0; i < setv.other_values_size(); i++)
-    {
-        ret += ", ";
-        SetValueToString(ret, setv.other_values(i));
-    }
 }
 
 CONV_FN(Select, select)

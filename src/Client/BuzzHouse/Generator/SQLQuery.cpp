@@ -265,6 +265,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             || t.isURLEngine() || t.isRedisEngine()))
     {
         Expr * structure = nullptr;
+        SettingValues * svs = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
         if (t.isIcebergS3Engine() || t.isDeltaLakeS3Engine() || t.isAnyS3Engine())
@@ -292,6 +293,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 sfunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? sfunc->mutable_structure() : nullptr;
+            svs = rg.nextMediumNumber() < 86 ? sfunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 sfunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -325,6 +327,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 afunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? afunc->mutable_structure() : nullptr;
+            svs = rg.nextMediumNumber() < 86 ? afunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 afunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -352,6 +355,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 ffunc->set_inoutformat(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
+            svs = rg.nextMediumNumber() < 86 ? ffunc->mutable_setting_values() : nullptr;
             if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
             {
                 ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
@@ -432,6 +436,26 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             }
             this->remote_entries.clear();
             structure->mutable_lit_val()->set_string_lit(std::move(buf));
+        }
+        if (svs)
+        {
+            const auto & engineSettings = allTableSettings.at(t.teng);
+
+            if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+            {
+                generateSettingValues(rg, engineSettings, svs);
+            }
+            if (t.has_metadata && rg.nextSmallNumber() < 9)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property("iceberg_metadata_file_path");
+                sv->set_value("'" + t.getMetadataPath(fc, false) + "'");
+            }
+            if (!svs->has_set_value() || rg.nextSmallNumber() < 3)
+            {
+                generateSettingValues(rg, serverSettings, svs);
+            }
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)

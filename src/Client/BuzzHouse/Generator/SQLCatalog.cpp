@@ -104,6 +104,13 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
     return "";
 }
 
+String SQLBase::getMetadataPath(const FuzzConfig & fc, const bool client) const
+{
+    const std::filesystem::path & fpath = client ? fc.client_file_path : fc.server_file_path;
+
+    return has_metadata ? fmt::format("{}/metadatat{}", fpath.generic_string(), tname) : "";
+}
+
 size_t SQLTable::numberOfInsertableColumns() const
 {
     size_t res = 0;

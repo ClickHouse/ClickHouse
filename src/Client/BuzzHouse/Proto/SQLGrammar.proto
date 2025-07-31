@@ -2458,6 +2458,16 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
+message SetValue {
+    required string property = 1;
+    required string value = 2;
+}
+
+message SettingValues {
+    required SetValue set_value = 1;
+    repeated SetValue other_values = 2;
+}
+
 message FileFunc {
     enum FName {
         file = 1;
@@ -2477,6 +2487,7 @@ message FileFunc {
     }
     optional Expr structure = 7;
     optional string fcomp = 8;
+    optional SettingValues setting_values = 9;
 }
 
 message FormatFunc {
@@ -2578,6 +2589,7 @@ message S3Func {
     required InOutFormat format = 6;
     required Expr structure = 7;
     optional string fcomp = 8;
+    optional SettingValues setting_values = 9;
 }
 
 message AzureBlobStorageFunc {
@@ -2599,6 +2611,7 @@ message AzureBlobStorageFunc {
     optional InOutFormat format = 8;
     optional string fcomp = 9;
     optional Expr structure = 10;
+    optional SettingValues setting_values = 11;
 }
 
 message URLFunc {
@@ -2838,16 +2851,6 @@ message SingleCTE {
 message CTEs {
     required SingleCTE cte = 1;
     repeated SingleCTE other_ctes = 2;
-}
-
-message SetValue {
-    required string property = 1;
-    required string value = 2;
-}
-
-message SettingValues {
-    required SetValue set_value = 1;
-    repeated SetValue other_values = 2;
 }
 
 message Select {

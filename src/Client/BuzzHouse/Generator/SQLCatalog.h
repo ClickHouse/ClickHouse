@@ -155,7 +155,7 @@ public:
 struct SQLBase
 {
 public:
-    bool is_temp = false, is_deterministic = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster;
@@ -285,6 +285,8 @@ public:
     bool isDettached() const;
 
     String getTablePath(const FuzzConfig & fc, bool client) const;
+
+    String getMetadataPath(const FuzzConfig & fc, bool client) const;
 };
 
 struct SQLTable : SQLBase

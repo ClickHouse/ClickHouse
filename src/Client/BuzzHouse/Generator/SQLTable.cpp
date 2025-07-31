@@ -947,6 +947,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
+    SettingValues * svs = nullptr;
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
@@ -1238,13 +1239,33 @@ void StatementGenerator::generateEngineDetails(
         /// Set format
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
-        /// Optional compression
         if (rg.nextBool())
         {
+            /// Optional compression
             static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
             b.file_comp = rg.pickRandomly(ObjectCompress);
             te->add_params()->set_svalue(b.file_comp);
+        }
+        if (b.isAnyIcebergEngine() && rg.nextSmallNumber() < 9)
+        {
+            /// Add metadata file to Iceberg Tables
+            b.has_metadata = true;
+            const String metadataClientPath = b.getMetadataPath(fc, true);
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            if (std::filesystem::create_directory(metadataClientPath))
+            {
+                std::ofstream versionHint(metadataClientPath + "/version-hint.text");
+
+                versionHint
+                    << (rg.nextSmallNumber() < 2 ? rg.nextString("", true, rg.nextStrlen()) : std::to_string(rg.randomInt<uint32_t>(0, 10)))
+                    << std::endl;
+                versionHint.close();
+            }
+            sv->set_property("iceberg_metadata_file_path");
+            sv->set_value("'" + b.getMetadataPath(fc, false) + "'");
         }
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
@@ -1267,7 +1288,6 @@ void StatementGenerator::generateEngineDetails(
     }
     if (te->has_engine())
     {
-        SettingValues * svs = nullptr;
         const auto & engineSettings = allTableSettings.at(b.teng);
 
         if (!engineSettings.empty() && rg.nextBool())
