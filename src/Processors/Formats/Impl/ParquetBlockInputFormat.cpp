@@ -67,6 +67,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
+{
+    if (nested_table_name.empty())
+        return nested_field_name;
+
+    if (nested_field_name.empty())
+        return nested_table_name;
+
+    return nested_table_name + "." + nested_field_name;
+}
+
+void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
+{
+    if (node->is_group())
+    {
+        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+        for (int i = 0; i < group->field_count(); ++i)
+            traverseAllFields(group->field(i), fields_mapping, concatenateName(current_path, group->name()));
+    }
+    int field_id = node->field_id();
+    fields_mapping[field_id] = concatenateName(current_path, node->name());
+}
+
+}
+
 #define THROW_ARROW_NOT_OK(status)                                     \
     do                                                                 \
     {                                                                  \
@@ -648,7 +676,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         std::unordered_map<Int64, String> parquet_field_ids;
         parquet_names_to_clickhouse = std::unordered_map<String, String>{};
         for (int i = 0; i < group_node->field_count(); ++i)
-            parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
+            traverseAllFields(group_node->field(i), parquet_field_ids);
 
         auto result = format_filter_info->column_mapper->makeMapping(header, parquet_field_ids);
         clickhouse_to_parquet_names = std::move(result.first);

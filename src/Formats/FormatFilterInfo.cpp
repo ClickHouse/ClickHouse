@@ -3,6 +3,12 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/ExpressionActions.h>
 
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include "Columns/IColumn.h"
+#include "Core/TypeId.h"
+
 namespace DB
 {
 
@@ -17,20 +23,14 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const Block & header,
+    const Block & /*header*/,
     const std::unordered_map<Int64, String> & format_encoding)
 {
     std::unordered_map<String, String> clickhouse_to_parquet_names;
     std::unordered_map<String, String> parquet_names_to_clickhouse;
 
-    for (size_t i = 0; i < header.columns(); ++i)
+    for (const auto & [column_name, field_id] : storage_encoding)
     {
-        auto column_name = header.getNames()[i];
-        int64_t field_id;
-        if (auto it = storage_encoding.find(column_name); it != storage_encoding.end())
-            field_id = it->second;
-        else
-            continue;
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())
         {
             clickhouse_to_parquet_names[column_name] = it->second;

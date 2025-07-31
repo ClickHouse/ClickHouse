@@ -1639,20 +1639,6 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         if (is_stream)
             dictionary_infos.clear();
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-
         column.type = header_column.type;
         columns.push_back(std::move(column.column));
     }
