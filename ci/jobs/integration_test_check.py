@@ -6,45 +6,30 @@ import json
 import logging
 import os
 import re
-import subprocess
-import sys
+import time
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional
 
-import integration_tests_runner as runner
-from build_download_helper import download_clickhouse_binary, download_clickhouse_master
-from ci_config import CI
-from ci_utils import Utils
-from docker_images_helper import DockerImage, get_docker_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
-from integration_test_images import IMAGES
-from pr_info import PRInfo
-from report import (
-    ERROR,
-    FAILURE,
-    SUCCESS,
-    JobReport,
-    StatusType,
-    TestResult,
-    TestResults,
-    read_test_results,
-)
-from stopwatch import Stopwatch
+import ci.jobs.scripts.integration_tests_runner as runner
+from ci.jobs.scripts.integration_test_images import IMAGES
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 
 def get_json_params_dict(
     check_name: str,
-    pr_info: PRInfo,
-    docker_images: List[DockerImage],
+    info: Info,
+    docker_images,
     run_by_hash_total: int,
     run_by_hash_num: int,
     job_configuration: str
 ) -> dict:
     return {
         "context_name": check_name,
-        "commit": pr_info.sha,
-        "pull_request": pr_info.number,
-        "pr_info": {"changed_files": list(pr_info.changed_files)},
+        "commit": info.sha,
+        "pull_request": info.pr_number,
+        "changed_files": info.get_changed_files(),
         "docker_images_with_versions": {d.name: d.version for d in docker_images},
         "shuffle_test_groups": False,
         "use_tmpfs": False,
@@ -54,6 +39,28 @@ def get_json_params_dict(
         "pr_updated_at": pr_info.updated_at,
         "job_configuration": job_configuration,
     }
+
+
+class DockerImage:
+    def __init__(self, name: str, version: Optional[str] = None):
+        self.name = name
+        if version is None:
+            self.version = "latest"
+        else:
+            self.version = version
+
+
+def get_docker_image(image_name: str) -> DockerImage:
+    DOCKER_TAG = os.getenv("DOCKER_TAG", None)
+    assert DOCKER_TAG and isinstance(DOCKER_TAG, str), "DOCKER_TAG env must be provided"
+    if "{" in DOCKER_TAG:
+        tags_map = json.loads(DOCKER_TAG)
+        assert (
+            image_name in tags_map
+        ), f"Image name [{image_name}] does not exist in provided DOCKER_TAG json string"
+        arch_suffix = "_arm" if Utils.is_arm() else "_amd"
+        return DockerImage(image_name, tags_map[image_name] + arch_suffix)
+    assert False
 
 
 def get_env_for_runner(
@@ -81,10 +88,40 @@ def get_env_for_runner(
     return my_env
 
 
+def read_test_results(results_path: Path, with_raw_logs: bool = True) -> List[Result]:
+    results = []
+    with open(results_path, "r", encoding="utf-8") as descriptor:
+        reader = csv.reader(descriptor, delimiter="\t")
+        for line in reader:
+            name = line[0]
+            status = line[1]
+            time = None
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
+                # The value can be emtpy, but when it's not,
+                # it's the time spent on the test
+                try:
+                    time = float(line[2])
+                except ValueError:
+                    pass
+
+            result = Result(name=name, status=status, start_time=time)
+            if len(line) == 4 and line[3]:
+                # The value can be emtpy, but when it's not,
+                # the 4th value is a pythonic list, e.g. ['file1', 'file2']
+                if with_raw_logs:
+                    # Python does not support TSV, so we unescape manually
+                    result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
+                else:
+                    result.set_files(line[3])
+
+            results.append(result)
+    return results
+
+
 def process_results(
     result_directory: Path,
-) -> Tuple[StatusType, str, TestResults, List[Path]]:
-    test_results = []  # type: TestResults
+):
+    test_results = []
     additional_files = []
     # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of
@@ -101,17 +138,27 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return (
+            Result.Status.ERROR,
+            "Invalid check_status.tsv",
+            test_results,
+            additional_files,
+        )
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, False)
         if len(test_results) == 0:
-            return ERROR, "Empty test_results.tsv", test_results, additional_files
+            return (
+                Result.Status.ERROR,
+                "Empty test_results.tsv",
+                test_results,
+                additional_files,
+            )
     except Exception as e:
         return (
-            ERROR,
+            Result.Status.ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -122,7 +169,7 @@ def process_results(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("check_name")
+    parser.add_argument("--check-name", default="", required=False)
     parser.add_argument(
         "--run-tests", nargs="*", help="List of tests to run", default=None
     )
@@ -143,23 +190,18 @@ def parse_args():
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    stopwatch = Stopwatch()
+    stopwatch = Utils.Stopwatch()
 
-    temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
-
-    repo_path = Path(REPO_COPY)
+    repo_path = Path(Utils.cwd())
+    temp_path = Path(f"{repo_path}/ci/tmp")
+    info = Info()
 
     args = parse_args()
-    check_name = args.check_name or os.getenv("CHECK_NAME")
+    check_name = args.check_name or info.job_name
     assert (
         check_name
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
-
-    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
     match = re.search(r"\(.*?\)", check_name)
     options = match.group(0)[1:-1].split(",") if match else []
@@ -167,6 +209,7 @@ def main():
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1
             run_by_hash_total = int(option.split("/")[1])
+            print(f"batch {run_by_hash_num}/{run_by_hash_total}")
             break
 
     job_configuration = options[0].strip()
@@ -177,10 +220,6 @@ def main():
         not validate_bugfix_check or args.report_to_file
     ), "--report-to-file must be provided for --validate-bugfix"
 
-    # For validate_bugfix_check we need up to date information about labels, so
-    # pr_event_from_api is used
-    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugfix_check)
-
     images = [get_docker_image(image_) for image_ in IMAGES]
 
     result_path = temp_path / "output_dir"
@@ -189,19 +228,34 @@ def main():
     work_path = temp_path / "workdir"
     work_path.mkdir(parents=True, exist_ok=True)
 
-    build_path = temp_path / "build"
+    build_path = temp_path
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_clickhouse_master(build_path, full=True)
+        if Utils.is_arm():
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        else:
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        if not info.is_local_run or not (temp_path / "clickhouse").exists():
+            print(
+                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
+            )
+            if info.is_local_run:
+                time.sleep(10)
+            Shell.check(
+                f"wget -nv -P {temp_path} {link_to_master_head_binary}",
+                verbose=True,
+                strict=True,
+            )
     else:
-        download_clickhouse_binary(check_name, reports_path, build_path)
+        pass
+        # Shell.check(f"cp {temp_path}/clickhouse {build_path}/", verbose=True, strict=True)
 
     binary_path = build_path / "clickhouse"
 
     # Set executable bit and run it for self extraction
     os.chmod(binary_path, 0o755)
-    subprocess.run(f"{binary_path} local 'SELECT version()'", shell=True, check=True)
+    # Shell.check(f"{binary_path} local 'SELECT version()'", verbose=True, strict=True)
 
     my_env = get_env_for_runner(
         check_name, binary_path, repo_path, result_path, work_path
@@ -212,7 +266,7 @@ def main():
         params_text = json.dumps(
             get_json_params_dict(
                 check_name,
-                pr_info,
+                info,
                 images,
                 run_by_hash_total,
                 run_by_hash_num,
@@ -235,37 +289,19 @@ def main():
         runner.run()
     except Exception as e:
         logging.error("Exception: %s", e)
-        state, description, test_results, additional_logs = ERROR, "infrastructure error", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
+        state, description, test_results, additional_logs = Result.Status.ERROR, "infrastructure error", [], []
     else:
         state, description, test_results, additional_logs = process_results(result_path)
 
-    JobReport(
-        description=description,
-        test_results=test_results,
+    Result(
+        name=info.job_name,
+        info=description,
+        results=test_results,
         status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump(to_file=args.report_to_file if args.report_to_file else None)
-
-    should_block_ci = False
-    if state != SUCCESS:
-        should_block_ci = True
-
-    if state == FAILURE and CI.is_required(check_name):
-        failed_cnt = Utils.get_failed_tests_number(description)
-        print(
-            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
-        )
-        if (
-            failed_cnt
-            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
-        ):
-            print("Won't block the CI workflow")
-            should_block_ci = False
-
-    if should_block_ci:
-        sys.exit(1)
+        start_time=stopwatch.start_time,
+        duration=stopwatch.duration,
+        files=additional_logs,
+    ).complete_job()
 
 
 if __name__ == "__main__":
