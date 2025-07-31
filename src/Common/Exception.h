@@ -44,7 +44,7 @@ public:
             std::terminate();
         capture_thread_frame_pointers = getThreadFramePointers();
     }
-    // stetsyuk
+
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
         if (terminate_on_any_exception)
@@ -113,7 +113,7 @@ protected:
         explicit MessageMasked(const std::string & msg_) : msg(msg_) {}
         explicit MessageMasked(std::string && msg_) : msg(msg_) {}
     };
-    // stetsyuk
+
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
     Exception(MessageMasked && msg_masked, int code, bool remote_);
 

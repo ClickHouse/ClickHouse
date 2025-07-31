@@ -81,8 +81,6 @@ static size_t handle_error_code(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    LOG_FATAL(getLogger("stetsyuk"), "format string: '{}'", format_string);
-
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
