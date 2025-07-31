@@ -1,21 +1,20 @@
 #include <memory>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Core/Settings.h>
-#include "Common/thread_local_rng.h"
-#include <Common/logger_useful.h>
-
-#include <fmt/format.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypeString.h"
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Interpreters/ActionsDAG.h"
-#include "Interpreters/Context.h"
-#include "Processors/QueryPlan/BuildRuntimeFilterStep.h"
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
+#include <fmt/format.h>
 
 
 namespace DB
