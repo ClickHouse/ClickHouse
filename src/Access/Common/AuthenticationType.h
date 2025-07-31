@@ -11,6 +11,9 @@ enum class AuthenticationType : uint8_t
     /// User doesn't have to enter password.
     NO_PASSWORD,
 
+    /// Internal user. It's impossible to log in to this user.
+    NO_AUTHENTICATION,
+
     /// Password is stored as is.
     PLAINTEXT_PASSWORD,
 
