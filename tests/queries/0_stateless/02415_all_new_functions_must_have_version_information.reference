@@ -435,9 +435,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
