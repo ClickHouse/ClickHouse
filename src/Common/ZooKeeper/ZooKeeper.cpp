@@ -848,6 +848,7 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
     returned_path = std::move(response.path);
     return code;
 }
+
 std::string ZooKeeper::sync(const std::string & path)
 {
     std::string returned_path;
@@ -1019,6 +1020,47 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
         return fallback_method();
 
     return response.error;
+}
+
+Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat)
+{
+    auto future_result = asyncTryGetACLNoThrow(path);
+
+    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    {
+        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Sync, path));
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
+
+    auto response = future_result.get();
+    Coordination::Error code = response.error;
+    if (code == Coordination::Error::ZOK)
+    {
+        res = std::move(response.acl);
+        if (stat)
+            *stat = response.stat;
+    }
+    return code;
+}
+
+Coordination::ACLs ZooKeeper::getACL(const std::string & path, Coordination::Stat * stat)
+{
+    Coordination::ACLs acls;
+    check(getACLImpl(path, acls, stat), path);
+    return acls;
+}
+
+bool ZooKeeper::tryGetACL(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat, Coordination::Error * code)
+{
+    Coordination::Error response_code = getACLImpl(path, res, stat);
+
+    if (!(response_code == Coordination::Error::ZOK || response_code == Coordination::Error::ZNONODE))
+        throw KeeperException::fromPath(response_code, path);
+
+    if (code)
+        *code = response_code;
+
+    return response_code == Coordination::Error::ZOK;
 }
 
 namespace
@@ -1255,7 +1297,6 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::
     impl->get(path, std::move(callback), watch_callback);
     return future;
 }
-
 
 std::future<Coordination::GetResponse> ZooKeeper::asyncTryGet(const std::string & path)
 {
@@ -1521,6 +1562,37 @@ std::future<Coordination::SyncResponse> ZooKeeper::asyncSync(const std::string &
     };
 
     impl->sync(path, std::move(callback));
+    return future;
+}
+
+ZooKeeper::FutureGetACL ZooKeeper::asyncTryGetACLNoThrow(const std::string & path)
+{
+    auto promise = std::make_shared<std::promise<Coordination::GetACLResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetACLResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    impl->getACL(path, std::move(callback));
+    return future;
+}
+
+ZooKeeper::FutureGetACL ZooKeeper::asyncGetACL(const std::string & path)
+{
+    auto promise = std::make_shared<std::promise<Coordination::GetACLResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetACLResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->getACL(path, std::move(callback));
     return future;
 }
 

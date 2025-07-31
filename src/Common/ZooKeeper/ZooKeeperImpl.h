@@ -195,6 +195,8 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
+    void getACL(const String & path, GetACLCallback callback) override;
+
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before

@@ -77,12 +77,16 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30):
+    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30, identity=None):
         self.bin_path = bin_path
         self.host = host
         self.port = port
 
         retry_count = 0
+
+        identity_arg = []
+        if identity:
+            identity_arg = ["--identity", identity]
 
         while True:
             try:
@@ -98,6 +102,7 @@ class KeeperClient(object):
                         "error",
                         "--tests-mode",
                         "--no-confirmation",
+                        *identity_arg
                     ],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -214,6 +219,9 @@ class KeeperClient(object):
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
 
+    def get_acl(self, path: str, timeout: float = 60.0):
+        return self.execute_query(f"get_acl '{path}'", timeout)
+
     def reconfig(
         self,
         joining: Optional[str],
@@ -244,12 +252,13 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, identity: Optional[str] = None
     ) -> "KeeperClient":
         client = cls(
             cluster.server_bin_path,
             cluster.get_instance_ip(keeper_node),
             port or cluster.zookeeper_port,
+            identity=identity
         )
 
         try:

@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperCheck;
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
+    extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -90,6 +91,7 @@ namespace Metrics::ResponseTime
     Histogram::Metric & sync = mf.withLabels({"sync"});
     Histogram::Metric & reconfig = mf.withLabels({"reconfig"});
     Histogram::Metric & multi = mf.withLabels({"multi"});
+    Histogram::Metric & get_acl = mf.withLabels({"get_acl"});
 
     template <typename Response>
     void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
@@ -455,7 +457,7 @@ ZooKeeper::ZooKeeper(
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
         initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+        keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -630,7 +632,6 @@ void ZooKeeper::connect(
 
     LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
 }
-
 
 void ZooKeeper::sendHandshake()
 {
@@ -1647,6 +1648,21 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     multi(std::span(requests), std::move(callback));
+}
+
+void ZooKeeper::getACL(const String & path, GetACLCallback callback)
+{
+    ZooKeeperGetACLRequest request;
+    request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get_acl);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperGetACLRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGetACL);
 }
 
 void ZooKeeper::multi(
