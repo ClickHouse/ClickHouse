@@ -32,14 +32,14 @@ public:
         , table_location(getTableLocation(url_))
         , client(client_)
     {
+        region = client->getRegion();
+        if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+            region = client->getRegionForBucket(url.bucket, /* force_detect */true);
+
         /// Check if user didn't mention any region.
         /// Same as in S3/Client.cpp (stripping len("https://s3.")).
         if (url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
-
-        region = client->getRegion();
-        if (region.empty() || region == Aws::Region::AWS_GLOBAL)
-            region = client->getRegionForBucket(url.bucket, /* force_detect */true);
 
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
     }
