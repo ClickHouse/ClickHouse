@@ -40,7 +40,7 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserGroupPtr parser_group_);
+    void init(FormatParserSharedResourcesPtr parser_shared_resources_);
 
     ~ReadManager();
 
@@ -82,7 +82,7 @@ private:
         std::vector<std::vector<Task>> row_group_tasks_to_schedule;
     };
 
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 

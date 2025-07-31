@@ -1,20 +1,20 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
 #include <Common/futex.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
 
 namespace DB::Parquet
 {
 
-ParserGroupExt::Limits ParserGroupExt::getLimitsPerReader(const FormatParserGroup & parser_group, double fraction)
+SharedResourcesExt::Limits SharedResourcesExt::getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction)
 {
-    const ParserGroupExt & ext = *static_cast<const ParserGroupExt *>(parser_group.opaque.get());
-    size_t n = parser_group.num_streams.load(std::memory_order_relaxed);
+    const SharedResourcesExt & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources.opaque.get());
+    size_t n = parser_shared_resources.num_streams.load(std::memory_order_relaxed);
     fraction /= std::max(n, size_t(1));
     return Limits {
         .memory_low_watermark = size_t(ext.total_memory_low_watermark * fraction),
         .memory_high_watermark = size_t(ext.total_memory_high_watermark * fraction),
-        .parsing_threads = size_t(std::max(std::lround(parser_group.parsing_runner.getMaxThreads() * fraction + .5), 1l))};
+        .parsing_threads = size_t(std::max(std::lround(parser_shared_resources.parsing_runner.getMaxThreads() * fraction + .5), 1l))};
 }
 
 #ifdef OS_LINUX

@@ -1315,7 +1315,7 @@ void BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> d
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in Decimal statistics: {} != {}", data.size(), input_size);
 
     T x = helper.convertUnpaddedValue(data);
-    out = DecimalField(Decimal<T>(x), scale);
+    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
 }
 
 template struct BigEndianDecimalFixedSizeConverter<Int32>;
@@ -1348,7 +1348,7 @@ void BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide value in Decimal statistics: {} > {} bytes", data.size(), sizeof(T));
 
     T x = BigEndianHelper<T>(data.size()).convertUnpaddedValue(data);
-    out = DecimalField(Decimal<T>(x), scale);
+    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
 }
 
 template struct BigEndianDecimalStringConverter<Int32>;

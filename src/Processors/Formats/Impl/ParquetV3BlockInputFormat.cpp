@@ -4,7 +4,8 @@
 
 #include <Common/ThreadPool.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/SharedThreadPools.h>
 
 namespace DB
@@ -25,12 +26,14 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     ReadBuffer & buf,
     SharedHeader header_,
     const FormatSettings & format_settings_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
-    , parser_group(parser_group_)
+    , parser_shared_resources(parser_shared_resources_)
+    , format_filter_info(format_filter_info_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
@@ -40,13 +43,20 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 {
     if (!reader)
     {
-        parser_group->initOnce([&]
+        format_filter_info->initOnce([&]
             {
-                parser_group->initKeyCondition(getPort().getHeader());
+                format_filter_info->initKeyCondition(getPort().getHeader());
 
-                if (format_settings.parquet.enable_row_group_prefetch && parser_group->max_io_threads > 0)
-                    parser_group->io_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_group->max_io_threads, "ParquetPrefetch", CurrentThread::getGroup());
+                auto ext = std::make_shared<Parquet::FilterInfoExt>();
+                if (format_filter_info->key_condition)
+                    format_filter_info->key_condition->extractSingleColumnConditions(ext->column_conditions, nullptr);
+                format_filter_info->opaque = ext;
+            });
+        parser_shared_resources->initOnce([&]
+            {
+                if (format_settings.parquet.enable_row_group_prefetch && parser_shared_resources->max_io_threads > 0)
+                    parser_shared_resources->io_runner.initThreadPool(
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_io_threads, "ParquetPrefetch", CurrentThread::getGroup());
 
                 /// Unfortunately max_parsing_threads setting doesn't have a value for
                 /// "do parsing in the same thread as the rest of query processing
@@ -55,26 +65,23 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 /// as a signal to disable thread pool altogether, sacrificing the ability to
                 /// use thread pool with 1 thread. We could subtract 1 instead, but then the
                 /// by default the thread pool will use `num_cores - 1` threads, also bad.
-                if (parser_group->max_parsing_threads <= 1 || format_settings.parquet.preserve_order)
-                    parser_group->parsing_runner.initManual();
+                if (parser_shared_resources->max_parsing_threads <= 1 || format_settings.parquet.preserve_order)
+                    parser_shared_resources->parsing_runner.initManual();
                 else
-                    parser_group->parsing_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_group->max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
+                    parser_shared_resources->parsing_runner.initThreadPool(
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
 
-                auto ext = std::make_shared<Parquet::ParserGroupExt>();
-
-                if (parser_group->key_condition)
-                    parser_group->key_condition->extractSingleColumnConditions(ext->column_conditions, nullptr);
+                auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
                 ext->total_memory_high_watermark = format_settings.parquet.memory_high_watermark;
-                parser_group->opaque = ext;
+                parser_shared_resources->opaque = ext;
             });
 
         reader.emplace();
-        reader->reader.prefetcher.init(in, read_options, parser_group);
-        reader->reader.init(read_options, getPort().getHeader(), parser_group);
-        reader->init(parser_group);
+        reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+        reader->init(parser_shared_resources);
     }
 }
 
@@ -115,7 +122,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     if (initialized)
         return;
     Parquet::Prefetcher prefetcher;
-    prefetcher.init(&in, read_options, /*parser_group_=*/ nullptr);
+    prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
     initialized = true;
 }

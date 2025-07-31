@@ -95,7 +95,7 @@ namespace DB::Parquet
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
 ///    It needs to know an approximate set of all needed ranges in advance, which we can produce
 ///    from parquet file metadata.
-///  * FormatParserGroup is shared can be shared across multiple parquet file readers belonging
+///  * FormatParserSharedResources is shared can be shared across multiple parquet file readers belonging
 ///    to the same query, e.g. when doing `SELECT * FROM url('.../part_{0..999}.parquet')`.
 ///    Splits the memory and thread count budgets among the readers. Important because we want to
 ///    use much more memory per reader when reading one file than when reading 100 files in parallel.
@@ -426,7 +426,7 @@ struct Reader
 
     ReadOptions options;
     const Block * sample_block;
-    FormatParserGroupPtr parser_group;
+    FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
@@ -466,7 +466,7 @@ struct Reader
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
-    void init(const ReadOptions & options_, const Block & sample_block_, FormatParserGroupPtr parser_group_);
+    void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
     void prefilterAndInitRowGroups();

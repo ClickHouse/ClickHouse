@@ -2,7 +2,8 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/BitHelpers.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 
 namespace DB::ErrorCodes
 {
@@ -35,9 +36,9 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserGroupPtr parser_group_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
 {
-    parser_group = parser_group_;
+    parser_shared_resources = parser_shared_resources_;
     reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
     reader.prefilterAndInitRowGroups();
     reader.preparePrewhere();
@@ -52,7 +53,7 @@ void ReadManager::init(FormatParserGroupPtr parser_group_)
     /// Distribute memory budget among stages.
     double sum = 0;
     stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
-    if (parser_group->prewhere_info)
+    if (reader.format_filter_info->prewhere_info)
         stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
     else
     {
@@ -438,7 +439,7 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
     }
 }
 
-static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, size_t batches_in_progress, size_t added_tasks, const ParserGroupExt::Limits & limits)
+static bool checkTaskSchedulingLimits(size_t memory_usage, size_t added_memory, size_t batches_in_progress, size_t added_tasks, const SharedResourcesExt::Limits & limits)
 {
     if (added_tasks == 0)
     {
@@ -473,7 +474,7 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
         if (!should_schedule && d < 0)
         {
             const auto & stage = stages[i];
-            auto limits = ParserGroupExt::getLimitsPerReader(*parser_group, stage.memory_target_fraction);
+            auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
             should_schedule = checkTaskSchedulingLimits(
                 stage.memory_usage.load(std::memory_order_relaxed), 0,
                 stage.batches_in_progress.load(std::memory_order_relaxed), 0, limits);
@@ -491,7 +492,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     MemoryUsageDiff diff(stage_idx);
     std::vector<Task> tasks;
 
-    auto limits = ParserGroupExt::getLimitsPerReader(*parser_group, stage.memory_target_fraction);
+    auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
     size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
     /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
@@ -575,7 +576,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, tasks.size());
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTaskBatches, funcs.size());
-        parser_group->parsing_runner.bulkSchedule(std::move(funcs));
+        parser_shared_resources->parsing_runner.bulkSchedule(std::move(funcs));
     }
 }
 
@@ -818,7 +819,7 @@ std::tuple<Chunk, BlockMissingValues> ReadManager::read()
 
         while (true)
         {
-            bool thread_pool_was_idle = parser_group->parsing_runner.isIdle();
+            bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
             if (exception)
                 std::rethrow_exception(exception);
@@ -857,11 +858,11 @@ std::tuple<Chunk, BlockMissingValues> ReadManager::read()
                 return {};
             }
 
-            if (parser_group->parsing_runner.isManual())
+            if (parser_shared_resources->parsing_runner.isManual())
             {
                 /// Pump the manual executor.
                 lock.unlock();
-                if (!parser_group->parsing_runner.runTaskInline())
+                if (!parser_shared_resources->parsing_runner.runTaskInline())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
                 lock.lock();
             }

@@ -1390,7 +1390,7 @@ void StorageURLWithFailover::read(
         storage_snapshot,
         local_context,
         supportsSubsetOfColumns(local_context),
-        /*supports_tuple_elements=*/ supports_prewhere
+        /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)

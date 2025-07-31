@@ -15,7 +15,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/thread_local_rng.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatFilterInfo.h>
 #include <lz4.h>
 #if USE_SNAPPY
 #include <snappy.h>
@@ -152,11 +152,11 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     }
 }
 
-void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatParserGroupPtr parser_group_)
+void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_)
 {
     options = options_;
     sample_block = &sample_block_;
-    parser_group = parser_group_;
+    format_filter_info = format_filter_info_;
 }
 
 parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
@@ -287,10 +287,10 @@ void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_bloc
 void Reader::prefilterAndInitRowGroups()
 {
     extended_sample_block = *sample_block;
-    for (const auto & col : parser_group->additional_columns)
+    for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
     extended_sample_block_data_types = extended_sample_block.getDataTypes();
-    PrewhereInfoPtr prewhere_info = parser_group->prewhere_info;
+    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
@@ -307,7 +307,7 @@ void Reader::prefilterAndInitRowGroups()
     for (const OutputColumnInfo & output_column : output_columns)
     {
         if (output_column.idx_in_output_block.has_value() && output_column.is_primitive &&
-            parser_group->columns_used_by_key_condition.contains(*output_column.idx_in_output_block))
+            format_filter_info->columns_used_by_key_condition.contains(*output_column.idx_in_output_block))
         {
             key_condition_columns[*output_column.idx_in_output_block] = output_column.primitive_start;
             primitive_columns[output_column.primitive_start].used_by_key_condition = output_column.idx_in_output_block;
@@ -324,10 +324,10 @@ void Reader::prefilterAndInitRowGroups()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
-        if (options.format.parquet.filter_push_down && parser_group->key_condition)
+        if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
             getHyperrectangleForRowGroup(key_condition_columns, meta, hyperrectangle);
-            if (!parser_group->key_condition->checkInHyperrectangle(
+            if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
         }
@@ -361,7 +361,7 @@ void Reader::prefilterAndInitRowGroups()
     if (row_groups.empty())
         return; // all row groups were skipped
 
-    if (options.format.parquet.bloom_filter_push_down && parser_group->key_condition)
+    if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
     {
         /// Index in output block -> arrow column info.
         std::vector<std::optional<parquet::ColumnDescriptor>> bf_eligible_columns(key_condition_columns.size());
@@ -429,7 +429,7 @@ void Reader::prefilterAndInitRowGroups()
                 return hashes;
             };
 
-            bloom_filter_condition.emplace(*parser_group->key_condition);
+            bloom_filter_condition.emplace(*format_filter_info->key_condition);
             bloom_filter_condition->prepareBloomFilterData(hash_one, hash_many);
 
             if (!any_column_uses_bf)
@@ -439,7 +439,7 @@ void Reader::prefilterAndInitRowGroups()
 
     if (options.format.parquet.page_filter_push_down)
     {
-        const auto & column_conditions = static_cast<ParserGroupExt *>(parser_group->opaque.get())->column_conditions;
+        const auto & column_conditions = static_cast<FilterInfoExt *>(format_filter_info->opaque.get())->column_conditions;
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             size_t primitive_column_idx = key_condition_columns.at(idx_in_output_block).value();
@@ -592,7 +592,7 @@ void Reader::prefilterAndInitRowGroups()
 
 void Reader::preparePrewhere()
 {
-    PrewhereInfoPtr prewhere_info = parser_group->prewhere_info;
+    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
     if (!prewhere_info)
         return;
 

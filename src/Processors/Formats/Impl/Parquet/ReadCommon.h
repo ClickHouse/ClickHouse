@@ -8,8 +8,10 @@
 
 namespace DB
 {
-struct FormatParserGroup;
-using FormatParserGroupPtr = std::shared_ptr<FormatParserGroup>;
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+struct FormatFilterInfo;
+using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
 class KeyCondition;
 }
 
@@ -40,12 +42,10 @@ struct ReadOptions
     size_t bloom_filter_max_set_size = 100;
 };
 
-struct ParserGroupExt
+struct SharedResourcesExt
 {
     size_t total_memory_low_watermark = 0;
     size_t total_memory_high_watermark = 0;
-
-    std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     struct Limits
     {
@@ -54,7 +54,12 @@ struct ParserGroupExt
         size_t parsing_threads;
     };
 
-    static Limits getLimitsPerReader(const FormatParserGroup & parser_group, double fraction);
+    static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+};
+
+struct FilterInfoExt
+{
+    std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 };
 
 

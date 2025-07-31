@@ -125,4 +125,5 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
             }
         });
 }
+
 }

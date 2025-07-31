@@ -17,7 +17,8 @@ public:
         ReadBuffer & buf,
         SharedHeader header_,
         const FormatSettings & format_settings,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek);
 
     void resetParser() override;
@@ -39,8 +40,8 @@ private:
 
     const FormatSettings format_settings;
     Parquet::ReadOptions read_options;
-    FormatParserGroupPtr parser_group;
-    PrewhereInfoPtr prewhere_info;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
 
     std::optional<Parquet::ReadManager> reader;
 
