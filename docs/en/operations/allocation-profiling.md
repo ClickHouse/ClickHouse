@@ -27,14 +27,18 @@ You can tell `jemalloc` to flush the current profile by running:
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
+    
 ```sql
-    SYSTEM JEMALLOC FLUSH PROFILE
+SYSTEM JEMALLOC FLUSH PROFILE
 ```
+
 </TabItem>
 <TabItem value="keeper" label="Keeper">
+    
 ```sh
-    echo jmfp | nc localhost 9181
+echo jmfp | nc localhost 9181
 ```
+
 </TabItem>
 </Tabs>
 
@@ -128,12 +132,16 @@ To disable the profiler:
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
 
-    SYSTEM JEMALLOC DISABLE PROFILE
+```sql
+SYSTEM JEMALLOC DISABLE PROFILE
+```
 
 </TabItem>
 <TabItem value="keeper" label="Keeper">
 
-    echo jmdp | nc localhost 9181
+```sh
+echo jmdp | nc localhost 9181
+```
 
 </TabItem>
 </Tabs>
@@ -143,12 +151,16 @@ To enable the profiler:
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
 
-    SYSTEM JEMALLOC ENABLE PROFILE
+```sql
+SYSTEM JEMALLOC ENABLE PROFILE
+```
 
 </TabItem>
 <TabItem value="keeper" label="Keeper">
 
-    echo jmep | nc localhost 9181
+```sh
+echo jmep | nc localhost 9181
+```
 
 </TabItem>
 </Tabs>
