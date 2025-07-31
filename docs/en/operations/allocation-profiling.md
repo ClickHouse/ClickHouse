@@ -27,14 +27,14 @@ You can tell `jemalloc` to flush the current profile by running:
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
-
+```sql
     SYSTEM JEMALLOC FLUSH PROFILE
-
+```
 </TabItem>
 <TabItem value="keeper" label="Keeper">
-
+```sh
     echo jmfp | nc localhost 9181
-
+```
 </TabItem>
 </Tabs>
 
