@@ -292,8 +292,8 @@ private:
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
 
-    void sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
-    void slowDownAfterNetworkError() const;
+    void sleepAfterRetyableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
+    void slowDownAfterRetryableError() const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

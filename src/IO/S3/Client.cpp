@@ -671,7 +671,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             /// Slow down because another thread encountered a retryable error.
-            slowDownAfterNetworkError();
+            slowDownAfterRetryableError();
 
             try
             {
@@ -694,7 +694,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    sleepAfterNetworkError(outcome.GetError(), attempt_no);
+                    sleepAfterRetyableError(outcome.GetError(), attempt_no);
                     continue;
                 }
                 return outcome;
@@ -727,7 +727,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
                     break;
 
-                sleepAfterNetworkError(error, attempt_no);
+                sleepAfterRetyableError(error, attempt_no);
             }
         }
 
@@ -758,10 +758,10 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     return RequestResult(error);
 }
 
-void Client::sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
+void Client::sleepAfterRetyableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
 {
     auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-    if (!client_configuration.s3_slow_all_threads_after_network_error)
+    if (!client_configuration.s3_slow_all_threads_after_network_error || !client_configuration.s3_slow_all_threads_after_retryable_error)
     {
         LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
         sleepForMilliseconds(sleep_ms);
@@ -778,9 +778,9 @@ void Client::sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreError
     }
 }
 
-void Client::slowDownAfterNetworkError() const
+void Client::slowDownAfterRetryableError() const
 {
-    if (!client_configuration.s3_slow_all_threads_after_network_error)
+    if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
 
     /// Wait until `next_time_to_retry_after_network_error`.
@@ -794,6 +794,7 @@ void Client::slowDownAfterNetworkError() const
 
         /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
+        /// TODO: move jitter to RetryStrategy
         std::uniform_real_distribution<double> dist(1.0, 1.1);
         double jitter = dist(thread_local_rng);
         sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
