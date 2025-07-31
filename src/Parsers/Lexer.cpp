@@ -493,14 +493,27 @@ Token Lexer::nextTokenImpl()
                     size_t heredoc_size = heredoc_name_end_position + 1;
                     std::string_view heredoc = {token_stream.data(), heredoc_size}; // NOLINT
 
-                    size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
-                    if (heredoc_end_position != std::string::npos)
+                    bool is_valid_name = true;
+                    for (auto c : heredoc)
                     {
+                        if (!isWordCharASCII(c))
+                        {
+                            is_valid_name = false;
+                            break;
+                        }
+                    }
 
-                        pos += heredoc_end_position;
-                        pos += heredoc_size;
+                    if (is_valid_name)
+                    {
+                        size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
+                        if (heredoc_end_position != std::string::npos)
+                        {
 
-                        return Token(TokenType::HereDoc, token_begin, pos);
+                            pos += heredoc_end_position;
+                            pos += heredoc_size;
+
+                            return Token(TokenType::HereDoc, token_begin, pos);
+                        }
                     }
                 }
 
