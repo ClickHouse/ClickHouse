@@ -311,12 +311,6 @@ def main():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             res = res and CH.start()
             res = res and CH.wait_ready()
-            # if res:
-            #     if "asan" not in info.job_name:
-            #         print("Attaching gdb")
-            #         res = res and CH.attach_gdb()
-            #     else:
-            #         print("Skipping gdb attachment for asan build")
             if res:
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):

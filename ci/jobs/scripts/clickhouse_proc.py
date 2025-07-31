@@ -620,13 +620,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                # Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
-                # (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
                 if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 600",
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
                     verbose=True,
                 ):
-                    print("Failed to stop ClickHouse process gracefully")
+                    print(
+                        "Failed to stop ClickHouse process gracefully - send ABRT signal to generate core file"
+                    )
+                    Shell.check(f"kill -ABRT {pid}")
 
         return self
 
@@ -656,6 +657,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # Find at most 3 core.* files in the current directory (non-recursive)
         cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
         core_files = Shell.get_output(cmd, verbose=True).splitlines()
+        if len(core_files) > 3:
+            print(
+                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
+            )
+            core_files = core_files[0:3]
         return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
 
     @classmethod
@@ -743,12 +749,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
         else:
             print("WARNING: dmesg not enabled")
-        results.append(
-            Result.from_commands_run(
-                name="Found signal in gdb.log",
-                command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+        if Path(self.GDB_LOG).is_file():
+            results.append(
+                Result.from_commands_run(
+                    name="Found signal in gdb.log",
+                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+                )
             )
-        )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
