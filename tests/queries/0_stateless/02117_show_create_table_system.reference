@@ -265,6 +265,7 @@ CREATE TABLE system.errors
     `value` UInt64,
     `last_error_time` DateTime,
     `last_error_message` String,
+    `last_error_format_string` String,
     `last_error_trace` Array(UInt64),
     `remote` UInt8,
     `query_id` String
