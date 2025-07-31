@@ -37,6 +37,8 @@
 namespace DB
 {
 
+static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
+
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
@@ -123,7 +125,11 @@ public:
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
-    GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
+    GinIndexStore(
+        const String & name_,
+        DataPartStoragePtr storage_,
+        MutableDataPartStoragePtr data_part_storage_builder_,
+        UInt64 segment_digestion_threshold_bytes_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -147,7 +153,7 @@ public:
     void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
-    bool needToWrite() const;
+    bool needToWriteCurrentSegment() const;
 
     /// Accumulate the size of text data which has been digested
     void incrementCurrentSizeBy(UInt64 sz) { current_size += sz; }
@@ -206,7 +212,7 @@ private:
     /// For the segmentation of Gin indexes
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
-    const UInt64 max_digestion_size = 0;
+    const UInt64 segment_digestion_threshold_bytes = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

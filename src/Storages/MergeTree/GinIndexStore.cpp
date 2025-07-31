@@ -160,11 +160,15 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
 {
 }
 
-GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
+GinIndexStore::GinIndexStore(
+    const String & name_,
+    DataPartStoragePtr storage_,
+    MutableDataPartStoragePtr data_part_storage_builder_,
+    UInt64 segment_digestion_threshold_bytes_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
-    , max_digestion_size(max_digestion_size_)
+    , segment_digestion_threshold_bytes(segment_digestion_threshold_bytes_)
 {
 }
 
@@ -250,10 +254,11 @@ GinIndexStore::Format GinIndexStore::getVersion()
     return getFormatVersion(version);
 }
 
-bool GinIndexStore::needToWrite() const
+bool GinIndexStore::needToWriteCurrentSegment() const
 {
-    assert(max_digestion_size > 0);
-    return current_size > max_digestion_size;
+    /// segment_digestion_threshold_bytes != 0 means GinIndexStore splits the index data into separate segments.
+    /// In case it's equal to 0 (zero), segment size is unlimited. Therefore, there will be a single segment.
+    return (segment_digestion_threshold_bytes != UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES) && (current_size > segment_digestion_threshold_bytes);
 }
 
 void GinIndexStore::finalize()
