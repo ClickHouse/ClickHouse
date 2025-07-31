@@ -503,7 +503,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-String createEmptyMetadataFile(
+std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
@@ -580,7 +580,7 @@ String createEmptyMetadataFile(
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return removeEscapedSlashes(oss.str());
+    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
 /**

@@ -166,6 +166,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
         }
+        case DB::DatabaseDataLakeCatalogType::NONE:
+        {
+            catalog_impl = nullptr;
+            break;
+        }
     }
     return catalog_impl;
 }
@@ -278,6 +283,8 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     type);
             }
         }
+        case DatabaseDataLakeCatalogType::NONE:
+            return nullptr;
     }
 }
 
@@ -778,6 +785,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 engine_func->name = "Iceberg";
                 break;
             }
+            case DatabaseDataLakeCatalogType::NONE:
+                break;
         }
 
         return std::make_shared<DatabaseDataLake>(
