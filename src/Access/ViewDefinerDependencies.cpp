@@ -14,16 +14,17 @@ std::once_flag ViewDefinerDependencies::instance_flag;
 
 ViewDefinerDependencies & ViewDefinerDependencies::instance()
 {
-    std::call_once(instance_flag, []() {
-        global_instance = std::unique_ptr<ViewDefinerDependencies>(new ViewDefinerDependencies());
-    });
+    std::call_once(instance_flag, []
+        {
+            global_instance = std::unique_ptr<ViewDefinerDependencies>(new ViewDefinerDependencies());
+        });
     return *global_instance;
 }
 
 void ViewDefinerDependencies::addViewDependency(const String & definer, const StorageID & view_id)
 {
     std::lock_guard lock(mutex);
-    
+
     /// Remove any existing mapping for this view to a different definer
     auto existing_definer_it = view_to_definer.find(view_id);
     if (existing_definer_it != view_to_definer.end() && existing_definer_it->second != definer)
@@ -33,7 +34,7 @@ void ViewDefinerDependencies::addViewDependency(const String & definer, const St
         if (old_views.empty())
             definer_to_views.erase(existing_definer_it->second);
     }
-    
+
     definer_to_views[definer].insert(view_id);
     view_to_definer[view_id] = definer;
 }
@@ -69,7 +70,7 @@ void ViewDefinerDependencies::removeViewDependencies(const StorageID & view_id)
 std::vector<StorageID> ViewDefinerDependencies::getViewsForDefiner(const String & definer) const
 {
     std::lock_guard lock(mutex);
-    
+
     auto it = definer_to_views.find(definer);
     if (it == definer_to_views.end())
         return {};
@@ -80,7 +81,7 @@ std::vector<StorageID> ViewDefinerDependencies::getViewsForDefiner(const String 
 bool ViewDefinerDependencies::hasViewDependencies(const String & definer) const
 {
     std::lock_guard lock(mutex);
-    
+
     auto it = definer_to_views.find(definer);
     return it != definer_to_views.end() && !it->second.empty();
 }
