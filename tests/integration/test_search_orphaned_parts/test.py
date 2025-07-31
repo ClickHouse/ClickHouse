@@ -22,9 +22,18 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_search_detached_parts():
+# ClickHouse checks extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
+# The test verifies how the search of orphaned parts works if there is no connection to MinIO.
+# The following is expected
+# * search_orphaned_parts_drives is `none` - does not search s3, the query is successful
+# * search_orphaned_parts_drives is `local` - does not search s3, the query is successful
+# * search_orphaned_parts_drives is `any` - searches s3, the query throws
+# Note, disk_s3_plain is not a part either of `no_s3` or of `local_cache` policies
+def test_search_orphaned_parts():
     table_name = "t1"
 
+    # Note that disk_s3_plain and s3_plain_rewritable are not used in these policies,
+    # !ClickHouse looks for orpaned parts on 'undefined' disks
     for storage_policy in ["no_s3", "local_cache"]:
         search_mode = "any"
         node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
@@ -36,7 +45,7 @@ def test_search_detached_parts():
             ) ENGINE=MergeTree()
             PARTITION BY id % 10
             ORDER BY id
-            SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+            SETTINGS storage_policy='{storage_policy}', search_orphaned_parts_drives='{search_mode}'
             """
         )
         node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
@@ -51,7 +60,7 @@ def test_search_detached_parts():
             ) ENGINE=MergeTree()
             PARTITION BY id % 10
             ORDER BY id
-            SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+            SETTINGS storage_policy='{storage_policy}', search_orphaned_parts_drives='{search_mode}'
             """
         )
         # To drop when minio is not available
@@ -76,7 +85,7 @@ def test_search_detached_parts():
                 ) ENGINE=MergeTree()
                 PARTITION BY id % 10
                 ORDER BY id
-                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                SETTINGS storage_policy='{storage_policy}', search_orphaned_parts_drives='{search_mode}'
                 """
             )
             node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
@@ -91,7 +100,7 @@ def test_search_detached_parts():
                 ) ENGINE=MergeTree()
                 PARTITION BY id % 10
                 ORDER BY id
-                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                SETTINGS storage_policy='{storage_policy}', search_orphaned_parts_drives='{search_mode}'
                 """
             )
             node1.query(
@@ -109,7 +118,7 @@ def test_search_detached_parts():
                 ) ENGINE=MergeTree()
                 PARTITION BY id % 10
                 ORDER BY id
-                SETTINGS storage_policy='{storage_policy}', search_detached_parts_drives='{search_mode}'
+                SETTINGS storage_policy='{storage_policy}', search_orphaned_parts_drives='{search_mode}'
                 """
             )
             node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

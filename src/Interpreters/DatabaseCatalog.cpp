@@ -87,7 +87,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsSearchDetachedPartsDrives search_detached_parts_drives;
+    extern const MergeTreeSettingsSearchOrphanedPartsDrives search_orphaned_parts_drives;
 }
 
 
@@ -1482,9 +1482,9 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
         auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
-        SearchDetachedPartsDrives mode = (*tbl->getSettings())[MergeTreeSetting::search_detached_parts_drives];
-        bool is_look_needed = mode == SearchDetachedPartsDrives::ANY
-            || (mode == SearchDetachedPartsDrives::LOCAL && is_local_metadata());
+        SearchOrphanedPartsDrives mode = (*tbl->getSettings())[MergeTreeSetting::search_orphaned_parts_drives];
+        bool is_look_needed = mode == SearchOrphanedPartsDrives::ANY
+            || (mode == SearchOrphanedPartsDrives::LOCAL && is_local_metadata());
 
         LOG_TRACE(log, "look_on_disk: mode {}, is_look_needed {}", mode, is_look_needed);
         return is_look_needed;

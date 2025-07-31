@@ -722,10 +722,6 @@ public:
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
 
-    /// Is the disk included in the scope for searching [detached] parts
-    ///   sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
-    bool lookOnDisk(DiskPtr disk) const;
-
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
 
@@ -1890,6 +1886,11 @@ private:
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
+
+    /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
+    ///   on disks that are not a part of storage policy of the table).
+    /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
+    bool shouldSearchForPartsOnDisk(DiskPtr disk) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

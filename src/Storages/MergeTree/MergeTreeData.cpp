@@ -265,7 +265,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
-    extern const MergeTreeSettingsSearchDetachedPartsDrives search_detached_parts_drives;
+    extern const MergeTreeSettingsSearchOrphanedPartsDrives search_orphaned_parts_drives;
 }
 
 namespace ServerSetting
@@ -2074,15 +2074,15 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
-bool MergeTreeData::lookOnDisk(DiskPtr disk) const
+bool MergeTreeData::shouldSearchForPartsOnDisk(DiskPtr disk) const
 {
     auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
-    SearchDetachedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_detached_parts_drives];
-    bool is_look_needed = mode == SearchDetachedPartsDrives::ANY
-      || (mode == SearchDetachedPartsDrives::LOCAL && is_local_metadata());
+    SearchOrphanedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_drives];
+    bool is_look_needed = mode == SearchOrphanedPartsDrives::ANY
+      || (mode == SearchOrphanedPartsDrives::LOCAL && is_local_metadata());
 
-    LOG_TRACE(log, "lookForDetachedParts: mode {}, is_look_needed {}", mode, is_look_needed);
+    LOG_TRACE(log, "shouldSearchForPartsOnDisk: mode {}, is_look_needed {}", mode, is_look_needed);
     return is_look_needed;
 }
 
@@ -2098,7 +2098,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
-        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2139,7 +2139,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
-            if (!is_disk_defined && !lookOnDisk(disk))
+            if (!is_disk_defined && !shouldSearchForPartsOnDisk(disk))
             {
                 skip_check_disks.insert(disk_name);
                 continue;
@@ -7110,7 +7110,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
-        if (disk->isReadOnly() || disk->isWriteOnce() || !lookOnDisk(disk))
+        if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
