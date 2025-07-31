@@ -359,9 +359,9 @@ void ManifestFileContent::sortManifestEntriesBySchemaId()
         indices.end(),
         [&](size_t i, size_t j)
         {
-            if (files[i].snapshot_id != files[j].snapshot_id)
+            if (files[i].schema_id != files[j].schema_id)
             {
-                return files[i].snapshot_id < files[j].snapshot_id;
+                return files[i].schema_id < files[j].schema_id;
             }
             return i < j;
         });

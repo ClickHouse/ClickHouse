@@ -749,6 +749,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
                 if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
                 {
                     previous_entry_schema = manifest_file_entry.schema_id;
+                    assert(previous_entry_schema < manifest_file_entry.schema_id);
                     pruner.emplace(
                         schema_processor,
                         relevant_snapshot_schema_id,
