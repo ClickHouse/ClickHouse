@@ -428,7 +428,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="amd_ubsan, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(

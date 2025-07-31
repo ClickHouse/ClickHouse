@@ -6,7 +6,7 @@ SET parallel_distributed_insert_select=2;
 DROP TABLE IF EXISTS t_mt_source;
 DROP TABLE IF EXISTS t_rmt_target SYNC;
 
-CREATE TABLE t_mt_source (k UInt64, v String) ENGINE = MergeTree() ORDER BY k;
+CREATE TABLE t_mt_source (k UInt64, v String) ENGINE = MergeTree() ORDER BY k SETTINGS index_granularity=10;
 CREATE TABLE t_rmt_target (k UInt64, v String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt_target', 'r1') ORDER BY ();
 
 SYSTEM STOP MERGES t_mt_source;
