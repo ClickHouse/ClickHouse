@@ -101,9 +101,13 @@ private:
     static std::string convertNumber(const std::string & number, const int from_base, const int to_base)
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
-            return "";
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Base is less than 2 or greater than 36 which is not supported");
         if (number.empty())
-            return "";
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Number for conversion is empty");
         std::string clean_number = number;
         bool is_negative = false;
         // Trim leading whitespace
@@ -140,7 +144,10 @@ private:
         }
         catch (...)
         {
-            return "";
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Invalid number format for base conversion in function conv");
+
         }
     }
 
