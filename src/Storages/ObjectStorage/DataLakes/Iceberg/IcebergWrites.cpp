@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/DataLake/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/DateTimeTransforms.h>
@@ -72,13 +73,14 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_)
+FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
     , metadata_dir(table_dir + "metadata/")
     , storage_data_dir(storage_dir + "data/")
     , storage_metadata_dir(storage_dir + "metadata/")
+    , use_uuid_in_metadata(use_uuid_in_metadata_)
 {
 }
 
@@ -95,6 +97,8 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
+    use_uuid_in_metadata = other.use_uuid_in_metadata;
+
     return *this;
 }
 
@@ -130,10 +134,22 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
-    return Result{
-        .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
-        .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
-    };
+    if (!use_uuid_in_metadata)
+    {
+        return Result{
+            .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
+            .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+        };
+    }
+    else
+    {
+        auto uuid_str = uuid_generator.createRandom().toString();
+        return Result{
+            .path_in_metadata = fmt::format("{}v{}-{}.metadata.json", metadata_dir, initial_version, uuid_str),
+            .path_in_storage = fmt::format("{}v{}-{}.metadata.json", storage_metadata_dir, initial_version, uuid_str),
+        };
+
+    }
 }
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
@@ -647,13 +663,17 @@ IcebergStorageSink::IcebergStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
     , context(context_)
     , configuration(configuration_)
     , format_settings(format_settings_)
+    , catalog(catalog_)
+    , table_id(table_id_)
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
@@ -662,19 +682,19 @@ IcebergStorageSink::IcebergStorageSink(
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
 
-    auto config_path = configuration_->getPath();
+    auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()));
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()));
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -800,7 +820,6 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
@@ -838,12 +857,17 @@ bool IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        if (object_storage->exists(StoredObject(storage_metadata_name)))
+        auto cleanup = [&] ()
         {
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        };
+
+        if (object_storage->exists(StoredObject(storage_metadata_name)))
+        {
+            cleanup();
             return false;
         }
 
@@ -851,6 +875,21 @@ bool IcebergStorageSink::initializeMetadata()
             StoredObject(storage_metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
+
+        if (catalog)
+        {
+            String catalog_filename = metadata_name;
+            if (!catalog_filename.starts_with(configuration->getTypeName()))
+                catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
+
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            {
+                cleanup();
+                object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                return false;
+            }
+        }
     }
     return true;
 }
