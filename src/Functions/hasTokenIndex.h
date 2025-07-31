@@ -110,30 +110,38 @@ class FunctionIndex : public IFunction
         const ColumnVector<UInt64> * col_part_offset_vector,
         PaddedPODArray<typename Impl::ResultType> & result)
     {
+        chassert(!matching_rows.empty());
         const PaddedPODArray<UInt64> &offsets = col_part_offset_vector->getData();
 
         const UInt64 *it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
+        chassert(it != offsets.end());
+
         const UInt64 *end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
 
         for (uint32_t row : matching_rows)
         {
             const size_t match_offset = row - 1;
 
-            chassert(*it <= match_offset);
+            if (*it > match_offset)
+                continue;
 
-            if (*it != match_offset)
+            if (*it < match_offset)
                 it = std::lower_bound(it, end_it, match_offset);
 
-            chassert(*it >= match_offset);
+            if (it == end_it)
+                break;
 
             if (*it == match_offset)
             {
                 const size_t idx = std::distance(offsets.begin(), it);
                 chassert(result[idx] == 0);
                 result[idx] = 1;
-            }
+                std::advance(it, 1);
 
-            std::advance(it, 1);
+                if (it == end_it)
+                    break;
+
+            }
         }
     }
 
@@ -221,9 +229,8 @@ public:
         //     index_name, token, part_idx, first_mark, last_mark, first_row, last_row, last_row - first_row, input_rows_count);
 
         // Check that we have the right boundary marks
-        chassert(first_row == part->index_granularity->getMarkStartingRow(first_mark));
-        chassert(last_row + 1 == part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
-        const MarkRange full_input_range(first_mark, last_mark);
+        chassert(first_row >= part->index_granularity->getMarkStartingRow(first_mark));
+        chassert(last_row < part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
 
         size_t idx = 0;
         MarkRanges index_ranges;
@@ -287,7 +294,8 @@ public:
             const std::vector<uint32_t> matching_rows
                 = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get(), subranges);
 
-            postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData());
+            if (!matching_rows.empty())
+                postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData());
         }
 
         return col_res;
