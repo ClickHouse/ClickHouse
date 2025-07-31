@@ -1,7 +1,6 @@
 #include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -972,70 +971,85 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
-    if (!source_ptr->hasUpdateField())
+    try
     {
-        std::optional<DictionaryParallelLoaderType> parallel_loader;
-        if constexpr (sharded)
-            parallel_loader.emplace(*this);
-
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-
-        UInt64 pull_time_microseconds = 0;
-        UInt64 process_time_microseconds = 0;
-
-        size_t total_rows = 0;
-        size_t total_blocks = 0;
-        String dictionary_name = getFullName();
-
-        Block block;
-        while (true)
+        if (!source_ptr->hasUpdateField())
         {
-            Stopwatch watch_pull;
-            bool has_data = executor.pull(block);
-            pull_time_microseconds += watch_pull.elapsedMicroseconds();
+            std::optional<DictionaryParallelLoaderType> parallel_loader;
+            if constexpr (sharded)
+                parallel_loader.emplace(*this);
 
-            if (!has_data)
-                break;
+            QueryPipeline pipeline(source_ptr->loadAll());
+            DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+            pipeline.setConcurrencyControl(false);
 
-            ++total_blocks;
-            total_rows += block.rows();
+            UInt64 pull_time_microseconds = 0;
+            UInt64 process_time_microseconds = 0;
 
-            Stopwatch watch_process;
-            resize(total_rows);
+            size_t total_rows = 0;
+            size_t total_blocks = 0;
+            String dictionary_name = getFullName();
+
+            Block block;
+            while (true)
+            {
+                Stopwatch watch_pull;
+                bool has_data = executor.pull(block);
+                pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+                if (!has_data)
+                    break;
+
+                ++total_blocks;
+                total_rows += block.rows();
+
+                Stopwatch watch_process;
+                resize(total_rows);
+
+                if (parallel_loader)
+                {
+                    parallel_loader->addBlock(std::move(block));
+                }
+                else
+                {
+                    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+                    blockToAttributes(block, arena_holder, /* shard = */ 0);
+                }
+                process_time_microseconds += watch_process.elapsedMicroseconds();
+            }
 
             if (parallel_loader)
-            {
-                parallel_loader->addBlock(std::move(block));
-            }
-            else
-            {
-                DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-                blockToAttributes(block, arena_holder, /* shard = */ 0);
-            }
-            process_time_microseconds += watch_process.elapsedMicroseconds();
+                parallel_loader->finish();
+
+            LOG_DEBUG(
+                log,
+                "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in "
+                "{:.2f} sec",
+                configuration.use_async_executor ? "asynchronous " : "",
+                total_blocks,
+                total_rows,
+                dictionary_name,
+                pull_time_microseconds / 1000000.0,
+                process_time_microseconds / 1000000.0);
+        }
+        else
+        {
+            updateData();
         }
 
-        if (parallel_loader)
-            parallel_loader->finish();
-
-        LOG_DEBUG(log,
-            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
-            configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows,
-            dictionary_name,
-            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+        if (configuration.require_nonempty && 0 == total_element_count)
+            throw Exception(
+                ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
     }
-    else
+    catch (...)
     {
-        updateData();
+        /// Catch and throw all exceptions (with extra information about the dictionary).
+        /// When updateData() fails halfway (e.g., due to memory pressure, network error etc), the
+        /// dictionary could be potentially left in a bad state leading to cascading failures with confusing
+        /// errors like LOGICAL_ERROR, SIZES_OF_COLUMNS_DOESNT_MATCH etc. in subsequent incremental updates.
+        tryLogCurrentException(log, fmt::format("Dictionary '{}' loading failed", getFullName()));
+        throw;
     }
-
-    if (configuration.require_nonempty && 0 == total_element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.",
-            getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
