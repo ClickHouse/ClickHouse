@@ -1533,7 +1533,7 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "Stateless
+          test_name: "Stateless"
 
       - name: Prepare env script
         run: |
