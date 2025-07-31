@@ -1549,26 +1549,26 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         SetValue * sv4 = svs->add_other_values();
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
-        sv1->set_value("glue");
-        sv2->set_value("gtest");
+        sv1->set_value("'glue'");
+        sv2->set_value("'gtest'");
         sv4->set_property("region");
-        sv4->set_value(cat->region);
+        sv4->set_value("'" + cat->region + "'");
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
         cat = &sc.hive_catalog.value();
 
         de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
-        sv1->set_value("hive");
-        sv2->set_value("htest");
+        sv1->set_value("'hive'");
+        sv2->set_value("'htest'");
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
         cat = &sc.rest_catalog.value();
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
-        sv1->set_value("rest");
-        sv2->set_value("rtest");
+        sv1->set_value("'rest'");
+        sv2->set_value("'rtest'");
     }
     else
     {
@@ -1577,7 +1577,7 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     de->add_params()->set_svalue(sc.user);
     de->add_params()->set_svalue(sc.password);
     sv3->set_property("storage_endpoint");
-    sv3->set_value(fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, cat->endpoint));
+    sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
 }
 
 void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
@@ -1614,28 +1614,28 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
         sv2->set_property("iceberg_warehouse");
         sv3->set_property("iceberg_storage_endpoint");
         sv4->set_property("iceberg_catalog_url");
-        sv3->set_value(fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, cat->endpoint));
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
         switch (b.catalog)
         {
             case CatalogTable::Glue: {
                 SetValue * sv5 = svs->add_other_values();
 
-                sv1->set_value("glue");
-                sv2->set_value("gtest");
-                sv4->set_value(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
+                sv1->set_value("'glue'");
+                sv2->set_value("'gtest'");
+                sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
                 sv5->set_property("iceberg_region");
-                sv5->set_value(cat->region);
+                sv5->set_value("'" + cat->region + "'");
             }
             break;
             case CatalogTable::Hive:
-                sv1->set_value("hive");
-                sv2->set_value("htest");
-                sv4->set_value(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+                sv1->set_value("'hive'");
+                sv2->set_value("'htest'");
+                sv4->set_value(fmt::format("'thrift://{}:{}'", cat->server_hostname, cat->port));
                 break;
             case CatalogTable::REST:
-                sv1->set_value("rest");
-                sv2->set_value("rtest");
-                sv4->set_value(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
+                sv1->set_value("'rest'");
+                sv2->set_value("'rtest'");
+                sv4->set_value(fmt::format("'http://{}:{}/v1'", cat->server_hostname, cat->port));
                 break;
             default:
                 break;
