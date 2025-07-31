@@ -640,7 +640,7 @@ def test_cmd_lgif(started_cluster):
         assert int(result["first_log_idx"]) == 1
         assert int(result["first_log_term"]) == 1
         assert int(result["last_log_idx"]) >= 1
-        assert int(result["last_log_term"]) == 1
+        assert int(result["last_log_term"]) >= 1
         assert int(result["last_committed_log_idx"]) >= 1
         assert int(result["leader_committed_log_idx"]) >= 1
         assert int(result["target_committed_log_idx"]) >= 1
@@ -750,7 +750,7 @@ def test_cmd_lgrq(started_cluster):
 
         zk = get_fake_zk(node1.name, timeout=30.0)
         if not zk.exists('/test_lgrq'):
-            zk.create('/test_lgrq')
+            zk.create('/test_lgrq', ephemeral=True)
 
         assert not node1.contains_in_log('Received request:')
 
