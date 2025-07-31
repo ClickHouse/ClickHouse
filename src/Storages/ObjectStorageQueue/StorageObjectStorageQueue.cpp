@@ -429,18 +429,19 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 
     createIterator(nullptr);
 
-    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), /*num_streams_=*/ processing_threads_num, nullptr, nullptr);
+    auto parser_shared_resources
+        = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/processing_threads_num);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
-                               i/* processor_id */,
-                               info,
-                               parser_group,
-                               progress,
-                               iterator,
-                               max_block_size,
-                               context,
-                               true/* commit_once_processed */));
+            i /* processor_id */,
+            info,
+            parser_shared_resources,
+            progress,
+            iterator,
+            max_block_size,
+            context,
+            true /* commit_once_processed */));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -455,7 +456,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
-    FormatParserGroupPtr parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
     ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
@@ -468,14 +469,25 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         commit_settings_copy = commit_settings;
     }
     return std::make_shared<ObjectStorageQueueSource>(
-        getName(), processor_id,
-        file_iterator, configuration, object_storage, progress_,
-        info, format_settings, parser_group,
+        getName(),
+        processor_id,
+        file_iterator,
+        configuration,
+        object_storage,
+        progress_,
+        info,
+        format_settings,
+        parser_shared_resources,
         commit_settings_copy,
         files_metadata,
-        local_context, max_block_size, shutdown_called, table_is_being_dropped,
+        local_context,
+        max_block_size,
+        shutdown_called,
+        table_is_being_dropped,
         getQueueLog(object_storage, local_context, enable_logging_to_queue_log),
-        getStorageID(), log, commit_once_processed);
+        getStorageID(),
+        log,
+        commit_once_processed);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -664,7 +676,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         pipes.reserve(threads);
         sources.reserve(threads);
 
-        auto parser_group = std::make_shared<FormatParserGroup>(queue_context->getSettingsRef(), /*num_streams_=*/ threads, nullptr, nullptr);
+        auto parser_shared_resources
+            = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
@@ -673,12 +686,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
-                parser_group,
+                parser_shared_resources,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                /*commit_once_processed=*/ false);
+                /*commit_once_processed=*/false);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
