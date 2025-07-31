@@ -111,12 +111,8 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
-    if (attemptedRetries == 0)
-    {
-        return 0;
-    }
-
-    uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
+    chassert(attemptedRetries > 0);
+    uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
     return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
 }
 
