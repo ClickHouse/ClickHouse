@@ -64,19 +64,19 @@ Get latest metadata path from version-hint.text file.
     DECLARE(Int64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
-    DECLARE(DatabaseDataLakeCatalogType, iceberg_catalog_type, DatabaseDataLakeCatalogType::ICEBERG_REST, "Catalog type", 0) \
-    DECLARE(String, iceberg_catalog_credential, "", "", 0)             \
-    DECLARE(Bool, iceberg_vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
-    DECLARE(String, iceberg_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
-    DECLARE(String, iceberg_oauth_server_uri, "", "OAuth server uri", 0)             \
-    DECLARE(Bool, iceberg_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
-    DECLARE(String, iceberg_warehouse, "", "Warehouse name inside the catalog", 0)             \
-    DECLARE(String, iceberg_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
-    DECLARE(String, iceberg_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
-    DECLARE(String, iceberg_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
-    DECLARE(String, iceberg_region, "", "Region for Glue catalog", 0)           \
-    DECLARE(String, iceberg_storage_endpoint, "", "Object storage endpoint", 0) \
-    DECLARE(String, iceberg_catalog_url, "", "Catalog url", 0) \
+    DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
+    DECLARE(String, storage_catalog_credential, "", "", 0)             \
+    DECLARE(Bool, storage_vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
+    DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
+    DECLARE(String, storage_oauth_server_uri, "", "OAuth server uri", 0)             \
+    DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
+    DECLARE(String, storage_warehouse, "", "Warehouse name inside the catalog", 0)             \
+    DECLARE(String, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
+    DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
+    DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
+    DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
+    DECLARE(String, storage_storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \
