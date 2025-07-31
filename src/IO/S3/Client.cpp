@@ -670,7 +670,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            /// Slow down because another thread encountered a retryable error.
+            /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
 
             try
@@ -723,8 +723,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
 
-                /// Check if query is canceled
-                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
+                /// Check if query is canceled.
+                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
                     break;
 
                 updateNextTimeToRetryAfterRetryableError(error, attempt_no);
