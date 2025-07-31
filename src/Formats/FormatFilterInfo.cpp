@@ -28,7 +28,6 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
 {
     std::unordered_map<String, String> clickhouse_to_parquet_names;
     std::unordered_map<String, String> parquet_names_to_clickhouse;
-
     for (const auto & [column_name, field_id] : storage_encoding)
     {
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())
