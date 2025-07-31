@@ -23,12 +23,12 @@ Columns:
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Operation status. Possible values:
-    - `'CREATING_BACKUP'`
-    - `'BACKUP_CREATED'`
-    - `'BACKUP_FAILED'`
-    - `'RESTORING'`
-    - `'RESTORED'`
-    - `'RESTORE_FAILED'`
+  - `'CREATING_BACKUP'`
+  - `'BACKUP_CREATED'`
+  - `'BACKUP_FAILED'`
+  - `'RESTORING'`
+  - `'RESTORED'`
+  - `'RESTORE_FAILED'`
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.

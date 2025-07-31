@@ -964,3 +964,74 @@ def test_shutdown_order(started_cluster):
     )
 
     node.query(f"DROP TABLE {new_table_name} SYNC")
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("limit", [1, 9999999999])
+def test_mv_settings(started_cluster, mode, limit):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_mv_settings_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    if limit == 9999999999:
+        expected_parts_num = 1
+    else:
+        expected_parts_num = 5
+
+    format = "column1 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+            "min_insert_block_size_rows_for_materialized_views": limit,
+            "min_insert_block_size_bytes_for_materialized_views": limit,
+        },
+    )
+
+    num_rows = 10
+
+    def insert():
+        files_to_generate = 5
+        table_name_suffix = f"{uuid.uuid4()}"
+        for i in range(files_to_generate):
+            file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+            s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+            node.query(
+                f"INSERT INTO FUNCTION {s3_function} select randomString(10) FROM numbers({num_rows})"
+            )
+
+    insert()
+
+    mv_table_name = f"{table_name}_mv"
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+    )
+    node.query(f"SYSTEM STOP MERGES {dst_table_name}")
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = num_rows
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_parts_num == int(
+        node.query(
+            f"SELECT count() FROM system.parts WHERE table = '{dst_table_name}' AND level = 0"
+        )
+    )

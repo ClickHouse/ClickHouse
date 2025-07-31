@@ -1,12 +1,12 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileBase.h>
-#include <config.h>
+#include "config.h"
 
 #if USE_SSL
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -29,7 +29,7 @@ struct DiskEncryptedSettings
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskEncryptedTransaction>
+class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
@@ -49,14 +49,19 @@ public:
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    void commit() override // NOLINT
+    void commit(const TransactionCommitOptionsVariant & options = NoCommitOptions{}) override // NOLINT
     {
-        delegate_transaction->commit();
+        delegate_transaction->commit(options);
     }
 
     void undo() override
     {
         delegate_transaction->undo();
+    }
+
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
+    {
+        return delegate_transaction->tryCommit(options);
     }
 
     ~DiskEncryptedTransaction() override = default;
@@ -189,15 +194,11 @@ public:
     /// Third param determines which files cannot be removed even if second is true.
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        for (const auto & file : files)
-        {
-            auto wrapped_path = wrappedPath(file.path);
-            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                delegate_transaction->removeSharedFileIfExists(wrapped_path, keep);
-            else
-                delegate_transaction->removeSharedFile(wrapped_path, keep);
-        }
+        auto wrapped_path_files = files;
+        for (auto & file : wrapped_path_files)
+            file.path = wrappedPath(file.path);
+
+        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only);
     }
 
     /// Set last modified time to file or directory at `path`.
@@ -252,37 +253,8 @@ public:
         delegate_transaction->truncateFile(wrapped_path, target_size);
     }
 
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint, file_size);
-    }
-
-    bool isTransactional() const override
-    {
-        return delegate_transaction->isTransactional();
-    }
-
-    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
-    {
-        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
-        {
-            moved_func(*tx);
-        };
-        delegate_transaction->validateTransaction(std::move(wrapped));
-    }
-
 private:
+
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);

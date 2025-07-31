@@ -23,11 +23,7 @@ workflow = Workflow.Config(
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
-        *[
-            job
-            for job in JobConfigs.functional_tests_jobs_required
-            if "asan" in job.name
-        ],
+        *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
         *[job for job in JobConfigs.stress_test_jobs if "tsan" in job.name],
         *[
             job

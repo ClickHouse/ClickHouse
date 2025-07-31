@@ -53,3 +53,5 @@
 - test_ytsaurus/
 # Creates too much servers
 - test_backup_restore_on_cluster/test_concurrency.py
+# TODO (alesapin) Try to verify that it's concurrency issue
+- test_database_delta/test.py

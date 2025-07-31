@@ -273,10 +273,6 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
-    /// If part is a child of another part, we do not increment metrics.
-    if (parent_part)
-        return;
-
     switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
@@ -305,10 +301,6 @@ void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) con
 
 void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) const
 {
-    /// If part is a child of another part, we do not increment metrics.
-    if (parent_part)
-        return;
-
     switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
@@ -335,12 +327,8 @@ void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) con
     }
 }
 
-void IMergeTreeDataPart::incrementTypeMetric(MergeTreeDataPartType type) const
+static void incrementTypeMetric(MergeTreeDataPartType type)
 {
-    /// If part is a child of another part, we do not increment metrics.
-    if (parent_part)
-        return;
-
     switch (type.getValue())
     {
         case MergeTreeDataPartType::Wide:
@@ -354,12 +342,8 @@ void IMergeTreeDataPart::incrementTypeMetric(MergeTreeDataPartType type) const
     }
 }
 
-void IMergeTreeDataPart::decrementTypeMetric(MergeTreeDataPartType type) const
+static void decrementTypeMetric(MergeTreeDataPartType type)
 {
-    /// If part is a child of another part, we do not increment metrics.
-    if (parent_part)
-        return;
-
     switch (type.getValue())
     {
         case MergeTreeDataPartType::Wide:
@@ -510,7 +494,6 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 
 void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 {
-    chassert(!parent_part);
     decrementStateMetric(state);
     state.store(new_state);
     incrementStateMetric(state);
@@ -683,7 +666,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
-    assert(assertHasValidVersionMetadata());
+    chassert(assertHasValidVersionMetadata());
     std::string path;
 
     try
@@ -1143,8 +1126,8 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
-    if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
-        result.emplace("columns_substreams.txt");
+    if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
+        result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
     return result;
 }
@@ -1641,26 +1624,30 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
 void IMergeTreeDataPart::loadTTLInfos()
 {
-    if (auto in = readFileIfExists("ttl.txt"))
+    auto metadata_snapshot = getMetadataSnapshot();
+    if (metadata_snapshot->hasAnyTTL())
     {
-        assertString("ttl format version: ", *in);
-        size_t format_version;
-        readText(format_version, *in);
-        assertChar('\n', *in);
-
-        if (format_version == 1)
+        if (auto in = readFileIfExists("ttl.txt"))
         {
-            try
+            assertString("ttl format version: ", *in);
+            size_t format_version;
+            readText(format_version, *in);
+            assertChar('\n', *in);
+
+            if (format_version == 1)
             {
-                ttl_infos.read(*in);
+                try
+                {
+                    ttl_infos.read(*in);
+                }
+                catch (const JSONException &)
+                {
+                    throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
+                }
             }
-            catch (const JSONException &)
-            {
-                throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
-            }
+            else
+                throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
         }
-        else
-            throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
     }
 }
 
@@ -1739,19 +1726,28 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
+void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
+{
+    columns_substreams_.validateColumns(getColumns().getNames());
+    columns_substreams = columns_substreams_;
+}
+
 void IMergeTreeDataPart::loadColumnsSubstreams()
 {
-    if (part_type != MergeTreeDataPartType::Compact || !index_granularity_info.mark_type.with_substreams)
-        return;
-
-    String path = fs::path(getDataPartStorage().getRelativePath()) / "columns_substreams.txt";
-
-    auto in = readFileIfExists("columns_substreams.txt");
-    if (!in)
-        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns_substreams.txt in part {}, expected path {} on drive {}", name, path, getDataPartStorage().getDiskName());
-
-    columns_substreams.readText(*in);
-
+    if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
+    {
+        columns_substreams.readText(*in);
+    }
+    /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
+    else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+    {
+        throw Exception(
+            ErrorCodes::NO_FILE_IN_DATA_PART,
+            "No columns_substreams.txt in part {}, expected path {} on drive {}",
+            name,
+            fs::path(getDataPartStorage().getRelativePath()) / COLUMNS_SUBSTREAMS_FILE_NAME,
+            getDataPartStorage().getDiskName());
+    }
 }
 
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
@@ -2025,7 +2021,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
 
 void IMergeTreeDataPart::remove()
 {
-    assert(assertHasValidVersionMetadata());
+    chassert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
     auto can_remove_callback = [this] ()
@@ -2346,19 +2342,19 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample) const
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 {
-    calculateColumnsSizesOnDisk(columns_sample);
+    calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample) const
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
+    calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
@@ -2718,9 +2714,4 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
     return {};
 }
 
-ALWAYS_INLINE MergeTreeDataPartState IMergeTreeDataPart::getState() const
-{
-    chassert(!parent_part);
-    return state.load(std::memory_order_relaxed);
-}
 }

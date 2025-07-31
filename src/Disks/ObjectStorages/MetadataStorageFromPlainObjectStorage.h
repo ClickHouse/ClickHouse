@@ -12,7 +12,6 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <vector>
 #include <Poco/Timestamp.h>
 
 
@@ -91,6 +90,11 @@ public:
     bool supportsStat() const override { return false; }
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
+    bool isReadOnly() const override { return true; }
+
+private:
+    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
+
 protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
@@ -158,9 +162,7 @@ public:
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
-
-    void commit() override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
 
     bool supportsChmod() const override { return false; }
 };
