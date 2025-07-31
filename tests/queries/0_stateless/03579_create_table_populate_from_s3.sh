@@ -23,20 +23,59 @@ SELECT * FROM s3(
     'TSV');
 EOF
 
-$CLICKHOUSE_CLIENT <<EOF
-SET enable_analyzer=1;
-SET enable_parallel_replicas=1;
-SET max_parallel_replicas=4;
-SET cluster_for_parallel_replicas='test_cluster_two_shards';
-SET parallel_replicas_for_cluster_engines=true;
 
-CREATE OR REPLACE TABLE test_table (x UInt32, y UInt32, z UInt32) engine=MergeTree ORDER BY x AS SELECT * FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/03579.tsv', 'TSV', 'x UInt32, y UInt32, z UInt32') LIMIT 100;
-SELECT count() FROM test_table;
-DROP TABLE IF EXISTS test_table;
+for parallel_replicas_for_cluster_engines in 'false' 'true'
+do
+    echo "Testing with parallel_replicas_for_cluster_engines=$parallel_replicas_for_cluster_engines"
 
-SET parallel_replicas_for_cluster_engines=false;
+    $CLICKHOUSE_CLIENT <<EOF
+    SET enable_analyzer=1;
+    SET enable_parallel_replicas=1;
+    SET max_parallel_replicas=4;
+    SET cluster_for_parallel_replicas='test_cluster_two_shards';
+    SET parallel_replicas_for_cluster_engines=${parallel_replicas_for_cluster_engines};
 
-CREATE OR REPLACE TABLE test_table (x UInt32, y UInt32, z UInt32) engine=MergeTree ORDER BY x AS SELECT * FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/03579.tsv', 'TSV', 'x UInt32, y UInt32, z UInt32') LIMIT 100;
-SELECT count() FROM test_table;
-DROP TABLE IF EXISTS test_table;
+    CREATE OR REPLACE TABLE table (x UInt32, y UInt32, z UInt32)
+        engine=MergeTree
+        ORDER BY x
+        AS SELECT *
+            FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/03579.tsv', NOSIGN, 'TSV')
+            LIMIT 100;
+    SELECT 'count from table', count() FROM table;
+    DROP TABLE IF EXISTS table;
+
+    CREATE OR REPLACE TABLE table_s3Cluster (x UInt32, y UInt32, z UInt32)
+        engine=MergeTree
+        ORDER BY x
+        AS SELECT *
+            FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/$CLICKHOUSE_DATABASE/03579.tsv', 'TSV')
+            LIMIT 100;
+    SELECT 'count from table_s3Cluster', count() FROM table_s3Cluster;
+    DROP TABLE IF EXISTS table_s3Cluster;
 EOF
+
+done
+
+
+# replicated_db="${CLICKHOUSE_DATABASE}_replicated"
+# cleanup_replicated_database() {
+#     $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${replicated_db};"
+#     $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${replicated_db}_second;"
+# }
+# trap cleanup_replicated_database EXIT
+
+# $CLICKHOUSE_CLIENT <<EOF
+# CREATE DATABASE IF NOT EXISTS ${replicated_db} ENGINE = Replicated('/clickhouse/{database}/replicated_db', 'shard_1');
+# CREATE DATABASE IF NOT EXISTS ${replicated_db}_second ENGINE = Replicated('/clickhouse/{database}/replicated_db', 'shard_2');
+# EOF
+
+# $CLICKHOUSE_CLIENT <<EOF
+# CREATE OR REPLACE TABLE ${replicated_db}.table_s3Cluster (x UInt32, y UInt32, z UInt32)
+#     engine=Memory
+#     AS SELECT *
+#         FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/$CLICKHOUSE_DATABASE/03579.tsv', 'TSV', 'auto')
+#         LIMIT 100;
+
+# SELECT count() FROM ${replicated_db}.table_s3Cluster;
+# SELECT count() FROM ${replicated_db}_second.table_s3Cluster;
+# EOF

@@ -31,7 +31,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !context->getClientInfo().is_replicated_database_internal)
     {
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(

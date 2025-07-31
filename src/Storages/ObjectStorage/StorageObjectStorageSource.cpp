@@ -146,6 +146,11 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         const bool expect_whole_archive = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
+        // ClusterFunctionReadTaskCallback is run under a lock
+        // why do we call it with a thread pool inside ReadTaskIterator?
+        // it should be just a cycle
+        // also why do we ask max_threads_count files at c-tor, why do we not just ask one?
+        // or why do we not ask max_threads_count file when next() is called and the current butch is ended?
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],

@@ -180,7 +180,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed();
 
-    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !context->getClientInfo().is_replicated_database_internal;
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {

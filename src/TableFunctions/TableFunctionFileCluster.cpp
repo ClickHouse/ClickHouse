@@ -20,7 +20,7 @@ StoragePtr TableFunctionFileCluster::getStorage(
 {
     StoragePtr storage;
 
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !context->getClientInfo().is_replicated_database_internal)
     {
         /// On worker node this filename won't contain any globs
         StorageFile::CommonArguments args{
@@ -35,7 +35,7 @@ StoragePtr TableFunctionFileCluster::getStorage(
             context->getSettingsRef()[Setting::rename_files_after_processing],
             path_to_archive};
 
-        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
+        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), /*distributed_processing_*/ true, args);
     }
     else
     {
