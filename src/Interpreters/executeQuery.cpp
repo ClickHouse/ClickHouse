@@ -1320,7 +1320,6 @@ static BlockIO executeQueryImpl(
 
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-                    insert_query->tail.reset();
 
                     input_storage.setPipe(std::move(pipe));
                 }
@@ -1404,8 +1403,6 @@ static BlockIO executeQueryImpl(
                 const auto & table_id = insert_query->table_id;
                 if (!table_id.empty())
                     context->setInsertionTable(table_id);
-
-                insert_query->tail.reset();
             }
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {

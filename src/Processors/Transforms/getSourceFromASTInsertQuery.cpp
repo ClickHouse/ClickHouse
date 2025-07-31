@@ -139,7 +139,10 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 
     /// tail does not possess the input buffer
     if (insert_query->tail)
+    {
         buffers.emplace_back(wrapReadBufferPointer(insert_query->tail));
+        insert_query->tail.reset();
+    }
 
     chassert(!buffers.empty());
     return std::make_unique<ConcatReadBuffer>(std::move(buffers));

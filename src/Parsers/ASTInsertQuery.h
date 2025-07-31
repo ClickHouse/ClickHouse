@@ -35,7 +35,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBufferPtr tail = nullptr;
+    mutable ReadBufferPtr tail = nullptr;
 
     bool async_insert_flush = false;
 

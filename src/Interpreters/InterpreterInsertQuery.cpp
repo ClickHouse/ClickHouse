@@ -699,12 +699,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         for (auto & buffer : owned_buffers)
             format->addBuffer(std::move(buffer));
 
-        if (auto * insert = query_ptr->as<ASTInsertQuery>())
-        {
-            if (insert->tail)
-                insert->tail.reset();
-        }
-
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
 
