@@ -81,7 +81,22 @@ class JobConfigs:
         ),
         result_name_for_cidb="Tests",
     )
-    tidy_build_jobs = Job.Config(
+    tidy_build_arm_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=[],  # from parametrize()
+        requires=[],
+        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=3600 * 4,
+        digest_config=build_digest_config,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TIDY,
+            provides=[],
+            runs_on=RunnerLabels.BUILDER_ARM,
+        ),
+    )
+    tidy_build_amd_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=[],  # from parametrize()
         requires=[],
@@ -94,11 +109,6 @@ class JobConfigs:
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
             runs_on=RunnerLabels.BUILDER_AMD,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_TIDY,
-            provides=[],
-            runs_on=RunnerLabels.BUILDER_ARM,
         ),
     )
     build_jobs = Job.Config(
@@ -273,7 +283,7 @@ class JobConfigs:
             runs_on=RunnerLabels.BUILDER_ARM,
         ),
     )
-    builds_for_tests = [b.name for b in build_jobs] + [tidy_build_jobs[0]]
+    builds_for_tests = [b.name for b in build_jobs] + [tidy_build_arm_jobs[0]]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -491,7 +501,7 @@ class JobConfigs:
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
         command=f"python3 ./ci/jobs/unit_tests_job.py",
-        run_in_docker="clickhouse/fasttest",
+        run_in_docker="clickhouse/fasttest+--privileged",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
@@ -925,7 +935,7 @@ class JobConfigs:
                 "**/*.md",
                 "./docs",
                 "./ci/jobs/docs_job.py",
-                "CHANGELOG.md"
+                "CHANGELOG.md",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
