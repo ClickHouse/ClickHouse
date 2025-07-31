@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include "Columns/IColumn.h"
-#include "Core/TypeId.h"
+#include <Columns/IColumn.h>
+#include <Core/TypeId.h>
 
 namespace DB
 {
