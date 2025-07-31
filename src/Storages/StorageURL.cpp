@@ -329,7 +329,8 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
@@ -345,7 +346,8 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -412,7 +414,8 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                parser_group,
+                parser_shared_resources,
+                format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
@@ -511,8 +514,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            !parser_group->hasFilter())
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -1289,7 +1292,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1305,7 +1309,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            parser_group,
+            parser_shared_resources,
+            format_filter_info,
             storage->headers,
             read_uri_params,
             is_url_with_globs,

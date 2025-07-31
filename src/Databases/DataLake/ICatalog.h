@@ -159,9 +159,17 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
+    /// Creates new table in catalog.
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
-    virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
+    /// Updates metadata in catalog.
+    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+
+    /// Does the catalog support transactions or anything like that?
+    /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
+    /// So the REST catalog is transactional.
+    /// The Glue catalog does not support such operation.
+    virtual bool isTransactional() const { return false; }
 
 protected:
     /// Name of the warehouse,
