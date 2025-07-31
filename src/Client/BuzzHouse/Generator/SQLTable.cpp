@@ -565,6 +565,24 @@ static const std::vector<SQLFunc> datesHash
        SQLFunc::FUNCtoModifiedJulianDayOrNull,
        SQLFunc::FUNCtoUTCTimestamp};
 
+static const std::vector<SQLFunc> arithmeticFuncs
+    = {SQLFunc::FUNCplus,
+       SQLFunc::FUNCminus,
+       SQLFunc::FUNCmultiply,
+       SQLFunc::FUNCdivide,
+       SQLFunc::FUNCintDiv,
+       SQLFunc::FUNCintDivOrZero,
+       SQLFunc::FUNCifNotFinite,
+       SQLFunc::FUNCmodulo,
+       SQLFunc::FUNCmoduloOrZero,
+       SQLFunc::FUNCpositiveModulo,
+       SQLFunc::FUNCgcd,
+       SQLFunc::FUNClcm,
+       SQLFunc::FUNCmax2,
+       SQLFunc::FUNCmin2,
+       SQLFunc::FUNCicebergBucket,
+       SQLFunc::FUNCicebergTruncate};
+
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
     columnPathRef(entry, expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
@@ -580,6 +598,18 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
     }
 }
 
+void StatementGenerator::entryOrConstant(RandomGenerator & rg, const ColumnPathChain & entry, Expr * expr)
+{
+    if (rg.nextBool())
+    {
+        columnPathRef(entry, expr);
+    }
+    else
+    {
+        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+    }
+}
+
 void StatementGenerator::colRefOrExpression(
     RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
 {
@@ -592,8 +622,9 @@ void StatementGenerator::colRefOrExpression(
     const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
     const uint32_t rand_func = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
+    const uint32_t arithmetic_func = 5;
     const uint32_t col_ref = 40;
-    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref;
+    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + col_ref;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -610,9 +641,9 @@ void StatementGenerator::colRefOrExpression(
         /// Use modulo function for partitioning/keys
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
-        columnPathRef(entry, bexpr->mutable_lhs());
+        entryOrConstant(rg, entry, bexpr->mutable_lhs());
         bexpr->set_op(BinaryOperator::BINOP_PERCENT);
-        bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+        entryOrConstant(rg, entry, bexpr->mutable_rhs());
     }
     else if (one_arg_func && nopt < (datetime_func + modulo_func + one_arg_func + 1))
     {
@@ -663,12 +694,22 @@ void StatementGenerator::colRefOrExpression(
     else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
     {
         /// Use random func
+        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+    }
+    else if (
+        arithmetic_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + 1))
+    {
+        /// Use arithmetic function
         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-        func_call->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(arithmeticFuncs));
+        entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
+        entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
     }
-    else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref + 1))
+    else if (
+        col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + col_ref + 1))
     {
+        /// Reference a column
         columnPathRef(entry, expr);
     }
     else
