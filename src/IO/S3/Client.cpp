@@ -1,4 +1,5 @@
 #include <IO/S3/Client.h>
+#include "Common/Logger.h"
 
 #if USE_AWS_S3
 
@@ -668,12 +669,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
+        const Int64 max_attempts = client_configuration.s3_retry_attempts + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            /// Sometimes we need to slow down because other requests failed with network errors to free the S3 server a bit.
+            /// Slow down because another thread encountered a retryable error.
             slowDownAfterNetworkError();
 
             try
@@ -688,7 +689,19 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Not all requests can be retried in that way.
                 /// Requests that read out response body to build the result are possible to retry.
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
-                return request_fn_(request_);
+                auto outcome = request_fn_(request_);
+
+                if (!outcome.IsSuccess()
+                    /// AWS SDK's built-in per-thread retry logic is disabled.
+                    && client_configuration.s3_slow_all_threads_after_retryable_error
+                    && attempt_no + 1 < max_attempts
+                    /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                    && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
+                {
+                    sleepAfterNetworkError(outcome.GetError(), attempt_no);
+                    continue;
+                }
+                return outcome;
             }
             catch (Poco::Net::NetException &)
             {
@@ -1057,7 +1070,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             credentials_configuration.role_session_name, credentials_configuration.expiration_window_seconds,
             std::move(credentials_provider), client_configuration, credentials_configuration.sts_endpoint_override);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+    /// Disable per-thread retry loops if global retry coordination is in use.
+    uint32_t retry_attempts = client_configuration.s3_slow_all_threads_after_retryable_error ? 0 : client_configuration.s3_retry_attempts;
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_attempts);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
