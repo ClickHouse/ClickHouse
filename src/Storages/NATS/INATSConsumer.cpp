@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CONNECT_NATS;
     extern const int INVALID_STATE;
 }
 

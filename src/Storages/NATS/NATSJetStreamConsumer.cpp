@@ -33,26 +33,26 @@ void NATSJetStreamConsumer::subscribe()
     auto er = jsOptions_Init(&jet_stream_options);
     if (er != NATS_OK)
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS, 
+            ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to create NATS jet stream options for {}. Nats last error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
-    
+
     jsCtx * new_jet_stream_ctx = nullptr;
     er = natsConnection_JetStream(&new_jet_stream_ctx, getNativeConnection(), &jet_stream_options);
     if (er != NATS_OK)
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS, 
+            ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to create NATS jet stream ctx for {}. Nats last error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
     jet_stream_ctx.reset(new_jet_stream_ctx);
 
     er = jsSubOptions_Init(&subscribe_options);
     if (er != NATS_OK)
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS, 
+            ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to create NATS jet stream subscribe options for {}. Error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
 
     subscribe_options.Stream = stream_name.c_str();
     subscribe_options.Consumer = consumer_name.c_str();
-    
+
     if (!getQueueName().empty())
         subscribe_options.Queue = getQueueName().c_str();
 
@@ -76,9 +76,9 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
 
     natsSubscription * subscription;
     auto status = js_PullSubscribeAsync(
-        &subscription, 
+        &subscription,
         jet_stream_ctx.get(),
-        subject.c_str(), 
+        subject.c_str(),
         consumer_name.c_str(),
         onMsg,
         static_cast<void *>(this),
@@ -87,9 +87,9 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
         nullptr);
     if (status != NATS_OK)
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS, 
+            ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), nats_GetLastError(nullptr));
-    
+
     NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
     natsSubscription_SetPendingLimits(result.get(), -1, -1);
 
