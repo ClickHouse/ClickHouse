@@ -153,7 +153,7 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
     return default_expr_list;
 }
 
-static ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
     ASTPtr conversion_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & required_column : required_columns)
