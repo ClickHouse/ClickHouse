@@ -999,7 +999,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info &&
         !lazily_read_info &&
-        !reader_settings.use_query_condition_cache) /// the query condition cache produces incorrect results with intersecting ranges
+        !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
+        !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
