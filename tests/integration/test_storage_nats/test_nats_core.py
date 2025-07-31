@@ -1225,7 +1225,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
     with nats_cluster.pause_container("nats1"):
-        wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
+        nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
         instance.query_and_get_error(
             """
             CREATE TABLE test.cs (key UInt64, value UInt64)
@@ -1269,7 +1269,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         """
     )
     with nats_cluster.pause_container("nats1"):
-        wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
+        nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
         instance.query("ATTACH TABLE test.cs")
 
     nats_helpers.wait_for_table_is_ready(instance, "test.cs")
