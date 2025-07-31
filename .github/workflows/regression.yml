@@ -299,6 +299,7 @@ jobs:
           REPORTS_PATH=${{ runner.temp }}/reports_dir
           SUITE=alter
           STORAGE=/${{ matrix.ONLY }}_partition
+          PART='${{ matrix.PART }}'
           EOF
       - name: Setup
         run: .github/setup.sh
@@ -438,7 +439,8 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           REPORTS_PATH=${{runner.temp}}/reports_dir
           SUITE=clickhouse_keeper
-          STORAGE=/${{ matrix.PART }}/${{ matrix.SSL }}
+          STORAGE=/${{ matrix.SSL }}
+          PART=${{ matrix.PART }}
           SSL=${{ matrix.SSL == 'ssl' && '--ssl' || '' }}
           EOF
       - name: Setup
@@ -459,7 +461,7 @@ jobs:
         id: run_suite
         run:  EXITCODE=0;
               python3
-              -u ${{ env.SUITE }}/regression.py $SSL
+              -u ${{ env.SUITE }}/regression.py ${{ env.SSL }}
               --clickhouse-binary-path ${{ env.clickhouse_path }}
               --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.PART }}, ${{ matrix.SSL }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
               --only "part ${{ matrix.PART }}/*"
@@ -840,6 +842,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           REPORTS_PATH=${{ runner.temp }}/reports_dir
           SUITE=s3
+          PART=${{ matrix.PART }}
           STORAGE=/${{ matrix.STORAGE }}
           EOF
       - name: Setup
