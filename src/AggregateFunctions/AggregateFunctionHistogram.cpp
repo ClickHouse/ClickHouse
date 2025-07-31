@@ -25,6 +25,7 @@
 #include <queue>
 #include <cmath>
 #include <cstddef>
+#include <numeric>
 
 
 namespace DB
@@ -58,16 +59,6 @@ public:
     constexpr static size_t bins_count_limit = 250;
 
 private:
-    struct WeightedValue
-    {
-        Mean mean;
-        Weight weight;
-
-        WeightedValue operator+(const WeightedValue & other) const
-        {
-            return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
-        }
-    };
 
     // quantity of stored weighted-values
     UInt32 size;
@@ -76,16 +67,30 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
-    // Weighted values representation of histogram.
-    WeightedValue points[0];
+    // Weighted values representation of histogram - Structure of Arrays format.
+    Mean mean[0];
+    Weight weight[0];
 
     void sort()
     {
-        ::sort(points, points + size,
-            [](const WeightedValue & first, const WeightedValue & second)
+        std::vector<size_t> indices(size);
+        std::iota(indices.begin(), indices.end(), 0);
+        ::sort(indices.begin(), indices.end(),
+            [this](size_t i, size_t j)
             {
-                return first.mean < second.mean;
+                return mean[i] < mean[j];
             });
+        std::vector<Mean> temp_mean(size);
+        std::vector<Weight> temp_weight(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            temp_mean[i] = mean[indices[i]];
+            temp_weight[i] = weight[indices[i]];
+        }   for (size_t i = 0; i < size; ++i)
+        {
+            mean[i] = temp_mean[i];
+            weight[i] = temp_weight[i];
+        }
     }
 
     template <typename T>
@@ -158,7 +163,7 @@ private:
         std::priority_queue<QueueItem, PriorityQueueStorage<QueueItem>, std::greater<>> queue{
             std::greater<>(), PriorityQueueStorage<QueueItem>(storage.data())};
 
-        auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
+        auto quality = [&](UInt32 i) { return mean[next[i]] - mean[i]; };
 
         for (size_t i = 0; i + 1 < size; ++i)
             queue.push({quality(static_cast<UInt32>(i)), i});
@@ -173,7 +178,9 @@ private:
             if (!active[left] || !active[right] || quality(left) > min_item.first)
                 continue;
 
-            points[left] = points[left] + points[right];
+            Weight combined_weight = weight[left] + weight[right];
+            mean[left] = mean[left] + weight[right] * (mean[right] - mean[left]) / combined_weight;
+            weight[left] = combined_weight;
 
             delete_node(right);
             if (active[next[left]])
@@ -189,7 +196,8 @@ private:
         {
             if (active[right])
             {
-                points[left] = points[right];
+                mean[left] = mean[right];
+                weight[left] = weight[right];
                 ++left;
             }
         }
@@ -210,15 +218,18 @@ private:
         for (auto right = left + 1; right < size; ++right)
         {
             // Fuse points if their text representations differ only in last digit
-            auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
-            if (points[left].mean + std::fabs(min_diff) >= points[right].mean)
+            auto min_diff = 10 * (mean[left] + mean[right]) * std::numeric_limits<Mean>::epsilon();
+            if (mean[left] + std::fabs(min_diff) >= mean[right])
             {
-                points[left] = points[left] + points[right];
+                Weight combined_weight = weight[left] + weight[right];
+                mean[left] = mean[left] + weight[right] * (mean[right] - mean[left]) / combined_weight;
+                weight[left] = combined_weight;
             }
             else
             {
                 ++left;
-                points[left] = points[right];
+                mean[left] = mean[right];
+                weight[left] = weight[right];
             }
         }
         size = static_cast<UInt32>(left + 1);
@@ -230,12 +241,12 @@ public:
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
     {
-        static_assert(offsetof(AggregateFunctionHistogramData, points) == sizeof(AggregateFunctionHistogramData), "points should be last member");
+        static_assert(offsetof(AggregateFunctionHistogramData, mean) == sizeof(AggregateFunctionHistogramData), "mean should be last member");
     }
 
     static size_t structSize(size_t max_bins)
     {
-        return sizeof(AggregateFunctionHistogramData) + max_bins * 2 * sizeof(WeightedValue);
+        return sizeof(AggregateFunctionHistogramData) + max_bins * 2 * (sizeof(Mean) + sizeof(Weight));
     }
 
     void insertResultInto(ColumnVector<Mean> & to_lower, ColumnVector<Mean> & to_upper, ColumnVector<Weight> & to_weights, UInt32 max_bins)
@@ -245,24 +256,25 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            to_lower.insertValue((i == 0) ? lower_bound : (points[i].mean + points[i - 1].mean) / 2);
-            to_upper.insertValue((i + 1 == size) ? upper_bound : (points[i].mean + points[i + 1].mean) / 2);
+            to_lower.insertValue((i == 0) ? lower_bound : (mean[i] + mean[i - 1]) / 2);
+            to_upper.insertValue((i + 1 == size) ? upper_bound : (mean[i] + mean[i + 1]) / 2);
 
             // linear density approximation
-            Weight lower_weight = (i == 0) ? points[i].weight : ((points[i - 1].weight) + points[i].weight * 3) / 4;
-            Weight upper_weight = (i + 1 == size) ? points[i].weight : (points[i + 1].weight + points[i].weight * 3) / 4;
+            Weight lower_weight = (i == 0) ? weight[i] : ((weight[i - 1]) + weight[i] * 3) / 4;
+            Weight upper_weight = (i + 1 == size) ? weight[i] : (weight[i + 1] + weight[i] * 3) / 4;
             to_weights.insertValue((lower_weight + upper_weight) / 2);
         }
     }
 
-    void add(Mean value, Weight weight, UInt32 max_bins)
+    void add(Mean value, Weight weight_val, UInt32 max_bins)
     {
         // nans break sort and compression
         // infs don't fit in bins partition method
         if (!isFinite(value))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
 
-        points[size] = {value, weight};
+        mean[size] = value;
+        this->weight[size] = weight_val;
         ++size;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
@@ -276,7 +288,7 @@ public:
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(upper_bound, other.upper_bound);
         for (size_t i = 0; i < other.size; ++i)
-            add(other.points[i].mean, other.points[i].weight, max_bins);
+            add(other.mean[i], other.weight[i], max_bins);
     }
 
     void write(WriteBuffer & buf) const
@@ -285,7 +297,8 @@ public:
         writeBinary(upper_bound, buf);
 
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(points), size * sizeof(WeightedValue));
+        buf.write(reinterpret_cast<const char *>(mean), size * sizeof(Mean));
+        buf.write(reinterpret_cast<const char *>(weight), size * sizeof(Weight));
     }
 
     void read(ReadBuffer & buf, UInt32 max_bins)
@@ -301,7 +314,8 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size in histogram (maximum: {})", max_size);
 
-        buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
+        buf.readStrict(reinterpret_cast<char *>(mean), size * sizeof(Mean));
+        buf.readStrict(reinterpret_cast<char *>(weight), size * sizeof(Weight));
     }
 };
 
