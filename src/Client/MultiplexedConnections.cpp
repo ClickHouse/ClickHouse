@@ -208,7 +208,9 @@ void MultiplexedConnections::sendQuery(
         replica_states[0].connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
         sent_query = true;
-    } else {
+    }
+    else
+    {
         throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
     }
 }
