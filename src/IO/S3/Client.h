@@ -292,7 +292,7 @@ private:
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
 
-    void sleepAfterRetyableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
+    void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
     void slowDownAfterRetryableError() const;
 
     String initial_endpoint;

@@ -694,7 +694,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    sleepAfterRetyableError(outcome.GetError(), attempt_no);
+                    updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
                 }
                 return outcome;
@@ -727,7 +727,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
                     break;
 
-                sleepAfterRetyableError(error, attempt_no);
+                updateNextTimeToRetryAfterRetryableError(error, attempt_no);
             }
         }
 
@@ -758,16 +758,12 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     return RequestResult(error);
 }
 
-void Client::sleepAfterRetyableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
+void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
 {
-    auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
     if (!client_configuration.s3_slow_all_threads_after_network_error || !client_configuration.s3_slow_all_threads_after_retryable_error)
-    {
-        LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
         return;
-    }
 
+    auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
     /// Set the time other s3 requests must wait until.
     UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     UInt64 next_time_ms = current_time_ms + sleep_ms;
