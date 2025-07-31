@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-fasttest, no-random-settings
+-- no-fasttest: requires s3 storage
 -- no-random-settings: a lot of settings influence task sizes, so it is simple to disable randomization completely
 
 CREATE TABLE t(a UInt64, s String) ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 's3_cache', min_rows_for_wide_part = 10000, min_bytes_for_wide_part = 0;
