@@ -50,22 +50,35 @@ void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
-        /** Arguments of engine is following: *
-          * - the database name of the referenced table
-          * - the table name of the referenced table
+        /** Arguments of engine is following:
+          * Alias(database.table)
+          * or
+          * Alias(database, table)
           */
 
         ASTs & engine_args = args.engine_args;
-        if (engine_args.size() != 2)
+        if (engine_args.empty() || engine_args.size() > 2)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires 2 arguments - database name of the reference table and table name of the reference table");
+                "Storage Alias requires 1 or 2 arguments - Alias(database.table) or Alias(database, table), where database.table is the reference table");
 
         const ContextPtr & local_context = args.getLocalContext();
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-        String database = checkAndGetLiteralArgument<String>(engine_args[0], "database");
-        String table = checkAndGetLiteralArgument<String>(engine_args[1], "table");
+        QualifiedTableName qualified_name;
+        if (engine_args.size() == 1)
+        {
+            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
+            auto arg = checkAndGetLiteralArgument<String>(engine_args[0], "database_with_table");
+            qualified_name = QualifiedTableName::parseFromString(arg);
+        }
+        else
+        {
+            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
+            auto database = checkAndGetLiteralArgument<String>(engine_args[0], "database");
+            auto table = checkAndGetLiteralArgument<String>(engine_args[1], "table");
+            qualified_name.database = std::move(database);
+            qualified_name.table = std::move(table);
+        }
 
         return std::make_shared<StorageAlias>(
             args.table_id,
@@ -73,7 +86,7 @@ void registerStorageAlias(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.getContext(),
-            StorageID(database, table));
+            StorageID(qualified_name));
     },
     {
         .supports_schema_inference = true,

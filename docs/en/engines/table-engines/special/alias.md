@@ -13,6 +13,8 @@ The Alias table engine is a reference to another table.
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
 ```sql
+ENGINE = Alias(database_name.table_name)
+-- or
 ENGINE = Alias(database_name, table_name)
 ```
 
@@ -50,4 +52,4 @@ select * from alias_table order by id;
 
 The storage is replaced with the storage of the referenced table after getting the table from the in-memory database catalog. For example: in the table-resolving phase of the planner (when `allow_experimental_analyzer=1`) or in the constructor of an interpreter (when `allow_experimental_analyzer=0`).
 
-Currently, it only supports `SELECT` and `INSERT` queries. Other operations like `ALTER` will be supported later.
+Currently, it only supports `SELECT` and `INSERT` queries. Other operations like `ALTER` is not supported.
