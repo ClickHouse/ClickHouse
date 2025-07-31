@@ -771,7 +771,7 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -779,8 +779,10 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-The provided array of needles (each string needle<sub>i</sub>) should be tokenized.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
 In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**
@@ -829,7 +831,7 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -837,8 +839,10 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-The provided array of needles (each string needle<sub>i</sub>) should be tokenized.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
 In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**
