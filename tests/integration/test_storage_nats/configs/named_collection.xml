@@ -9,27 +9,15 @@
             <nats_username>click</nats_username>
             <nats_password>house</nats_password>
         </nats1>
-        <nats_async_pull_consumer>
+        <nats_pull_consumer>
             <nats_url>nats1:4444</nats_url>
             <nats_stream>test_stream</nats_stream>
             <nats_consumer_name>test_consumer</nats_consumer_name>
-            <nats_consumer_mode>async</nats_consumer_mode>
             <nats_subjects>test_subject</nats_subjects>
             <nats_format>JSONEachRow</nats_format>
             <nats_skip_broken_messages>111</nats_skip_broken_messages>
             <nats_username>click</nats_username>
             <nats_password>house</nats_password>
-        </nats_async_pull_consumer>
-        <nats_sync_pull_consumer>
-            <nats_url>nats1:4444</nats_url>
-            <nats_stream>test_stream</nats_stream>
-            <nats_consumer_name>test_consumer</nats_consumer_name>
-            <nats_consumer_mode>sync</nats_consumer_mode>
-            <nats_subjects>test_subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_skip_broken_messages>111</nats_skip_broken_messages>
-            <nats_username>click</nats_username>
-            <nats_password>house</nats_password>
-        </nats_sync_pull_consumer>
+        </nats_pull_consumer>
     </named_collections>
 </clickhouse>

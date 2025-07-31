@@ -17,7 +17,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
-#include <Storages/NATS/NATSJetStreamAsyncConsumer.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSJetStreamProducer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
@@ -56,7 +56,6 @@ namespace NATSSetting
     extern const NATSSettingsUInt64 nats_max_block_size;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
     extern const NATSSettingsString nats_consumer_name;
-    extern const NATSSettingsNATSJetStreamConsumerMode nats_consumer_mode;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
     extern const NATSSettingsString nats_queue_group;
@@ -544,12 +543,8 @@ INATSConsumerPtr StorageNATS::createConsumer()
     }
 
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
-    auto consumer_mode = (*nats_settings)[NATSSetting::nats_consumer_mode];
 
-    if(consumer_mode == NATSJetStreamConsumerMode::ASYNC)
-        return std::make_shared<NATSJetStreamAsyncConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
-    
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported consumer type");
+    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
 }
 INATSProducerPtr StorageNATS::createProducer(String subject)
 {

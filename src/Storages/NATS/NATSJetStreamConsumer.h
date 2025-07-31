@@ -26,7 +26,7 @@ public:
     void subscribe() override;
 
 protected:
-    virtual NATSSubscriptionPtr subscribeToSubject(const String & subject) = 0;
+    NATSSubscriptionPtr subscribeToSubject(const String & subject);
 
     const String stream_name;
     const String consumer_name;

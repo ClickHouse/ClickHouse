@@ -69,4 +69,31 @@ void NATSJetStreamConsumer::subscribe()
     setSubscriptions(std::move(created_subscriptions));
 }
 
+NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & subject)
+{
+    if (consumer_name.empty())
+        throw Exception(ErrorCodes::INVALID_STATE, "To use NATS jet stream consumers, you must specify `nats_consumer_name` setting");
+
+    natsSubscription * subscription;
+    auto status = js_PullSubscribeAsync(
+        &subscription, 
+        jet_stream_ctx.get(),
+        subject.c_str(), 
+        consumer_name.c_str(),
+        onMsg,
+        static_cast<void *>(this),
+        &jet_stream_options,
+        &subscribe_options,
+        nullptr);
+    if (status != NATS_OK)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS, 
+            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), nats_GetLastError(nullptr));
+    
+    NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
+    natsSubscription_SetPendingLimits(result.get(), -1, -1);
+
+    return result;
+}
+
 }

@@ -65,10 +65,7 @@ def nats_setup_teardown():
 
 # Tests
 
-consumer_modes = ["async"]
-
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_select_empty(nats_cluster, consumer_mode):
+def test_nats_select_empty(nats_cluster):
     
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
     
@@ -79,7 +76,6 @@ def test_nats_select_empty(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -89,8 +85,7 @@ def test_nats_select_empty(nats_cluster, consumer_mode):
     assert int(instance.query("SELECT count() FROM test.nats")) == 0
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_select(nats_cluster, consumer_mode):
+def test_nats_select(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -101,7 +96,6 @@ def test_nats_select(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
@@ -121,8 +115,7 @@ def test_nats_select(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_json_without_delimiter(nats_cluster, consumer_mode):
+def test_nats_json_without_delimiter(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -133,7 +126,6 @@ def test_nats_json_without_delimiter(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -160,8 +152,7 @@ def test_nats_json_without_delimiter(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_csv_with_delimiter(nats_cluster, consumer_mode):
+def test_nats_csv_with_delimiter(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -172,7 +163,6 @@ def test_nats_csv_with_delimiter(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'CSV',
                      nats_row_delimiter = '\\n';
@@ -205,8 +195,7 @@ def test_nats_csv_with_delimiter(nats_cluster, consumer_mode):
 
     nats_helpers.check_result(result, True)
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_tsv_with_delimiter(nats_cluster, consumer_mode):
+def test_nats_tsv_with_delimiter(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -217,7 +206,6 @@ def test_nats_tsv_with_delimiter(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -238,8 +226,7 @@ def test_nats_tsv_with_delimiter(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_macros(nats_cluster, consumer_mode):
+def test_nats_macros(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -250,7 +237,6 @@ def test_nats_macros(nats_cluster, consumer_mode):
             SETTINGS nats_url = '{{nats_url}}',
                      nats_stream = '{{nats_stream}}',
                      nats_consumer_name = '{{nats_consumer_name}}',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = '{{nats_subjects}}',
                      nats_format = '{{nats_format}}';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -269,8 +255,7 @@ def test_nats_macros(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_materialized_view(nats_cluster, consumer_mode):
+def test_nats_materialized_view(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -281,7 +266,6 @@ def test_nats_materialized_view(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
@@ -308,8 +292,7 @@ def test_nats_materialized_view(nats_cluster, consumer_mode):
     nats_helpers.check_result("SELECT * FROM test.view2 ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_materialized_view_with_subquery(nats_cluster, consumer_mode):
+def test_nats_materialized_view_with_subquery(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -320,7 +303,6 @@ def test_nats_materialized_view_with_subquery(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
@@ -340,8 +322,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_many_materialized_views(nats_cluster, consumer_mode):
+def test_nats_many_materialized_views(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -352,7 +333,6 @@ def test_nats_many_materialized_views(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
@@ -387,8 +367,7 @@ def test_nats_many_materialized_views(nats_cluster, consumer_mode):
     nats_helpers.check_result(result2, True)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_protobuf(nats_cluster, consumer_mode):
+def test_nats_protobuf(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -399,7 +378,6 @@ def test_nats_protobuf(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'Protobuf',
                      nats_schema = 'nats.proto:ProtoKeyValue';
@@ -441,8 +419,7 @@ def test_nats_protobuf(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_big_message(nats_cluster, consumer_mode):
+def test_nats_big_message(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -461,7 +438,6 @@ def test_nats_big_message(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value String)
@@ -476,8 +452,7 @@ def test_nats_big_message(nats_cluster, consumer_mode):
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", batch_messages * nats_messages)
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_mv_combo(nats_cluster, consumer_mode):
+def test_nats_mv_combo(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -491,7 +466,6 @@ def test_nats_mv_combo(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_num_consumers = {NUM_CONSUMERS},
                      nats_format = 'JSONEachRow',
@@ -564,8 +538,7 @@ def test_nats_mv_combo(nats_cluster, consumer_mode):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_insert(nats_cluster, consumer_mode):
+def test_nats_insert(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -575,7 +548,6 @@ def test_nats_insert(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -602,8 +574,7 @@ def test_nats_insert(nats_cluster, consumer_mode):
     nats_helpers.check_result(result, True)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_fetching_messages_without_mv(nats_cluster, consumer_mode):
+def test_fetching_messages_without_mv(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -613,7 +584,6 @@ def test_fetching_messages_without_mv(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -639,8 +609,7 @@ def test_fetching_messages_without_mv(nats_cluster, consumer_mode):
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_many_subjects_insert_wrong(nats_cluster, consumer_mode):
+def test_nats_many_subjects_insert_wrong(nats_cluster):
 
     instance.query(
         f"""
@@ -648,7 +617,6 @@ def test_nats_many_subjects_insert_wrong(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'insert1,insert2.>,insert3.*.foo',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -693,8 +661,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_many_subjects_insert_right(nats_cluster, consumer_mode):
+def test_nats_many_subjects_insert_right(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -704,7 +671,6 @@ def test_nats_many_subjects_insert_right(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'right_insert1,right_insert2',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -735,8 +701,7 @@ def test_nats_many_subjects_insert_right(nats_cluster, consumer_mode):
     nats_helpers.check_result(result, True)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_many_inserts(nats_cluster, consumer_mode):
+def test_nats_many_inserts(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -746,7 +711,6 @@ def test_nats_many_inserts(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -755,7 +719,6 @@ def test_nats_many_inserts(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -812,8 +775,7 @@ def test_nats_many_inserts(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_overloaded_insert(nats_cluster, consumer_mode):
+def test_nats_overloaded_insert(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -824,7 +786,6 @@ def test_nats_overloaded_insert(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_num_consumers = 5,
                      nats_max_block_size = 10000,
@@ -834,7 +795,6 @@ def test_nats_overloaded_insert(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
@@ -895,8 +855,7 @@ def test_nats_overloaded_insert(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_virtual_column(nats_cluster, consumer_mode):
+def test_nats_virtual_column(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -907,7 +866,6 @@ def test_nats_virtual_column(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
@@ -948,8 +906,7 @@ def test_nats_virtual_column(nats_cluster, consumer_mode):
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_virtual_column_with_materialized_view(nats_cluster, consumer_mode):
+def test_nats_virtual_column_with_materialized_view(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -960,7 +917,6 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster, consumer_mode)
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64, subject String) ENGINE = MergeTree()
@@ -998,8 +954,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster, consumer_mode)
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_many_consumers_to_each_queue(nats_cluster, consumer_mode):
+def test_nats_many_consumers_to_each_queue(nats_cluster):
 
     instance.query(
         """
@@ -1021,7 +976,6 @@ def test_nats_many_consumers_to_each_queue(nats_cluster, consumer_mode):
                 SETTINGS nats_url = 'nats1:4444',
                          nats_stream = 'test_stream',
                          nats_consumer_name = 'test_consumer_{table_id}',
-                         nats_consumer_mode = '{consumer_mode}',
                          nats_subjects = 'test_subject',
                          nats_num_consumers = 2,
                          nats_queue_group = 'many_consumers',
@@ -1073,8 +1027,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, consumer_mode):
+def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
     
@@ -1088,7 +1041,6 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, co
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_num_consumers = 2,
@@ -1097,7 +1049,6 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, co
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
@@ -1145,8 +1096,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, co
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_no_connection_at_startup_1(nats_cluster, consumer_mode):
+def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1158,7 +1108,6 @@ def test_nats_no_connection_at_startup_1(nats_cluster, consumer_mode):
                 SETTINGS nats_url = 'nats1:4444',
                         nats_stream = 'test_stream',
                         nats_consumer_name = 'test_consumer',
-                        nats_consumer_mode = '{consumer_mode}',
                         nats_subjects = 'test_subject',
                         nats_format = 'JSONEachRow',
                         nats_num_consumers = '5',
@@ -1172,8 +1121,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster, consumer_mode):
         )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_no_connection_at_startup_2(nats_cluster, consumer_mode):
+def test_nats_no_connection_at_startup_2(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1184,7 +1132,6 @@ def test_nats_no_connection_at_startup_2(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_num_consumers = '5',
@@ -1232,8 +1179,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_format_factory_settings(nats_cluster, consumer_mode):
+def test_nats_format_factory_settings(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1245,7 +1191,6 @@ def test_nats_format_factory_settings(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      date_time_input_format = 'best_effort';
@@ -1270,8 +1215,7 @@ def test_nats_format_factory_settings(nats_cluster, consumer_mode):
 
     assert result == expected
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_bad_args(nats_cluster, consumer_mode):
+def test_nats_bad_args(nats_cluster):
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
@@ -1280,7 +1224,6 @@ def test_nats_bad_args(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         """
@@ -1293,15 +1236,13 @@ def test_nats_bad_args(nats_cluster, consumer_mode):
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         """
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_drop_mv(nats_cluster, consumer_mode):
+def test_nats_drop_mv(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1312,7 +1253,6 @@ def test_nats_drop_mv(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -1363,15 +1303,14 @@ def test_nats_drop_mv(nats_cluster, consumer_mode):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_nats_predefined_configuration(nats_cluster, consumer_mode):
+def test_nats_predefined_configuration(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS(nats_{consumer_mode}_pull_consumer);
+            ENGINE = NATS(nats_pull_consumer);
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
@@ -1395,8 +1334,7 @@ def test_nats_predefined_configuration(nats_cluster, consumer_mode):
     assert result == "1\t2\n"
         
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_format_with_prefix_and_suffix(nats_cluster, consumer_mode):
+def test_format_with_prefix_and_suffix(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1407,7 +1345,6 @@ def test_format_with_prefix_and_suffix(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'CustomSeparated';
         """
@@ -1424,8 +1361,7 @@ def test_format_with_prefix_and_suffix(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_max_rows_per_message(nats_cluster, consumer_mode):
+def test_max_rows_per_message(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
@@ -1437,7 +1373,6 @@ def test_max_rows_per_message(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'table_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'CustomSeparated',
                      nats_max_rows_per_message = 3,
@@ -1473,8 +1408,7 @@ def test_max_rows_per_message(nats_cluster, consumer_mode):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_row_based_formats(nats_cluster, consumer_mode):
+def test_row_based_formats(nats_cluster):
     
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
@@ -1511,7 +1445,6 @@ def test_row_based_formats(nats_cluster, consumer_mode):
                 SETTINGS nats_url = 'nats1:4444',
                          nats_stream = 'test_stream',
                          nats_consumer_name = 'table_consumer',
-                         nats_consumer_mode = '{consumer_mode}',
                          nats_subjects = 'test_subject',
                          nats_format = '{format_name}';      
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
@@ -1544,8 +1477,7 @@ def test_row_based_formats(nats_cluster, consumer_mode):
         assert result == expected
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_block_based_formats_1(nats_cluster, consumer_mode):
+def test_block_based_formats_1(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1556,7 +1488,6 @@ def test_block_based_formats_1(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'PrettySpace';
         """
@@ -1597,8 +1528,7 @@ def test_block_based_formats_1(nats_cluster, consumer_mode):
     ]
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_block_based_formats_2(nats_cluster, consumer_mode):
+def test_block_based_formats_2(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
@@ -1625,7 +1555,6 @@ def test_block_based_formats_2(nats_cluster, consumer_mode):
                 SETTINGS nats_url = 'nats1:4444',
                          nats_stream = 'test_stream',
                          nats_consumer_name = 'table_consumer',
-                         nats_consumer_mode = '{consumer_mode}',
                          nats_subjects = 'test_subject',
                          nats_format = '{format_name}';      
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
@@ -1657,8 +1586,7 @@ def test_block_based_formats_2(nats_cluster, consumer_mode):
         assert result == expected
 
 
-@pytest.mark.parametrize("consumer_mode", consumer_modes)
-def test_hiding_credentials(nats_cluster, consumer_mode):
+def test_hiding_credentials(nats_cluster):
 
     asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
@@ -1671,7 +1599,6 @@ def test_hiding_credentials(nats_cluster, consumer_mode):
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
                      nats_consumer_name = 'test_consumer',
-                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_username = 'click',
