@@ -109,21 +109,6 @@ struct string_view
     {
     }
 
-    inline const char * data() const
-    {
-        return ptr;
-    }
-
-    inline const char * begin() const
-    {
-        return ptr;
-    }
-
-    inline const char * end() const
-    {
-        return ptr + size;
-    }
-
     inline size_t find(string_view other) const
     {
         for (size_t offset = 0; offset + other.size <= size; ++offset)
