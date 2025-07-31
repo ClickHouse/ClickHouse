@@ -116,6 +116,8 @@ public:
     const std::set<Int32> & getColumnsIDsWithBounds() const;
 
 private:
+    void sortManifestEntriesBySchemaId();
+
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
     std::vector<ManifestFileEntry> files;

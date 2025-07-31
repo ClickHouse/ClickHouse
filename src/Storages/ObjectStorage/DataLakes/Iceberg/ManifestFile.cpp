@@ -294,45 +294,13 @@ ManifestFileContent::ManifestFileContent(
             /// If we don't have column characteristics, bounds don't have any sense.
             /// This happens if the subfield is inside map ot array, because we don't support
             /// name generation for such subfields (we support names of nested subfields in structs only).
-            if (!field_characteristics)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"), "Column with id {}, so bounds are ignored", column_id);
-                continue;
-            }
             const auto & name_and_type = *field_characteristics;
             String left_str;
             String right_str;
             /// lower_bound and upper_bound may be NULL.
-            if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
-                    "Some of the bounds for column with id {} are NULL, so bounds are ignored, left bound {}, right bound {}",
-                    column_id,
-                    left_str,
-                    right_str);
-                continue;
-            }
 
             auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
             auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
-            if (!left || !right)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
-                    "Failed to deserialize bounds for column with id {}, left bound {}, right bound {}",
-                    column_id,
-                    left_str,
-                    right_str);
-                continue;
-            }
-
-            LOG_DEBUG(
-                &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
-                "Can deserialize bounds for column with id {}, file_path: {}",
-                column_id,
-                file_path);
 
             columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
         }
@@ -365,7 +333,12 @@ ManifestFileContent::ManifestFileContent(
         }
         this->files.emplace_back(status, added_sequence_number, snapshot_id, schema_id, file, partition_key_value, columns_infos);
     }
+    sortManifestEntriesBySchemaId();
+}
 
+// We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
+void ManifestFileContent::sortManifestEntriesBySchemaId()
+{
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
 

@@ -745,6 +745,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
             const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
             for (const auto & manifest_file_entry : data_files_in_manifest)
             {
+                // Trying to reuse already initialized pruner
                 if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
                 {
                     previous_entry_schema = manifest_file_entry.schema_id;
@@ -759,10 +760,6 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
 
                 if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
-                    LOG_DEBUG(
-                        log,
-                        "Processing manifest file entry with data file: {}",
-                        std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                     if (!use_partition_pruning || !pruner->canBePruned(manifest_file_entry))
                     {
                         if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
@@ -773,7 +770,6 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         }
     }
 
-    LOG_DEBUG(log, "ABCDEFGH: Found {} data files in Iceberg table {}", data_files.size(), configuration.lock()->getPathForRead().path);
     if (!use_partition_pruning)
     {
         std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
