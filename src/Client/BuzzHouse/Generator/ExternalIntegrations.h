@@ -63,10 +63,7 @@ public:
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &)
-    {
-        return false;
-    }
+    virtual bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -87,30 +84,19 @@ public:
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
-    bool performIntegration(
-        RandomGenerator & rg,
-        std::shared_ptr<SQLDatabase> db,
-        uint32_t tname,
-        bool can_shuffle,
-        bool is_deterministic,
-        std::vector<ColumnPathChain> & entries) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
     virtual bool optimizeTableForOracle(PeerTableDatabase, const SQLTable &) { return true; }
 
-    bool performCreatePeerTable(
-        RandomGenerator & rg,
-        bool is_clickhouse_integration,
-        const SQLTable & t,
-        const CreateTable * ct,
-        std::vector<ColumnPathChain> & entries);
+    bool performCreatePeerTable(RandomGenerator &, bool, SQLTable &, const CreateTable *, std::vector<ColumnPathChain> &);
 
     virtual String truncateStatement() { return String(); }
 
-    bool truncatePeerTableOnRemote(const SQLTable & t);
+    bool truncatePeerTableOnRemote(const SQLTable &);
 
-    bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
+    bool performQueryOnServerOrRemote(PeerTableDatabase, const String &);
 
     ~ClickHouseIntegratedDatabase() override = default;
 
@@ -258,7 +244,7 @@ public:
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -292,13 +278,7 @@ public:
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
-    bool performIntegration(
-        RandomGenerator & rg,
-        std::shared_ptr<SQLDatabase>,
-        uint32_t tname,
-        bool can_shuffle,
-        bool is_deterministic,
-        std::vector<ColumnPathChain> & entries) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MongoDBIntegration() override = default;
 #else
@@ -327,14 +307,13 @@ public:
     {
     }
 
-    void setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
 
-    void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
 
-    void setBackupDetails(const String & filename, BackupRestore * br);
+    void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(
-        RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
@@ -347,12 +326,11 @@ public:
     {
     }
 
-    void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
 
-    void setBackupDetails(const String & filename, BackupRestore * br);
+    void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(
-        RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     ~AzuriteIntegration() override = default;
 };
@@ -365,9 +343,9 @@ public:
     {
     }
 
-    void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
 };
@@ -391,6 +369,8 @@ private:
     std::vector<bool> next_calls_succeeded;
 
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
+
+    ClickHouseIntegratedDatabase * getPeerPtr(const PeerTableDatabase pt) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }
@@ -438,12 +418,12 @@ public:
     explicit ExternalIntegrations(FuzzConfig & fcc);
 
     void createExternalDatabaseTable(
-        RandomGenerator & rg, IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+        RandomGenerator & rg, IntegrationCall dc, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
     void createExternalDatabase(RandomGenerator & rg, IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
     void createPeerTable(
-        RandomGenerator & rg, PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
+        RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
 
     bool truncatePeerTableOnRemote(const SQLTable & t);
 

@@ -1212,7 +1212,7 @@ keeper_settings = {
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
         "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
         "rocksdb_load_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
-        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 0, 100000),
+        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
         "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
         "snapshots_to_keep": threshold_generator(0.2, 0.2, 0, 5),
         "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),

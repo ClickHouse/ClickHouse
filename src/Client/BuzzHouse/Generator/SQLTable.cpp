@@ -1235,10 +1235,6 @@ void StatementGenerator::generateEngineDetails(
         {
             te->add_params()->set_svalue(b.getTablePath(fc, false));
         }
-        /// Set path, but ignore it for now
-        //const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
-        //te->add_params()->set_svalue(fpath.generic_string());
-
         /// Set format
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());

@@ -38,6 +38,13 @@ enum class PeerQuery
     AllPeers = 2
 };
 
+enum class CatalogTable
+{
+    Glue = 1,
+    Hive = 2,
+    REST = 3
+};
+
 struct SQLColumn
 {
 public:
@@ -159,6 +166,7 @@ public:
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
     std::optional<InOutFormat> file_format;
+    std::optional<CatalogTable> catalog;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
