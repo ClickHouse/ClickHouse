@@ -1209,6 +1209,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
                 if (parquet_columns_to_clickhouse)
                 {
+                    chassert(clickhouse_columns_to_parquet);
+
                     auto full_name = clickhouse_columns_to_parquet->at(column_name);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())

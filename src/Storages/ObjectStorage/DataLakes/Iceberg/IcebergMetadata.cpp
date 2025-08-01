@@ -96,77 +96,7 @@ parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer
     return {schema_object_id, schema_object};
 }
 
-std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
-{
-    if (nested_table_name.empty())
-        return nested_field_name;
-
-    if (nested_field_name.empty())
-        return nested_table_name;
-
-    return nested_table_name + "." + nested_field_name;
 }
-
-
-void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
-{
-    auto type_str = type->getValue<String>(Iceberg::f_type);
-    if (type_str == "map")
-    {
-        auto key_id = type->getValue<Int64>(Iceberg::f_key_id);
-        auto value_id = type->getValue<Int64>(Iceberg::f_value_id);
-        auto key_name = concatenateName(current_path, "key");
-        auto value_name = concatenateName(current_path, "value");
-        if (type->isObject(Iceberg::f_key))
-            traverseComplexType(type->getObject(Iceberg::f_key), result, key_name);
-        result[key_name] = key_id;
-
-        if (type->isObject(Iceberg::f_value))
-            traverseComplexType(type->getObject(Iceberg::f_value), result, value_name);
-        result[value_name] = value_id;
-        return;
-    }
-    if (type_str == "list")
-    {
-        auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
-        if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
-        result[current_path] = element_id;
-        return;
-    }
-    if (type_str == "struct")
-    {
-        auto fields = type->getArray(Iceberg::f_fields);
-        for (UInt32 i = 0; i < fields->size(); ++i)
-        {
-            auto field = fields->getObject(i);
-            auto field_id = field->getValue<Int32>(Iceberg::f_id);
-            auto child_path = concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
-            if (field->isObject(Iceberg::f_type))
-                traverseComplexType(field->getObject(Iceberg::f_type), result, child_path);
-            result[child_path] = field_id;
-        }
-        return;
-    }
-}
-
-std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_map<String, Int64> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        auto field_id = current_object->getValue<Int32>(Iceberg::f_id);
-        auto cur_name = current_object->getValue<String>(Iceberg::f_name);
-        if (current_object->isObject(Iceberg::f_type))
-            traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
-        result[cur_name] = field_id;
-    }
-    return result;
-}
-
-}
-
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
@@ -394,7 +324,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     if (schema->getValue<Int32>(f_schema_id) != schema_id)
                         continue;
 
-                    column_name_to_parquet_field_id = traverseSchema(schema->getArray(Iceberg::f_fields));
+                    column_name_to_parquet_field_id = IcebergSchemaProcessor::traverseSchema(schema->getArray(Iceberg::f_fields));
                 }
                 column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
             }

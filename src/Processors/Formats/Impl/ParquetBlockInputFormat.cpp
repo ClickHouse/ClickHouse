@@ -70,16 +70,6 @@ namespace ErrorCodes
 namespace
 {
 
-std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
-{
-    if (nested_table_name.empty())
-        return nested_field_name;
-
-    if (nested_field_name.empty())
-        return nested_table_name;
-
-    return nested_table_name + "." + nested_field_name;
-}
 
 void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
 {
@@ -87,10 +77,10 @@ void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map
     {
         auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
         for (int i = 0; i < group->field_count(); ++i)
-            traverseAllFields(group->field(i), fields_mapping, concatenateName(current_path, group->name()));
+            traverseAllFields(group->field(i), fields_mapping, Nested::concatenateName(current_path, group->name()));
     }
     int field_id = node->field_id();
-    fields_mapping[field_id] = concatenateName(current_path, node->name());
+    fields_mapping[field_id] = Nested::concatenateName(current_path, node->name());
 }
 
 }

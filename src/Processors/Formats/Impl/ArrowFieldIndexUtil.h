@@ -97,7 +97,10 @@ public:
                     transformed_name = it->second;
             }
             if (ignore_case)
+            {
                 boost::to_lower(col_name);
+                boost::to_lower(transformed_name);
+            }
             findRequiredIndices(col_name, transformed_name, i, named_col.type, fields_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
         }
         return required_indices;
