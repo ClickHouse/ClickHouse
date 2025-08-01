@@ -7,7 +7,7 @@ CREATE TABLE t0 (c0 Int) ENGINE = Memory;
 
 SYSTEM ENABLE FAILPOINT use_delayed_remote_source;
 
-SELECT count() FROM remoteSecure('localhost:9440', 'default', 't0') AS tx; -- { serverError 265 }
+SELECT count() FROM remoteSecure('localhost:9440', currentDatabase(), 't0') AS tx; -- { serverError 265 }
 
 SYSTEM DISABLE FAILPOINT use_delayed_remote_source;
 
