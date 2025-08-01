@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include "Common/Logger.h"
 #include <Common/CurrentThread.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -30,6 +31,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include "Core/Joins.h"
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
@@ -127,7 +129,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -161,7 +164,11 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
+    /// use shared instance if provided, else create a new one
+    if (shared_used_flags_)
+        used_flags = shared_used_flags_;
+    else
+        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1174,7 +1181,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
 
     for (const auto & onexpr : table_join->getClauses())
     {
@@ -1241,6 +1248,41 @@ HashJoin::~HashJoin()
         instance_log_id,
         getTotalByteCount(),
         getTotalRowCount());
+}
+
+bool HashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(kind))
+        return false;
+
+    if (!needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+
+    /// if the hash table is empty, we have no non-joined rows
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
+        return false;
+
+    updateNonJoinedRowsStatus();
+    return has_non_joined_rows.load(std::memory_order_acquire);
+}
+
+void HashJoin::updateNonJoinedRowsStatus() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return;
+
+    bool found_non_joined = false;
+
+    if (!empty() && used_flags)
+    {
+        found_non_joined = true;
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
 }
 
 template <typename Mapped>
@@ -1432,7 +1474,8 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                bool is_used = parent.isUsed(offset);
+                if (is_used)
                     continue;
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
@@ -1464,7 +1507,24 @@ private:
             size_t rows = columns->columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
-                if (nullmap && (*nullmap)[row])
+                try
+                {
+                    if ((*nullmap)[row])
+                    {
+                        /// we make sure we have columns to insert into
+                        if (columns_keys_and_right.empty())
+                            continue;
+
+                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                        {
+                            /// check if the block has enough columns
+                            if (col < columns->columns.size())
+                                columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
+                        }
+                        ++rows_added;
+                    }
+                }
+                catch (...)
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
@@ -1801,5 +1861,6 @@ void HashJoin::onBuildPhaseFinish()
                     map_.getBufferSizeInCells(data->type) + 1);
             });
     }
+    updateNonJoinedRowsStatus();
 }
 }
