@@ -441,38 +441,91 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
             std::vector<JoinCondition> result;
             if (function_name == "or")
             {
+                std::vector<std::vector<JoinCondition>> all_child_conditions;
+
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
-                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    all_child_conditions.emplace_back(std::move(child_res));
                     child_res.clear();
                 }
-
+                
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
                 // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
-                size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
-                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+
+                // Create two distinct JOIN clauses with specific filter conditions
+                if (all_child_conditions.size() == 2)
                 {
-                    result.clear();
-                    buildJoinCondition(node, builder_context, result.emplace_back());
+                    /// set explicit disjunctive flags for all child conditions to ensure OR semantics
+                    for (auto & child_conditions : all_child_conditions)
+                    {
+                        for (auto & condition : child_conditions)
+                        {
+                            condition.left_filter_disjunctive = true;
+                            condition.right_filter_disjunctive = true;
+                        }
+                        result.insert(result.end(), std::make_move_iterator(child_conditions.begin()), std::make_move_iterator(child_conditions.end()));
+                    }
+                }
+                else
+                {
+                    // Default case - combine all child conditions
+                    for (auto & child_conditions : all_child_conditions)
+                        result.insert(result.end(), std::make_move_iterator(child_conditions.begin()), std::make_move_iterator(child_conditions.end()));
+
+                    size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
+                    if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                    {
+                        result.clear();
+                        buildJoinCondition(node, builder_context, result.emplace_back());
+                    }
                 }
             }
             else
             {
-                auto it = arguments.begin();
+                std::vector<std::vector<JoinCondition>> all_child_conditions;
+                for (auto & argument : arguments)
                 {
-                    auto & child_res = get_and_check_built_clause(it->get());
-
-                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    auto & child_res = get_and_check_built_clause(argument.get());
+                    all_child_conditions.emplace_back(std::move(child_res));
                     child_res.clear();
                 }
-                it++;
 
-                for (; it != arguments.end(); it++)
+                if (!all_child_conditions.empty())
                 {
-                    auto & child_res = get_and_check_built_clause(it->get());
-                    result = makeCrossProduct(result, child_res);
-                    child_res.clear();
+                    // For AND conditions, we need to do cross product
+                    auto it = all_child_conditions.begin();
+
+                    std::vector<JoinCondition> initial_conditions = std::move(*it);
+
+                    for (auto & condition : initial_conditions)
+                    {
+                        if (!condition.left_filter_conditions.empty())
+                            condition.left_filter_disjunctive = true;
+
+                        if (!condition.right_filter_conditions.empty())
+                            condition.right_filter_disjunctive = true;
+                    }
+
+                    result = std::move(initial_conditions);
+                    ++it;
+
+                    // Then cross product with remaining conditions
+                    for (; it != all_child_conditions.end(); ++it)
+                    {
+                        auto & next_conditions = *it;
+
+                        for (auto & condition : next_conditions)
+                        {
+                            if (!condition.left_filter_conditions.empty())
+                                condition.left_filter_disjunctive = true;
+
+                            if (!condition.right_filter_conditions.empty())
+                                condition.right_filter_disjunctive = true;
+                        }
+
+                        result = makeCrossProduct(result, next_conditions);
+                    }
                 }
             }
             built_clauses.emplace(node.get(), std::move(result));
