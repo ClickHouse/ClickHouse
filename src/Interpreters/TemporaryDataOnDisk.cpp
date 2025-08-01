@@ -149,23 +149,21 @@ public:
     }
 
     ~TemporaryFileOnLocalDisk() override
+    try
     {
-        try
+        if (disk->existsFile(path_to_file))
         {
-            if (disk->existsFile(path_to_file))
-            {
-                LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
-                disk->removeRecursive(path_to_file);
-            }
-            else
-            {
-                LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
-            }
+            LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
+            disk->removeRecursive(path_to_file);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
 private:
@@ -339,7 +337,7 @@ TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, Te
 {
     /// Constant columns must be avoided since they are not supported in (de/)serialization, but we have to keep lazy columns
     /// to make sure NativeReader can deserialize them correctly. See NativeReader::read for more details about how lazy columns are handled.
-    for (const auto & column : *header_)
+    for (const auto & column : header_)
         header.insert(ColumnWithTypeAndName{column.column->cloneEmpty()->convertToFullColumnIfConst(), column.type, column.name});
 }
 
