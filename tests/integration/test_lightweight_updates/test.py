@@ -112,7 +112,10 @@ def test_lwu_replicated_database(started_cluster, db_engine, table_engine):
 
 @pytest.mark.parametrize("table_engine", ["ReplicatedMergeTree"])
 def test_lwu_upgrade(started_cluster, table_engine):
-    node3.query("DROP TABLE IF EXISTS lwu_table_upgrade")
+    node3.query("DROP TABLE IF EXISTS lwu_table_upgrade SYNC")
+
+    if CLICKHOUSE_CI_MIN_TESTED_VERSION not in node3.query("select version()").strip():
+        node3.restart_with_original_version(clear_data_dir=True)
 
     node3.query(
         f"CREATE TABLE lwu_table_upgrade (x Int32, y String) ENGINE = {table_engine}('/test/clickhouse/default/lwu_table_upgrade', '1') ORDER BY x"
