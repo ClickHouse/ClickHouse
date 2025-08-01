@@ -65,7 +65,7 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must have one input stream");
 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
