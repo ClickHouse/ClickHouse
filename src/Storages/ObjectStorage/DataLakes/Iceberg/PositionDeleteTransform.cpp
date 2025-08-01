@@ -35,7 +35,7 @@ extern const int LOGICAL_ERROR;
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path;
+    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),

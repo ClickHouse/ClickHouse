@@ -2937,7 +2937,7 @@ def test_position_deletes(started_cluster, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 100))
@@ -2959,7 +2959,7 @@ def test_position_deletes(started_cluster, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90))
 
@@ -2985,7 +2985,7 @@ def test_position_deletes(started_cluster, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90)) + list(
         range(100, 150)
