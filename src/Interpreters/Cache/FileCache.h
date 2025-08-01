@@ -37,12 +37,17 @@ struct FileCacheReserveStat
         size_t non_releasable_size = 0;
         size_t non_releasable_count = 0;
 
+        size_t evicting_count = 0;
+        size_t invalidated_count = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
             releasable_count += other.releasable_count;
             non_releasable_size += other.non_releasable_size;
             non_releasable_count += other.non_releasable_count;
+            evicting_count += other.evicting_count;
+            invalidated_count += other.invalidated_count;
             return *this;
         }
     };
@@ -50,7 +55,14 @@ struct FileCacheReserveStat
     Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
-    void update(size_t size, FileSegmentKind kind, bool releasable);
+    enum class State
+    {
+        Releasable,
+        NonReleasable,
+        Evicting,
+        Invalidated,
+    };
+    void update(size_t size, FileSegmentKind kind, State state);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
@@ -194,8 +206,8 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::WriteLock lockCache() const;
+    CachePriorityGuard::WriteLock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -313,20 +325,20 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CachePriorityGuard::WriteLock *);
 
     struct SizeLimits
     {
-        size_t max_size;
-        size_t max_elements;
-        double slru_size_ratio;
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
     bool doDynamicResizeImpl(
         const SizeLimits & current_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
-        CachePriorityGuard::Lock &);
+        CachePriorityGuard::WriteLock &);
 };
 
 }
