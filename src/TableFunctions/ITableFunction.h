@@ -44,13 +44,6 @@ public:
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
-    /// For cluster functions.
-    virtual bool isClusterFunction() const { return false; }
-    /// The database storage name is used to check privileges.
-    /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
-    /// privileges as if it was S3.
-    virtual std::string getNonClusteredAnalogueStorageName() const;
-
     /// Returns true if we always know table structure when executing table function
     /// (e.g. structure is specified in table function arguments)
     virtual bool hasStaticStructure() const { return false; }
@@ -104,7 +97,15 @@ private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
 
-    virtual const char * getStorageTypeName() const = 0;
+    /// The name which is used in ENGINE section of the CREATE query.
+    /// This name is registered in the storage factory and used
+    /// to check privileges.
+    virtual const char * getStorageEngineName() const = 0;
+    virtual bool isClusterFunction() const { return false; }
+    /// The database storage name is used to check privileges.
+    /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
+    /// privileges as if it was S3.
+    virtual const char * getNonClusteredAnalogueStorageEngineName() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

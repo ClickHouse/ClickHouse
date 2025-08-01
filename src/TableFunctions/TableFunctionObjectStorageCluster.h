@@ -32,7 +32,6 @@ public:
     static constexpr auto name = Definition::name;
 
     String getName() const override { return name; }
-    String getNonClusteredAnalogueStorageName() const override { return Definition::non_clustered_storage_type_name; }
 
 protected:
     using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;
@@ -44,12 +43,10 @@ protected:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return Definition::storage_type_name; }
-
+    const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
+    const char * getNonClusteredAnalogueStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
     bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
-
     bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
-
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 

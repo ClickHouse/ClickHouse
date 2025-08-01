@@ -29,8 +29,8 @@ protected:
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_, bool) const override;
 
-    const char * getStorageTypeName() const override { return "FileCluster"; }
-    std::string getNonClusteredAnalogueStorageName() const override { return "File"; }
+    const char * getStorageEngineName() const override { return "FileCluster"; }
+    const char * getNonClusteredAnalogueStorageEngineName() const override { return "File"; }
 };
 
 }

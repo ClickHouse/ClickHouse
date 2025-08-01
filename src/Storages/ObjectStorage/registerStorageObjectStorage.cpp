@@ -97,7 +97,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzure(StorageFactory & factory)
 {
-    factory.registerStorage(AzureDefinition::storage_type_name, [](const StorageFactory::Arguments & args)
+    factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
@@ -131,22 +131,22 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
 void registerStorageS3(StorageFactory & factory)
 {
-    registerStorageS3Impl(S3Definition::storage_type_name, factory);
+    registerStorageS3Impl(S3Definition::storage_engine_name, factory);
 }
 
 void registerStorageCOS(StorageFactory & factory)
 {
-    registerStorageS3Impl(COSNDefinition::storage_type_name, factory);
+    registerStorageS3Impl(COSNDefinition::storage_engine_name, factory);
 }
 
 void registerStorageOSS(StorageFactory & factory)
 {
-    registerStorageS3Impl(OSSDefinition::storage_type_name, factory);
+    registerStorageS3Impl(OSSDefinition::storage_engine_name, factory);
 }
 
 void registerStorageGCS(StorageFactory & factory)
 {
-    registerStorageS3Impl(GCSDefinition::storage_type_name, factory);
+    registerStorageS3Impl(GCSDefinition::storage_engine_name, factory);
 }
 
 #endif
@@ -154,7 +154,7 @@ void registerStorageGCS(StorageFactory & factory)
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory)
 {
-    factory.registerStorage(HDFSDefinition::storage_type_name, [=](const StorageFactory::Arguments & args)
+    factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
@@ -200,7 +200,7 @@ void registerStorageIceberg(StorageFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerStorage(
-        IcebergDefinition::storage_type_name,
+        IcebergDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -216,7 +216,7 @@ void registerStorageIceberg(StorageFactory & factory)
         });
 
     factory.registerStorage(
-        IcebergS3Definition::storage_type_name,
+        IcebergS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -233,7 +233,7 @@ void registerStorageIceberg(StorageFactory & factory)
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
     factory.registerStorage(
-        IcebergAzureDefinition::storage_type_name,
+        IcebergAzureDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -250,7 +250,7 @@ void registerStorageIceberg(StorageFactory & factory)
 #    endif
 #    if USE_HDFS
     factory.registerStorage(
-        IcebergHDFSDefinition::storage_type_name,
+        IcebergHDFSDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -266,7 +266,7 @@ void registerStorageIceberg(StorageFactory & factory)
         });
 #    endif
     factory.registerStorage(
-        IcebergLocalDefinition::storage_type_name,
+        IcebergLocalDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -290,7 +290,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerStorage(
-        DeltaLakeDefinition::storage_type_name,
+        DeltaLakeDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -304,7 +304,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
     factory.registerStorage(
-        DeltaLakeS3Definition::storage_type_name,
+        DeltaLakeS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -320,7 +320,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
     factory.registerStorage(
-        DeltaLakeAzureDefinition::storage_type_name,
+        DeltaLakeAzureDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -335,7 +335,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         });
 #    endif
     factory.registerStorage(
-        DeltaLakeLocalDefinition::storage_type_name,
+        DeltaLakeLocalDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
@@ -355,7 +355,7 @@ void registerStorageHudi(StorageFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerStorage(
-        HudiDefinition::storage_type_name,
+        HudiDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
