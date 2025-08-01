@@ -120,8 +120,6 @@ using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, Stora
 using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 #endif
 
-using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
-
 
 #if USE_AVRO
 #    if USE_AWS_S3

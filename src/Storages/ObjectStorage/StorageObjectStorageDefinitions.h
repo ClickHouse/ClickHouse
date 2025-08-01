@@ -44,12 +44,6 @@ struct HDFSDefinition
     static constexpr auto storage_type_name = "HDFS";
 };
 
-struct LocalDefinition
-{
-    static constexpr auto name = "local";
-    static constexpr auto storage_type_name = "Local";
-};
-
 struct IcebergDefinition
 {
     static constexpr auto name = "iceberg";
