@@ -11,6 +11,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
 #include <IO/Operators.h>
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -101,8 +102,8 @@ String formatJoinCondition(const JoinCondition & join_condition)
 }
 
 JoinStepLogical::JoinStepLogical(
-    SharedHeader left_header_,
-    SharedHeader right_header_,
+    const Block & left_header_,
+    const Block & right_header_,
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
@@ -200,7 +201,7 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
 
 void JoinStepLogical::updateOutputHeader()
 {
-    Block header;
+    Header & header = output_header.emplace();
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
     for (const auto * node : expression_actions.post_join_actions->getInputs())
@@ -211,7 +212,7 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
     }
 
-    if (header.empty())
+    if (!header)
     {
         for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
         {
@@ -220,8 +221,6 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
         }
     }
-
-    output_header = std::make_shared<const Block>(std::move(header));
 }
 
 JoinActionRef addNewOutput(const ActionsDAG::Node & node, ActionsDAGPtr & actions_dag)
@@ -259,6 +258,7 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition, ActionsDAG & actions_dag, 
 JoinActionRef concatConditionsWithFunction(
     const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, const FunctionOverloadResolverPtr & concat_function)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction");
     if (conditions.empty())
         return JoinActionRef(nullptr);
 
@@ -268,6 +268,7 @@ JoinActionRef concatConditionsWithFunction(
     auto nodes = std::ranges::to<ActionsDAG::NodeRawConstPtrs>(std::views::transform(conditions, [](const auto & x) { return x.getNode(); }));
 
     const auto & result_node = actions_dag->addFunction(concat_function, nodes, {});
+    LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction: {}, {}", result_node.result_name, actions_dag->dumpDAG());
     actions_dag->addOrReplaceInOutputs(result_node);
     return JoinActionRef(&result_node, actions_dag.get());
 }
@@ -276,11 +277,13 @@ JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, co
 {
     if (use_or_semantics)
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "1");
         FunctionOverloadResolverPtr or_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
         return concatConditionsWithFunction(conditions, actions_dag, or_function);
     }
     else
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "2");
         FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         return concatConditionsWithFunction(conditions, actions_dag, and_function);
     }
@@ -288,7 +291,6 @@ JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, co
 
 JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    // Use OR semantics for table filters when processing OR predicates
     auto condition = concatConditions(conditions, actions_dag, use_or_semantics);
     conditions.clear();
     if (condition)
@@ -506,13 +508,12 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
 
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
-static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
+static Block blockWithColumns(ColumnsWithTypeAndName columns)
 {
-    ColumnsWithTypeAndName columns;
-    columns.reserve(actions_dag.getOutputs().size());
-    for (const auto & node : actions_dag.getOutputs())
-        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
-    return std::make_shared<const Block>(Block{columns});
+    Block block;
+    for (const auto & column : columns)
+        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
+    return block;
 }
 
 static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
@@ -613,12 +614,24 @@ JoinPtr JoinStepLogical::convertToPhysical(
         }
     }
 
-    if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions, join_expression.condition.left_filter_disjunctive))
+    const bool left_filter_is_disjunction =
+        join_expression.condition.left_filter_disjunctive;
+
+    if (auto left_pre_filter_condition =
+            concatMergeConditions(join_expression.condition.left_filter_conditions,
+                                   expression_actions.left_pre_join_actions,
+                                   left_filter_is_disjunction))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
-    if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions, join_expression.condition.right_filter_disjunctive))
+    const bool right_filter_is_disjunction =
+        join_expression.condition.right_filter_disjunctive;
+
+    if (auto right_pre_filter_condition =
+            concatMergeConditions(join_expression.condition.right_filter_conditions,
+                                   expression_actions.right_pre_join_actions,
+                                   right_filter_is_disjunction))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
@@ -742,8 +755,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     table_join->setUsedColumns(expression_actions.post_join_actions->getRequiredColumnsNames());
     table_join->setJoinInfo(join_info);
 
-    SharedHeader left_sample_block = blockWithActionsDAGOutput(*expression_actions.left_pre_join_actions);
-    SharedHeader right_sample_block = blockWithActionsDAGOutput(*expression_actions.right_pre_join_actions);
+    Block left_sample_block = blockWithColumns(expression_actions.left_pre_join_actions->getResultColumns());
+    Block right_sample_block = blockWithColumns(expression_actions.right_pre_join_actions->getResultColumns());
 
     if (swap_inputs)
     {
@@ -802,7 +815,7 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
         ActionsDAG result = std::move(*actions_dag);
         *actions_dag = std::move(new_dag);
 
-        updateInputHeader(std::make_shared<const Block>(result.getResultColumns()), side == JoinTableSide::Left ? 0 : 1);
+        updateInputHeader(result.getResultColumns(), side == JoinTableSide::Left ? 0 : 1);
 
         return result;
     }

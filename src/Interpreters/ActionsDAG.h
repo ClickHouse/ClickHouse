@@ -396,6 +396,11 @@ public:
 
     struct ActionsForJOINFilterPushDown;
 
+    static std::optional<ActionsForFilterPushDown> createActionsForMixed(
+        NodeRawConstPtrs conjunction_nodes,
+        NodeRawConstPtrs disjunction_nodes,
+        const ColumnsWithTypeAndName & all_inputs);
+
     /** Split actions for JOIN filter push down.
       *
       * @param filter_name - name of filter node in current DAG.
@@ -478,6 +483,12 @@ private:
 
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
     static std::optional<ActionsForFilterPushDown> createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsForFilterPushDown> buildDisjunctionFilter(const std::vector<NodeRawConstPtrs> & branches, const ColumnsWithTypeAndName & stream_inputs);
+    static ActionsDAG replace_equivalent_columns_in_filter(
+        const ActionsDAG & filter,
+        size_t filter_pos,
+        const Block & stream_header,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };

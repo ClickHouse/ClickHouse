@@ -25,18 +25,14 @@
 
 #include <stack>
 #include <base/sort.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/Stopwatch.h>
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
-#include <Poco/Logger.h>
-#include <Core/Field.h>
-#include <Core/Names.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -2371,8 +2367,8 @@ struct ConjunctionNodes
 };
 struct DisjunctionNodes
 {
-    std::vector<const ActionsDAG::Node*> allowed;   /// fully push‑able leaves
-    std::vector<const ActionsDAG::Node*> rejected;  /// leaves that must stay local
+    std::vector<const ActionsDAG::Node *> allowed; /// fully push‑able leaves
+    std::vector<const ActionsDAG::Node *> rejected; /// leaves that must stay local
 };
 
 /// Take a node which result is a predicate.
@@ -2482,145 +2478,106 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     return conjunction;
 }
 
-/// Collect leaf predicates under OR‑trees and decide which can be pushed.
+/// Collect leaf predicates, condition of which contains at least one OR node
+/// and decide which of them can be pushed‑down.
 DisjunctionNodes getDisjunctionNodes(
-    const ActionsDAG::Node * predicate,
-    std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
-    bool allow_non_deterministic_functions)
+    const ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
 {
-    LOG_TRACE(disjunction_logger, "getDisjunctionNodes() called for predicate: {}", (predicate ? predicate->result_name : "<null>"));
+    LOG_TRACE(disjunction_logger, "getDisjunctionNodes() called for predicate: {}", predicate ? predicate->result_name : "<null>");
+
     DisjunctionNodes disjunction;
-
     if (!predicate)
-    {
-        LOG_TRACE(disjunction_logger, "getDisjunctionNodes() null predicate, returning empty result");
         return disjunction;
-    }
 
-    /// Collect leaf predicates of every OR
-    std::unordered_set<const ActionsDAG::Node*> leaves;
+    std::unordered_set<const ActionsDAG::Node *> leaves_under_or;
     {
-        std::stack<const ActionsDAG::Node*> s;
-        s.push(predicate);
-        while (!s.empty())
+        struct Frame
         {
-            const auto * n = s.top(); s.pop();
-            bool is_or = n->type == ActionsDAG::ActionType::FUNCTION &&
-                        n->function_base->getName() == "or";
-            if (is_or)
+            const ActionsDAG::Node * node;
+            bool under_or;
+        };
+        std::stack<Frame> st;
+        st.push({predicate, false});
+
+        while (!st.empty())
+        {
+            auto [n, under_or] = st.top();
+            st.pop();
+
+            bool is_func = n->type == ActionsDAG::ActionType::FUNCTION;
+            bool is_or = is_func && n->function_base->getName() == "or";
+            bool is_and = is_func && n->function_base->getName() == "and";
+            bool is_alias = n->type == ActionsDAG::ActionType::ALIAS;
+
+            if (is_or || is_and || is_alias)
             {
                 for (const auto * ch : n->children)
-                    s.push(ch);
+                    st.push({ch, under_or || is_or});
             }
-            else
-                leaves.insert(n);
+            else if (under_or)
+            {
+                leaves_under_or.insert(n);
+            }
         }
     }
 
-    /// Bottom‑up mark‑and‑propagate pass
-    struct Frame { const ActionsDAG::Node *node; size_t next = 0; size_t ok_children = 0; };
-    std::stack<Frame> dfs;
-    std::unordered_set<const ActionsDAG::Node*> seen;
-    LOG_TRACE(disjunction_logger, "Starting DFS traversal for OR node collection");
-    dfs.push({predicate});
-    seen.insert(predicate);
-    LOG_TRACE(disjunction_logger, "Initial predicate added to DFS stack: {}", predicate->result_name);
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+        size_t ok_children = 0;
+    };
 
-    size_t iteration_count = 0;
+    std::stack<Frame> dfs;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    dfs.push({predicate});
+    visited.insert(predicate);
+
     while (!dfs.empty())
     {
-        ++iteration_count;
-        if (iteration_count % 1000 == 0)
-        {
-            LOG_TRACE(disjunction_logger, "DFS traversal iteration {} - stack size: {}", iteration_count, dfs.size());
-        }
-
         auto & f = dfs.top();
-        LOG_TRACE(disjunction_logger, "Processing node: {} (children: {}, visited: {})", 
-                  f.node->result_name, f.node->children.size(), f.next);
-
-        // depth-first walk
-        while (f.next < f.node->children.size())
+        while (f.next_child < f.node->children.size())
         {
-            const auto * ch = f.node->children[f.next];
-            LOG_TRACE(disjunction_logger, "Examining child {} of node {}", f.next, f.node->result_name);
-
-            if (!seen.contains(ch))
+            const auto * ch = f.node->children[f.next_child];
+            if (!visited.contains(ch))
             {
-                LOG_TRACE(disjunction_logger, "Visiting new child: {}", ch->result_name);
-                seen.insert(ch);
+                visited.insert(ch);
                 dfs.push({ch});
                 break;
             }
-            LOG_TRACE(disjunction_logger, "Child already seen: {}", ch->result_name);
-
-            if (allowed_nodes.contains(ch))
-            {
-                ++f.ok_children;
-                LOG_TRACE(disjunction_logger, "Incrementing ok_children for node {}: {}", f.node->result_name, f.ok_children);
-            }
-            ++f.next;
+            ++f.next_child;
         }
 
-        if (f.next == f.node->children.size())
+        if (f.next_child == f.node->children.size())
         {
-            LOG_TRACE(disjunction_logger, "Post-order processing for node: {}", f.node->result_name);
+            bool nondet = !allow_non_deterministic_functions && f.node->type == ActionsDAG::ActionType::FUNCTION
+                && !f.node->function_base->isDeterministicInScopeOfQuery();
 
-            bool nondet = !allow_non_deterministic_functions &&
-                        f.node->type == ActionsDAG::ActionType::FUNCTION &&
-                        !f.node->function_base->isDeterministicInScopeOfQuery();
+            bool subtree_pushable = !nondet
+                && (f.node->children.empty() ? (allowed_nodes.contains(f.node) || f.node->type == ActionsDAG::ActionType::COLUMN)
+                                             : f.ok_children == f.node->children.size());
 
-            if (nondet)
-                LOG_TRACE(disjunction_logger, "Node {} is non-deterministic", f.node->result_name);
-
-            /// A node is pushable when it is deterministic *and*
-            /// every child was pushable.
-            bool subtree_local =
-                !nondet &&
-                (f.node->children.empty()
-                 ? allowed_nodes.contains(f.node)
-                 : f.ok_children == f.node->children.size());
-
-            if (leaves.contains(f.node))
+            if (leaves_under_or.contains(f.node))
             {
-                LOG_TRACE(disjunction_logger, "Node {} is a leaf", f.node->result_name);
-                auto & vec = subtree_local
-                        ? disjunction.allowed
-                        : disjunction.rejected;
-
-                if (std::find(vec.begin(), vec.end(), f.node) == vec.end())
-                {
-                    vec.push_back(f.node);
-                    LOG_TRACE(disjunction_logger, "Added node {} to {} list", f.node->result_name, 
-                              subtree_local ? "allowed" : "rejected");
-                }
+                auto & dst = subtree_pushable ? disjunction.allowed : disjunction.rejected;
+                if (std::find(dst.begin(), dst.end(), f.node) == dst.end())
+                    dst.push_back(f.node);
             }
 
-            LOG_TRACE(disjunction_logger, "Popping node {} from stack", f.node->result_name);
             dfs.pop();
-
-            /// propagate the flag to the parent on the stack
-            if (!dfs.empty() && subtree_local)
+            if (!dfs.empty() && subtree_pushable)
                 ++dfs.top().ok_children;
         }
     }
-    LOG_TRACE(disjunction_logger, "getDisjunctionNodes() completed - allowed: {}, rejected: {}", 
-              disjunction.allowed.size(), disjunction.rejected.size());
 
-    // Log the allowed nodes for debugging
-    if (!disjunction.allowed.empty())
-    {
-        std::string allowed_nodes_str;
-        for (size_t i = 0; i < disjunction.allowed.size(); ++i)
-        {
-            if (i > 0) allowed_nodes_str += ", ";
-            allowed_nodes_str += disjunction.allowed[i]->result_name;
-        }
-        LOG_TRACE(disjunction_logger, "Allowed nodes: {}", allowed_nodes_str);
-    }
-
+    LOG_TRACE(
+        disjunction_logger,
+        "getDisjunctionNodes() completed – allowed {}, rejected {}",
+        disjunction.allowed.size(),
+        disjunction.rejected.size());
     return disjunction;
 }
+
 
 ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
@@ -2648,8 +2605,8 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 /// - table2 filter: (c < 10) OR (c < 11)
 struct DecomposedORPredicates
 {
-    std::vector<const ActionsDAG::Node*> left_stream_predicates;
-    std::vector<const ActionsDAG::Node*> right_stream_predicates;
+    std::vector<const ActionsDAG::Node *> left_stream_predicates;
+    std::vector<const ActionsDAG::Node *> right_stream_predicates;
     bool decomposition_successful = false;
 };
 
@@ -2658,8 +2615,10 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
     const std::unordered_set<const ActionsDAG::Node *> & left_stream_allowed_nodes,
     const std::unordered_set<const ActionsDAG::Node *> & right_stream_allowed_nodes)
 {
-    LOG_TRACE(disjunction_logger, "decomposeORPredicatesForJoinPushdown() called for predicate: {}", 
-              (predicate ? predicate->result_name : "<null>"));
+    LOG_TRACE(
+        disjunction_logger,
+        "decomposeORPredicatesForJoinPushdown() called for predicate: {}",
+        (predicate ? predicate->result_name : "<null>"));
 
     DecomposedORPredicates result;
 
@@ -2667,8 +2626,8 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
         return result;
 
     // find OR predicates within the predicate tree (could be nested in AND conditions)
-    std::vector<const ActionsDAG::Node*> or_predicates;
-    std::stack<const ActionsDAG::Node*> stack;
+    std::vector<const ActionsDAG::Node *> or_predicates;
+    std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
 
     while (!stack.empty())
@@ -2702,18 +2661,18 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
 
     for (const auto * or_predicate : or_predicates)
     {
-        LOG_TRACE(disjunction_logger, "Processing OR predicate: {} with {} children", 
-                  or_predicate->result_name, or_predicate->children.size());
+        LOG_TRACE(
+            disjunction_logger, "Processing OR predicate: {} with {} children", or_predicate->result_name, or_predicate->children.size());
 
-        std::vector<std::vector<const ActionsDAG::Node*>> left_predicates_per_branch;
-        std::vector<std::vector<const ActionsDAG::Node*>> right_predicates_per_branch;
+        std::vector<std::vector<const ActionsDAG::Node *>> left_predicates_per_branch;
+        std::vector<std::vector<const ActionsDAG::Node *>> right_predicates_per_branch;
 
         for (const auto * or_child : or_predicate->children)
         {
             LOG_TRACE(disjunction_logger, "Processing OR branch: {}", or_child->result_name);
 
-            std::vector<const ActionsDAG::Node*> left_branch_predicates;
-            std::vector<const ActionsDAG::Node*> right_branch_predicates;
+            std::vector<const ActionsDAG::Node *> left_branch_predicates;
+            std::vector<const ActionsDAG::Node *> right_branch_predicates;
 
             std::unordered_set<const ActionsDAG::Node *> empty_allowed_nodes;
             auto branch_conjunctions = getConjunctionNodes(const_cast<ActionsDAG::Node *>(or_child), empty_allowed_nodes, false);
@@ -2724,7 +2683,7 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
                 bool belongs_to_left = false;
                 bool belongs_to_right = false;
 
-                std::stack<const ActionsDAG::Node*> node_stack;
+                std::stack<const ActionsDAG::Node *> node_stack;
                 node_stack.push(pred);
 
                 while (!node_stack.empty())
@@ -2761,8 +2720,8 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
         }
 
         // collect all unique predicates for each stream
-        std::unordered_set<const ActionsDAG::Node*> left_pred_set;
-        std::unordered_set<const ActionsDAG::Node*> right_pred_set;
+        std::unordered_set<const ActionsDAG::Node *> left_pred_set;
+        std::unordered_set<const ActionsDAG::Node *> right_pred_set;
 
         for (const auto & branch : left_predicates_per_branch)
         {
@@ -2785,8 +2744,12 @@ DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
 
     result.decomposition_successful = !result.left_stream_predicates.empty() || !result.right_stream_predicates.empty();
 
-    LOG_TRACE(disjunction_logger, "Decomposition result: {} left predicates, {} right predicates, success: {}",
-              result.left_stream_predicates.size(), result.right_stream_predicates.size(), result.decomposition_successful);
+    LOG_TRACE(
+        disjunction_logger,
+        "Decomposition result: {} left predicates, {} right predicates, success: {}",
+        result.left_stream_predicates.size(),
+        result.right_stream_predicates.size(),
+        result.decomposition_successful);
 
     return result;
 }
@@ -2918,9 +2881,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
-/// Result actions add single column with disjunction result (it is always first in outputs).
-/// No other columns are added or removed.
-std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
+std::optional<ActionsDAG::ActionsForFilterPushDown>
+ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     LOG_TRACE(disjunction_logger, "createActionsForDisjunction() called with {} disjunction nodes", disjunction.size());
 
@@ -2934,7 +2896,10 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     // as we have the well-tested conjunction code path, we can use it.
     if (disjunction.size() == 1)
     {
-        LOG_TRACE(disjunction_logger, "createActionsForDisjunction() single node optimization: using conjunction handler for node {}", disjunction[0]->result_name);
+        LOG_TRACE(
+            disjunction_logger,
+            "createActionsForDisjunction() single node optimization: using conjunction handler for node {}",
+            disjunction[0]->result_name);
         return createActionsForConjunction({disjunction[0]}, all_inputs);
     }
 
@@ -2960,8 +2925,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     for (const auto * predicate : disjunction)
     {
         ++predicate_idx;
-        LOG_TRACE(disjunction_logger, "Processing disjunction node {} of {}: {}", 
-                  predicate_idx, disjunction.size(), predicate->result_name);
+        LOG_TRACE(
+            disjunction_logger, "Processing disjunction node {} of {}: {}", predicate_idx, disjunction.size(), predicate->result_name);
 
         if (nodes_mapping.contains(predicate))
         {
@@ -3113,7 +3078,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     auto disjunction = getDisjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
 
     if (disjunction.allowed.empty())
-        return {};
+        return {}; //TODO
 
     chassert(predicate->result_type);
 
@@ -3137,6 +3102,111 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
 
     return actions;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForMixed(
+    NodeRawConstPtrs conjunction_nodes, NodeRawConstPtrs disjunction_nodes, const ColumnsWithTypeAndName & all_inputs)
+{
+    if (disjunction_nodes.empty())
+        return createActionsForConjunction(conjunction_nodes, all_inputs);
+    if (conjunction_nodes.empty())
+        return createActionsForDisjunction(disjunction_nodes, all_inputs);
+
+    ActionsDAG actions;
+    std::unordered_map<const Node *, const Node *> map;
+    std::unordered_map<std::string, std::list<const Node *>> required_inputs;
+
+    auto clone = [&](const Node * n)
+    {
+        if (map.contains(n))
+            return map[n];
+
+        std::stack<const Node *> dfs;
+        dfs.push(n);
+        while (!dfs.empty())
+        {
+            const Node * cur = dfs.top();
+            if (map.contains(cur))
+            {
+                dfs.pop();
+                continue;
+            }
+
+            bool ready = true;
+            for (const auto * ch : cur->children)
+                if (!map.contains(ch))
+                {
+                    dfs.push(ch);
+                    ready = false;
+                }
+
+            if (!ready)
+                continue;
+
+            auto & copy = actions.nodes.emplace_back(*cur);
+            map[cur] = &copy;
+            for (auto *& ch : copy.children)
+                ch = map[ch];
+
+            if (copy.type == ActionType::INPUT)
+                required_inputs[copy.result_name].push_back(&copy);
+
+            dfs.pop();
+        }
+        return map[n];
+    };
+
+    /// clone every node we need
+    NodeRawConstPtrs conj_cloned;
+    conj_cloned.reserve(conjunction_nodes.size());
+    for (const auto * n : conjunction_nodes)
+        conj_cloned.push_back(clone(n));
+
+    NodeRawConstPtrs disj_cloned;
+    disj_cloned.reserve(disjunction_nodes.size());
+    for (const auto * n : disjunction_nodes)
+        disj_cloned.push_back(clone(n));
+
+    /// OR-part
+    FunctionOverloadResolverPtr or_fn = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+    const Node * or_node = disj_cloned.size() == 1 ? disj_cloned.front() : &actions.addFunction(or_fn, disj_cloned, {});
+
+    /// AND the common predicates with the OR-part
+    NodeRawConstPtrs and_args = conj_cloned;
+    and_args.push_back(or_node);
+
+    const Node * final = and_args.size() == 1
+        ? and_args.front()
+        : &actions.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>()), and_args, {});
+
+    for (const auto & col : all_inputs)
+    {
+        const Node * in;
+        auto & lst = required_inputs[col.name];
+        if (lst.empty())
+            in = &actions.addInput(col);
+        else
+        {
+            in = lst.front();
+            lst.pop_front();
+            actions.inputs.push_back(in);
+        }
+        actions.outputs.push_back(in);
+    }
+
+    bool remove_filter = true;
+    if (final->type == ActionType::INPUT)
+    {
+        remove_filter = false;
+    }
+    else
+    {
+        actions.outputs.insert(actions.outputs.begin(), final);
+    }
+
+    size_t filter_pos = remove_filter ? 0 : std::find(actions.outputs.begin(), actions.outputs.end(), final) - actions.outputs.begin();
+
+    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
@@ -3187,28 +3257,37 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    // Process conjunction nodes (AND predicates)
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
-    
-    // Process disjunction nodes (OR predicates)
+
     auto left_stream_push_down_disjunctions = getDisjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_disjunctions = getDisjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_disjunctions = getDisjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
-    
+
+    LOG_TRACE(getLogger("DEBUGGING!"), "left_stream_allowed_conjunctions: {}", left_stream_allowed_conjunctions.size());
+    LOG_TRACE(getLogger("DEBUGGING!"), "right_stream_allowed_conjunctions: {}", right_stream_allowed_conjunctions.size());
+    LOG_TRACE(getLogger("DEBUGGING!"), "both_streams_push_down_conjunctions: {}", both_streams_push_down_conjunctions.allowed.size());
+
     NodeRawConstPtrs left_stream_allowed_disjunctions = std::move(left_stream_push_down_disjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
 
-    // Create sets for faster lookups when processing nodes from both streams
-    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
-    
-    std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
+    LOG_TRACE(getLogger("DEBUGGING!"), "left_stream_allowed_disjunctions: {}", left_stream_allowed_disjunctions.size());
+    LOG_TRACE(getLogger("DEBUGGING!"), "right_stream_allowed_disjunctions: {}", right_stream_allowed_disjunctions.size());
+    LOG_TRACE(getLogger("DEBUGGING!"), "both_streams_push_down_disjunctions: {}", both_streams_push_down_disjunctions.allowed.size());
+
+    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(
+        left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
+    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(
+        right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
+
+    std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(
+        left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
+    std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(
+        right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
 
     for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
     {
@@ -3218,7 +3297,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
             right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
     }
-    
+
     for (const auto * both_streams_push_down_allowed_disjunction_node : both_streams_push_down_disjunctions.allowed)
     {
         if (!left_stream_allowed_disjunctions_set.contains(both_streams_push_down_allowed_disjunction_node))
@@ -3229,18 +3308,15 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     }
 
     LOG_TRACE(disjunction_logger, "Attempting enhanced OR predicate decomposition");
-    auto decomposed_or_predicates = decomposeORPredicatesForJoinPushdown(
-        predicate, left_stream_allowed_nodes, right_stream_allowed_nodes);
+    auto decomposed_or_predicates = decomposeORPredicatesForJoinPushdown(predicate, left_stream_allowed_nodes, right_stream_allowed_nodes);
 
     if (decomposed_or_predicates.decomposition_successful)
     {
         LOG_TRACE(disjunction_logger, "OR predicate decomposition successful, enhancing filter pushdown");
 
-        /// add decomposed predicates to the existing allowed predicates
         for (const auto * left_pred : decomposed_or_predicates.left_stream_predicates)
         {
-            if (!left_stream_allowed_conjunctions_set.contains(left_pred) && 
-                !left_stream_allowed_disjunctions_set.contains(left_pred))
+            if (!left_stream_allowed_conjunctions_set.contains(left_pred) && !left_stream_allowed_disjunctions_set.contains(left_pred))
             {
                 left_stream_allowed_conjunctions.push_back(left_pred);
                 left_stream_allowed_conjunctions_set.insert(left_pred);
@@ -3250,8 +3326,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
         for (const auto * right_pred : decomposed_or_predicates.right_stream_predicates)
         {
-            if (!right_stream_allowed_conjunctions_set.contains(right_pred) && 
-                !right_stream_allowed_disjunctions_set.contains(right_pred))
+            if (!right_stream_allowed_conjunctions_set.contains(right_pred) && !right_stream_allowed_disjunctions_set.contains(right_pred))
             {
                 right_stream_allowed_conjunctions.push_back(right_pred);
                 right_stream_allowed_conjunctions_set.insert(right_pred);
@@ -3289,15 +3364,16 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     {
         chassert(rejected_nodes.front()->result_type);
 
-        bool left_stream_push_constant = 
-            (!left_stream_allowed_conjunctions.empty() && left_stream_allowed_conjunctions[0]->type == ActionType::COLUMN) ||
-            (!left_stream_allowed_disjunctions.empty() && left_stream_allowed_disjunctions[0]->type == ActionType::COLUMN);
+        bool left_stream_push_constant
+            = (!left_stream_allowed_conjunctions.empty() && left_stream_allowed_conjunctions[0]->type == ActionType::COLUMN)
+            || (!left_stream_allowed_disjunctions.empty() && left_stream_allowed_disjunctions[0]->type == ActionType::COLUMN);
 
-        bool right_stream_push_constant = 
-            (!right_stream_allowed_conjunctions.empty() && right_stream_allowed_conjunctions[0]->type == ActionType::COLUMN) ||
-            (!right_stream_allowed_disjunctions.empty() && right_stream_allowed_disjunctions[0]->type == ActionType::COLUMN);
+        bool right_stream_push_constant
+            = (!right_stream_allowed_conjunctions.empty() && right_stream_allowed_conjunctions[0]->type == ActionType::COLUMN)
+            || (!right_stream_allowed_disjunctions.empty() && right_stream_allowed_disjunctions[0]->type == ActionType::COLUMN);
 
-        if ((left_stream_push_constant || right_stream_push_constant) && !rejected_nodes.front()->result_type->equals(*predicate->result_type))
+        if ((left_stream_push_constant || right_stream_push_constant)
+            && !rejected_nodes.front()->result_type->equals(*predicate->result_type))
         {
             /// No further optimization can be done
             return {};
@@ -3309,23 +3385,18 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     std::optional<ActionsDAG::ActionsForFilterPushDown> left_stream_disjunction_filter;
     std::optional<ActionsDAG::ActionsForFilterPushDown> right_stream_disjunction_filter;
 
-    if (!left_stream_allowed_conjunctions.empty())
-        left_stream_conjunction_filter = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
+    if (!left_stream_allowed_conjunctions.empty() || !left_stream_allowed_disjunctions.empty())
+        left_stream_conjunction_filter = createActionsForMixed(
+            left_stream_allowed_conjunctions, left_stream_allowed_disjunctions, left_stream_header.getColumnsWithTypeAndName());
 
-    if (!right_stream_allowed_conjunctions.empty())
-        right_stream_conjunction_filter = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
+    if (!right_stream_allowed_conjunctions.empty() || !right_stream_allowed_disjunctions.empty())
+        right_stream_conjunction_filter = createActionsForMixed(
+            right_stream_allowed_conjunctions, right_stream_allowed_disjunctions, right_stream_header.getColumnsWithTypeAndName());
 
-    if (!left_stream_allowed_disjunctions.empty())
-        left_stream_disjunction_filter = createActionsForDisjunction(left_stream_allowed_disjunctions, left_stream_header.getColumnsWithTypeAndName());
-
-    if (!right_stream_allowed_disjunctions.empty())
-        right_stream_disjunction_filter = createActionsForDisjunction(right_stream_allowed_disjunctions, right_stream_header.getColumnsWithTypeAndName());
-
-    auto replace_equivalent_columns_in_filter = [](
-        const ActionsDAG & filter,
-        size_t filter_pos,
-        const Block & stream_header,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
+    auto replace_equivalent_columns_in_filter = [](const ActionsDAG & filter,
+                                                   size_t filter_pos,
+                                                   const Block & stream_header,
+                                                   const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
         auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[filter_pos]}, columns_to_replace);
         chassert(updated_filter.getOutputs().size() == 1);
@@ -3386,26 +3457,29 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     };
 
     if (left_stream_conjunction_filter)
-        left_stream_conjunction_filter->dag = replace_equivalent_columns_in_filter(left_stream_conjunction_filter->dag,
+        left_stream_conjunction_filter->dag = replace_equivalent_columns_in_filter(
+            left_stream_conjunction_filter->dag,
             left_stream_conjunction_filter->filter_pos,
             left_stream_header,
             equivalent_right_stream_column_to_left_stream_column);
 
     if (right_stream_conjunction_filter)
-        right_stream_conjunction_filter->dag = replace_equivalent_columns_in_filter(right_stream_conjunction_filter->dag,
+        right_stream_conjunction_filter->dag = replace_equivalent_columns_in_filter(
+            right_stream_conjunction_filter->dag,
             right_stream_conjunction_filter->filter_pos,
             right_stream_header,
             equivalent_left_stream_column_to_right_stream_column);
 
-    // Replace equivalent columns in disjunction filters (same as for conjunction)
     if (left_stream_disjunction_filter)
-        left_stream_disjunction_filter->dag = replace_equivalent_columns_in_filter(left_stream_disjunction_filter->dag,
+        left_stream_disjunction_filter->dag = replace_equivalent_columns_in_filter(
+            left_stream_disjunction_filter->dag,
             left_stream_disjunction_filter->filter_pos,
             left_stream_header,
             equivalent_right_stream_column_to_left_stream_column);
 
     if (right_stream_disjunction_filter)
-        right_stream_disjunction_filter->dag = replace_equivalent_columns_in_filter(right_stream_disjunction_filter->dag,
+        right_stream_disjunction_filter->dag = replace_equivalent_columns_in_filter(
+            right_stream_disjunction_filter->dag,
             right_stream_disjunction_filter->filter_pos,
             right_stream_header,
             equivalent_left_stream_column_to_right_stream_column);
@@ -3457,8 +3531,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         right_stream_disjunction_dag = std::move(right_stream_disjunction_filter->dag);
     }
 
-    ActionsDAG::ActionsForJOINFilterPushDown result
-    {
+    ActionsDAG::ActionsForJOINFilterPushDown result{
         .left_stream_conjunction_filter = std::move(left_stream_conjunction_dag),
         .left_stream_conjunction_removes_filter = left_stream_conjunction_removes_filter,
         .right_stream_conjunction_filter = std::move(right_stream_conjunction_dag),
@@ -3466,11 +3539,10 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         .left_stream_disjunction_filter = std::move(left_stream_disjunction_dag),
         .left_stream_disjunction_removes_filter = left_stream_disjunction_removes_filter,
         .right_stream_disjunction_filter = std::move(right_stream_disjunction_dag),
-        .right_stream_disjunction_removes_filter = right_stream_disjunction_removes_filter
-    };
+        .right_stream_disjunction_removes_filter = right_stream_disjunction_removes_filter};
 
-    if (!result.left_stream_conjunction_filter && !result.right_stream_conjunction_filter &&
-        !result.left_stream_disjunction_filter && !result.right_stream_disjunction_filter)
+    if (!result.left_stream_conjunction_filter && !result.right_stream_conjunction_filter && !result.left_stream_disjunction_filter
+        && !result.right_stream_disjunction_filter)
         return result;
 
     /// Now, when actions are created, update the current DAG.

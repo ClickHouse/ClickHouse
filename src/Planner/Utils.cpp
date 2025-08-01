@@ -47,7 +47,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include "Common/logger_useful.h"
 
 #include <stack>
 
@@ -602,34 +601,24 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
         visited_nodes.insert(predicate);
         while (!stack.empty())
         {
-            LOG_TRACE(getLogger("iteration"), "getConjunctsList start. stack size: {}", stack.size());
             const auto * node = stack.back();
             stack.pop_back();
             bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
-            bool is_disjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "or";
-            
-            if (is_conjunction || is_disjunction)
+            if (is_conjunction)
             {
                 for (const auto & child : node->children)
                 {
                     if (!visited_nodes.contains(child))
                     {
-                        LOG_TRACE(getLogger("iteration"), "getConjunctsList child: {}", child->result_name);
                         visited_nodes.insert(child);
                         stack.push_back(child);
                     }
                 }
             }
             else if (node->type == ActionsDAG::ActionType::ALIAS)
-            {
-                LOG_TRACE(getLogger("iteration"), "getConjunctsList alias: {}", node->result_name);
                 stack.push_back(node->children.front());
-            }
             else
-            {
-                LOG_TRACE(getLogger("iteration"), "getConjunctsList item: {}", node->result_name);
                 conjuncts.push_back(node);
-            }
         }
     }
     return conjuncts;

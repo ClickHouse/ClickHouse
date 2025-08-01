@@ -53,6 +53,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_join_condition;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -360,11 +361,14 @@ void buildJoinClauseImpl(
         }
         else
         {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns nullability will be changed later which make this expression not right.
-            if (!join_use_nulls)
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
                 join_clause.addResidualCondition(node);
             }
@@ -569,69 +573,11 @@ JoinClauses buildJoinClauses(
             JoinClauses result;
             if (function_name == "or")
             {
-                std::vector<JoinClause> left_table_clauses;
-                std::vector<JoinClause> right_table_clauses;
-                std::vector<JoinClause> cross_table_clauses;
-
-                // collect and analyze all OR branch clauses
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
-
-                    for (auto & clause : child_res)
-                    {
-                        bool references_left = !clause.getLeftFilterConditionNodes().empty() || !clause.getLeftKeyNodes().empty();
-                        bool references_right = !clause.getRightFilterConditionNodes().empty() || !clause.getRightKeyNodes().empty();
-
-                        if (references_left && !references_right)
-                            left_table_clauses.push_back(std::move(clause));
-                        else if (references_right && !references_left)
-                            right_table_clauses.push_back(std::move(clause));
-                        else if (references_left && references_right)
-                            cross_table_clauses.push_back(std::move(clause));
-                    }
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
                     child_res.clear();
-                }
-
-                // if we have predicates that can be decomposed to individual tables, create enhanced join clause
-                if (!left_table_clauses.empty() || !right_table_clauses.empty())
-                {
-                    result.emplace_back();
-                    auto & enhanced_clause = result.back();
-
-                    if (!left_table_clauses.empty())
-                    {
-                        for (const auto & left_clause : left_table_clauses)
-                        {
-                            for (const auto * filter_node : left_clause.getLeftFilterConditionNodes())
-                                enhanced_clause.addCondition(JoinTableSide::Left, filter_node);
-                        }
-                    }
-
-                    if (!right_table_clauses.empty())
-                    {
-                        for (const auto & right_clause : right_table_clauses)
-                        {
-                            for (const auto * filter_node : right_clause.getRightFilterConditionNodes())
-                                enhanced_clause.addCondition(JoinTableSide::Right, filter_node);
-                        }
-                    }
-
-                    for (auto & cross_clause : cross_table_clauses)
-                    {
-                        // for cross-table clauses, we still need to handle them as separate join conditions
-                        // but we can optimize by combining them when possible
-                        result.push_back(std::move(cross_clause));
-                    }
-                }
-                else
-                {
-                    for (auto & argument : arguments)
-                    {
-                        auto & child_res = get_and_check_built_clause(argument.get());
-                        result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
-                        child_res.clear();
-                    }
                 }
 
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
@@ -1061,7 +1007,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 
 std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader & right_table_expression_header)
+    const Block & right_table_expression_header)
 {
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return {};
@@ -1117,7 +1063,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
       */
     Block right_table_expression_header_with_storage_column_names;
 
-    for (const auto & right_table_expression_column : *right_table_expression_header)
+    for (const auto & right_table_expression_column : right_table_expression_header)
     {
         auto table_column_name_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
         if (table_column_name_it == right_table_expression.column_mapping.end())
@@ -1128,7 +1074,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);
     }
 
-    return std::make_shared<DirectKeyValueJoin>(table_join, *right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
+    return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
 }
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
@@ -1153,8 +1099,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader & left_table_expression_header,
-    SharedHeader & right_table_expression_header,
+    const Block & left_table_expression_header,
+    const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
     UInt64 hash_table_key_hash,
     std::optional<UInt64> rhs_size_estimation)
@@ -1277,8 +1223,8 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader left_table_expression_header,
-    SharedHeader right_table_expression_header,
+    const Block & left_table_expression_header,
+    const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
     UInt64 hash_table_key_hash,
     std::optional<UInt64> rhs_size_estimation)
@@ -1296,7 +1242,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (auto storage = table_join->getStorageJoin())
     {
         Names required_column_names;
-        for (const auto & result_column : *right_table_expression_header)
+        for (const auto & result_column : right_table_expression_header)
         {
             auto source_column_name_it = right_table_expression.column_mapping.find(result_column.name);
             if (source_column_name_it == right_table_expression.column_mapping.end())

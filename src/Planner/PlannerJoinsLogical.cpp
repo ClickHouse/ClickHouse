@@ -327,8 +327,18 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
 
     if (function_name == "or")
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "buildDisjunctiveJoinConditions: or");
         for (const auto & child : function_node->getArguments())
             buildDisjunctiveJoinConditions(child, builder_context, join_conditions);
+        
+        // Mark all join conditions as using disjunctive semantics for their filters
+        // This is important for OR predicates so they're properly pushed down with OR semantics
+        for (auto & condition : join_conditions)
+        {
+            condition.left_filter_disjunctive = true;
+            condition.right_filter_disjunctive = true;
+            condition.residual_disjunctive = true;
+        }
         return;
     }
     buildJoinCondition(node, builder_context, join_conditions.emplace_back());
@@ -383,6 +393,14 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
         for (const auto & lhs_clause : lhs)
         {
             result.emplace_back(concatConditions(lhs_clause, rhs_clause));
+
+            auto & merged = result.back();
+            merged.left_filter_disjunctive =
+                    lhs_clause.left_filter_disjunctive || rhs_clause.left_filter_disjunctive;
+            merged.right_filter_disjunctive =
+                    lhs_clause.right_filter_disjunctive || rhs_clause.right_filter_disjunctive;
+            merged.residual_disjunctive =
+                    lhs_clause.residual_disjunctive || rhs_clause.residual_disjunctive;
         }
     }
     return result;
@@ -442,7 +460,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
             if (function_name == "or")
             {
                 std::vector<std::vector<JoinCondition>> all_child_conditions;
-
+                
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
@@ -456,7 +474,6 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
                 // Create two distinct JOIN clauses with specific filter conditions
                 if (all_child_conditions.size() == 2)
                 {
-                    /// set explicit disjunctive flags for all child conditions to ensure OR semantics
                     for (auto & child_conditions : all_child_conditions)
                     {
                         for (auto & condition : child_conditions)
@@ -469,10 +486,9 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
                 }
                 else
                 {
-                    // Default case - combine all child conditions
                     for (auto & child_conditions : all_child_conditions)
                         result.insert(result.end(), std::make_move_iterator(child_conditions.begin()), std::make_move_iterator(child_conditions.end()));
-
+                    
                     size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
                     if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
                     {
@@ -490,40 +506,39 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
                     all_child_conditions.emplace_back(std::move(child_res));
                     child_res.clear();
                 }
-
+                
                 if (!all_child_conditions.empty())
                 {
-                    // For AND conditions, we need to do cross product
                     auto it = all_child_conditions.begin();
-
                     std::vector<JoinCondition> initial_conditions = std::move(*it);
-
+                    
                     for (auto & condition : initial_conditions)
                     {
+                        LOG_TRACE(getLogger("DEBUGGING!"), "buildDisjunctiveJoinConditionsGeneral: {}", condition.predicates.size());
                         if (!condition.left_filter_conditions.empty())
                             condition.left_filter_disjunctive = true;
-
+                            
                         if (!condition.right_filter_conditions.empty())
                             condition.right_filter_disjunctive = true;
                     }
-
+                    
                     result = std::move(initial_conditions);
                     ++it;
-
-                    // Then cross product with remaining conditions
+                    
                     for (; it != all_child_conditions.end(); ++it)
                     {
                         auto & next_conditions = *it;
-
+                        
                         for (auto & condition : next_conditions)
                         {
+                            LOG_TRACE(getLogger("DEBUGGING!"), "buildDisjunctiveJoinConditionsGeneral: {}, {}", condition.left_filter_conditions.size(), condition.right_filter_conditions.size());
                             if (!condition.left_filter_conditions.empty())
                                 condition.left_filter_disjunctive = true;
-
+                                
                             if (!condition.right_filter_conditions.empty())
                                 condition.right_filter_disjunctive = true;
                         }
-
+                        
                         result = makeCrossProduct(result, next_conditions);
                     }
                 }
