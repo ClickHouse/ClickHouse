@@ -106,7 +106,6 @@ BlockIO InterpreterUpdateQuery::execute()
 
     BlockIO res;
     res.pipeline = table->updateLightweight(commands, getContext());
-    res.pipeline.addStorageHolder(table);
     return res;
 }
 

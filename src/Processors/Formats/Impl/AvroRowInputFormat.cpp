@@ -1023,7 +1023,7 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr->init();
 }
 
-bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
     if (file_reader_ptr->hasMore())
     {

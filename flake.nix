@@ -223,7 +223,7 @@
     contrib-sqids-cpp = { url = "github:sqids/sqids-cpp/a471f53672e98d49223f598528a533b07b085c61"; flake = false; };
     contrib-idna = { url = "github:ada-url/idna/3c8be01d42b75649f1ac9b697d0ef757eebfe667"; flake = false; };
     contrib-google-cloud-cpp = { url = "github:ClickHouse/google-cloud-cpp/83f30caadb8613fb5c408d8c2fd545291596b53f"; flake = false; };
-    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/66c644817ffae04d8fa5f81931dbb67e99745522"; flake = false; };
+    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/07d4497f735733b5a893b72e60d82ee373082dbb"; flake = false; };
     contrib-openssl = { url = "github:ClickHouse/openssl/2aa34c68d677b447fb85c55167d8d1ab98ba4def"; flake = false; };
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
@@ -232,7 +232,7 @@
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
-    contrib-chdig = { url = "github:azat/chdig/e152e9dc8dad1d72c4faf011ace3573d6e01ea5d"; flake = false; };
+    contrib-chdig = { url = "github:azat/chdig/b176fa241d4b0cd58aecd17eece111e376567e6c"; flake = false; };
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/5ae9bfe8cab2fd930764501d7203dbe3651fc9b5"; flake = false; };
     contrib-nlohmann-json = { url = "github:nlohmann/json/55f93686c01528224f448c19128836e7df245f72"; flake = false; };
     contrib-crc32c = { url = "github:google/crc32c/02e65f4fd3065d27b2e29324800ca6d04df16126"; flake = false; };

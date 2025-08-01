@@ -157,8 +157,6 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             table_function_ptr->setStructureHint(structure_hint);
         }
 
-        table_function_ptr->setPartitionBy(query.partition_by);
-
         return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
                                            /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
     }

@@ -20,7 +20,6 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1
       Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -33,7 +32,6 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -56,7 +54,6 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1
       Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -69,7 +66,6 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -92,7 +88,6 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1
       Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
@@ -105,4 +100,3 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-            Ranges: 1

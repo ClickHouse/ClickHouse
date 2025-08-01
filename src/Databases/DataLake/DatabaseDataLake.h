@@ -56,12 +56,6 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
-    void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
-        const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
-
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 

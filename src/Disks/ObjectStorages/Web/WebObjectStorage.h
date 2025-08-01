@@ -53,8 +53,6 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
-
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,

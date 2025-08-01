@@ -1,7 +1,5 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
-#include <base/defines.h>
-
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -24,45 +22,6 @@
 #include <string_view>
 #include <utility> /// pair
 #include <vector>
-
-#ifdef SANITIZER
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" {
-#ifdef ADDRESS_SANITIZER
-const char * __asan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1";
-}
-const char * __lsan_default_options()
-{
-    return "max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef MEMORY_SANITIZER
-const char * __msan_default_options()
-{
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef THREAD_SANITIZER
-const char * __tsan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-const char * __ubsan_default_options()
-{
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
-}
-#endif
-}
-#pragma clang diagnostic pop
-#endif
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);

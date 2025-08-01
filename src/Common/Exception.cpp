@@ -34,7 +34,6 @@ namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
-    extern const int AVRO_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -136,17 +135,8 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 #endif
 }
 
-static int getCodeForSTDException(const std::exception & exc)
-{
-    /// This looks strange, but avoids a direct dependency on the external library.
-    std::string name = demangle(typeid(exc).name());
-    if (name.starts_with("avro::"))
-        return ErrorCodes::AVRO_EXCEPTION;
-    return ErrorCodes::STD_EXCEPTION;
-}
-
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), getCodeForSTDException(exc))
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
@@ -304,34 +294,21 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        if (start_of_message.empty())
+        if (!start_of_message.empty())
+            message.text = fmt::format("{}: {}", start_of_message, message.text);
+
+        switch (level)
         {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, message); break;
-                case LogsLevel::trace: LOG_TRACE(logger, message); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, message); break;
-                case LogsLevel::information: LOG_INFO(logger, message); break;
-                case LogsLevel::warning: LOG_WARNING(logger, message); break;
-                case LogsLevel::error: LOG_ERROR(logger, message); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, message); break;
-            }
+            case LogsLevel::none: break;
+            case LogsLevel::test: LOG_TEST(logger, message); break;
+            case LogsLevel::trace: LOG_TRACE(logger, message); break;
+            case LogsLevel::debug: LOG_DEBUG(logger, message); break;
+            case LogsLevel::information: LOG_INFO(logger, message); break;
+            case LogsLevel::warning: LOG_WARNING(logger, message); break;
+            case LogsLevel::error: LOG_ERROR(logger, message); break;
+            case LogsLevel::fatal: LOG_FATAL(logger, message); break;
         }
-        else
-        {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::trace: LOG_TRACE(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::information: LOG_INFO(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::warning: LOG_WARNING(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::error: LOG_ERROR(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, "{}: {}", start_of_message, message.text); break;
-            }
-        }
+
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
