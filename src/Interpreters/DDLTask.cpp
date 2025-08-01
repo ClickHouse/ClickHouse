@@ -253,15 +253,17 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    // Do not set here SECONDARY_QUERY
-    // SECONDARY_QUERY is used to distinguish queries that are executed on worker nodes
-    // it has nothing to do with DDL replication
-    query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
 }
 
+ContextMutablePtr DDLTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+{
+    auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    return query_context;
+}
 
 bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
@@ -536,6 +538,10 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
+    // Do not set here SECONDARY_QUERY
+    // SECONDARY_QUERY is used to distinguish queries that are executed on worker nodes
+    // it has nothing to do with DDL replication
+    query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
