@@ -654,7 +654,7 @@ Planner buildPlannerForCorrelatedSubquery(
     Planner subquery_planner(
         correlated_subquery.query_tree,
         subquery_options,
-        std::move(global_planner_context));
+        std::move(global_planner_context), "buildPlannerForCorrelatedSubquery");
     subquery_planner.buildQueryPlanIfNeeded();
 
     return subquery_planner;
