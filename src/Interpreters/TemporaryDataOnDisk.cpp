@@ -334,8 +334,11 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
-    , header(header_.cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
 {
+    /// Constant columns must be avoided since they are not supported in (de/)serialization, but we have to keep lazy columns
+    /// to make sure NativeReader can deserialize them correctly. See NativeReader::read for more details about how lazy columns are handled.
+    for (const auto & column : header_)
+        header.insert(ColumnWithTypeAndName{column.column->cloneEmpty()->convertToFullColumnIfConst(), column.type, column.name});
 }
 
 TemporaryDataBuffer::Stat TemporaryBlockStreamHolder::finishWriting() const
