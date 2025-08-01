@@ -7,6 +7,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -424,7 +426,11 @@ void addExpressionStep(
 
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
+    {
+        LOG_DEBUG(getLogger("Planner"), "Adding inputs for unused columns to expression step, current header: {}, actions names: {}",
+            query_plan.getCurrentHeader()->dumpStructure(), actions.dumpNames());
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+    }
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
@@ -1488,6 +1494,12 @@ void Planner::buildPlanForQueryNode()
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
+    LOG_DEBUG(getLogger("Planner"),
+        "buildPlanForQueryNode 1 node: {}, original query: {}, at\n{}",
+        query_tree->formatConvertedASTForErrorMessage(),
+        query_tree->formatOriginalASTForErrorMessage(),
+        StackTrace().toString());
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1622,16 +1634,23 @@ void Planner::buildPlanForQueryNode()
 
     auto from_stage = join_tree_query_plan.stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
+
+    LOG_DEBUG(getLogger("Planner"),
+        "buildPlanForQueryNode 2 stage {}: current header: {}",
+        QueryProcessingStage::toString(from_stage),
+        query_plan.getCurrentHeader()->dumpNames());
+
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
     LOG_TRACE(
         log,
-        "Query from stage {} to stage {}{}",
+        "uildPlanForQueryNode 3 stage {} to stage {}{} current header: {}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
-        select_query_options.only_analyze ? " only analyze" : "");
+        select_query_options.only_analyze ? " only analyze" : "",
+        query_plan.getCurrentHeader()->dumpNames());
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;

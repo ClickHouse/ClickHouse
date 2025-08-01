@@ -71,6 +71,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    auto logger = getLogger(fmt::format("CLUSTER {}({})", configuration_->getEngineName(), table_id_.table_name));
+    LOG_DEBUG(logger, "Creating storage with configuration type: {} at\n{}",
+        configuration->getTypeName(),
+        StackTrace().toString());
+
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,

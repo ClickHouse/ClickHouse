@@ -116,7 +116,7 @@ StorageObjectStorage::StorageObjectStorage(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    LOG_DEBUG(log, "Creating storage with configuration type: {} distributed_processing {} at\n{}",
+    LOG_DEBUG(log, "Creating storage object storage with configuration type: {} distributed_processing {} at\n{}",
         configuration->getTypeName(),
         distributed_processing,
         StackTrace().toString());

@@ -20,7 +20,7 @@ StoragePtr TableFunctionFileCluster::getStorage(
 {
     StoragePtr storage;
 
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && !context->getClientInfo().is_replicated_database_internal)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contain any globs
         StorageFile::CommonArguments args{
