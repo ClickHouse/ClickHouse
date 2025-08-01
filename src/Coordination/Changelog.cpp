@@ -856,7 +856,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
             next_position = position + size_in_file;
         }
-        else if (total_size + entry_size > commit_logs_cache.size_threshold || total_entries > commit_logs_cache.count_threshold)
+        else if (total_size + entry_size > commit_logs_cache.size_threshold || total_entries + 1 > commit_logs_cache.count_threshold)
             break;
         else if (changelog_description == current_file_info->file_description && position == next_position)
         {
@@ -1051,8 +1051,16 @@ size_t LogEntryStorage::InMemoryCache::numberOfEntries() const
 
 bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) const
 {
-    return empty() || (size_threshold != 0 && (cache_size + log_entry_size < size_threshold))
-        || (count_threshold != 0 && (numberOfEntries() + 1 < count_threshold));
+    if (hasUnlimitedSpace() || empty())
+        return true;
+
+    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
+        return false;
+
+    if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
+        return false;
+
+    return true;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1436,9 +1444,17 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::lock_guard lock(commit_logs_cache_mutex);
+    const auto latest_log_cache_over_size_threshold = [&]
+    {
+        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+    };
+
+    const auto latest_log_cache_over_count_threshold = [&]
+    {
+        return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
+    };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && (latest_logs_cache.cache_size > latest_logs_cache.size_threshold
-               || latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold))
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
     {
         auto node = latest_logs_cache.popOldestEntry();
         auto log_entry_size = logEntrySize(getLogEntry(node.mapped()));
