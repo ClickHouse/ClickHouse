@@ -1113,6 +1113,25 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+bool ClientBase::processBuzzHouseServerQuery(const String & full_query)
+{
+    /// Ignore buzzhouse setting so the whole result set can be fetched
+    bool res = true;
+    const auto buzz_backup = this->buzz_house;
+
+    this->buzz_house = 0;
+    try
+    {
+        res = processTextAsSingleQuery(full_query);
+    }
+    catch (...)
+    {
+        res = false;
+    }
+    this->buzz_house = buzz_backup;
+    return res;
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.

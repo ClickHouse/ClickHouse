@@ -568,14 +568,14 @@ bool Client::buzzHouse()
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-        has_cloud_features &= processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
-        has_cloud_features &= processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
+        has_cloud_features &= processBuzzHouseServerQuery("DROP DATABASE IF EXISTS fuzztest;");
+        has_cloud_features &= processBuzzHouseServerQuery("CREATE DATABASE fuzztest Engine=Shared;");
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
-        replica_setup &= processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
+        replica_setup &= processBuzzHouseServerQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
         std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
-        const auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
+        const auto u = processBuzzHouseServerQuery("DROP TABLE IF EXISTS tx;");
         UNUSED(u);
-        const auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        const auto v = processBuzzHouseServerQuery("DROP DATABASE IF EXISTS fuzztest;");
         UNUSED(v);
 
         fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;

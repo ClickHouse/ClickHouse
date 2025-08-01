@@ -103,7 +103,7 @@ public:
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
-    bool processTextAsSingleQuery(const String & full_query);
+    bool processBuzzHouseServerQuery(const String & full_query);
 
     virtual bool tryToReconnect(const uint32_t, const uint32_t)
     {
@@ -135,6 +135,8 @@ protected:
 
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
+    /// Returns true if query succeeded
+    bool processTextAsSingleQuery(const String & full_query);
 
     void processParsedSingleQuery(
         std::string_view query_,

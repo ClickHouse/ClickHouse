@@ -1,6 +1,8 @@
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 
 #include <ranges>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -350,20 +352,11 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
 
 bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
 {
-    bool res = true;
-
-    try
+    if (outlog)
     {
-        if (outlog)
-        {
-            outf << query << std::endl;
-        }
-        res &= this->cb->processTextAsSingleQuery(query);
+        outf << query << std::endl;
     }
-    catch (...)
-    {
-        res = false;
-    }
+    const bool res = this->cb->processBuzzHouseServerQuery(query);
     if (!res)
     {
         fmt::print(stderr, "Error on processing query '{}'\n", query);
