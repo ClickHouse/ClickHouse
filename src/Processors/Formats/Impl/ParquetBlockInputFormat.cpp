@@ -667,7 +667,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
     if (format_filter_info && format_filter_info->column_mapper)
     {
         auto header = getPort().getHeader();
@@ -679,10 +678,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             traverseAllFields(group_node->field(i), parquet_field_ids);
 
         auto result = format_filter_info->column_mapper->makeMapping(header, parquet_field_ids);
-        clickhouse_to_parquet_names = std::move(result.first);
+        clickhouse_names_to_parquet = std::move(result.first);
         parquet_names_to_clickhouse = std::move(result.second);
     }
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_names_to_parquet);
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
@@ -927,6 +926,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             "Parquet",
             format_settings,
             parquet_names_to_clickhouse,
+            clickhouse_names_to_parquet,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
