@@ -38,9 +38,6 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
 
-    if (capitalize_first_letter(storage_type_str) == "S3a")
-        storage_type_str = "S3";
-
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
     if (!storage_type)
@@ -180,27 +177,6 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
-}
-
-DB::SettingsChanges CatalogSettings::allChanged() const
-{
-    DB::SettingsChanges changes;
-    changes.emplace_back("storage_endpoint", storage_endpoint);
-    changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
-    changes.emplace_back("region", region);
-
-    return changes;
-}
-
-void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
-}
-
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
 }

@@ -1,6 +1,8 @@
+#include <exception>
 #include <optional>
 #include <string_view>
 
+#include <type_traits>
 #include <unordered_map>
 #include <base/defines.h>
 
@@ -13,7 +15,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -246,26 +247,30 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         regex_nodes.emplace(id, node);
 
 #if USE_VECTORSCAN
-        RegexpAnalysisResult result;
-        if (use_vectorscan)
-            result = OptimizedRegularExpression::analyze(regex);
+        String required_substring;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+        std::vector<std::string> alternatives;
 
-        for (auto & alter : result.alternatives)
+        if (use_vectorscan)
+            OptimizedRegularExpression::analyze(regex, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+
+        for (auto & alter : alternatives)
         {
             if (alter.size() < 3)
             {
-                result.alternatives.clear();
+                alternatives.clear();
                 break;
             }
         }
-        if (!result.required_substring.empty())
+        if (!required_substring.empty())
         {
-            simple_regexps.push_back(result.required_substring);
+            simple_regexps.push_back(required_substring);
             regexp_ids.push_back(id);
         }
-        else if (!result.alternatives.empty())
+        else if (!alternatives.empty())
         {
-            for (auto & alternative : result.alternatives)
+            for (auto & alternative : alternatives)
             {
                 simple_regexps.push_back(alternative);
                 regexp_ids.push_back(id);
@@ -971,7 +976,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
 
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & /*name*/,
+    auto create_layout = [=](const std::string &,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,

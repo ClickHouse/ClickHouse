@@ -140,7 +140,7 @@ template<bool enable> struct ConstexprIfsAreNotIfdefs
 {
     template <typename T> constexpr static std::string_view getStaticFormatString(T &&) { return {}; }
     template <typename T> static PreformattedMessage getPreformatted(T &&) { return {}; }
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string> &, fmt::format_string<Args...>, Args &&...) { return {}; }
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args &&...) { return {}; }
 };
 
 template<> struct ConstexprIfsAreNotIfdefs<true>
@@ -156,13 +156,13 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
 
     template <typename T> static T && getPreformatted(T && x) { return std::forward<T>(x); }
 
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string> & out, fmt::format_string<Args...> fmt_str, Args && ...args)
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
     {
         return tryGetArgsAndFormat(out, std::move(fmt_str), std::forward<Args>(args)...);
     }
 };
 
-template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string> & out, fmt::format_string<Args...> fmt_str, Args && ...args)
+template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
 {
     tryGetFormattedArgs(out, args...);
     return fmt::format(fmt_str, std::forward<Args>(args)...);
@@ -281,9 +281,9 @@ public:
 
     LogSeriesLimiter * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
+    LogSeriesLimiter * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    LogSeriesLimiter * getChannel();
     void log(Poco::Message & message);
 
     LoggerPtr getLogger() { return logger; }

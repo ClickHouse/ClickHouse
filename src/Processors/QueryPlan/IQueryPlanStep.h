@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
 namespace DB
@@ -23,19 +24,16 @@ using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
 
-struct ExplainPlanOptions;
+using Header = Block;
+using Headers = std::vector<Header>;
 
-class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+struct ExplainPlanOptions;
 
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
     IQueryPlanStep();
-
-    IQueryPlanStep(const IQueryPlanStep &) = default;
-    IQueryPlanStep(IQueryPlanStep &&) = default;
 
     virtual ~IQueryPlanStep() = default;
 
@@ -50,10 +48,10 @@ public:
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const SharedHeaders & getInputHeaders() const { return input_headers; }
+    const Headers & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputHeader() const { return output_header != nullptr; }
-    const SharedHeader & getOutputHeader() const;
+    bool hasOutputHeader() const { return output_header.has_value(); }
+    const Header & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
@@ -65,8 +63,6 @@ public:
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
-
-    virtual QueryPlanStepPtr clone() const;
 
     virtual const SortDescription & getSortDescription() const;
 
@@ -87,10 +83,6 @@ public:
     virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeIndexes(FormatSettings & /*settings*/) const {}
 
-    /// Get detailed description of read-from-storage step projections (if any). Shown in with options `projections = 1`.
-    virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
-    virtual void describeProjections(FormatSettings & /*settings*/) const {}
-
     /// Get description of the distributed plan. Shown in with options `distributed = 1
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
 
@@ -108,16 +100,14 @@ public:
     String getUniqID() const;
 
     /// (e.g. you correctly remove / add columns).
-    void updateInputHeaders(SharedHeaders input_headers_);
-    void updateInputHeader(SharedHeader input_header, size_t idx = 0);
-
-    virtual bool hasCorrelatedExpressions() const;
+    void updateInputHeaders(Headers input_headers_);
+    void updateInputHeader(Header input_header, size_t idx = 0);
 
 protected:
     virtual void updateOutputHeader() = 0;
 
-    SharedHeaders input_headers;
-    SharedHeader output_header;
+    Headers input_headers;
+    std::optional<Header> output_header;
 
     /// Text description about what current step does.
     std::string step_description;
@@ -132,4 +122,5 @@ private:
     size_t step_index = 0;
 };
 
+using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 }

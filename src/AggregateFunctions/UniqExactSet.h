@@ -1,11 +1,12 @@
 #pragma once
 
+#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
+
 
 namespace DB
 {
@@ -14,13 +15,6 @@ namespace ErrorCodes
 {
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
-
-enum class SetLevelHint
-{
-    singleLevel,
-    twoLevel,
-    unknown,
-};
 
 template <typename SingleLevelSet, typename TwoLevelSet>
 class UniqExactSet
@@ -31,30 +25,13 @@ class UniqExactSet
 public:
     using value_type = typename SingleLevelSet::value_type;
 
-    template <typename Arg, SetLevelHint hint>
+    template <typename Arg, bool use_single_level_hash_table = true>
     auto ALWAYS_INLINE insert(Arg && arg)
     {
-        if constexpr (hint == SetLevelHint::singleLevel)
-        {
+        if constexpr (use_single_level_hash_table)
             asSingleLevel().insert(std::forward<Arg>(arg));
-        }
-        else if constexpr (hint == SetLevelHint::twoLevel)
-        {
-            asTwoLevel().insert(std::forward<Arg>(arg));
-        }
         else
-        {
-            if (isSingleLevel())
-            {
-                auto && [_, inserted] = asSingleLevel().insert(std::forward<Arg>(arg));
-                if (inserted && worthConvertingToTwoLevel(asSingleLevel().size()))
-                    convertToTwoLevel();
-            }
-            else
-            {
-                asTwoLevel().insert(std::forward<Arg>(arg));
-            }
-        }
+            asTwoLevel().insert(std::forward<Arg>(arg));
     }
 
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
@@ -117,10 +94,11 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
+        /// If the size is large, we may convert the singleLevelHash to twoLevelHash and merge in parallel.
+        if (other.size() > 40000)
         {
-            two_level_set = other.getTwoLevelSet();
-            return;
+            if (isSingleLevel())
+                convertToTwoLevel();
         }
 
         if (isSingleLevel() && other.isTwoLevel())
@@ -133,10 +111,6 @@ public:
         else
         {
             auto & lhs = asTwoLevel();
-
-            if (other.isSingleLevel())
-                return lhs.merge(other.asSingleLevel());
-
             const auto rhs_ptr = other.getTwoLevelSet();
             const auto & rhs = *rhs_ptr;
             if (!thread_pool)
@@ -148,16 +122,17 @@ public:
             }
             else
             {
-                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
+                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
+
                         while (true)
                         {
-                            if (is_cancelled->load())
+                            if (is_cancelled->load(std::memory_order_seq_cst))
                                 return;
 
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
@@ -168,14 +143,14 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner(thread_func, Priority{});
+                        thread_pool->scheduleOrThrowOnError(thread_func);
+                    thread_pool->wait();
                 }
                 catch (...)
                 {
-                    is_cancelled->store(true);
+                    thread_pool->wait();
                     throw;
                 }
-                runner.waitForAllToFinishAndRethrowFirstError();
             }
         }
     }
