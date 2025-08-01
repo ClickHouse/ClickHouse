@@ -70,7 +70,8 @@ const std::set<String> methods = {"hnsw"};
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
-    {"cosineDistance", unum::usearch::metric_kind_t::cos_k}};
+    {"cosineDistance", unum::usearch::metric_kind_t::cos_k},
+    {"binaryQuantizationDistance", unum::usearch::metric_kind_t::hamming_k}}; /// Internal only
 
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
@@ -78,7 +79,8 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
     {"bf16", unum::usearch::scalar_kind_t::bf16_k},
-    {"i8", unum::usearch::scalar_kind_t::i8_k}};
+    {"i8", unum::usearch::scalar_kind_t::i8_k},
+    {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
 template<typename T>
@@ -449,7 +451,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     /// The vector similarity index was build for a specific distance function.
     /// It can only be used if the ORDER BY clause in the SELECT query uses the same distance function.
     if ((parameters->distance_function == "L2Distance" && metric_kind != unum::usearch::metric_kind_t::l2sq_k)
-        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k))
+        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k && metric_kind != unum::usearch::metric_kind_t::hamming_k)) /// Binary quanntized index has internal hamming distance function
             return true;
 
     return false;
@@ -553,6 +555,8 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         scalar_kind = quantizationToScalarKind.at(index.arguments[3].safeGet<String>());
         usearch_hnsw_params = {.connectivity  = index.arguments[4].safeGet<UInt64>(),
                                .expansion_add = index.arguments[5].safeGet<UInt64>()};
+        if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
+            metric_kind = distanceFunctionToMetricKind.at("binaryQuantizationDistance");
     }
 
     return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
@@ -593,6 +597,8 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     {
         if (!quantizationToScalarKind.contains(index.arguments[3].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
+        if (quantizationToScalarKind.at(index.arguments[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k && distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index is only supported for Cosine distance metric");
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
         UInt64 connectivity = index.arguments[4].safeGet<UInt64>();
