@@ -337,7 +337,7 @@ TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, Te
 {
     /// Constant columns must be avoided since they are not supported in (de/)serialization, but we have to keep lazy columns
     /// to make sure NativeReader can deserialize them correctly. See NativeReader::read for more details about how lazy columns are handled.
-    for (const auto & column : *header_)
+    for (const auto & column : header_)
         header.insert(ColumnWithTypeAndName{column.column->cloneEmpty()->convertToFullColumnIfConst(), column.type, column.name});
 }
 
