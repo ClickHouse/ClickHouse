@@ -158,11 +158,11 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
+    static constexpr auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
     static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
     static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-    static constexpr auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
 
     enum class Format : uint8_t
     {
@@ -287,13 +287,13 @@ public:
     /// Read segment information from .gin_seg files
     void readSegments();
 
-    /// Read all dictionaries from .gin_dict files
-    void readSegmentDictionaries();
+    /// Prepare segments for reading
+    void prepareSegmentsForReading();
 
-    /// Read dictionary for given segment id
-    void readSegmentDictionary(UInt32 segment_id);
+    /// Prepare segment for given segment id
+    void prepareSegmentForReading(UInt32 segment_id);
 
-    /// Read FST for given segment id
+    /// Read FST for given segment dictionary from .gin_dict files
     void readSegmentFST(GinSegmentDictionaryPtr segment_dictionary);
 
     /// Read postings lists for the term

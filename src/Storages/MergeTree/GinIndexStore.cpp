@@ -548,13 +548,13 @@ void GinIndexStoreDeserializer::readSegments()
     }
 }
 
-void GinIndexStoreDeserializer::readSegmentDictionaries()
+void GinIndexStoreDeserializer::prepareSegmentsForReading()
 {
     for (UInt32 seg_index = 0; seg_index < store->getNumOfSegments(); ++seg_index)
-        readSegmentDictionary(seg_index);
+        prepareSegmentForReading(seg_index);
 }
 
-void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
+void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 {
     /// Check validity of segment_id
     auto it = store->segment_dictionaries.find(segment_id);
@@ -695,7 +695,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String & name, DataPartStorageP
 
         GinIndexStoreDeserializer deserializer(store);
         deserializer.readSegments();
-        deserializer.readSegmentDictionaries();
+        deserializer.prepareSegmentsForReading();
 
         stores[key] = store;
 
