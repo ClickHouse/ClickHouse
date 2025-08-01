@@ -268,13 +268,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     {
         schema_id_by_data_file.clear();
         schema_id_by_data_files_initialized = false;
-
-        {
-            std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
-            cached_unprunned_data_files_for_last_processed_snapshot = std::nullopt;
-            cached_unprunned_position_deletes_files_for_last_processed_snapshot = std::nullopt;
-        }
-
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -726,13 +719,21 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
 
 // We need to pass transform function here not to store ManifestFileEntry for data files explicitly in RAM
 template <typename T>
-std::vector<T> IcebergMetadata::getPureFilesImpl(
+std::vector<T> IcebergMetadata::getFilesImpl(
     const ActionsDAG * filter_dag,
     FileContentType file_content_type,
     ContextPtr local_context,
-    bool use_partition_pruning,
     std::function<T(const ManifestFileEntry &)> transform_function) const
 {
+    if (!local_context && filter_dag)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
+    }
+
+    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
+
     std::vector<T> files;
     {
         SharedLockGuard lock(mutex);
@@ -760,67 +761,27 @@ std::vector<T> IcebergMetadata::getPureFilesImpl(
             }
         }
     }
-    return files;
-}
-
-template <typename T>
-std::vector<T> IcebergMetadata::getCachedFilesImpl(
-    const ActionsDAG * filter_dag,
-    FileContentType file_content_type,
-    ContextPtr local_context,
-    std::optional<std::vector<T>> * cached_files,
-    std::function<T(const ManifestFileEntry &)> transform_function) const
-{
-    if (!local_context && filter_dag)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
-    }
-
-    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
-
-    {
-        std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
-
-        if (!use_partition_pruning && cached_files->has_value())
-            return cached_files->value();
-    }
-
-    auto files = getPureFilesImpl<T>(filter_dag, file_content_type, local_context, use_partition_pruning, transform_function);
-
     std::sort(files.begin(), files.end());
-
-    if (!use_partition_pruning)
-    {
-        std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
-        *cached_files = std::move(files);
-        return cached_files->value();
-    }
-
     return files;
 }
-
 
 std::vector<ParsedDataFileInfo> IcebergMetadata::getDataFiles(
     const ActionsDAG * filter_dag, ContextPtr local_context, const std::vector<ManifestFileEntry> & position_delete_files) const
 {
-    return getCachedFilesImpl<ParsedDataFileInfo>(
+    return getFilesImpl<ParsedDataFileInfo>(
         filter_dag,
         FileContentType::DATA,
         local_context,
-        &cached_unprunned_data_files_for_last_processed_snapshot,
         [this, &position_delete_files](const ManifestFileEntry & entry)
         { return ParsedDataFileInfo{this->configuration.lock(), entry, position_delete_files}; });
 }
 
 std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
-    return getCachedFilesImpl<ManifestFileEntry>(
+    return getFilesImpl<ManifestFileEntry>(
         filter_dag,
         FileContentType::POSITIONAL_DELETE,
         local_context,
-        &cached_unprunned_position_deletes_files_for_last_processed_snapshot,
         // In the current design we can't avoid storing ManifestFileEntry in RAM explicitly for position deletes
         [](const ManifestFileEntry & entry) { return entry; });
 }

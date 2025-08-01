@@ -145,11 +145,6 @@ private:
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     const String table_location;
 
-    mutable std::optional<std::vector<ParsedDataFileInfo>>
-        cached_unprunned_data_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
-    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_position_deletes_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
-    mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
-
     ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
@@ -168,19 +163,10 @@ private:
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 
     template <typename T>
-    std::vector<T> getPureFilesImpl(
+    std::vector<T> getFilesImpl(
         const ActionsDAG * filter_dag,
         Iceberg::FileContentType file_content_type,
         ContextPtr local_context,
-        bool use_partition_pruning,
-        std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
-
-    template <typename T>
-    std::vector<T> getCachedFilesImpl(
-        const ActionsDAG * filter_dag,
-        Iceberg::FileContentType file_content_type,
-        ContextPtr local_context,
-        std::optional<std::vector<T>> * cached_files,
         std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
 };
 
