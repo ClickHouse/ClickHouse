@@ -954,7 +954,7 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     query_id = f"query_with_filter_{TABLE_NAME}"
     result = int(
         instance.query(
-            f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+            f"""SELECT count() FROM {table_function} WHERE c == toDateTime('2000/01/05')
             """,
             query_id=query_id,
         )

@@ -110,6 +110,7 @@ private:
 };
 
 /// An iterator over DB::ActionsDAG const node ptr's.
+/// Applies corresponding delta-kernel visitors to each node.
 class  EngineIterator : public ffi::EngineIterator
 {
 public:
@@ -140,8 +141,12 @@ private:
                 return nullptr;
             }
 
-            LOG_TEST(iterator_data->log(), "Node name: {}, node type: {}, column type: {}",
-                     node->result_name, node->type, node->column ? toString(node->column->getDataType()) : "None");
+            LOG_TEST(
+                iterator_data->log(),
+                "Node name: {}, node type: {}, column type: {}",
+                node->result_name,
+                node->type,
+                node->column ? toString(node->column->getDataType()) : "None");
 
             auto result = getNextImpl(*iterator_data, node);
             if (result && result != VISITOR_FAILED_OR_UNSUPPORTED)
@@ -396,7 +401,6 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    //auto value = DB::getFieldFromColumnForASTLiteral(literal_node->column, 0, getTypeOrNestedType(column_node));
                     DB::Field value;
                     literal_node->column->get(0, value);
 

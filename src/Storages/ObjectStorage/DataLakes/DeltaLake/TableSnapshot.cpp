@@ -218,8 +218,6 @@ public:
         }
         catch (...)
         {
-            /// We cannot allow to throw exceptions from ScanCallback,
-            /// otherwise delta-kernel will panic and call terminate.
             setScanException();
             data_files_cv.notify_all();
             LOG_DEBUG(log, "Exception during scan_metadata_next");
@@ -416,7 +414,7 @@ TableSnapshot::TableSnapshot(
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
-    /// TODO: This settings are not changeable per query in case of table engine.
+    /// TODO: These settings are not changeable per query in case of table engine.
     , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
     , throw_on_engine_visitor_error(context_->getSettingsRef()[DB::Setting::delta_lake_throw_on_engine_predicate_error])
 {
