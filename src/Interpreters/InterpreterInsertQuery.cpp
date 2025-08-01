@@ -346,11 +346,6 @@ static bool isTrivialSelect(const ASTPtr & select)
     return false;
 }
 
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
-}
-
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
 {
     const Settings & settings = context_->getSettingsRef();
@@ -695,9 +690,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     if (query.hasInlinedData() && !async_insert)
     {
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
-
-        for (auto & buffer : owned_buffers)
-            format->addBuffer(std::move(buffer));
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());

@@ -1355,7 +1355,6 @@ static BlockIO executeQueryImpl(
         }
 
         bool quota_checked = false;
-        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
 
         if (async_insert)
         {
@@ -1407,7 +1406,6 @@ static BlockIO executeQueryImpl(
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {
                 async_insert = false;
-                //insert_data_buffer_holder = std::move(result.insert_data_buffer);
 
                 if (insert_query->data)
                 {
@@ -1544,9 +1542,6 @@ static BlockIO executeQueryImpl(
                         auto table_id = insert_interpreter->getDatabaseTable();
                         if (!table_id.empty())
                             context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
-
-                        if (insert_data_buffer_holder)
-                            insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                     }
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
