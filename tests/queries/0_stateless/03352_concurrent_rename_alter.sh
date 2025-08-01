@@ -24,9 +24,13 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_rename_alter (id) VALUES (1);
 "
 
+TIMEOUT=8
+
 function insert1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "INSERT INTO t_rename_alter (id, dt, arr) SELECT 1, now(), [(now(), 1, 'a', 'b')]" --insert_deduplicate 0
         sleep 0.05
     done
@@ -34,7 +38,9 @@ function insert1()
 
 function insert2()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "INSERT INTO t_rename_alter (id, dt, arr_v2) SELECT 1, now(), [(now(), 1, 'a', 'b', 'c')]" --insert_deduplicate 0
         sleep 0.05
     done
@@ -42,22 +48,18 @@ function insert2()
 
 function select1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_rename_alter WHERE NOT ignore(*) FORMAT Null;" --insert_deduplicate 0
         sleep 0.05
     done
 }
 
-export -f insert1;
-export -f insert2;
-export -f select1;
-
-TIMEOUT=8
-
 for _ in {0..4}; do
-    timeout $TIMEOUT bash -c insert1 2> /dev/null &
-    timeout $TIMEOUT bash -c insert2 2> /dev/null &
-    timeout $TIMEOUT bash -c select1 2> /dev/null &
+    insert1 2> /dev/null &
+    insert2 2> /dev/null &
+    select1 2> /dev/null &
 done
 
 $CLICKHOUSE_CLIENT --query "
