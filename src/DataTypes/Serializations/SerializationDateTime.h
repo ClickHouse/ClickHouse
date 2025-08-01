@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/TimezoneMixin.h>
 
 namespace DB
@@ -32,6 +33,7 @@ class SerializationTime final : public SerializationNumber<Int32>, public Timezo
 {
 public:
     explicit SerializationTime(const TimezoneMixin & time_zone_);
+    explicit SerializationTime(const DataTypeTime & time_type);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

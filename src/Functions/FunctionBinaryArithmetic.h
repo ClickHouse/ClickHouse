@@ -2068,16 +2068,7 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        // Special case for Time: binary OPS should reuse timezone
-                        // of Time argument as timezeone of result type.
-                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
-
-                        const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
-                            tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
-                            tz = &left;
-                        type_res = std::make_shared<DataTypeTime>(*tz);
+                        type_res = std::make_shared<DataTypeTime>();
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();

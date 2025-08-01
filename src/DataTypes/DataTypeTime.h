@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/TimezoneMixin.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {
@@ -33,13 +33,15 @@ class DataTypeTime final : public DataTypeNumberBase<Int32>
 {
 public:
     explicit DataTypeTime(const String & time_zone_name = "");
-    explicit DataTypeTime(const TimezoneMixin & time_zone);
+
+    bool hasExplicitTimeZone() const { return false; }
+    const DateLUTImpl & getTimeZone() const;
+    String getTimeZoneID() const { return {}; }
 
     static constexpr auto family_name = "Time";
 
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
-    void updateHashImpl(SipHash & hash) const override;
     TypeIndex getTypeId() const override { return TypeIndex::Time; }
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
 
