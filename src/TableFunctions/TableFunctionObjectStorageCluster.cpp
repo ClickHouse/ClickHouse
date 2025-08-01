@@ -14,8 +14,8 @@
 namespace DB
 {
 
-template <typename Definition, typename Configuration, bool is_data_lake>
-StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_lake>::executeImpl(
+template <typename Definition, typename Configuration>
+StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
@@ -44,13 +44,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* comment */ String{},
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
-            /* catalog*/nullptr,
-            /* if_not_exists*/false,
-            /* is_datalake_query*/ false,
             /* distributed_processing */ true,
-            /* partition_by_ */Base::partition_by,
-            /* is_table_function */true,
-            /* lazy_init */ true);
+            /*partition_by_=*/nullptr);
     }
     else
     {
@@ -61,7 +56,6 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            Base::partition_by,
             context);
     }
 

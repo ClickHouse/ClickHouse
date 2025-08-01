@@ -3,10 +3,10 @@ description: 'Settings for configuring users and roles.'
 sidebar_label: 'User Settings'
 sidebar_position: 63
 slug: /operations/settings/settings-users
-title: 'Users and roles settings'
+title: 'Users and Roles Settings'
 ---
 
-# Users and roles settings
+# Users and Roles Settings
 
 The `users` section of the `users.xml` configuration file contains user settings.
 
@@ -150,6 +150,7 @@ Example:
 This setting can't be specified at the same time with
 `dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
 and `allow_databases` settings.
+
 
 ### user_name/networks {#user-namenetworks}
 

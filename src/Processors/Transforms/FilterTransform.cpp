@@ -10,8 +10,6 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Functions/IFunction.h>
 
 namespace ProfileEvents
 {
@@ -63,16 +61,16 @@ Block FilterTransform::transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    SharedHeader header_,
+    const Block & header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_)
+    std::optional<std::pair<size_t, String>> condition_)
     : ISimpleTransform(
             header_,
-            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
+            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
@@ -83,24 +81,12 @@ FilterTransform::FilterTransform(
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
-    {
         expression->execute(transformed_header);
-
-        /// Special check to stop queries like "WHERE ignore(...)"
-        {
-            const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
-            while (node->type == ActionsDAG::ActionType::ALIAS)
-                node = node->children[0];
-
-            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
-                always_false = true;
-        }
-    }
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
-        always_false = always_false || ConstantFilterDescription(*column).always_false;
+        constant_filter_description = ConstantFilterDescription(*column);
 
     if (condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
@@ -109,7 +95,7 @@ FilterTransform::FilterTransform(
 IProcessor::Status FilterTransform::prepare()
 {
     if (!on_totals
-        && (always_false
+        && (constant_filter_description.always_false
             /// Optimization for `WHERE column in (empty set)`.
             /// The result will not change after set was created, so we can skip this check.
             /// It is implemented in prepare() stop pipeline before reading from input port.
@@ -164,10 +150,6 @@ void FilterTransform::doTransform(Chunk & chunk)
         types = block.getDataTypes();
     }
 
-    size_t num_columns = columns.size();
-    ColumnPtr filter_column = columns[filter_column_position];
-    ConstantFilterDescription constant_filter_description(*filter_column);
-
     if (constant_filter_description.always_true || on_totals)
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
@@ -176,11 +158,21 @@ void FilterTransform::doTransform(Chunk & chunk)
         return;
     }
 
+    size_t num_columns = columns.size();
+    ColumnPtr filter_column = columns[filter_column_position];
+
+    /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
+        *  and now - are calculated. That is, not all cases are covered by the code above.
+        * This happens if the function returns a constant for a non-constant argument.
+        * For example, `ignore` function.
+        */
+    constant_filter_description = ConstantFilterDescription(*filter_column);
+
     if (constant_filter_description.always_false)
     {
         writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         incrementProfileEvents(0, {});
-        return;
+        return; /// Will finish at next prepare call
     }
 
     std::unique_ptr<IFilterDescription> filter_description;

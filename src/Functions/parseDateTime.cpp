@@ -21,7 +21,7 @@
 
 #include <expected>
 
-#include <Functions/StringHelpers.h>
+#include "StringHelpers.h"
 
 namespace DB
 {

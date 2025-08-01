@@ -1,12 +1,10 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Storages/PartitionCommands.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/PartitionCommands.h>
 
-#include <memory>
+#include <ranges>
 #include <shared_mutex>
 
 
@@ -160,9 +158,9 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
-void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVariant & options)
+void MetadataStorageFromDiskTransaction::commit()
 {
-    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -176,7 +174,9 @@ void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    addOperation(std::make_unique<WriteInlineDataOperation>(path, data, *metadata_storage.getDisk(), metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->setInlineData(data);
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -244,7 +244,12 @@ void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::stri
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<RewriteFileOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->addObject(std::move(object_key), size_in_bytes);
+
+    auto data = metadata->serializeToString();
+    if (!data.empty())
+        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
@@ -266,13 +271,6 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
-}
-
-std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
-    return std::nullopt;
 }
 
 }

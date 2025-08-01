@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
+#include <Core/Names.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -12,6 +13,9 @@
 
 namespace DB
 {
+
+class Block;
+using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -54,8 +58,6 @@ struct ExplainPlanOptions
     bool actions = false;
     /// Add information about indexes actions.
     bool indexes = false;
-    /// Add information about projections.
-    bool projections = false;
     /// Add information about sorting
     bool sorting = false;
     /// Show remote plans for distributed query.
@@ -80,7 +82,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
+    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
@@ -136,7 +138,6 @@ public:
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
-    void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
     QueryPlan clone() const;

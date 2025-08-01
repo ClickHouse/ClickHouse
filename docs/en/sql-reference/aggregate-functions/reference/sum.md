@@ -56,6 +56,7 @@ SELECT sum(salary) FROM employees;
 
 Result:
 
+
 ```response
    ┌─sum(salary)─┐
 1. │      266140 │
