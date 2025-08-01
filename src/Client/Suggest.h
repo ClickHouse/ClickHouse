@@ -41,7 +41,9 @@ public:
     int getLastError() const { return last_error.load(); }
 
 private:
-    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
+    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, std::function<void(const Block &)> on_data);
+
+    bool hasSystemCompletions(IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info);
 
     void fillWordsFromBlock(const Block & block);
 
