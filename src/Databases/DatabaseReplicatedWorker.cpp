@@ -7,11 +7,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageMaterializedView.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
+#include <Parsers/ASTRenameQuery.h>
 
 namespace fs = std::filesystem;
 
@@ -431,6 +433,80 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     return entry_path;
 }
 
+
+static bool getRMVCoordinationInfo(
+    LoggerPtr log,
+    const ZooKeeperPtr & zookeeper,
+    UUID parent_uuid,
+    Coordination::Stat & stats,
+    RefreshTask::CoordinationZnode & coordination_znode)
+{
+    if (parent_uuid == UUIDHelpers::Nil)
+        return false;
+
+    const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
+    if (!storage)
+        return false;
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
+    const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
+    if (!refresh || refresh->append)
+        return false;
+    const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
+    if (!mv)
+        return false;
+
+    const auto coordination_path = mv->getCoordinationPath();
+
+    if (!coordination_path.has_value() || (*coordination_path).empty())
+        return false;
+    String data;
+    try
+    {
+        if (!zookeeper->tryGet(*coordination_path, data, &stats))
+            return false;
+        coordination_znode.parse(data);
+        return true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Unable to get coordination information: " + *coordination_path);
+        return false;
+    }
+}
+
+bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVInnerTable(
+    const ZooKeeperPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime)
+{
+    if (create_uuid == UUIDHelpers::Nil)
+        return false;
+
+    Coordination::Stat stats;
+    RefreshTask::CoordinationZnode coordination_znode;
+
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+        return false;
+
+    LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
+    if (coordination_znode.last_success_table_uuid == create_uuid)
+        return false;
+
+    LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
+    return ddl_log_ctime < stats.mtime;
+}
+
+bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVInnerTable(
+    const ZooKeeperPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table)
+{
+    Coordination::Stat stats;
+    RefreshTask::CoordinationZnode coordination_znode;
+
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+        return false;
+
+    StorageID storage_id{rename_from_table};
+    return !DatabaseCatalog::instance().isTableExist(storage_id, context);
+}
+
 DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run)
 {
     if (!dry_run)
@@ -535,7 +611,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String node_data = zookeeper->get(entry_path);
+    Coordination::Stat stats;
+    String node_data = zookeeper->get(entry_path, &stats);
     task->entry.parse(node_data);
 
     if (task->entry.query.empty())
@@ -560,6 +637,50 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         out_reason = fmt::format("Parent table {} doesn't exist", task->entry.parent_table_uuid.value());
         return {};
+    }
+    if (task->entry.parent_table_uuid)
+    {
+        const auto & parent_table_uuid = *task->entry.parent_table_uuid;
+        LOG_DEBUG(log, "Entry {}, parent_uuid {}", entry_name, parent_table_uuid);
+        if (const auto * create_query = task->query->as<ASTCreateQuery>())
+        {
+            if (create_query->uuid != UUIDHelpers::Nil
+                && shouldSkipCreatingRMVInnerTable(zookeeper, *task->entry.parent_table_uuid, create_query->uuid, stats.ctime))
+            {
+                LOG_INFO(
+                    log,
+                    "Skip DDL {} as creating the old inner table of RMV '{}', query {}",
+                    entry_name,
+                    parent_table_uuid,
+                    create_query->formatForLogging());
+                out_reason = fmt::format(
+                    "Creating the old inner table '{}' of Refreshable Materialized View '{}'", create_query->uuid, parent_table_uuid);
+                return {};
+            }
+        }
+        else if (const auto * rename_query = task->query->as<ASTRenameQuery>())
+        {
+            if (rename_query->getElements().size() == 1)
+            {
+                const auto & element = rename_query->getElements().front();
+                QualifiedTableName from_table{.database = element.from.getDatabase(), .table = element.from.getTable()};
+                if (shouldSkipRenamingRMVInnerTable(zookeeper, *task->entry.parent_table_uuid, from_table))
+                {
+                    LOG_INFO(
+                        log,
+                        "Skip DDL {} as renaming the old inner table of RMV '{}', query {}",
+                        entry_name,
+                        parent_table_uuid,
+                        rename_query->formatForLogging());
+
+                    out_reason = fmt::format(
+                        "Renaming the old inner table '{}' of Refreshable Materialized View '{}'",
+                        from_table.getFullName(),
+                        parent_table_uuid);
+                    return {};
+                }
+            }
+        }
     }
 
     return task;
