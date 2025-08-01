@@ -808,7 +808,6 @@ try
 
     setThreadName("AsyncInsertQ");
 
-    // const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
@@ -1194,8 +1193,8 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsing(
     {
         std::unique_ptr<StreamingFormatExecutor> executor;
         InsertData::EntriesPair entries_pair;
-        std::shared_ptr<AsyncInsertInfo> chunk_info;
-        size_t total_rows;
+        std::shared_ptr<AsyncInsertInfo> chunk_info = std::make_shared<AsyncInsertInfo>();
+        size_t total_rows = 0;
         String current_exception;
         InsertData::EntryPtr entries_it;
     };
@@ -1250,13 +1249,13 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsing(
                 entries_bytes += (*entries_it)->chunk.byteSize();
             }
 
-            ei.executor = std::move(std::make_unique<StreamingFormatExecutor>(
+            ei.executor = std::make_unique<StreamingFormatExecutor>(
                 header,
                 format,
                 on_error,
                 entries_bytes,
                 len,
-                adding_defaults_transform));
+                adding_defaults_transform);
 
             ei.entries_pair = {from, entries_it};
         }
@@ -1310,7 +1309,6 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsing(
         chunk.getChunkInfos().add(ei.chunk_info);
         chunks[executors_num] = std::move(chunk);
     }
-    return;
 }
 
 template <typename LogFunc>
