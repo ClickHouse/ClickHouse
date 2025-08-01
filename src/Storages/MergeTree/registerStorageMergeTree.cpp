@@ -11,7 +11,7 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include "Common/StackTrace.h"
+#include <Common/StackTrace.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
