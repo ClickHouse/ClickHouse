@@ -325,6 +325,8 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool allPartitionsHaveSinglePart() const;
+
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
