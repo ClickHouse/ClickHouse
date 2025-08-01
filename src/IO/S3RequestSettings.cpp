@@ -4,6 +4,7 @@
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
 #include <IO/S3RequestSettings.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
@@ -325,6 +326,21 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!impl->storage_class_name.value.empty() && impl->storage_class_name.changed)
         impl->storage_class_name = Poco::toUpperInPlace(impl->storage_class_name.value);
+}
+
+void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
+{
+    impl->writeChangedBinary(out);
+}
+
+S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr context)
+{
+    S3RequestSettings result;
+    result.impl = std::make_unique<S3RequestSettingsImpl>();
+    result.impl->readBinary(in);
+    result.finishInit(context->getSettingsRef(), false);
+    /// TODO Proxy Configuration
+    return result;
 }
 
 }
