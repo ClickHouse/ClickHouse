@@ -23,7 +23,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 
-
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
     #include <iomanip>
@@ -646,7 +645,7 @@ protected:
             size_t size() const { return count; }
 
             size_t capacity() const { return CAPACITY; }
-        
+
             inline void push(cell_type * cell)
             {
                 if (count < CAPACITY)
@@ -678,7 +677,9 @@ protected:
 
     public:
         iterator_base() {} /// NOLINT
-        iterator_base(Container * container_, cell_type * ptr_, bool prefetch_ = false) : container(container_), ptr(ptr_), prefetch(prefetch_) {
+        iterator_base(Container * container_, cell_type * ptr_, bool prefetch_ = false) : container(container_), ptr(ptr_), prefetch(prefetch_)
+        {
+            chassert(container->buf != nullptr);
             buf_end = container->buf + container->grower.bufSize();
         }
 
@@ -707,7 +708,6 @@ protected:
                 while (ptr < buf_end && ptr->isZero(*container))
                     ++ptr;
             }
-
             return static_cast<Derived &>(*this);
         }
 
@@ -743,28 +743,34 @@ protected:
         void prepareNext()
         {
             iter_count++;
+            if (next_ptr < buf_end)
+            {
+                if (unlikely(next_ptr->isZero(*container)))
+                    next_ptr = container->buf;
+                else
+                    next_ptr += 1;
+            }
             if (prefetch_buffer.size() <  prefetch_ahead && next_ptr < buf_end) [[likely]]
             {
                 if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
                     prefetch_ahead = std::min(prefetch_buffer.capacity(), prefetching.calcPrefetchLookAhead() + 1);
-                
+
                 auto n = prefetch_ahead - prefetch_buffer.size();
                 cell_type * last_ptr = nullptr;
                 for (size_t i = 0; i < n; ++i)
                 {
-                    if (unlikely(next_ptr->isZero(*container))) [[unlikely]]
-                        next_ptr = container->buf;
-                    else
-                        next_ptr += 1;
                     while (next_ptr < buf_end && next_ptr->isZero(*container))
+                    {
                         ++next_ptr;
-    
+                    }
+
                     if (next_ptr < buf_end) [[likely]]
                     {
                         prefetch_buffer.push(next_ptr);
                         last_ptr = next_ptr;
+                        next_ptr += i + 1 < n ? 1 : 0; /// If we are at the last iteration, do not increment next_ptr.
                     }
-                    else 
+                    else
                         break;
                 }
                 if (last_ptr) [[likely]]
