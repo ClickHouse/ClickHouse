@@ -83,7 +83,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , name(std::move(name_))
@@ -93,13 +94,15 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
-    , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1 /* max_threads */))
+    , create_reader_pool(
+          std::make_shared<ThreadPool>(
+              CurrentMetrics::StorageObjectStorageThreads,
+              CurrentMetrics::StorageObjectStorageThreadsActive,
+              CurrentMetrics::StorageObjectStorageThreadsScheduled,
+              1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -375,7 +378,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !parser_group->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -415,7 +418,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         &schema_cache,
         log,
         max_block_size,
-        parser_group,
+        parser_shared_resources,
+        format_filter_info,
         need_only_count);
 }
 
@@ -430,7 +434,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    FormatParserGroupPtr parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -532,7 +537,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            parser_group,
+            parser_shared_resources,
+            format_filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
@@ -544,15 +550,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        std::shared_ptr<const ActionsDAG> transformer;
-        if (object_info->data_lake_metadata)
-            transformer = object_info->data_lake_metadata->transform;
-        if (!transformer)
-            transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
-
-        if (transformer)
+        std::optional<ActionsDAG> transformer;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
+            transformer = object_info->data_lake_metadata->transform->clone();
+            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
+            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
+            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
+            transformer->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+        }
+        if (!transformer)
+        {
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info->getPath()))
+                transformer = schema_transformer->clone();
+        }
+
+        if (transformer.has_value())
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);

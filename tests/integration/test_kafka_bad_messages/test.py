@@ -99,7 +99,7 @@ def bad_messages_parsing_mode(
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
                          kafka_topic_list = '{topic_name}',
-                         kafka_group_name = '{format_name}',
+                         kafka_group_name = '{topic_name}',
                          kafka_format = '{format_name}',
                          kafka_flush_interval_ms = 500,
                          kafka_handle_error_mode= '{handle_error_mode}';
@@ -137,7 +137,7 @@ message Message {
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
                          kafka_topic_list = '{topic_name}',
-                         kafka_group_name = '{format_name}',
+                         kafka_group_name = '{topic_name}',
                          kafka_format = '{format_name}',
                          kafka_flush_interval_ms = 500,
                          kafka_handle_error_mode= '{handle_error_mode}',
@@ -230,7 +230,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     ]:
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_parsing_err")
+        k.kafka_create_topic(admin_client, f"{format_name}_parsing_exc")
 
         instance.query(
             f"""
@@ -241,8 +241,8 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             CREATE TABLE kafka_{format_name} (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{format_name}_parsing_err',
-                         kafka_group_name = '{format_name}',
+                         kafka_topic_list = '{format_name}_parsing_exc',
+                         kafka_group_name = '{format_name}_parsing_exc',
                          kafka_format = '{format_name}',
                          kafka_flush_interval_ms=500,
                          kafka_num_consumers = 1;
@@ -254,12 +254,12 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
 
         k.kafka_produce(
             kafka_cluster,
-            f"{format_name}_parsing_err",
+            f"{format_name}_parsing_exc",
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
         )
 
-    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_err, partition:|1|1|1|default|kafka_JSONEachRow
+    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition:|1|1|1|default|kafka_JSONEachRow
 """
     # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
     result_system_kafka_consumers = instance.query_with_retry(
@@ -277,7 +277,7 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: wh
         "Avro",
         "JSONEachRow",
     ]:
-        k.kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
+        k.kafka_delete_topic(admin_client, f"{format_name}_parsing_exc")
 
 
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
