@@ -162,7 +162,6 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["IS_FLAKY_CHECK"] = "1"
         os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
         os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
         os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
