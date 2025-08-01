@@ -10,17 +10,6 @@
 namespace DB
 {
 
-struct ci_less {
-    bool operator()(const std::string& a, const std::string& b) const {
-        return std::lexicographical_compare(
-            a.begin(), a.end(),
-            b.begin(), b.end(),
-            [](unsigned char ac, unsigned char bc) {
-                return std::tolower(ac) < std::tolower(bc);
-            });
-    }
-};
-
 struct HTTPAuthClientParams
 {
     Poco::URI uri;
@@ -28,7 +17,7 @@ struct HTTPAuthClientParams
     size_t max_tries;
     size_t retry_initial_backoff_ms;
     size_t retry_max_backoff_ms;
-    std::set<String, ci_less> forward_headers;
+    std::vector<String> forward_headers;
 };
 
 template <typename TResponseParser>
@@ -42,7 +31,7 @@ public:
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
         , retry_max_backoff_ms{params.retry_max_backoff_ms}
-        , forward_headers{params.forward_headers}
+        , forward_headers{params.forward_headers.begin(), params.forward_headers.end()}
         , uri{params.uri}
         , parser{parser_}
     {
@@ -76,6 +65,20 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
+
+    struct ci_less
+    {
+        bool operator()(const std::string & a, const std::string & b) const
+        {
+            return std::lexicographical_compare(
+                a.begin(), a.end(),
+                b.begin(), b.end(),
+                [](unsigned char ac, unsigned char bc) {
+                    return std::tolower(ac) < std::tolower(bc);
+                });
+        }
+    };
+
     const std::set<String, ci_less> & getForwardHeaders() const { return forward_headers; }
 
 private:
