@@ -781,6 +781,7 @@ The input data is tokenized by the tokenizer from the index definition.
 :::note
 Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
 In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+The input parameter needles array can be generated with the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 
 Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
@@ -806,6 +807,20 @@ ORDER BY id;
 INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
 SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+3
+```
+
+**Combination with the `tokens` function:**
+
+Query:
+
+```sql
+SELECT count() FROM `text_table` WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
@@ -841,6 +856,7 @@ The input data is tokenized by the tokenizer from the index definition.
 :::note
 Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
 In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+The input parameter needles array can be generated with the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
 
 Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
@@ -866,6 +882,20 @@ ORDER BY id;
 INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
 SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+1
+```
+
+**Combination with the `tokens` function:**
+
+Query:
+
+```sql
+SELECT count() FROM `text_table` WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
