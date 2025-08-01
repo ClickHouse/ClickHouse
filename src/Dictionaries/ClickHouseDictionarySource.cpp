@@ -194,7 +194,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
             io.query_scope_holder = std::make_unique<CurrentThread::QueryScope>(context_copy);
         }
 
-        context_copy->setCurrentQueryId(fmt::format("ClickHouseDictionarySource::%s", getRandomASCIIString(16)));
+        context_copy->setCurrentQueryId(fmt::format("ClickHouseDictionarySource::{}", getRandomASCIIString(16)));
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
