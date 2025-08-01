@@ -65,6 +65,7 @@ private:
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
+    const bool throw_on_engine_visitor_error;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;

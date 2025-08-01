@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Analyzer/Utils.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
@@ -14,6 +15,12 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_fail_literal_visitor[];
 }
 
 namespace DeltaLake
@@ -160,7 +167,7 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     EngineIterator engine_iterator(iterator_data);
     auto result = ffi::visit_predicate_and(state, &engine_iterator);
 
-    LOG_TEST(iterator_data.log(), "visitPredicate finished");
+    LOG_TEST(iterator_data.log(), "visitPredicate finished (exception: {})", predicate->hasException());
     return result;
 }
 
@@ -171,6 +178,11 @@ static uintptr_t visitLiteralValue(
     ffi::KernelExpressionVisitorState * state)
 {
     LOG_TEST(getLogger("EnginePredicate"), "Type index: {}, data type: {}", type_index, data_type->getName());
+
+    fiu_do_on(DB::FailPoints::delta_kernel_fail_literal_visitor,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault for visitLiteralValue");
+    });
 
     switch (type_index)
     {
@@ -248,7 +260,10 @@ static uintptr_t visitLiteralValue(
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
 {
     if (iterator_data.hasException())
+    {
+        LOG_TEST(iterator_data.log(), "Exception during processing, quitting from getNextImpl");
         return VISITOR_FAILED_OR_UNSUPPORTED;
+    }
 
     switch (node->type)
     {

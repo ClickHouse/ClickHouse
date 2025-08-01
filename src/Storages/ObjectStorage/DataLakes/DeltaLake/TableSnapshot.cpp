@@ -40,6 +40,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
+    extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
 }
 
 namespace ProfileEvents
@@ -86,14 +87,16 @@ public:
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
         DB::ObjectStoragePtr object_storage_,
-        const DB::ActionsDAG * filter_dag_,
+        const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
         bool enable_expression_visitor_logging_,
+        bool throw_on_engine_predicate_error_,
         LoggerPtr log_)
         : engine(engine_)
         , snapshot(snapshot_)
         , scan(scan_)
+        , filter(filter_)
         , data_prefix(data_prefix_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
@@ -102,17 +105,16 @@ public:
         , list_batch_size(list_batch_size_)
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
+        , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
     {
-        if (filter_dag_)
+        if (filter)
         {
             pruner.emplace(
-                *filter_dag_,
+                *filter,
                 table_schema_,
                 partition_columns_,
                 physical_names_map_,
                 DB::Context::getGlobalContextInstance());
-
-            predicate = getEnginePredicate(*filter_dag_, scan_exception);
 
             LOG_TEST(log, "Using filter expression");
         }
@@ -148,12 +150,27 @@ public:
             thread->join();
     }
 
+    void setScanException()
+    {
+        if (!scan_exception)
+        {
+            scan_exception = std::current_exception();
+            shutdown = true;
+        }
+    }
+
     void initScanState()
     {
-        scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(),
-                                                   engine.get(),
-                                                   predicate ? predicate.get() : nullptr),
-                                         "scan");
+        if (filter)
+        {
+            auto predicate = getEnginePredicate(*filter, engine_predicate_exception);
+            scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), predicate.get()), "scan");
+        }
+        else
+        {
+            scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), nullptr), "scan");
+        }
+
         scan_data_iterator = KernelUtils::unwrapResult(
             ffi::scan_metadata_iter_init(engine.get(), scan.get()),
             "scan_metadata_iter_init");
@@ -161,10 +178,12 @@ public:
 
     void scanDataFunc()
     {
-        initScanState();
-        LOG_TEST(log, "Starting iterator loop");
         try
         {
+            initScanState();
+
+            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(scan_exception));
+
             while (!shutdown.load())
             {
                 bool have_scan_data_res = KernelUtils::unwrapResult(
@@ -199,12 +218,11 @@ public:
         }
         catch (...)
         {
-            if (!scan_exception)
-            {
-                scan_exception = std::current_exception();
-            }
-            shutdown = true;
+            /// We cannot allow to throw exceptions from ScanCallback,
+            /// otherwise delta-kernel will panic and call terminate.
+            setScanException();
             data_files_cv.notify_all();
+            LOG_DEBUG(log, "Exception during scan_metadata_next");
         }
     }
 
@@ -222,12 +240,16 @@ public:
             DB::ObjectInfoPtr object;
             {
                 std::unique_lock lock(next_mutex);
+
                 if (!iterator_finished && data_files.empty() && !shutdown)
                 {
                     LOG_TEST(log, "Waiting for next data file");
                     schedule_next_batch_cv.notify_one();
                     data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
                 }
+
+                if (engine_predicate_exception && throw_on_engine_predicate_error)
+                    std::rethrow_exception(engine_predicate_exception);
 
                 if (scan_exception)
                     std::rethrow_exception(scan_exception);
@@ -290,13 +312,9 @@ public:
         catch (...)
         {
             auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-            if (!context->scan_exception)
-            {
-                /// We cannot allow to throw exceptions from ScanCallback,
-                /// otherwise delta-kernel will panic and call terminate.
-                context->scan_exception = std::current_exception();
-                context->shutdown = true;
-            }
+            /// We cannot allow to throw exceptions from ScanCallback,
+            /// otherwise delta-kernel will panic and call terminate.
+            context->setScanException();
         }
     }
 
@@ -352,9 +370,9 @@ private:
     const KernelExternEngine & engine;
     const KernelSnapshot & snapshot;
     KernelScan & scan;
-    std::shared_ptr<EnginePredicate> predicate;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
+    const DB::ActionsDAG * filter;
 
     const std::string data_prefix;
     DB::NamesAndTypesList expression_schema;
@@ -364,8 +382,10 @@ private:
     const size_t list_batch_size;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
+    const bool throw_on_engine_predicate_error;
 
     std::exception_ptr scan_exception;
+    std::exception_ptr engine_predicate_exception;
 
     /// Whether scanDataFunc should stop scanning.
     /// Set in destructor.
@@ -396,7 +416,9 @@ TableSnapshot::TableSnapshot(
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
+    /// TODO: This settings are not changeable per query in case of table engine.
     , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
+    , throw_on_engine_visitor_error(context_->getSettingsRef()[DB::Setting::delta_lake_throw_on_engine_predicate_error])
 {
 }
 
@@ -469,6 +491,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         callback,
         list_batch_size,
         enable_expression_visitor_logging,
+        throw_on_engine_visitor_error,
         log);
 }
 

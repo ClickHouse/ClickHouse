@@ -31,6 +31,8 @@ public:
         visitor = &visitPredicate;
     }
 
+    bool hasException() const { return exception != nullptr; }
+
     void setException(std::exception_ptr exception_)
     {
         DB::tryLogException(exception_, log);

@@ -2632,3 +2632,32 @@ def test_delta_kernel_internal_pruning(started_cluster):
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
         )
     )
+
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    query_id = f"query_with_filter_{TABLE_NAME}_12"
+    assert "Injecting fault for visitLiteralValue" in instance.query_and_get_error(
+        f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+        query_id=query_id,
+        settings={"delta_lake_throw_on_engine_predicate_error": 1},
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_13"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+            query_id=query_id,
+        )
+    )
+
+    instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
