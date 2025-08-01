@@ -1835,14 +1835,15 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 auto it = node_to_projection_name.find(matched_column_node);
 
-                if (hasTableExpressionInJoinTree(join_node->getLeftTableExpression(), source_table_expression))
-                    matched_column_node = join_using_column_nodes.at(0);
-                else if (hasTableExpressionInJoinTree(join_node->getRightTableExpression(), source_table_expression))
-                    matched_column_node = join_using_column_nodes.at(1);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find column {} in JOIN USING section {}",
-                        matched_column_node->dumpTree(), join_node->dumpTree());
+                LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, source_table_expression->formatASTForErrorMessage());
+                // if (hasTableExpressionInJoinTree(join_node->getLeftTableExpression(), source_table_expression))
+                //     matched_column_node = join_using_column_nodes.at(0);
+                // else if (hasTableExpressionInJoinTree(join_node->getRightTableExpression(), source_table_expression))
+                //     matched_column_node = join_using_column_nodes.at(1);
+                // else
+                //     throw Exception(ErrorCodes::LOGICAL_ERROR,
+                //         "Cannot find column {} in JOIN USING section {}",
+                //         matched_column_node->dumpTree(), join_node->dumpTree());
 
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
