@@ -30,3 +30,4 @@ ${CLICKHOUSE_CLIENT} --query "DROP USER $ephemeral"
 ${CLICKHOUSE_CLIENT} --query "SHOW USERS" | grep -c $ephemeral_definer
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.test_mv"
 ${CLICKHOUSE_CLIENT} --query "SHOW USERS" | grep -c $ephemeral_definer
+echo "Done"

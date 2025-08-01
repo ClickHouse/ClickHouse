@@ -2061,8 +2061,8 @@ def test_rmv_no_definer():
     instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-    instance.query("DROP USER u1")
     instance.query("DROP TABLE test.rmv")
+    instance.query("DROP USER u1")
 
     instance.query(f"RESTORE ALL FROM {backup_name}")
 
