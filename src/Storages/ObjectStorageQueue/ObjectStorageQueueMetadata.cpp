@@ -585,7 +585,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
     const auto drop_lock_path = zookeeper_path / "drop";
 
     Coordination::Error code;
-    for (size_t i = 0; i < 1000; ++i)
+    const size_t max_tries = 1000;
+    for (size_t i = 0; i < max_tries; ++i)
     {
         Coordination::Stat stat;
         std::string registry_str;
@@ -640,10 +641,15 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
         if (code == Coordination::Error::ZBADVERSION
             || code == Coordination::Error::ZNODEEXISTS
+            || code == Coordination::Error::ZNONODE
             || code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            if (i == max_tries - 1)
+                zkutil::KeeperMultiException::check(code, requests, responses);
             continue;
+        }
 
-        throw zkutil::KeeperException(code);
+        zkutil::KeeperMultiException::check(code, requests, responses);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register in keeper. Last error: {}", code);
 }
