@@ -12,11 +12,23 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;;
+}
+
 namespace DB
 {
 
+std::string ITableFunction::getNonClusteredAnalogueStorageName() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+}
+
 std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
 {
+    if (isClusterFunction())
+        return StorageFactory::instance().getSourceAccessObject(getNonClusteredAnalogueStorageName());
     return StorageFactory::instance().getSourceAccessObject(getStorageTypeName());
 }
 

@@ -1,8 +1,10 @@
 #pragma once
 #include "config.h"
+
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 
 
 namespace DB
@@ -14,54 +16,6 @@ class StorageS3Settings;
 class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
-
-struct AzureClusterDefinition
-{
-    static constexpr auto name = "azureBlobStorageCluster";
-    static constexpr auto storage_type_name = "AzureBlobStorageCluster";
-};
-
-struct S3ClusterDefinition
-{
-    static constexpr auto name = "s3Cluster";
-    static constexpr auto storage_type_name = "S3Cluster";
-};
-
-struct HDFSClusterDefinition
-{
-    static constexpr auto name = "hdfsCluster";
-    static constexpr auto storage_type_name = "HDFSCluster";
-};
-
-struct IcebergS3ClusterDefinition
-{
-    static constexpr auto name = "icebergS3Cluster";
-    static constexpr auto storage_type_name = "IcebergS3Cluster";
-};
-
-struct IcebergAzureClusterDefinition
-{
-    static constexpr auto name = "icebergAzureCluster";
-    static constexpr auto storage_type_name = "IcebergAzureCluster";
-};
-
-struct IcebergHDFSClusterDefinition
-{
-    static constexpr auto name = "icebergHDFSCluster";
-    static constexpr auto storage_type_name = "IcebergHDFSCluster";
-};
-
-struct DeltaLakeClusterDefinition
-{
-    static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_type_name = "DeltaLakeS3Cluster";
-};
-
-struct HudiClusterDefinition
-{
-    static constexpr auto name = "hudiCluster";
-    static constexpr auto storage_type_name = "HudiS3Cluster";
-};
 
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
@@ -78,6 +32,7 @@ public:
     static constexpr auto name = Definition::name;
 
     String getName() const override { return name; }
+    String getNonClusteredAnalogueStorageName() const override { return Definition::non_clustered_storage_type_name; }
 
 protected:
     using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;

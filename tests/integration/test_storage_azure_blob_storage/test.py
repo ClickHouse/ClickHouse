@@ -41,14 +41,14 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None, user=None
 ):
     for i in range(try_num):
         try:
             if expect_error:
-                return node.query_and_get_error(query, settings=settings)
+                return node.query_and_get_error(query, settings=settings, user=user)
             else:
-                return node.query(query, settings=settings)
+                return node.query(query, settings=settings, user=user)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",

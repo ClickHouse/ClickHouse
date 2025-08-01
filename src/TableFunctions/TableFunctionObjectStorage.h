@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
 
@@ -23,108 +24,6 @@ class StorageLocalConfiguration;
 struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
-
-struct AzureDefinition
-{
-    static constexpr auto name = "azureBlobStorage";
-    static constexpr auto storage_type_name = "Azure";
-};
-
-struct S3Definition
-{
-    static constexpr auto name = "s3";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct GCSDefinition
-{
-    static constexpr auto name = "gcs";
-    static constexpr auto storage_type_name = "GCS";
-};
-
-struct COSNDefinition
-{
-    static constexpr auto name = "cosn";
-    static constexpr auto storage_type_name = "COSN";
-};
-
-struct OSSDefinition
-{
-    static constexpr auto name = "oss";
-    static constexpr auto storage_type_name = "OSS";
-};
-
-struct HDFSDefinition
-{
-    static constexpr auto name = "hdfs";
-    static constexpr auto storage_type_name = "HDFS";
-};
-
-struct LocalDefinition
-{
-    static constexpr auto name = "local";
-    static constexpr auto storage_type_name = "Local";
-};
-
-struct IcebergDefinition
-{
-    static constexpr auto name = "iceberg";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct IcebergS3Definition
-{
-    static constexpr auto name = "icebergS3";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct IcebergAzureDefinition
-{
-    static constexpr auto name = "icebergAzure";
-    static constexpr auto storage_type_name = "Azure";
-};
-
-struct IcebergLocalDefinition
-{
-    static constexpr auto name = "icebergLocal";
-    static constexpr auto storage_type_name = "Local";
-};
-
-struct IcebergHDFSDefinition
-{
-    static constexpr auto name = "icebergHDFS";
-    static constexpr auto storage_type_name = "HDFS";
-};
-
-struct DeltaLakeDefinition
-{
-    static constexpr auto name = "deltaLake";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct DeltaLakeS3Definition
-{
-    static constexpr auto name = "deltaLakeS3";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct DeltaLakeAzureDefinition
-{
-    static constexpr auto name = "deltaLakeAzure";
-    static constexpr auto storage_type_name = "Azure";
-};
-
-struct DeltaLakeLocalDefinition // New definition for local Delta Lake
-{
-    static constexpr auto name = "deltaLakeLocal";
-    static constexpr auto storage_type_name = "Local";
-};
-
-struct HudiDefinition
-{
-    static constexpr auto name = "hudi";
-    static constexpr auto storage_type_name = "S3";
-};
 
 template <typename Definition, typename Configuration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction

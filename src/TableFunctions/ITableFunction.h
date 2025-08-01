@@ -44,6 +44,13 @@ public:
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
+    /// For cluster functions.
+    virtual bool isClusterFunction() const { return false; }
+    /// The database storage name is used to check privileges.
+    /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
+    /// privileges as if it was S3.
+    virtual std::string getNonClusteredAnalogueStorageName() const;
+
     /// Returns true if we always know table structure when executing table function
     /// (e.g. structure is specified in table function arguments)
     virtual bool hasStaticStructure() const { return false; }
