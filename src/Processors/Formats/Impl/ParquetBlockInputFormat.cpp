@@ -677,7 +677,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         for (int i = 0; i < group_node->field_count(); ++i)
             traverseAllFields(group_node->field(i), parquet_field_ids);
 
-        auto result = format_filter_info->column_mapper->makeMapping(header, parquet_field_ids);
+        auto result = format_filter_info->column_mapper->makeMapping(parquet_field_ids);
         clickhouse_names_to_parquet = std::move(result.first);
         parquet_names_to_clickhouse = std::move(result.second);
     }

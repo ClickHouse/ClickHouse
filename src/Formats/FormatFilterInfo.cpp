@@ -23,7 +23,6 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const Block & /*header*/,
     const std::unordered_map<Int64, String> & format_encoding)
 {
     std::unordered_map<String, String> clickhouse_to_parquet_names;
