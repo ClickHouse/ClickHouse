@@ -384,7 +384,6 @@ public:
 
     static void filterColumns(Columns & columns, const FilterWithCachedCount & filter);
     static void filterBlock(Block & block, const FilterWithCachedCount & filter);
-    static String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 private:
     void fillVirtualColumns(Columns & columns, ReadResult & result);

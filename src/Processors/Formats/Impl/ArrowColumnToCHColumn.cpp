@@ -520,7 +520,8 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
 
 static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata)
 {
-    auto column_builder = GeoColumnBuilder(column_name, geo_metadata.type);
+    DataTypePtr type = getGeoDataType(geo_metadata.type);
+    MutableColumnPtr column = type->createColumn();
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
@@ -532,7 +533,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
             auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
-                column_builder.appendDefault();
+                column->insertDefault();
                 continue;
             }
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
@@ -546,11 +547,11 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                     result_object = parseWKTFormat(in_buffer);
                     break;
             }
-            column_builder.appendObject(result_object);
+            appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
         }
     }
 
-    return column_builder.getResultColumn();
+    return {std::move(column), std::move(type), column_name};
 }
 
 template <typename T>
@@ -1436,8 +1437,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    auto geo_json = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json);
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -1541,8 +1542,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    auto geo_metadata = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_metadata);
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {

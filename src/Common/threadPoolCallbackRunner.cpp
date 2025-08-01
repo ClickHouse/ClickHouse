@@ -53,6 +53,9 @@ void ThreadPoolCallbackRunnerFast::shutdown()
     queue_cv.notify_all();
 #endif
     shutdown_cv.wait(lock, [&] { return threads == 0; });
+
+    if (mode == Mode::ThreadPool)
+        chassert(active_tasks.load() == queue.size());
 }
 
 void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
@@ -67,6 +70,7 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
 
     if (mode == Mode::ThreadPool)
     {
+        active_tasks.fetch_add(1, std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(1, std::memory_order_release);
         if (prev_size < max_threads)
@@ -92,6 +96,7 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
 
     if (mode == Mode::ThreadPool)
     {
+        active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
         if (prev_size < max_threads)
@@ -174,6 +179,8 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
             tryLogCurrentException("FastThreadPool");
             chassert(false);
         }
+
+        active_tasks.fetch_sub(1, std::memory_order_relaxed);
     }
 }
 
