@@ -749,7 +749,10 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
                 if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
                 {
                     previous_entry_schema = manifest_file_entry.schema_id;
-                    assert(previous_entry_schema < manifest_file_entry.schema_id);
+                    if (previous_entry_schema > manifest_file_entry.schema_id)
+                    {
+                        LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
+                    }
                     pruner.emplace(
                         schema_processor,
                         relevant_snapshot_schema_id,
