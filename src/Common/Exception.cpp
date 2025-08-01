@@ -85,17 +85,17 @@ static size_t handle_error_code(
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_, const std::string & format_string_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
-    , format_string(format_string_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_, std::string && format_string_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string format_string_)
     : msg(std::move(msg_))
-    , format_string(format_string_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);

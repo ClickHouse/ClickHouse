@@ -108,8 +108,8 @@ protected:
     {
         std::string msg;
         std::string format_string;
-        explicit MessageMasked(const std::string & msg_, const std::string & format_string_);
-        explicit MessageMasked(std::string && msg_, std::string && format_string_);
+        explicit MessageMasked(const std::string & msg_, std::string format_string_);
+        explicit MessageMasked(std::string && msg_, std::string format_string_);
         explicit MessageMasked(const std::string & msg_) : msg(msg_) {}
         explicit MessageMasked(std::string && msg_) : msg(msg_) {}
     };
