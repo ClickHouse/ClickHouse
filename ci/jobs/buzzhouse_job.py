@@ -209,12 +209,18 @@ def main():
             log_file=shell_log_file,
         )
 
+        # If ClickHouse got OOM killed, ignore the result
         # On SIGTERM due to timeout, exit code is 143, ignore it
+        oom_check = ch.check_ch_is_oom_killed()
         results.append(
             Result.create_from(
                 name="Buzzing result",
                 status=(
-                    Result.Status.SUCCESS if run in (0, 143) else Result.Status.FAILED
+                    Result.Status.SUCCESS
+                    if (
+                        run in (0, 143) or (oom_check is not None and oom_check.is_ok())
+                    )
+                    else Result.Status.FAILED
                 ),
                 info=Shell.get_output(f"tail -300 {shell_log_file}"),
             )

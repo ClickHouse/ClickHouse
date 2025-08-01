@@ -674,6 +674,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
+    def check_ch_is_oom_killed(self):
+        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
+            return Result.from_commands_run(
+                name="OOM in dmesg",
+                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+            )
+        else:
+            return None
+
     def check_fatal_messages_in_logs(self):
         results = []
 
@@ -732,15 +741,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
-        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
-            results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                )
-            )
-        else:
+        oom_check = self.check_ch_is_oom_killed()
+        if oom_check is None:
             print("WARNING: dmesg not enabled")
+        else:
+            results.append(oom_check)
         results.append(
             Result.from_commands_run(
                 name="Found signal in gdb.log",
