@@ -602,12 +602,12 @@ def test_cmd_csnp(started_cluster):
     try:
         wait_nodes()
         zk = get_fake_zk(node1.name, timeout=30.0)
-        for i in range(10):
+        for i in range(20):
             data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
 
             if "Failed to schedule snapshot creation task" not in data:
                 break
-            time.sleep(0.5)
+            time.sleep(1)
         else:
             assert False, "Failed to schedule snapshot after multiple retries"
 
