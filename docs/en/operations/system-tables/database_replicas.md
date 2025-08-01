@@ -9,7 +9,7 @@ Contains information of each Replicated database replicas.
 
 Columns:
 
-- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the Replciated database is in.
+- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the Replicated database is in.
 
 - `is_readonly` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the database replica is in read-only mode.
     This mode is turned on if the config does not have sections with Zookeeper/ClickHouse Keeper.
