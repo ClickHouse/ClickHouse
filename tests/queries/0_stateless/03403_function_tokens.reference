@@ -5,7 +5,7 @@ Default tokenizer
 ['abc','def','foo','bar','baz','code','hello','world','xäöüx']	Array(String)	1
 ['abc','def','foo','bar','baz','code','hello','world','xäöüx']	Array(String)	1
 Ngram tokenizer
-['']	Array(String)	1
+[]	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
 ['abc def']	Array(String)	1
@@ -17,7 +17,7 @@ Split tokenizer
 ['a','bc','d']	Array(String)	1
 ['a','bc','d']	Array(String)	1
 No-op tokenizer
-['']	Array(String)	1
+[]	Array(String)	1
 ['abc def']	Array(String)	1
 Special cases (not systematically tested)
 -- FixedString inputs
@@ -36,5 +36,5 @@ Split tokenizer
 ['a','bc','d']	Array(String)	0
 ['a','bc','d']	Array(String)	0
 No-op tokenizer
-['']	Array(String)	0
+[]	Array(String)	0
 ['abc def']	Array(String)	0
