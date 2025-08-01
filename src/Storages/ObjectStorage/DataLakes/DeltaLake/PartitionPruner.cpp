@@ -99,7 +99,7 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
     if (!object_info.data_lake_metadata->transform)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
 
-    const auto partition_values = DeltaLake::getConstValuesFromExpression(
+    auto partition_values = DeltaLake::getConstValuesFromExpression(
         physical_partition_columns,
         *object_info.data_lake_metadata->transform);
 

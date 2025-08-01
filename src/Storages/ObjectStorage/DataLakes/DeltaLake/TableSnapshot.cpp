@@ -185,7 +185,7 @@ public:
         {
             initScanState();
 
-            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(scan_exception));
+            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
 
             while (!shutdown.load())
             {
@@ -326,7 +326,7 @@ public:
         const ffi::Stats * stats,
         const ffi::DvInfo * /* dv_info */,
         const ffi::Expression * transform,
-        const struct ffi::CStringMap * /* partition_map */)
+        const struct ffi::CStringMap * /* deprecated */)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)

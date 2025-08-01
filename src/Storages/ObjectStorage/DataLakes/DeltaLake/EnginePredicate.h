@@ -40,6 +40,9 @@ public:
             exception = exception_;
     }
 
+    const DB::ActionsDAG & getFilterDAG() const { return filter; }
+
+private:
     const LoggerPtr log = getLogger("EnginePredicate");
 
     /// Predicate expression.

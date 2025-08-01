@@ -248,12 +248,12 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result);
+            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result);
+            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
         }
         default:
         {
@@ -266,7 +266,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 {
     if (iterator_data.hasException())
     {
-        LOG_TEST(iterator_data.log(), "Exception during processing, quitting from getNextImpl");
+        LOG_TEST(iterator_data.log(), "Exception during processing, returning from getNextImpl");
         return VISITOR_FAILED_OR_UNSUPPORTED;
     }
 
@@ -366,7 +366,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                 if (literal_node && column_node)
                 {
                     /// If literal node has a different type from column's,
-                    /// cast one to another.
+                    /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
                     {
                         DB::ColumnWithTypeAndName column;
@@ -374,7 +374,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         column.column = DB::DataTypeString().createColumnConst(0, column.name);
                         column.type = std::make_shared<DB::DataTypeString>();
 
-                        DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.filter);
+                        /// TODO: get rid of const_cast.
+                        DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
 
                         const auto * right_arg = &dag.addColumn(std::move(column));
                         const auto * left_arg = literal_node;
