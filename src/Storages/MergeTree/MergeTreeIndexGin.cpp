@@ -37,6 +37,7 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES = "segment_digestion_threshold_bytes";
+static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(const String & index_name_)
     : index_name(index_name_)
@@ -708,7 +709,7 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
     if (auto it = options.find(option); it != options.end())
     {
         const Field & value = it->second;
-        Field::Types::Which expected_type = Field::TypeToEnum<Type>::value;
+        Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
         if (value.getType() != expected_type)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
@@ -765,7 +766,10 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     const UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
-    GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, ngram_size, separators);
+    const double bloom_filter_false_positive_rate
+        = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
+
+    GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, bloom_filter_false_positive_rate, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -818,9 +822,21 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     const UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
+    const double bloom_filter_false_positive_rate
+        = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
+
+    if (!std::isfinite(bloom_filter_false_positive_rate) || bloom_filter_false_positive_rate <= 0.0
+        || bloom_filter_false_positive_rate >= 1.0)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Text index '{}' argument must be between 0.0 and 1.0, but got {}",
+            ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE,
+            bloom_filter_false_positive_rate);
+
     GinFilterParameters gin_filter_params(
         tokenizer.value(),
         segment_digestion_threshold_bytes,
+        bloom_filter_false_positive_rate,
         ngram_size,
         getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 

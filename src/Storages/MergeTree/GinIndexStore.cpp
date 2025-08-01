@@ -215,11 +215,13 @@ GinIndexStore::GinIndexStore(
     const String & name_,
     DataPartStoragePtr storage_,
     MutableDataPartStoragePtr data_part_storage_builder_,
-    UInt64 segment_digestion_threshold_bytes_)
+    UInt64 segment_digestion_threshold_bytes_,
+    double bloom_filter_false_positive_rate_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , segment_digestion_threshold_bytes(segment_digestion_threshold_bytes_)
+    , bloom_filter_false_positive_rate(bloom_filter_false_positive_rate_)
 {
 }
 
@@ -399,10 +401,11 @@ void GinIndexStore::writeSegmentId()
 namespace
 {
 /// Initialize bloom filter from tokens from the term dictionary
-GinSegmentDictionaryBloomFilter initializeBloomFilter(const GinIndexStore::GinIndexPostingsBuilderContainer & postings)
+GinSegmentDictionaryBloomFilter
+initializeBloomFilter(const GinIndexStore::GinIndexPostingsBuilderContainer & postings, double bloom_filter_false_positive_rate)
 {
     auto number_of_unique_terms = postings.size(); /// postings is a dictionary
-    const auto [bits_per_rows, hashes] = BloomFilterHash::calculationBestPractices(GIN_INDEX_BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
+    const auto [bits_per_rows, hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     auto bloom_filter = GinSegmentDictionaryBloomFilter(number_of_unique_terms, bits_per_rows, hashes);
     for (const auto & [token, _] : postings)
         bloom_filter.add(token);
@@ -426,7 +429,7 @@ void GinIndexStore::writeSegment()
     for (const auto & [token, postings_list] : current_postings)
         token_postings_list_pairs.push_back({token, postings_list});
 
-    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings);
+    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),

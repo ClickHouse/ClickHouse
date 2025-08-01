@@ -37,9 +37,6 @@
 
 namespace DB
 {
-/// The default bloom filter false positive rate, which is 0.1%.
-static constexpr auto GIN_INDEX_BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.001;
-
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
@@ -177,7 +174,8 @@ public:
         const String & name_,
         DataPartStoragePtr storage_,
         MutableDataPartStoragePtr data_part_storage_builder_,
-        UInt64 segment_digestion_threshold_bytes_);
+        UInt64 segment_digestion_threshold_bytes_,
+        double bloom_filter_false_positive_rate_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -261,6 +259,7 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
     const UInt64 segment_digestion_threshold_bytes = 0;
+    const double bloom_filter_false_positive_rate = 0.0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
