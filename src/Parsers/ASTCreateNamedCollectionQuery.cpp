@@ -16,14 +16,14 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
 
 void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "CREATE NAMED COLLECTION ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
-    ostr << backQuoteIfNeed(collection_name);
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
 
     formatOnCluster(ostr, settings);
 
-    ostr << " AS ";
+    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
     bool first = true;
     for (const auto & change : changes)
     {

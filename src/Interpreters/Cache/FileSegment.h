@@ -67,7 +67,7 @@ public:
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::IteratorPtr queue_iterator_ = nullptr);
 
-    ~FileSegment();
+    ~FileSegment() = default;
 
     State state() const;
 
@@ -130,8 +130,6 @@ public:
     State wait(size_t offset);
 
     bool isDownloaded() const;
-
-    time_t getFinishedDownloadTime() const;
 
     size_t getHitsCount() const { return hits_count; }
 
@@ -266,7 +264,6 @@ private:
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
-    time_t download_finished_time = 0;
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;

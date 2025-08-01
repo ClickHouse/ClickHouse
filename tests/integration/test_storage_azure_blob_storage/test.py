@@ -901,57 +901,25 @@ def test_function_signatures(cluster):
     query_5 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'column1 UInt32')"
     assert azure_query(node, query_5) == "1\n2\n3\n"
 
-    # " - connection_string, container_name, blobpath, format, compression, partition_strategy \n"
-    query_6 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard')"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+    query_6 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
     assert azure_query(node, query_6) == "1\n2\n3\n"
 
-    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, structure \n"
-    query_7 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+    query_7 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
     assert azure_query(node, query_7) == "1\n2\n3\n"
 
-    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file \n"
-    query_8 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true)"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+    query_8 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
     assert azure_query(node, query_8) == "1\n2\n3\n"
 
-    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file, structure \n"
-    query_9 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+    query_9 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
     assert azure_query(node, query_9) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
-    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
-    assert azure_query(node, query_10) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
-    query_11 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
-    assert azure_query(node, query_11) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
-    query_12 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
-    assert azure_query(node, query_12) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
-    query_13 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
-    assert azure_query(node, query_13) == "1\n2\n3\n"
-
     # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
-    query_14 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
-    assert azure_query(node, query_14) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
-    query_15 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard')"
-    assert azure_query(node, query_15) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, structure\n"
-    query_16 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
-    assert azure_query(node, query_16) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n"
-    query_17 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true)"
-    assert azure_query(node, query_17) == "1\n2\n3\n"
-
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, structure\n"
-    query_18 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
-    assert azure_query(node, query_18) == "1\n2\n3\n"
+    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    assert azure_query(node, query_10) == "1\n2\n3\n"
 
 
 def check_profile_event_for_query(instance, file, profile_event, amount):
@@ -1699,8 +1667,7 @@ def test_hive_partitioning_with_all_parameters(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
-
-    pattern = r"DB::Exception: A hive partitioned file can't contain only partition columns"
+    pattern = r"DB::Exception: Cannot use hive partitioning for file"
 
     with pytest.raises(Exception, match=pattern):
         azure_query(node, query, settings={"use_hive_partitioning": 1})
@@ -1751,25 +1718,3 @@ def test_sas_token(cluster):
         node, f"SELECT * FROM azureBlobStorage('{sas_token}', '', 'test-sas-token.csv')"
     )
     assert content.splitlines() == ["foo"]
-
-
-def test_hive_partition_strategy(cluster):
-    node = cluster.instances["node"]
-
-    azure_query(
-        node,
-        f"create table test_hive_partition_strategy (year UInt16, country String, counter UInt8)"
-        f"engine=AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f"'cont', 'test_hive_partition_strategy',"
-        f"'devstoreaccount1',"
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',"
-        f"'Parquet', 'auto', 'hive') PARTITION BY (year, country)",
-    )
-
-    azure_query(node, f"insert into table test_hive_partition_strategy values (2020, 'Brazil', 1), (2021, 'Russia', 2), (2021, 'Russia', 3);")
-
-    res = azure_query(node, "select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from test_hive_partition_strategy order by counter;")
-
-    assert "cont/test_hive_partition_strategy/year=2020/country=Brazil/<snowflakeid>.parquet\t1\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t2\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t3\n" == res
-
-    azure_query(node, "DROP TABLE IF EXISTS test_hive_partition_strategy")
