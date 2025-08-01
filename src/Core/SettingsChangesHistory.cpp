@@ -116,7 +116,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"update_parallel_mode", "auto", "auto", "A new setting"},
             {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
-            {"apply_patch_parts", false, true, "A new setting"},
+            {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
