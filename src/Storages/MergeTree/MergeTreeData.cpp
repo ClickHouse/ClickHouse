@@ -466,7 +466,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 }
 
 
-DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
+DataPartsLock::DataPartsLock(std::shared_mutex & data_parts_mutex_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
     , lock_watch(Stopwatch(CLOCK_MONOTONIC))
@@ -1820,7 +1820,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const String & part_name,
     const DiskPtr & part_disk_ptr,
     MergeTreeDataPartState to_state,
-    std::mutex & part_loading_mutex)
+    std::shared_mutex & part_loading_mutex)
 {
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
 
@@ -1998,7 +1998,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     const String & part_name,
     const DiskPtr & part_disk_ptr,
     MergeTreeDataPartState to_state,
-    std::mutex & part_loading_mutex,
+    std::shared_mutex & part_loading_mutex,
     size_t initial_backoff_ms,
     size_t max_backoff_ms,
     size_t max_tries)
@@ -2044,7 +2044,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);
 
     std::mutex part_select_mutex;
-    std::mutex part_loading_mutex;
+    std::shared_mutex part_loading_mutex;
 
     std::vector<LoadPartResult> loaded_parts;
 
@@ -6895,7 +6895,7 @@ DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_contex
     return getVisibleDataPartsVector(local_context->getCurrentTransaction());
 }
 
-DataPartsVector MergeTreeData::getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const
+DataPartsVector MergeTreeData::getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsAnyLock & lock) const
 {
     DataPartsVector res;
     if (const auto * txn = local_context->getCurrentTransaction().get())
@@ -6993,7 +6993,7 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
 {
     DataPartsVector res;
     DataPartsVector buf;
@@ -7021,18 +7021,18 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
 {
-    auto lock = lockParts();
+    auto lock = readLockParts();
     return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
 }
 
-DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states) const
+DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states) const
 {
     return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Regular}, lock, out_states);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
-    auto lock = lockParts();
+    auto lock = readLockParts();
     return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Regular}, lock, out_states);
 }
 
@@ -7043,13 +7043,13 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage(const DataPar
 
 DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
-    auto lock = lockParts();
+    auto lock = readLockParts();
     return getDataPartsVectorForInternalUsage(affordable_states, {DataPartKind::Patch}, lock, out_states);
 }
 
 DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage() const
 {
-    auto lock = lockParts();
+    auto lock = readLockParts();
     return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Patch}, lock);
 }
 
@@ -9803,7 +9803,7 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
 
     DataPartsVector parts;
     {
-        auto lock = lockParts();
+        auto lock = readLockParts();
         parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
         object_columns_copy = object_columns;
     }
