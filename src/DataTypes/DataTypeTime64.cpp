@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -26,7 +25,7 @@ DataTypeTime64::DataTypeTime64(UInt32 scale_, const std::string & time_zone_name
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "DataTypeTime64 scale {} is too large, maximum is {}", scale_, TIME64_MAX_SCALE);
-            
+
     if (!time_zone_name.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -41,7 +40,7 @@ DataTypeTime64::DataTypeTime64(UInt32 scale_, const TimezoneMixin & time_zone_in
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "DataTypeTime64 scale {} is too large, maximum is {}", scale_, TIME64_MAX_SCALE);
-            
+
     if (time_zone_info.hasExplicitTimeZone())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

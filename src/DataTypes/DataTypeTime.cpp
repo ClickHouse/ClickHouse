@@ -14,7 +14,6 @@ namespace ErrorCodes
 }
 
 DataTypeTime::DataTypeTime(const String & time_zone_name)
-    : TimezoneMixin("")
 {
     if (!time_zone_name.empty())
         throw Exception(
@@ -23,7 +22,6 @@ DataTypeTime::DataTypeTime(const String & time_zone_name)
 }
 
 DataTypeTime::DataTypeTime(const TimezoneMixin & time_zone_)
-    : TimezoneMixin(time_zone_)
 {
     if (time_zone_.hasExplicitTimeZone())
         throw Exception(

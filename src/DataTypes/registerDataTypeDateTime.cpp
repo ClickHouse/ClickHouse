@@ -152,7 +152,7 @@ static DataTypePtr createTime64(const ASTPtr & arguments)
 
     const auto scale = getArgument<UInt64, ArgumentKind::Mandatory>(arguments, 0, "scale", "Time64");
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, 1, "timezone", "Time64");
-    
+
     if (timezone && !timezone->empty())
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
