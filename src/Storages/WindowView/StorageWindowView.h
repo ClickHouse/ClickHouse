@@ -177,7 +177,7 @@ public:
 
     Block getInputHeader() const;
 
-    SharedHeader getOutputHeader() const;
+    const Block & getOutputHeader() const;
 
 private:
     LoggerPtr log;

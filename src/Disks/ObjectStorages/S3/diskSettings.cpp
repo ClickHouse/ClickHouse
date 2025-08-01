@@ -53,13 +53,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
-
-    extern const S3AuthSettingsString role_arn;
-    extern const S3AuthSettingsString role_session_name;
-    extern const S3AuthSettingsString http_client;
-    extern const S3AuthSettingsString service_account;
-    extern const S3AuthSettingsString metadata_service;
-    extern const S3AuthSettingsString request_token_path;
 }
 
 namespace ErrorCodes
@@ -67,9 +60,33 @@ namespace ErrorCodes
 extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
+std::unique_ptr<S3ObjectStorageSettings> getSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    const std::string & endpoint,
+    bool validate_settings)
+{
+    const auto & settings = context->getSettingsRef();
+
+    auto auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
+    auto request_settings = S3::S3RequestSettings(config, settings, config_prefix, "s3_", validate_settings);
+
+    request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(S3::URI(endpoint).uri.getScheme()), config_prefix, config);
+
+    return std::make_unique<S3ObjectStorageSettings>(
+        request_settings,
+        auth_settings,
+        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+        config.getInt(config_prefix + ".list_object_keys_size", 1000),
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        config.getBool(config_prefix + ".readonly", false));
+}
+
 std::unique_ptr<S3::Client> getClient(
     const std::string & endpoint,
-    const S3Settings & settings,
+    const S3ObjectStorageSettings & settings,
     ContextPtr context,
     bool for_disk_s3)
 {
@@ -81,7 +98,7 @@ std::unique_ptr<S3::Client> getClient(
 
 std::unique_ptr<S3::Client> getClient(
     const S3::URI & url,
-    const S3Settings & settings,
+    const S3ObjectStorageSettings & settings,
     ContextPtr context,
     bool for_disk_s3)
 {
@@ -133,11 +150,6 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.http_keep_alive_timeout = auth_settings[S3AuthSetting::http_keep_alive_timeout];
     client_configuration.http_keep_alive_max_requests = auth_settings[S3AuthSetting::http_keep_alive_max_requests];
 
-    client_configuration.http_client = auth_settings[S3AuthSetting::http_client];
-    client_configuration.service_account = auth_settings[S3AuthSetting::service_account];
-    client_configuration.metadata_service = auth_settings[S3AuthSetting::metadata_service];
-    client_configuration.request_token_path = auth_settings[S3AuthSetting::request_token_path];
-
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
 
@@ -163,9 +175,6 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::use_insecure_imds_request],
         auth_settings[S3AuthSetting::expiration_window_seconds],
         auth_settings[S3AuthSetting::no_sign_request],
-        auth_settings[S3AuthSetting::role_arn],
-        auth_settings[S3AuthSetting::role_session_name],
-        /*sts_endpoint_override=*/""
     };
 
     return S3::ClientFactory::instance().create(

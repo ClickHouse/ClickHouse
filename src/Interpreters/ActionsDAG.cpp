@@ -136,7 +136,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-UInt64 ActionsDAG::Node::getHash() const
+size_t ActionsDAG::Node::getHash() const
 {
     SipHash hash_state;
     updateHash(hash_state);
@@ -1363,6 +1363,9 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
         if (*it == col)
             break;
 
+    if (it == inputs.end())
+        return false;
+
     /// Check column has no dependent.
     for (const auto & node : nodes)
         for (const auto * child : node.children)
@@ -1377,15 +1380,14 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
-        if (&(*jt) == col)
+        if (&(*jt) == *it)
         {
             nodes.erase(jt);
             break;
         }
     }
 
-    if (it != inputs.end())
-        inputs.erase(it);
+    inputs.erase(it);
     return true;
 }
 
