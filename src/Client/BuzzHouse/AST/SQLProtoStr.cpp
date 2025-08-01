@@ -1831,7 +1831,7 @@ CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
     ret += "(";
-    if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
+    if (ff.has_cluster() && ff.fname() > FileFunc_FName_icebergLocal)
     {
         ClusterToString(ret, false, ff.cluster());
         ret += ", ";
@@ -2084,7 +2084,7 @@ CONV_FN(S3Func, sfunc)
 {
     ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
+    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
         ClusterToString(ret, false, sfunc.cluster());
         ret += ", ";
@@ -2121,7 +2121,7 @@ CONV_FN(AzureBlobStorageFunc, azure)
 {
     ret += AzureBlobStorageFunc_FName_Name(azure.fname());
     ret += "(";
-    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
+    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
     {
         ClusterToString(ret, false, azure.cluster());
         ret += ", ";

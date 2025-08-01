@@ -2522,7 +2522,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if (!next.isSharedDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         svs = svs ? svs : cd->mutable_setting_values();

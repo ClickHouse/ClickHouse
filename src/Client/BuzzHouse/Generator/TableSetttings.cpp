@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static DB::Strings storagePolicies, disks, caches;
+static DB::Strings storagePolicies, disks;
 
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
@@ -345,8 +345,7 @@ const std::unordered_map<String, CHSetting> dataLakeSettings
        {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", CHSetting(trueOrFalse, {}, false)},
-       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)},
-       {"write_full_path_in_iceberg_metadata", CHSetting(trueOrFalse, {}, false)}}; /// Leave it duplicated
+       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> fileTableSettings
     = {{"engine_file_allow_create_multiple_files", CHSetting(trueOrFalse, {}, false)},
@@ -420,15 +419,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         const auto & disk_setting = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(disks) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
-    }
-    if (!fc.caches.empty())
-    {
-        caches.insert(caches.end(), fc.caches.begin(), fc.caches.end());
-        const auto & cache_setting
-            = CHSetting([&](RandomGenerator & rg) { return "1, filesystem_cache_name = '" + rg.pickRandomly(caches) + "'"; }, {}, false);
-
-        s3Settings.insert({{"enable_filesystem_cache", cache_setting}});
-        azureBlobStorageSettings.insert({{"enable_filesystem_cache", cache_setting}});
     }
     if (fc.enable_fault_injection_settings)
     {
