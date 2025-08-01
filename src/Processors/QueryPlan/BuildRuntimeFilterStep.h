@@ -4,7 +4,9 @@
 namespace DB
 {
 
-/// Implements WHERE, HAVING operations. See FilterTransform.
+/// Implements a step that doesn't modify the data but builds a bloom filter from the values of the specified column.
+/// This bloom filter is put into a per-query map and can be used with `filterContains` function.
+/// This is used for filtering left side af a JOIN based on key values collected from the right side.
 class BuildRuntimeFilterStep : public ITransformingStep
 {
 public:
