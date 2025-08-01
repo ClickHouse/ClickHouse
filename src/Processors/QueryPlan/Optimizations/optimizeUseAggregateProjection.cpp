@@ -736,7 +736,7 @@ std::optional<String> optimizeUseAggregateProjections(
             pipe = Pipe(
                 std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
         else
-            pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
     }
@@ -773,7 +773,7 @@ std::optional<String> optimizeUseAggregateProjections(
         if (!is_parallel_reading_on_remote_replicas)
             pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
         else
-            pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(block_with_count.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;

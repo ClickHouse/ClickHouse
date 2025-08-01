@@ -22,16 +22,7 @@ SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'R
 SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010;
 
 SELECT '---normal : contains only projections ---';
-DROP TABLE normal;
-CREATE TABLE IF NOT EXISTS normal
-(
-    `key` UInt32,
-    `value` UInt32,
-)
-ENGINE = MergeTree
-ORDER BY tuple() settings index_granularity=1;
-
-ALTER TABLE normal ADD PROJECTION p_normal (SELECT key, value ORDER BY key);
+TRUNCATE TABLE normal;
 INSERT INTO normal select number as key, number as value from numbers(10000);
 INSERT INTO normal select number as key, number as value from numbers(10000, 100);
 
@@ -61,16 +52,7 @@ SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
 SELECT sum(value) AS v FROM agg where key > 98 AND key < 100 settings force_optimize_projection = 1, enable_analyzer = 1;
 
 SELECT '---agg : contains only projections ---';
-DROP TABLE IF EXISTS agg;
-CREATE TABLE agg
-(
-    `key` UInt32,
-    `value` UInt32,
-)
-ENGINE = MergeTree
-ORDER BY tuple() settings index_granularity=1;
-
-ALTER TABLE agg ADD PROJECTION p_agg (SELECT key, sum(value) GROUP BY key);
+TRUNCATE TABLE agg;
 INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100);
 INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100, 100);
 
