@@ -712,7 +712,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="No lost s3 keys",
+                name="Lost s3 keys",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
