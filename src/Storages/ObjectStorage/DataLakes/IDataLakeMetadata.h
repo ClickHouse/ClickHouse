@@ -7,7 +7,8 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 
 namespace DB
 {

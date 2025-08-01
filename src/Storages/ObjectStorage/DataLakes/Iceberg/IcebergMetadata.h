@@ -13,7 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Formats/FormatParserGroup.h>
 
 #include <Common/SharedMutex.h>
 #include <tuple>
