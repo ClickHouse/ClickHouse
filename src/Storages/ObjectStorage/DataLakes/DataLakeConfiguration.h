@@ -14,12 +14,13 @@
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
-#include <Formats/FormatParserGroup.h>
-
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 
 #include <fmt/ranges.h>
@@ -37,12 +38,19 @@ namespace ErrorCodes
 namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
-    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType iceberg_catalog_type;
-    extern DataLakeStorageSettingsString iceberg_storage_endpoint;
-    extern DataLakeStorageSettingsString iceberg_aws_access_key_id;
-    extern DataLakeStorageSettingsString iceberg_aws_secret_access_key;
-    extern DataLakeStorageSettingsString iceberg_region;
-    extern DataLakeStorageSettingsString iceberg_catalog_url;
+    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
+    extern DataLakeStorageSettingsString storage_storage_endpoint;
+    extern DataLakeStorageSettingsString storage_aws_access_key_id;
+    extern DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern DataLakeStorageSettingsString storage_region;
+    extern DataLakeStorageSettingsString storage_catalog_url;
+    extern DataLakeStorageSettingsString storage_warehouse;
+    extern DataLakeStorageSettingsString storage_catalog_credential;
+
+    extern DataLakeStorageSettingsString storage_auth_scope;
+    extern DataLakeStorageSettingsString storage_auth_header;
+    extern DataLakeStorageSettingsString storage_oauth_server_uri;
+    extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
 
@@ -203,25 +211,40 @@ public:
         return current_metadata->getColumnMapper();
     }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context) const override
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override
     {
 #if USE_AWS_S3 && USE_AVRO
-        if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
             auto catalog_parameters = DataLake::CatalogSettings{
-                .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
-                .aws_access_key_id = (*settings)[DataLakeStorageSetting::iceberg_aws_access_key_id].value,
-                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::iceberg_aws_secret_access_key].value,
-                .region = (*settings)[DataLakeStorageSetting::iceberg_region].value,
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::storage_storage_endpoint].value,
+                .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
+                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
+                .region = (*settings)[DataLakeStorageSetting::storage_region].value,
             };
 
             return std::make_shared<DataLake::GlueCatalog>(
-                (*settings)[DataLakeStorageSetting::iceberg_catalog_url].value,
+                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
                 context,
                 catalog_parameters,
                 /* table_engine_definition */nullptr
             );
         }
+        /// Attach condition is provided for compatibility.
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST ||
+            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE && !(*settings)[DataLakeStorageSetting::storage_catalog_url].value.empty()))
+        {
+            return std::make_shared<DataLake::RestCatalog>(
+                (*settings)[DataLakeStorageSetting::storage_warehouse].value,
+                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
+                (*settings)[DataLakeStorageSetting::storage_catalog_credential].value,
+                (*settings)[DataLakeStorageSetting::storage_auth_scope].value,
+                (*settings)[DataLakeStorageSetting::storage_auth_header],
+                (*settings)[DataLakeStorageSetting::storage_oauth_server_uri].value,
+                (*settings)[DataLakeStorageSetting::storage_oauth_server_use_request_body].value,
+                context);
+        }
+
 #endif
         return nullptr;
     }
