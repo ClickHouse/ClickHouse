@@ -5,11 +5,11 @@ slug: /operations/system-tables/database_replicas
 title: 'system.database_replicas'
 ---
 
-Contains information of each detached table.
+Contains information of each Replicated database replicas.
 
 Columns:
 
-- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
+- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the Replciated database is in.
 
 - `is_readonly` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the database replica is in read-only mode.
     This mode is turned on if the config does not have sections with Zookeeper/ClickHouse Keeper.
@@ -29,7 +29,6 @@ Columns:
 - `total_replicas` ([UInt32](../../sql-reference/data-types/int-uint.md)) - The total number of known replicas of this database.
 
 - `log_ptr` ([UInt32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one.
-
 
 **Example**
 

@@ -1,7 +1,9 @@
 import logging
 import os
+import random
 import re
 import shutil
+import string
 import threading
 import time
 
@@ -91,6 +93,11 @@ def zk_rmr_with_retries(zk, path):
             print(ex)
             time.sleep(0.5)
     assert False
+
+
+
+def generate_random_string(length=6):
+    return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
 
 @pytest.fixture(scope="module")
@@ -1721,7 +1728,8 @@ def test_lag_after_recovery(started_cluster):
 
 
 def test_system_database_replicas_with_ro(started_cluster):
-    database_1 = "test_system_database_replicas_1"
+    prefix = generate_random_string()
+    database_1 = f"{prefix}_test_system_database_replicas_1"
 
     main_node.query(
         f"CREATE DATABASE {database_1} ENGINE = Replicated('/test/{database_1}', 'shard1', 'replica1');"
@@ -1737,10 +1745,11 @@ def test_system_database_replicas_with_ro(started_cluster):
         [database_1, 1, 1],
     ])
     assert (
-        main_node.query("SELECT database, is_readonly, max_log_ptr FROM system.database_replicas") == expected
+        main_node.query(
+            f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
     )
 
-    database_2 = "test_system_database_replicas_2"
+    database_2 = f"{prefix}_test_system_database_replicas_2"
     main_node.query(
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
     )
@@ -1750,89 +1759,102 @@ def test_system_database_replicas_with_ro(started_cluster):
         [database_2, 0, 1],
     ])
     assert (
-        main_node.query("SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
+        main_node.query(
+            f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+        ) == expected
     )
 
 
 def test_block_system_database_replicas(started_cluster):
+    prefix = generate_random_string()
     for i in range(1, 7):
         main_node.query(
-            f"CREATE DATABASE db_{i} ENGINE = Replicated('/test/db_{i}', 'shard1', 'replica1');"
+            f"CREATE DATABASE {prefix}_db_{i} ENGINE = Replicated('/test/{prefix}_db_{i}', 'shard1', 'replica1');"
         )
 
     expected = TSV([
-        ["db_1", 0, 1],
-        ["db_2", 0, 1],
-        ["db_3", 0, 1],
-        ["db_4", 0, 1],
-        ["db_5", 0, 1],
-        ["db_6", 0, 1],
+        [f"{prefix}_db_1", 0, 1],
+        [f"{prefix}_db_2", 0, 1],
+        [f"{prefix}_db_3", 0, 1],
+        [f"{prefix}_db_4", 0, 1],
+        [f"{prefix}_db_5", 0, 1],
+        [f"{prefix}_db_6", 0, 1],
     ])
+
+    for i in [2,4,7]:
+        assert (
+            main_node.query(
+                f"SET max_block_size={i}; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+            ) == expected
+        )
+
     assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' AND is_readonly=0 ORDER BY database"
+        ) == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=4; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' AND is_readonly=1 ORDER BY database"
+        ) == ""
     )
 
+    expected = TSV([[f"{prefix}_db_1", 0, 1]])
     assert (
-        main_node.query("SET max_block_size=7; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
-    )
-
-    assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE is_readonly=0 ORDER BY database") == expected
-    )
-
-    assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE is_readonly=1 ORDER BY database") == ""
-    )
-
-    expected = TSV([["db_1", 0, 1]])
-    assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database LIMIT 1") == expected
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database LIMIT 1"
+        ) == expected
     )
 
     expected = TSV([
-        ["db_1", 0, 1],
-        ["db_2", 0, 1],
+        [f"{prefix}_db_1", 0, 1],
+        [f"{prefix}_db_2", 0, 1],
     ])
     assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database LIMIT 2") == expected
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database LIMIT 2"
+        ) == expected
     )
 
     zk = cluster.get_kazoo_client("zoo1")
-    zk_rmr_with_retries(zk, f"/test/db_1")
-    zk_rmr_with_retries(zk, f"/test/db_2")
-    zk_rmr_with_retries(zk, f"/test/db_3")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_1")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_2")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_3")
 
     for i in range(1, 7):
         main_node.query(
-            f"DETACH DATABASE db_{i}"
+            f"DETACH DATABASE {prefix}_db_{i}"
         )
         main_node.query(
-            f"ATTACH DATABASE db_{i}"
+            f"ATTACH DATABASE {prefix}_db_{i}"
         )
 
     expected = TSV([
-        ["db_1", 1, 1],
-        ["db_2", 1, 1],
-        ["db_3", 1, 1],
-        ["db_4", 0, 1],
-        ["db_5", 0, 1],
-        ["db_6", 0, 1],
+        [f"{prefix}_db_1", 1, 1],
+        [f"{prefix}_db_2", 1, 1],
+        [f"{prefix}_db_3", 1, 1],
+        [f"{prefix}_db_4", 0, 1],
+        [f"{prefix}_db_5", 0, 1],
+        [f"{prefix}_db_6", 0, 1],
     ])
 
     assert (
-        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+        ) == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='db_1'") == "1\n"
+        main_node.query(
+            f"SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='{prefix}_db_1'"
+        ) == "1\n"
     )
 
     assert (
-        main_node.query("SELECT is_readonly FROM system.database_replicas WHERE database='db_11'") == ""
+        main_node.query(
+            f"SELECT is_readonly FROM system.database_replicas WHERE database='{prefix}_db_11'"
+        ) == ""
     )
 
 

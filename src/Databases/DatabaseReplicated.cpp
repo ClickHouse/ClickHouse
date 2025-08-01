@@ -227,13 +227,8 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
 
         paths.clear();
 
-        paths.push_back(fs::path(zookeeper_path) / "replicas");
-
-        auto children_result = zookeeper->getChildren(paths);
-        const auto & all_replicas = children_result[0].names;
-
-        response.total_replicas = UInt32(all_replicas.size());
-        paths.clear();
+        const Strings all_replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+        response.total_replicas = static_cast<UInt32>(all_replicas.size());
     }
     catch (const Coordination::Exception &)
     {
