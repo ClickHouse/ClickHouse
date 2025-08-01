@@ -392,7 +392,7 @@ The operation maintains these properties:
            {"except",
             "The array containing elements to exclude from the result. ",
             {"Array(T)"}
-           };
+           }};
 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same type as the input array containing elements from `source` that weren't found in `except`. ", {"Array(T)"}};
 
