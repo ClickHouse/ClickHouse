@@ -81,7 +81,6 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
 
-
 ## See also {#see-also}
 
 - [system.databases](../../operations/system-tables/databases.md) system table

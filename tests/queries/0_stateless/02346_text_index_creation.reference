@@ -6,6 +6,9 @@ Test ngram_size argument.
 Test separators argument.
 -- separators must be array.
 -- separators must be an array of strings.
+Test segment_digestion_threshold_bytes argument.
+-- segment_digestion_threshold_bytes must be an integer.
+-- segment_digestion_threshold_bytes can be 0 (zero).
 Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.

@@ -34,7 +34,6 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 - [CREATE NAMED COLLECTION](/sql-reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](/sql-reference/statements/drop#drop-function)
 
-
 **See Also**
 
 - [Named collections guide](/operations/named-collections.md)

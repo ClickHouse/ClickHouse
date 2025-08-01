@@ -660,28 +660,28 @@ Configuration options for `http_handlers` work as follows.
 
 Each of these are discussed below:
 
-  - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
+- `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the   
   configuration file, it does not match the method portion of the HTTP request.
 
-  - `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular 
+- `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular 
   expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP 
   request.
 
-  - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
+- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
   configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-  - `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, 
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, 
   `response_content`, `query`, `query_param_name`. `type` currently supports three types: [`predefined_query_handler`](#predefined_query_handler), 
   [`dynamic_query_handler`](#dynamic_query_handler), [`static`](#static).
 
-    - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
-    - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
+  - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+  - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
        HTTP request parameters.
-    - `status` — use with `static` type, response status code.
-    - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
-    - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
+  - `status` — use with `static` type, response status code.
+  - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+  - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
+  - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
     from the file or configuration sends to client.
 
 The configuration methods for different `type`s are discussed next.

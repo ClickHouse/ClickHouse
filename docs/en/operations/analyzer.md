@@ -195,5 +195,6 @@ The status can be checked [here](https://github.com/ClickHouse/ClickHouse/issues
 
 The list of features that the new analyzer currently doesn't support is given below:
 
+- Annoy index.
 - Hypothesis index. Work in progress [here](https://github.com/ClickHouse/ClickHouse/pull/48381).
 - Window view is not supported. There are no plans to support it in the future.

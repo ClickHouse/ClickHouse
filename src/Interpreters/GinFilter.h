@@ -6,9 +6,10 @@
 namespace DB
 {
 
+static constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
+static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
+
 static inline constexpr auto TEXT_INDEX_NAME = "text";
-static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
-static inline constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 
 enum class GinSearchMode : uint8_t
 {
@@ -20,10 +21,13 @@ struct GinFilterParameters
 {
     GinFilterParameters(
         String tokenizer_,
+        UInt64 segment_digestion_threshold_bytes_,
         std::optional<UInt64> ngram_size_,
         std::optional<std::vector<String>> separators_);
 
     String tokenizer;
+    /// Digestion threshold to split a segment. By default, it is 0 (zero) which means unlimited.
+    UInt64 segment_digestion_threshold_bytes;
     /// for ngram tokenizer
     std::optional<UInt64> ngram_size;
     /// for split tokenizer

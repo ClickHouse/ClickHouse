@@ -47,7 +47,6 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 ## Metric descriptions {#metric-descriptions}
 
-
 ### AsynchronousHeavyMetricsCalculationTimeSpent {#asynchronousheavymetricscalculationtimespent}
 
 Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics).

@@ -40,6 +40,7 @@ namespace DB::DimensionalMetrics
     public:
         explicit MetricFamily(Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
+        void unregister(LabelValues label_values) noexcept;
         MetricsMap getMetrics() const;
         const Labels & getLabels() const;
 

@@ -37,6 +37,8 @@
 namespace DB
 {
 
+static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
+
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
@@ -114,19 +116,20 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
-    /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
     enum class Format : uint8_t
     {
-        v0 = 0,
-        v1 = 1, /// Initial version
-        v2 = 2, /// Supports adaptive compression
+        v1 = 1, /// Initial version, supports adaptive compression
     };
 
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
-    GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
+    GinIndexStore(
+        const String & name_,
+        DataPartStoragePtr storage_,
+        MutableDataPartStoragePtr data_part_storage_builder_,
+        UInt64 segment_digestion_threshold_bytes_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -150,7 +153,7 @@ public:
     void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
-    bool needToWrite() const;
+    bool needToWriteCurrentSegment() const;
 
     /// Accumulate the size of text data which has been digested
     void incrementCurrentSizeBy(UInt64 sz) { current_size += sz; }
@@ -170,7 +173,7 @@ private:
     /// FST size less than 100KiB does not worth to compress.
     static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
     /// Current version of GinIndex to store FST
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v2;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 
     friend class GinIndexStoreDeserializer;
 
@@ -209,7 +212,7 @@ private:
     /// For the segmentation of Gin indexes
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
-    const UInt64 max_digestion_size = 0;
+    const UInt64 segment_digestion_threshold_bytes = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

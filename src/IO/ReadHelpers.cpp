@@ -59,7 +59,7 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif

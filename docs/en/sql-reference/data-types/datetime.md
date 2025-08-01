@@ -129,7 +129,6 @@ FROM dt
 
 As timezone conversion only changes the metadata, the operation has no computation cost.
 
-
 ## Limitations on time zones support {#limitations-on-time-zones-support}
 
 Some time zones may not be supported completely. There are a few cases:

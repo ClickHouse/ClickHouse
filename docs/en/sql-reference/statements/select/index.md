@@ -65,7 +65,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
-
 ### Dynamic column selection {#dynamic-column-selection}
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.

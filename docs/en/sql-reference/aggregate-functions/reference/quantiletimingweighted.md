@@ -89,7 +89,6 @@ Result:
 
 Same as `quantileTimingWeighted`, but accept multiple parameters with quantile levels and return an Array filled with many values of that quantiles.
 
-
 **Example**
 
 Input table:

@@ -178,9 +178,12 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << s.nl_or_ws << indent_str << "INTERPOLATE";
             if (!interpolate()->children.empty())
             {
+                auto nested_frame = frame;
+                nested_frame.expression_list_prepend_whitespace = false;
+
                 ostr << " (";
-                interpolate()->format(ostr, s, state, frame);
-                ostr << " )";
+                interpolate()->format(ostr, s, state, nested_frame);
+                ostr << ")";
             }
         }
     }
@@ -190,16 +193,11 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws << indent_str << "ORDER BY ALL";
 
         auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
-        ostr
-               << (elem->direction == -1 ? " DESC" : " ASC")
-              ;
+        ostr << (elem->direction == -1 ? " DESC" : " ASC");
 
         if (elem->nulls_direction_was_explicitly_specified)
         {
-            ostr
-                   << " NULLS "
-                   << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST")
-                  ;
+            ostr << " NULLS " << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST");
         }
     }
 

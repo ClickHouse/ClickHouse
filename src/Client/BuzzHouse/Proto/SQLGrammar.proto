@@ -1587,37 +1587,38 @@ enum SQLTableFunc {
     TFfuzzQuery = 14;
     TFgenerateRandom = 15;
     TFmergeTreeIndex = 16;
-    TFhdfs = 17;
-    TFhdfsCluster = 18;
-    TFhudi = 19;
-    TFhudiCluster = 20;
-    TFiceberg = 21;
-    TFicebergCluster = 22;
-    TFinput = 23;
-    TFjdbc = 24;
-    TFmerge = 25;
-    TFmongodb = 26;
-    TFmysql = 27;
-    TFnull = 28;
-    TFnumbers = 29;
-    TFtimeSeriesData = 30;
-    TFtimeSeriesMetrics = 31;
-    TFtimeSeriesTags = 32;
-    TFzeros = 33;
-    TFgenerateSeries = 34;
-    TFodbc = 35;
-    TFpostgresql = 36;
-    TFredis = 37;
-    TFremote = 38;
-    TFremoteSecure = 39;
-    TFS3 = 40;
-    TFS3Cluster = 41;
-    TFsqlite = 42;
-    TFurl = 43;
-    TFurlCluster = 44;
-    TFvalues = 45;
-    TFview = 46;
-    TFloop = 47;
+    TFmergeTreeProjection = 18;
+    TFhdfs = 19;
+    TFhdfsCluster = 20;
+    TFhudi = 21;
+    TFhudiCluster = 22;
+    TFiceberg = 23;
+    TFicebergCluster = 24;
+    TFinput = 25;
+    TFjdbc = 26;
+    TFmerge = 27;
+    TFmongodb = 28;
+    TFmysql = 29;
+    TFnull = 30;
+    TFnumbers = 31;
+    TFtimeSeriesData = 32;
+    TFtimeSeriesMetrics = 33;
+    TFtimeSeriesTags = 34;
+    TFzeros = 35;
+    TFgenerateSeries = 36;
+    TFodbc = 37;
+    TFpostgresql = 38;
+    TFredis = 39;
+    TFremote = 40;
+    TFremoteSecure = 41;
+    TFS3 = 42;
+    TFS3Cluster = 43;
+    TFsqlite = 44;
+    TFurl = 45;
+    TFurlCluster = 46;
+    TFvalues = 47;
+    TFview = 48;
+    TFloop = 49;
 }
 
 message Database {
@@ -2457,19 +2458,14 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
-enum FileCompression {
-    COMPgz = 1;
-    COMPbr = 2;
-    COMPxz = 3;
-    COMPzst = 4;
-    COMPlz4 = 5;
-    COMPbz2 = 6;
-}
-
 message FileFunc {
     enum FName {
         file = 1;
-        fileCluster = 2;
+        deltaLakeLocal = 2;
+        icebergLocal = 3;
+        fileCluster = 4;
+        deltaLakeLocalCluster = 5;
+        icebergLocalCluster = 6;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2477,9 +2473,10 @@ message FileFunc {
     oneof file_func_oneof {
         InFormat informat = 4;
         OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
     }
-    optional Expr structure = 6;
-    optional FileCompression fcomp = 7;
+    optional Expr structure = 7;
+    optional string fcomp = 8;
 }
 
 message FormatFunc {
@@ -2519,6 +2516,7 @@ message RemoteFunc {
     required TableOrFunction tof = 3;
     optional string user = 4;
     optional string password = 5;
+    optional Expr sharding_key = 6;
 }
 
 message MySQLFunc {
@@ -2543,11 +2541,34 @@ message SQLiteFunc {
     required string rtable = 2;
 }
 
+message RedisFunc {
+    required string address = 1;
+    required Expr key = 2;
+    required Expr structure = 3;
+    optional uint32 db_index = 4;
+    optional string password = 5;
+    optional uint32 pool_size = 6;
+}
+
+message MongoDBFunc {
+    required string address = 1;
+    required string database = 2;
+    required string collection = 3;
+    required string user = 4;
+    required string password = 5;
+    required Expr structure = 6;
+}
+
 message S3Func {
     enum FName {
-        s3 = 1;
-        gcs = 2;
-        s3Cluster = 3;
+        gcs = 1;
+        s3 = 2;
+        deltaLakeS3 = 3;
+        icebergS3 = 4;
+        gcsCluster = 5; /// Add as an alignment
+        s3Cluster = 6;
+        deltaLakeS3Cluster = 7;
+        icebergS3Cluster = 8;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2562,7 +2583,11 @@ message S3Func {
 message AzureBlobStorageFunc {
     enum FName {
         azureBlobStorage = 1;
-        azureBlobStorageCluster = 2;
+        deltaLakeAzure = 2;
+        icebergAzure = 3;
+        deltaLakeAzureCluster = 4;
+        azureBlobStorageCluster = 5;
+        icebergAzureCluster = 6;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2606,12 +2631,18 @@ message ClusterFunc {
     optional bool all_replicas = 1;
     required Cluster cluster = 2;
     required TableOrFunction tof = 3;
-    optional string sharding_key = 4;
+    optional Expr sharding_key = 4;
 }
 
 message MergeTreeIndexFunc {
     required ExprSchemaTable est = 1;
     optional bool with_marks = 2;
+    optional bool with_minmax = 3;
+}
+
+message MergeTreeProjectionFunc {
+    required ExprSchemaTable est = 1;
+    required Projection proj = 2;
 }
 
 message GenerateRandomFunc {
@@ -2619,6 +2650,11 @@ message GenerateRandomFunc {
     optional uint64 random_seed = 2;
     optional uint32 max_string_length = 3;
     optional uint64 max_array_length = 4;
+}
+
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
 }
 
 message ValuesStatement {
@@ -2646,6 +2682,9 @@ message TableFunction {
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
         URLFunc url = 18;
+        RedisFunc redis = 19;
+        MongoDBFunc mongodb = 20;
+        MergeTreeProjectionFunc mtproj = 21;
     }
 }
 
@@ -2779,8 +2818,9 @@ message SetQuery {
 }
 
 message CTEquery {
-    required Table table = 1;
-    required Select query = 2;
+    optional bool recursive = 1;
+    required Table table = 2;
+    required Select query = 3;
 }
 
 message CTEexpr {
@@ -3203,6 +3243,7 @@ message TableEngineParam {
         string regexp = 12;
         ExprSchemaTable est = 13;
         Expr expr = 14;
+        KeyValuePair kvalue = 15;
     }
 }
 
@@ -3318,7 +3359,7 @@ message Drop {
 
 message InsertFromFile {
     required string path = 1;
-    optional FileCompression fcomp = 2;
+    optional string fcomp = 2;
     required InFormat format = 3;
 }
 
@@ -3405,7 +3446,7 @@ message SelectIntoFile {
     required string path = 1;
     optional bool tstdout = 2;
     optional SelectIntoFileStep step = 3;
-    optional FileCompression compression = 4;
+    optional string compression = 4;
     optional uint32 level = 5;
 }
 

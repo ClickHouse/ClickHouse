@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET enable_analyzer = 1;
+
 DROP DATABASE IF EXISTS 01902_db_repr;
 DROP DATABASE IF EXISTS 01902_db_repr1;
 DROP DATABASE IF EXISTS 01902_db_repr2;

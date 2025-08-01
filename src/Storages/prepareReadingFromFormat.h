@@ -24,10 +24,26 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints;
+        /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
+        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    };
+
+    struct PrepareReadingFromFormatHiveParams
+    {
+        /// Columns which exist inside data file.
+        NamesAndTypesList file_columns;
+        /// Columns which are read from path to data file.
+        /// (Hive partition columns).
+        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.
-    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns);
+    ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        const PrepareReadingFromFormatHiveParams & hive_parameters = {});
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

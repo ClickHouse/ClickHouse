@@ -307,7 +307,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             for (const auto & host_id_str : finished_hosts.names)
                 finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
 
-            auto finished_statuses = zookeeper->get(finished_status_paths);
+            auto finished_statuses = zookeeper->tryGet(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
                 const auto & host_id_str = finished_hosts.names[host_idx];

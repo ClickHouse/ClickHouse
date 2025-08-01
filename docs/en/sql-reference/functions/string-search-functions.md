@@ -771,7 +771,7 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -779,9 +779,10 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**
@@ -830,7 +831,7 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
@@ -838,9 +839,10 @@ The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**

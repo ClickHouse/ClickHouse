@@ -87,7 +87,6 @@ You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `
 
 In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
 
-
 ```sql
 SELECT hostname(), count()
 FROM system.parts

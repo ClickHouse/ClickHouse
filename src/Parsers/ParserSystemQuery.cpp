@@ -624,8 +624,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
             }
-            else
-                return false;
 
             break;
         }

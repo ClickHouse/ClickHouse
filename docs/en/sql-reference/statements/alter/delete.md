@@ -14,7 +14,6 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 
 Deletes data matching the specified filtering expression. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-
 :::note
 The `ALTER TABLE` prefix makes this syntax different from most other systems supporting SQL. It is intended to signify that unlike similar queries in OLTP databases this is a heavy operation not designed for frequent use.  `ALTER TABLE` is considered a heavyweight operation that requires the underlying data to be merged before it is deleted. For MergeTree tables, consider using the [`DELETE FROM` query](/sql-reference/statements/delete.md), which performs a lightweight delete and can be considerably faster.
 :::

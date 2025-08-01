@@ -18,6 +18,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int DATALAKE_DATABASE_ERROR;
 }
 
@@ -106,6 +107,17 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
     }
 
     return nullable ? DB::makeNullable(DB::IcebergSchemaProcessor::getSimpleType(name)) : DB::IcebergSchemaProcessor::getSimpleType(name);
+}
+
+std::pair<std::string, std::string> parseTableName(const std::string & name)
+{
+    auto pos = name.rfind('.');
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+
+    auto table_name = name.substr(pos + 1);
+    auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
+    return {namespace_name, table_name};
 }
 
 }

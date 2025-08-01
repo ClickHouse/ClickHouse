@@ -287,7 +287,6 @@ Example:
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-
 ## Wildcards in path {#wildcards-in-path}
 
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
@@ -311,7 +310,6 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
-
 
 ## Introspection {#introspection}
 

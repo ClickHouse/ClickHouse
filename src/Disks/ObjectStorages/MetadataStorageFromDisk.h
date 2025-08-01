@@ -78,6 +78,8 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+
+    bool isReadOnly() const override { return disk->isReadOnly(); }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
@@ -94,7 +96,7 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit(const TransactionCommitOptionsVariant & options) final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -103,6 +105,8 @@ public:
     void createEmptyMetadataFile(const std::string & path) override;
 
     void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+
+    bool supportAddingBlobToMetadata() override { return true; }
 
     void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
@@ -136,6 +140,7 @@ public:
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
 
 

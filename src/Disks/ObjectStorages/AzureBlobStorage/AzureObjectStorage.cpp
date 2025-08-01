@@ -108,14 +108,18 @@ AzureObjectStorage::AzureObjectStorage(
     AzureBlobStorage::AuthMethod auth_method_,
     ClientPtr && client_,
     SettingsPtr && settings_,
+    const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
-    const String & description_)
+    const String & description_,
+    const String & common_key_prefix_)
     : name(name_)
     , auth_method(std::move(auth_method_))
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
+    , common_key_prefix(common_key_prefix_)
+    , connection_params(connection_params_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -362,6 +366,12 @@ void AzureObjectStorage::applyNewSettings(
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));
+}
+
+
+ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
+{
+    return DB::getAzureObjectStorageConnectionInfo(connection_params);
 }
 
 }

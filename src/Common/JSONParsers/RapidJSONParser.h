@@ -11,6 +11,7 @@
 #include <base/defines.h>
 #include <rapidjson/document.h>
 #include <Common/JSONParsers/ElementTypes.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -124,6 +125,33 @@ struct RapidJSONParser
 
             result = it->value;
             return true;
+        }
+
+        bool findCaseInsensitive(std::string_view key, Element & result) const
+        {
+            // RapidJSON doesn't have native case-insensitive search, so we iterate
+            for (auto it = ptr->MemberBegin(); it != ptr->MemberEnd(); ++it)
+            {
+                std::string_view member_key(it->name.GetString(), it->name.GetStringLength());
+                if (member_key.size() == key.size())
+                {
+                    bool match = true;
+                    for (size_t i = 0; i < key.size(); ++i)
+                    {
+                        if (!equalsCaseInsensitive(member_key[i], key[i]))
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match)
+                    {
+                        result = it->value;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /// Optional: Provides access to an object's element by index.

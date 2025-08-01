@@ -13,6 +13,7 @@ public:
     StatisticsMinMax(const SingleStatisticsDescription & statistics_description, const DataTypePtr & data_type_);
 
     void build(const ColumnPtr & column) override;
+    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
