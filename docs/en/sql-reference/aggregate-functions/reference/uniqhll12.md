@@ -34,7 +34,6 @@ Function:
 
 - Provides the determinate result (it does not depend on the query processing order).
 
-
 We do not recommend using this function. In most cases, use the [uniq](/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined) function.
 
 **See Also**

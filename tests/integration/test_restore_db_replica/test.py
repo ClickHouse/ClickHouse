@@ -248,9 +248,6 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -261,6 +258,9 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
@@ -335,9 +335,6 @@ def test_query_after_restore_db_replica(
         f"{exclusive_database_name}.{changed_table}",
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -349,6 +346,9 @@ def test_query_after_restore_db_replica(
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     if exists_table:
         assert zk.exists(
@@ -485,11 +485,13 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         )
 
     assert node_1.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ) == TSV([count_test_table_1]) 
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
+        check_callback=lambda x: x.strip() == str(count_test_table_1),
+    ) == TSV([count_test_table_1])
     assert node_2.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ) == TSV([count_test_table_1]) 
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
+        check_callback=lambda x: x.strip() == str(count_test_table_1),
+    ) == TSV([count_test_table_1])
 
     expected_count = ["0"]
     if restore_firstly_node_where_created:

@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import os
+import re
 import random
 import time
 import uuid
@@ -50,7 +51,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text, ignore_exit_code=False):
+def execute_spark_query(node, query_text):
     node.exec_in_container(
         [
             "bash",
@@ -59,7 +60,7 @@ def execute_spark_query(node, query_text, ignore_exit_code=False):
         ],
     )
 
-    return node.exec_in_container(
+    result = node.exec_in_container(
         [
             "bash",
             "-c",
@@ -75,15 +76,22 @@ cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
     --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
     --conf "spark.sql.catalog.unity.token=" \\
     --conf "spark.sql.defaultCatalog=unity" \\
-    -S -e "{query_text}" | grep -v 'loading settings'
+    -S -e "{query_text}"
 """,
         ],
-        nothrow=ignore_exit_code,
     )
 
+    # We do not use "grep -v" for the above command,
+    # because it will mess up the exit code.
+    exclude_pattern = r"loading settings"
+    lines = result.splitlines()
+    filtered = [line for line in lines if not re.search(exclude_pattern, line)]
+    result = "\n".join(filtered)
+    return result
 
-def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
-    return execute_spark_query(node, ";".join(queries_list), ignore_exit_code)
+
+def execute_multiple_spark_queries(node, queries_list):
+    return execute_spark_query(node, ";".join(queries_list))
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
@@ -135,7 +143,7 @@ def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA test_schema{test_uuid}{i}" for i in range(10)], True
+        node1, [f"CREATE SCHEMA test_schema{test_uuid}{i}" for i in range(10)]
     )
     execute_multiple_spark_queries(
         node1,
@@ -143,7 +151,6 @@ def test_multiple_schemes_tables(started_cluster):
             f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'"
             for i in range(10)
         ],
-        True,
     )
     execute_multiple_spark_queries(
         node1,
@@ -151,7 +158,6 @@ def test_multiple_schemes_tables(started_cluster):
             f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)"
             for i in range(10)
         ],
-        True,
     )
 
     node1.query(
@@ -184,15 +190,14 @@ def test_multiple_schemes_tables(started_cluster):
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     schema_name = f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
-    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
-    execute_spark_query(node1, create_query, ignore_exit_code=True)
+    execute_spark_query(node1, create_query)
     execute_spark_query(
         node1,
         f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')",
-        ignore_exit_code=True,
     )
 
     node1.query(
@@ -245,15 +250,14 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
     node1.query(f"drop database if exists {table_name_src}")
 
     schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
-    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
-    execute_spark_query(node1, create_query, ignore_exit_code=True)
+    execute_spark_query(node1, create_query)
     execute_spark_query(
         node1,
         f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')",
-        ignore_exit_code=True,
     )
 
     node1.query(
@@ -280,7 +284,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert len(ntz_tables) == 1
 
     def get_schemas():
-        return execute_spark_query(node1, f"SHOW SCHEMAS", ignore_exit_code=True)
+        return execute_spark_query(node1, f"SHOW SCHEMAS")
 
     assert schema_name in get_schemas()
 
@@ -317,19 +321,18 @@ def test_no_permission_and_list_tables(started_cluster):
     node1.query("drop database if exists schema_with_permissions")
 
     schema_name = f"schema_with_permissions"
-    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
     table_name_1 = f"table_granted"
     table_name_2 = f"table_not_granted"
 
     create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/tmp/{schema_name}/{table_name_1}'"
     create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/tmp/{schema_name}/{table_name_2}'"
 
-    execute_multiple_spark_queries(node1, [create_query_2, create_query_1], True)
+    execute_multiple_spark_queries(node1, [create_query_2, create_query_1])
 
     execute_spark_query(
         node1,
         f"REVOKE ALL PRIVILEGES ON TABLE {schema_name}.{table_name_1} FROM PUBLIC;",
-        ignore_exit_code=True,
     )
 
     node1.query(
