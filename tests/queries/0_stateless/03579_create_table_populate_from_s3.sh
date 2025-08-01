@@ -58,8 +58,6 @@ EOF
 
 done
 
-exit 0
-
 replicated_db="${CLICKHOUSE_DATABASE}_replicated"
 cleanup_replicated_database() {
     set +e
