@@ -30,7 +30,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
-           {"region", [&](const JSONObjectType & value) { region = static_cast<uint32_t>(value.getUInt64()); }},
+           {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
     for (const auto [key, value] : jobj.getObject())

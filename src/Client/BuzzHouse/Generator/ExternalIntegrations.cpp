@@ -1610,10 +1610,10 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
         SetValue * sv3 = svs->add_other_values();
         SetValue * sv4 = svs->add_other_values();
 
-        sv1->set_property("iceberg_catalog_type");
-        sv2->set_property("iceberg_warehouse");
-        sv3->set_property("iceberg_storage_endpoint");
-        sv4->set_property("iceberg_catalog_url");
+        sv1->set_property("storage_catalog_type");
+        sv2->set_property("storage_warehouse");
+        sv3->set_property("storage_storage_endpoint");
+        sv4->set_property("storage_catalog_url");
         sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
         switch (b.catalog)
         {
@@ -1623,7 +1623,7 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
                 sv1->set_value("'glue'");
                 sv2->set_value("'gtest'");
                 sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
-                sv5->set_property("iceberg_region");
+                sv5->set_property("storage_region");
                 sv5->set_value("'" + cat->region + "'");
             }
             break;
