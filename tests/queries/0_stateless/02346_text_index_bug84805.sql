@@ -20,7 +20,7 @@ SELECT 'Test ngram tokenizer';
 
 CREATE TABLE tab (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'no_op') )
+    INDEX idx str TYPE text(tokenizer = 'ngram') )
 ENGINE = MergeTree()
 ORDER BY tuple();
 
