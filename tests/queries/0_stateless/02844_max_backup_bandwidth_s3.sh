@@ -7,7 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 client_opts=(
-  --allow_repeated_settings
   --send_logs_level 'error'
 )
 

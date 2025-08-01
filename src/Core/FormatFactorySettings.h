@@ -891,16 +891,6 @@ When enabled, values of complex data types like Tuple/Array/Map in JSON output f
 
 Enabled by default.
 )", 0) \
-    DECLARE(Bool, output_format_json_map_as_array_of_tuples, false, R"(
-Serialize maps columns as JSON arrays of tuples.
-
-Disabled by default.
-)", 0) \
-    DECLARE(Bool, input_format_json_map_as_array_of_tuples, false, R"(
-Deserialize maps columns as JSON arrays of tuples.
-
-Disabled by default.
-)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
@@ -1033,9 +1023,6 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
-)", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
-Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1251,9 +1238,6 @@ Target row index stride in ORC output format
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
 )", 0) \
-    DECLARE(UInt64, output_format_orc_compression_block_size, 262144, R"(
-The size of the compression block in bytes for ORC output format.
-)", 0) \
     DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
 The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \
@@ -1363,9 +1347,6 @@ Limits the size of the blocks formed during data parsing in input formats in byt
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
-)", 0) \
-    DECLARE(Bool, output_format_parquet_geometadata, true, R"(
-Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
 
 

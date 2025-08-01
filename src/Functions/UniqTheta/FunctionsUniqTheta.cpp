@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
-#include <Functions/UniqTheta/FunctionsUniqTheta.h>
+#include "FunctionsUniqTheta.h"
 
 #if USE_DATASKETCHES
 

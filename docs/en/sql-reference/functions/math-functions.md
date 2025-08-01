@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Mathematical Functions'
 sidebar_label: 'Mathematical'
+sidebar_position: 125
 slug: /sql-reference/functions/math-functions
 title: 'Mathematical Functions'
 ---
 
-# Mathematical functions
+# Mathematical Functions
 
 ## e {#e}
 

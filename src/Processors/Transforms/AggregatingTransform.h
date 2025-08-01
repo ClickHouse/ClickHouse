@@ -33,6 +33,9 @@ public:
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
 struct AggregatingTransformParams
 {
     Aggregator::Params params;
@@ -46,10 +49,10 @@ struct AggregatingTransformParams
     Aggregator & aggregator;
     bool final;
 
-    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
         , final(final_)
     {
     }
@@ -143,11 +146,11 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
-        SharedHeader header,
+        Block header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
