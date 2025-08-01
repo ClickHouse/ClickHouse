@@ -93,7 +93,7 @@ private:
     const size_t max_field_value_size;
 
     mutable std::mutex get_stream_mutex;
-    ReadBufferPtr stream;
+    ReadBufferPtr stream TSA_GUARDED_BY(get_stream_mutex);
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;

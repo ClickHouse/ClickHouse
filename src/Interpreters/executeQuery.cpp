@@ -2042,9 +2042,8 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        /// input stream has been consumed into some source proceccors/format readers
-        /// here we reset it in order not to hold the reference to the input stream
-        istr.reset();
+        /// input stream has to be consumed into some source proceccors/format readers
+        assert(!istr.get());
 
         if (set_result_details)
         {

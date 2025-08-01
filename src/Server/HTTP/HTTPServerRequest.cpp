@@ -57,7 +57,6 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and decide that it's EOF (but it is not). It may break deduplication, because clients cannot control it
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
-    std::unique_ptr<ReadBuffer> imp_stream;
     if (getChunkedTransferEncoding())
     {
         stream = std::make_shared<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
