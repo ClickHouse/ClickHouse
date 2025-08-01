@@ -110,7 +110,7 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
-    chassert(attemptedRetries > 0);
+    chassert(attemptedRetries >= 0);
     uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
     return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
 }
@@ -791,7 +791,6 @@ void Client::slowDownAfterRetryableError() const
 
         /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
-        /// TODO: move jitter to RetryStrategy
         std::uniform_real_distribution<double> dist(1.0, 1.1);
         double jitter = dist(thread_local_rng);
         sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
