@@ -73,7 +73,8 @@ public:
             return std::lexicographical_compare(
                 a.begin(), a.end(),
                 b.begin(), b.end(),
-                [](unsigned char ac, unsigned char bc) {
+                [](unsigned char ac, unsigned char bc)
+                {
                     return std::tolower(ac) < std::tolower(bc);
                 });
         }
@@ -104,7 +105,8 @@ public:
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
 
-        for (const auto & k : headers) {
+        for (const auto & k : headers)
+        {
             if (this->getForwardHeaders().contains(k.first))
                 request.add(k.first, k.second);
         }
