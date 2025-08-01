@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+
 #include <memory>
 #include <shared_mutex>
 

@@ -397,6 +397,7 @@ void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & meta
             auto object_key_with_metadata = metadata->popLastObject();
             outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
         }
+
         if (metadata->getTotalSizeBytes() != target_size)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);

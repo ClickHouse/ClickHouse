@@ -65,12 +65,20 @@ public:
         disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool /*autocommit */ = true) override
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override
+    {
+        return disk.writeFile(path, buf_size, mode, settings);
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
     }
