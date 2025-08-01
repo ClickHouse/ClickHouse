@@ -64,6 +64,12 @@ namespace DB::DimensionalMetrics
         return *it->second;
     }
 
+    void MetricFamily::unregister(LabelValues label_values) noexcept
+    {
+        std::lock_guard lock(mutex);
+        metrics.erase(label_values);
+    }
+
     MetricFamily::MetricsMap MetricFamily::getMetrics() const
     {
         std::shared_lock lock(mutex);

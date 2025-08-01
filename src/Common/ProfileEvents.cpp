@@ -128,14 +128,43 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
-    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    /* Azure profile events */ \
+    M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
+    M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
+    M(DiskAzureReadRequestsErrors, "Number of Azure disk read request errors.", ValueType::Number) \
+    M(DiskAzureReadRequestsThrottling, "Number of Azure disk read requests throttled.", ValueType::Number) \
+    M(DiskAzureReadRequestsRedirects, "Number of Azure disk read request redirects.", ValueType::Number) \
+    M(DiskAzureWriteMicroseconds, "Total time spent waiting for Azure disk write requests.", ValueType::Microseconds) \
+    M(DiskAzureWriteRequestsCount, "Number of Azure disk write requests.", ValueType::Number) \
+    M(DiskAzureWriteRequestsErrors, "Number of Azure disk write request errors.", ValueType::Number) \
+    M(DiskAzureWriteRequestsThrottling, "Number of Azure disk write requests throttled.", ValueType::Number) \
+    M(DiskAzureWriteRequestsRedirects, "Number of Azure disk write request redirects.", ValueType::Number) \
+    M(AzureReadMicroseconds, "Total time spent waiting for Azure read requests.", ValueType::Microseconds) \
+    M(AzureReadRequestsCount, "Number of Azure read requests.", ValueType::Number) \
+    M(AzureReadRequestsErrors, "Number of Azure read request errors.", ValueType::Number) \
+    M(AzureReadRequestsThrottling, "Number of Azure read requests throttled.", ValueType::Number) \
+    M(AzureReadRequestsRedirects, "Number of Azure read request redirects.", ValueType::Number) \
+    M(AzureWriteMicroseconds, "Total time spent waiting for Azure read requests.", ValueType::Microseconds) \
+    M(AzureWriteRequestsCount, "Number of Azure write requests.", ValueType::Number) \
+    M(AzureWriteRequestsErrors, "Number of Azure write request errors.", ValueType::Number) \
+    M(AzureWriteRequestsThrottling, "Number of Azure write requests throttled.", ValueType::Number) \
+    M(AzureWriteRequestsRedirects, "Number of Azure write request redirects.", ValueType::Number) \
+    M(AzureGetRequestThrottlerCount, "Number of Azure GET requests passed through throttler.", ValueType::Number) \
+    M(AzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure GET request throttling.", ValueType::Microseconds) \
+    M(DiskAzureGetRequestThrottlerCount, "Number of Azure disk GET requests passed through throttler.", ValueType::Number) \
+    M(DiskAzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk GET request throttling.", ValueType::Microseconds) \
+    M(AzurePutRequestThrottlerCount, "Number of Azure PUT requests passed through throttler.", ValueType::Number) \
+    M(AzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure PUT request throttling.", ValueType::Microseconds) \
+    M(DiskAzurePutRequestThrottlerCount, "Number of Azure disk PUT requests passed through throttler.", ValueType::Number) \
+    M(DiskAzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk PUT request throttling.", ValueType::Microseconds) \
+    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
+    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
+    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
+    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
+    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
+    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttling.", ValueType::Microseconds) \
+    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
+    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(BackupThrottlerBytes, "Bytes passed through 'max_backup_bandwidth_for_server' throttler.", ValueType::Bytes) \
     M(BackupThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_backup_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(MergesThrottlerBytes, "Bytes passed through 'max_merges_bandwidth_for_server' throttler.", ValueType::Bytes) \
@@ -330,6 +359,7 @@
     M(MutationCreatedEmptyParts, "Number of total parts which were replaced to empty parts instead of running mutation", ValueType::Number) \
     M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation", ValueType::Number) \
     M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.", ValueType::Bytes) \
+    M(MutationAffectedRowsUpperBound, "The upper bound of number of rows that were affected by mutation (e.g. number of rows that satisfy the predicate of UPDATE or DELETE mutation). The actual number may be slightly less", ValueType::Number) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
     M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
@@ -717,6 +747,7 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperCleanupTransactionCommitRetry, "Number of times metadata transaction commit for deleted objects cleanup was retried", ValueType::Number) \
     M(MetadataFromKeeperOperations, "Number of times a request was made to Keeper", ValueType::Number) \
     M(MetadataFromKeeperIndividualOperations, "Number of paths read or written by single or multi requests to Keeper", ValueType::Number) \
+    M(MetadataFromKeeperIndividualOperationsMicroseconds, "Time spend during single or multi requests to Keeper", ValueType::Microseconds) \
     M(MetadataFromKeeperReconnects, "Number of times a reconnect to Keeper was done", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times a old deleted object clean up was performed by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \
@@ -1031,7 +1062,11 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
-    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots", ValueType::Microseconds) \
+    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
+    M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
+    M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
+    M(ConcurrencyControlUpscales, "Total number of CPU upscaling events", ValueType::Number) \
+    M(ConcurrencyControlDownscales, "Total number of CPU downscaling events", ValueType::Number) \
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
@@ -1054,10 +1089,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
-    \
-    M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan", ValueType::Number) \
-    M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)", ValueType::Number) \
-    M(GWPAsanFree, "Number of free operations done by GWPAsan", ValueType::Number) \
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \

@@ -1,8 +1,12 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Disks/IO/WriteBufferFromDistributedCache.h>
+#include <Core/DistributedCacheProtocol.h>
+#endif
+#include <Core/Settings.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Interpreters/Context.h>
-#include <Common/Logger.h>
 #include <Common/checkStackSize.h>
 #include <ranges>
 #include <Common/logger_useful.h>
@@ -20,6 +24,11 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char smt_insert_fake_hardware_error[];
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
@@ -28,37 +37,33 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
-    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_)
-    : disk(disk_)
-    , object_storage(object_storage_)
+    : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_storage.createTransaction())
 {}
 
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
-    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     MetadataTransactionPtr metadata_transaction_)
-    : disk(disk_)
-    , object_storage(object_storage_)
+    : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
 {}
 
 MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
-    DiskObjectStorage & disk_,
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     IObjectStorage & destination_object_storage_,
     IMetadataStorage & destination_metadata_storage_)
-    : DiskObjectStorageTransaction(disk_, object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
     , destination_object_storage(destination_object_storage_)
     , destination_metadata_storage(destination_metadata_storage_)
 {}
@@ -131,6 +136,16 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!metadata_storage.existsFile(path))
         {
+            auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
+            if (maybe_blobs.has_value())
+            {
+                auto unlink_outcome = tx->unlinkMetadata(path);
+                if (unlink_outcome)
+                    objects_to_remove = ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)};
+
+                return;
+            }
+
             if (if_exists)
                 return;
 
@@ -213,6 +228,19 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         {
             if (!metadata_storage.existsFile(path))
             {
+                auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
+                if (maybe_blobs.has_value())
+                {
+                    auto unlink_outcome = tx->unlinkMetadata(path);
+                    if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
+                    {
+                        objects_to_remove.emplace_back(ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)});
+                        paths_removed_with_objects.push_back(path);
+                    }
+
+                    continue;
+                }
+
                 if (if_exists)
                     continue;
 
@@ -536,18 +564,26 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         tx->createEmptyMetadataFile(to_path);
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
-        for (const auto & object_from : source_blobs)
+        if (source_blobs.empty())
+            return;
+
+        if (!tx->supportAddingBlobToMetadata())
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
-            auto object_to = StoredObject(object_key.serialize());
+            if (source_blobs.size() > 1)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
+                    from_path,
+                    source_blobs.size());
 
-            object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
-
-            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
-
-            created_objects.push_back(object_to);
+            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
+            return;
         }
+
+        for (const auto & object_from : source_blobs)
+            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
     }
+
 
     void undo() override
     {
@@ -556,6 +592,21 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
+    }
+
+    template <bool support_adding_blob_to_metadata>
+    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
+    {
+        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
+        auto object_to = StoredObject(object_key.serialize());
+
+        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
+        created_objects.push_back(object_to);
+
+        if constexpr (support_adding_blob_to_metadata)
+            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
+        else
+            tx->createMetadataFile(to_path, object_key, object_from.bytes_size);
     }
 };
 
@@ -635,42 +686,7 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
     void finalize() override {}
 };
 
-struct ValidateTransactionObjectStorageOperation final : public IDiskObjectStorageOperation
-{
-    DiskTransactionPtr disk_transaction;
-    std::function<void(IDiskTransaction&)> check_function;
-
-    ValidateTransactionObjectStorageOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        DiskTransactionPtr disk_transaction_,
-        std::function<void(IDiskTransaction&)> check_function_)
-        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-        , disk_transaction(disk_transaction_)
-        , check_function(std::move(check_function_))
-    {}
-
-    std::string getInfoForLog() const override
-    {
-        return fmt::format("ValidateTransactionObjectStorageOperation");
-    }
-
-    void execute(MetadataTransactionPtr) override
-    {
-        check_function(*disk_transaction);
-    }
-
-    void undo() override
-    {
-    }
-
-    void finalize() override
-    {
-    }
-};
-
 }
-
 
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 {
@@ -791,6 +807,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
+    if (mode == WriteMode::Append && !metadata_transaction->supportAddingBlobToMetadata())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
+
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
@@ -809,8 +828,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             {
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
-                if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
-                    tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
+                if (!tx->object_storage.isPlain())
+                {
+                    auto maybe_blobs = tx->metadata_transaction->tryGetBlobsFromTransactionIfExists(path);
+                    if (maybe_blobs.has_value())
+                        tx->object_storage.removeObjectsIfExist(*maybe_blobs);
+                    /// NOTE: In the best case it would be better to remove file from metadata transaction
+                    /// as well, nevertheless it will be overridden in createMetadataFilePath
+                }
 
                 if (do_not_write_empty_blob && count == 0)
                 {
@@ -846,15 +871,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            write_op->setOnExecute([object_storage_tx, mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
+            /// NOTE: we should not take shared_ptr, only raw pointer, because transaction object always lives
+            /// longer than buffer with this callback. Otherwise we can get cyclic shared_ptr.
+            write_op->setOnExecute([object_storage_tx_raw_ptr = object_storage_tx.get(), mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
-                    if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
+                    if (!object_storage_tx_raw_ptr->object_storage.isPlain())
                     {
-                        object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
+                        auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
+                        if (maybe_blobs.has_value())
+                            object_storage_tx_raw_ptr->object_storage.removeObjectsIfExist(*maybe_blobs);
+                        /// NOTE: In the best case it would be better to remove file from metadata transaction
+                        /// as well, nevertheless it will be overridden in createMetadataFilePath
                     }
 
                     if (do_not_write_empty_blob && count == 0)
@@ -877,13 +908,45 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         operations_to_execute.emplace_back(std::move(write_operation));
     }
 
+    [[maybe_unused]] bool use_distributed_cache = false;
+    size_t use_buffer_size = buf_size;
+#if ENABLE_DISTRIBUTED_CACHE
+    use_distributed_cache = settings.write_through_distributed_cache
+        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az);
+    if (use_distributed_cache && settings.distributed_cache_settings.write_through_cache_buffer_size)
+        use_buffer_size = settings.distributed_cache_settings.write_through_cache_buffer_size;
+#endif
+
     auto impl = object_storage.writeObject(
         object,
         /// We always use mode Rewrite because we simulate append using metadata and different files
         WriteMode::Rewrite,
         object_attributes,
-        buf_size,
+        use_buffer_size,
         settings);
+
+#if ENABLE_DISTRIBUTED_CACHE
+    if (use_distributed_cache)
+    {
+        auto connection_info = object_storage.getConnectionInfo();
+        if (connection_info)
+        {
+            auto global_context = Context::getGlobalContextInstance();
+            auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
+                query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
+
+            impl = std::make_unique<WriteBufferFromDistributedCache>(
+                path,
+                object,
+                settings,
+                connection_info,
+                std::move(impl),
+                std::move(timeouts));
+        }
+    }
+#endif
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
         std::move(impl), std::move(create_metadata_callback), object.remote_path, do_not_write_empty_blob);
@@ -992,7 +1055,7 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
         object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
-void DiskObjectStorageTransaction::commit()
+void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
@@ -1027,55 +1090,107 @@ void DiskObjectStorageTransaction::commit()
 
     try
     {
-        metadata_transaction->commit();
+        metadata_transaction->commit(options);
     }
     catch (...)
     {
-        for (const auto & operation : operations_to_execute | std::views::reverse)
-            operation->undo();
+        if (needRollbackBlobs(options))
+            undo();
 
         throw;
     }
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
+
+    operations_to_execute.clear();
+
+    is_committed = true;
 }
 
-std::vector<std::string> DiskObjectStorageTransaction::listUncommittedDirectoryInTransaction(const std::string & path) const
+
+TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
-    return metadata_transaction->listUncommittedDirectory(path);
+    for (size_t i = 0; i < operations_to_execute.size(); ++i)
+    {
+        try
+        {
+            operations_to_execute[i]->execute(metadata_transaction);
+        }
+        catch (Exception & ex)
+        {
+            /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
+            metadata_transaction = metadata_storage.createTransaction();
+
+            ex.addMessage(fmt::format("While executing operation #{}", i));
+
+            if (needRollbackBlobs(options))
+            {
+                for (int64_t j = i; j >= 0; --j)
+                {
+                    try
+                    {
+                        operations_to_execute[j]->undo();
+                    }
+                    catch (Exception & rollback_ex)
+                    {
+                        rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
+                        throw;
+                    }
+                }
+            }
+
+            throw;
+        }
+    }
+
+    TransactionCommitOutcomeVariant outcome = metadata_transaction->tryCommit(options);
+    try
+    {
+        fiu_do_on(FailPoints::smt_insert_fake_hardware_error,
+        {
+            auto * result = std::get_if<MetaInKeeperCommitOutcome>(&outcome);
+            result->code = Coordination::Error::ZOPERATIONTIMEOUT;
+        });
+
+        if (!isSuccessfulOutcome(outcome))
+        {
+            /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
+            metadata_transaction = metadata_storage.createTransaction();
+
+            if (canRollbackBlobs(options, outcome))
+            {
+                undo();
+            }
+
+            return outcome;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        undo();
+        throw;
+    }
+
+    for (const auto & operation : operations_to_execute)
+        operation->finalize();
+
+    operations_to_execute.clear();
+
+    is_committed = true;
+    return outcome;
 }
 
 void DiskObjectStorageTransaction::undo()
 {
-    for (const auto & operation : operations_to_execute | std::views::reverse)
-        operation->undo();
-}
+    if (!is_committed)
+    {
+        for (const auto & operation : operations_to_execute | std::views::reverse)
+            operation->undo();
+    }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncommittedFileInTransaction(
-    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
-{
-    auto maybe_objects = metadata_transaction->tryGetBlobsFromTransactionIfExists(path);
-    if (!maybe_objects.has_value())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Stored objects for path '{}' not found in transaction", path);
-
-    /// tryGetBlobsFromTransactionIfExists return empty vector if blobs are unknown inside transaction
-    if (maybe_objects->empty())
-        return nullptr;
-
-    return disk.readFileFromStorageObjects(
-        *maybe_objects, path, settings, read_hint, file_size);
-}
-
-bool DiskObjectStorageTransaction::isTransactional() const
-{
-    return metadata_storage.isTransactional();
-}
-
-void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskTransaction&)> check_function)
-{
-    auto operation = std::make_unique<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, shared_from_this(), std::move(check_function));
-    operations_to_execute.emplace_back(std::move(operation));
+    operations_to_execute.clear();
 }
 
 }

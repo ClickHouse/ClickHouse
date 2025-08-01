@@ -13,6 +13,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
+#include <Disks/ObjectStorages/IObjectStorageConnectionInfo.h>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -45,13 +46,33 @@ namespace DB::AzureBlobStorage
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
 
+class StaticCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
+        : token(std::move(token_)), expires_on(expires_on_)
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+    }
+
+private:
+    std::string token;
+    std::chrono::system_clock::time_point expires_on;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
+    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
 }
 
 #endif
@@ -180,13 +201,14 @@ public:
     /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
+    virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
+
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
-
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
