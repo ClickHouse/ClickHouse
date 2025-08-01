@@ -15,6 +15,8 @@
 #include <Disks/IDisk.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
@@ -82,6 +84,12 @@ namespace Setting
 {
     extern const SettingsBool fsync_metadata;
 }
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSearchOrphanedPartsDrives search_orphaned_parts_drives;
+}
+
 
 class DatabaseNameHints : public IHints<>
 {
@@ -1459,11 +1467,35 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
+    /// Check if we are interested in a particular disk
+    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
+    auto look_on_disk =
+        [this](DiskPtr disk, std::shared_ptr<MergeTreeData> tbl)
+    {
+        if (!tbl)
+            /// Not a MergeTree - don't skip
+            return true;
+
+        if (tbl->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
+            /// Disk is actually used - don't skip
+            return true;
+
+        auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+
+        SearchOrphanedPartsDrives mode = (*tbl->getSettings())[MergeTreeSetting::search_orphaned_parts_drives];
+        bool is_look_needed = mode == SearchOrphanedPartsDrives::ANY
+            || (mode == SearchOrphanedPartsDrives::LOCAL && is_local_metadata());
+
+        LOG_TRACE(log, "look_on_disk: mode {}, is_look_needed {}", mode, is_look_needed);
+        return is_look_needed;
+    };
+
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
+        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        if (disk->isReadOnly() || !look_on_disk(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);

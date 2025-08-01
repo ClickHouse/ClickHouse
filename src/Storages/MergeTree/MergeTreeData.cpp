@@ -199,6 +199,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsBool function_date_trunc_return_type_behavior;
 }
 
 namespace MergeTreeSetting
@@ -264,6 +265,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
+    extern const MergeTreeSettingsSearchOrphanedPartsDrives search_orphaned_parts_drives;
 }
 
 namespace ServerSetting
@@ -2082,6 +2084,17 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
+bool MergeTreeData::shouldSearchForPartsOnDisk(DiskPtr disk) const
+{
+    auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+
+    SearchOrphanedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_drives];
+    bool is_look_needed = mode == SearchOrphanedPartsDrives::ANY
+      || (mode == SearchOrphanedPartsDrives::LOCAL && is_local_metadata());
+
+    LOG_TRACE(log, "shouldSearchForPartsOnDisk: mode {}, is_look_needed {}", mode, is_look_needed);
+    return is_look_needed;
+}
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
@@ -2095,7 +2108,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
-        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2136,6 +2149,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
+            if (!is_disk_defined && !shouldSearchForPartsOnDisk(disk))
+            {
+                skip_check_disks.insert(disk_name);
+                continue;
+            }
 
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
