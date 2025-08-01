@@ -11,7 +11,6 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Common/StackTrace.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -257,12 +256,6 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_replica_name = engine_args[arg_num + 1]->as<ASTLiteral>();
         if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
-
-        LOG_DEBUG(getLogger("registerStorageMergeTree"),
-                  "Using zookeeper path '{}' and replica name '{}' for table {}, query.attach {}, is_replicated_database {} mode {} at\n{}",
-                  ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>(), table_id.getNameForLogs()
-                  , query.attach, is_replicated_database, size_t(local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments]),
-                  StackTrace().toString());
 
         if (!query.attach && is_replicated_database
             && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)

@@ -25,8 +25,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -183,25 +181,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         && !context->isDistributed();
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    LOG_DEBUG(getLogger("TableFunctionObjectStorage"),
-        "Creating storage with configuration type: {} for table {}, "
-        "can_use_parallel_replicas {}, "
-        "is_secondary_query {}, "
-        "is_insert_query {}, "
-        "parallel_replicas_cluster_name {}, "
-        "parallel_replicas_for_cluster_engines {}, "
-        "canUseTaskBasedParallelReplicas {}, "
-        "isDistributed {}",
-        configuration->getTypeName(),
-        table_name,
-        can_use_parallel_replicas,
-        is_secondary_query,
-        is_insert_query,
-        parallel_replicas_cluster_name,
-        bool(query_settings[Setting::parallel_replicas_for_cluster_engines]),
-        context->canUseTaskBasedParallelReplicas(),
-        context->isDistributed());
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {

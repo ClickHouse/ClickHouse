@@ -1,6 +1,5 @@
 #include <Storages/IStorageCluster.h>
 
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
@@ -136,12 +135,6 @@ void IStorageCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    LOG_DEBUG(log, "Reading from cluster {} for query {}, processed_stage {}, at\n{}",
-        cluster_name,
-        query_info.query ? query_info.query->formatForLogging() : "unknown",
-        processed_stage,
-        StackTrace().toString());
-
     storage_snapshot->check(column_names);
 
     updateBeforeRead(context);
@@ -194,13 +187,6 @@ void IStorageCluster::read(
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    LOG_DEBUG(log, "Initializing pipeline for reading from cluster {} for query {}, processed_stage {}, output header {}, at\n{}",
-        cluster->getName(),
-        query_to_send->formatForLogging(),
-        processed_stage,
-        output_header ? output_header->dumpNames() : "unknown",
-        StackTrace().toString());
-
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 

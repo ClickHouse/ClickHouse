@@ -32,14 +32,6 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
 
-    LOG_DEBUG(getLogger("TableFunctionObjectStorageCluster"),
-        "Creating storage with configuration type: {} for table {}, context->getClientInfo().query_kind {}, is_replicated_database_internal {}, is_insert_query {}",
-        configuration->getTypeName(),
-        table_name,
-        context->getClientInfo().query_kind,
-        context->getClientInfo().is_replicated_database_internal,
-        is_insert_query);
-
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs

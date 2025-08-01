@@ -1,7 +1,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -116,11 +115,6 @@ StorageObjectStorage::StorageObjectStorage(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    LOG_DEBUG(log, "Creating storage object storage with configuration type: {} distributed_processing {} at\n{}",
-        configuration->getTypeName(),
-        distributed_processing,
-        StackTrace().toString());
-
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
@@ -405,12 +399,6 @@ void StorageObjectStorage::read(
         modified_format_settings.emplace(getFormatSettings(local_context));
 
     configuration->modifyFormatSettings(modified_format_settings.value());
-
-    LOG_DEBUG(log, "Reading from {} for query {}, distributed_processing {}, at\n{}",
-        configuration->getTypeName(),
-        query_info.query ? query_info.query->formatForLogging() : "unknown",
-        distributed_processing,
-        StackTrace().toString());
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
