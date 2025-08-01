@@ -19,6 +19,8 @@ WITH
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
-SELECT name, output_rows from system.processors_profile_log where event_date >= (today() - 1) and query_id = id
+SELECT 
+    replace(name, 'ReadPoolParallelReplicasInOrder', 'ReadPoolInOrder') AS name, output_rows
+from system.processors_profile_log where event_date >= (today() - 1) and query_id = id
     and (name like '%MergeTreeSelect%' or name like '%VirtualRowTransform%')
 ORDER BY name, output_rows;
