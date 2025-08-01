@@ -15,6 +15,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/SessionAwareIOStream.h>
+#include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -45,8 +46,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects;
-    unsigned int s3_retry_attempts;
+    unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
+    unsigned int s3_retry_attempts = DEFAULT_RETRY_ATTEMPTS;
+    unsigned int s3_retry_scale_factor = DEFAULT_RETRY_SCALE_FACTOR;
+    unsigned int s3_retry_max_delay_ms = DEFAULT_RETRY_MAX_DELAY_MS;
     bool s3_slow_all_threads_after_network_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
