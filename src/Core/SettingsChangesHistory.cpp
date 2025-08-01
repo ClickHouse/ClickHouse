@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
+            {"delta_lake_enable_engine_predicate", true, true, "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

@@ -41,6 +41,7 @@ namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
+    extern const SettingsBool delta_lake_enable_engine_predicate;
 }
 
 namespace ProfileEvents
@@ -92,6 +93,7 @@ public:
         size_t list_batch_size_,
         bool enable_expression_visitor_logging_,
         bool throw_on_engine_predicate_error_,
+        bool enable_engine_predicate_,
         LoggerPtr log_)
         : engine(engine_)
         , snapshot(snapshot_)
@@ -106,6 +108,7 @@ public:
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
+        , enable_engine_predicate(enable_engine_predicate_)
     {
         if (filter)
         {
@@ -161,7 +164,7 @@ public:
 
     void initScanState()
     {
-        if (filter)
+        if (filter && enable_engine_predicate)
         {
             auto predicate = getEnginePredicate(*filter, engine_predicate_exception);
             scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), predicate.get()), "scan");
@@ -381,6 +384,7 @@ private:
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
     const bool throw_on_engine_predicate_error;
+    const bool enable_engine_predicate;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -414,10 +418,8 @@ TableSnapshot::TableSnapshot(
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
-    /// TODO: These settings are not changeable per query in case of table engine.
-    , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
-    , throw_on_engine_visitor_error(context_->getSettingsRef()[DB::Setting::delta_lake_throw_on_engine_predicate_error])
 {
+    updateSettings(context_);
 }
 
 size_t TableSnapshot::getVersion() const
@@ -426,8 +428,17 @@ size_t TableSnapshot::getVersion() const
     return snapshot_version;
 }
 
-bool TableSnapshot::update()
+void TableSnapshot::updateSettings(const DB::ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+    enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
+    throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
+    enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
+}
+
+bool TableSnapshot::update(DB::ContextPtr context)
+{
+    updateSettings(context);
     if (!snapshot.get())
     {
         /// Snapshot is not yet created,
@@ -490,6 +501,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         list_batch_size,
         enable_expression_visitor_logging,
         throw_on_engine_visitor_error,
+        enable_engine_predicate,
         log);
 }
 

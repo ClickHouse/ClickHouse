@@ -1517,17 +1517,15 @@ def test_partition_columns_2(started_cluster, cluster):
         ).strip()
     )
 
-    ac = node.query(
-        f"explain actions=1 SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
-        settings={"allow_experimental_delta_kernel_rs": 1},
-    ).strip()
-    print("KSSENII ACTIONS: ", ac)
     assert (
         "1"
         in node.query(
             f" SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1550,7 +1548,10 @@ def test_partition_columns_2(started_cluster, cluster):
         in node.query(
             f"SELECT a FROM {delta_function} WHERE c = 7 and d = 'bb'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1653,7 +1654,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "bob"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 12", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 12",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)
@@ -1662,7 +1668,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "aelin"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 51", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 51",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)

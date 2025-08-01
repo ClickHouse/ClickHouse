@@ -35,7 +35,7 @@ public:
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update();
+    bool update(DB::ContextPtr context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -64,8 +64,10 @@ private:
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
-    const bool enable_expression_visitor_logging;
-    const bool throw_on_engine_visitor_error;
+
+    bool enable_expression_visitor_logging;
+    bool throw_on_engine_visitor_error;
+    bool enable_engine_predicate;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
@@ -82,6 +84,7 @@ private:
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
+    void updateSettings(const DB::ContextPtr & context);
 };
 
 /// TODO; Enable event tracing in DeltaKernel.
