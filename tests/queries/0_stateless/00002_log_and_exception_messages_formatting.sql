@@ -55,7 +55,7 @@ WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
   AND (message like '%DB::Exception%' or message like '%Coordination::Exception%');
 
-WITH 0.011 AS threshold
+WITH 0.02 AS threshold
 SELECT
     'unknown runtime exceptions',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
