@@ -23,7 +23,7 @@ struct QueryPlanOptimizationSettings
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
         PreparedSetsCachePtr prepared_sets_cache_,
-        bool is_parallel_replicas_initiator_);
+        bool is_parallel_replicas_initiator_with_projection_support_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -97,7 +97,7 @@ struct QueryPlanOptimizationSettings
 
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
-    bool is_parallel_replicas_initiator = false;
+    bool is_parallel_replicas_initiator_with_projection_support = false;
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;

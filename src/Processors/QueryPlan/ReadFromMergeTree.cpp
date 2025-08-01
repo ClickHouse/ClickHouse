@@ -2873,11 +2873,8 @@ void ReadFromMergeTree::clearParallelReadingExtension()
         return;
 
     is_parallel_reading_from_replicas = false;
-    if (all_ranges_callback.has_value())
-        all_ranges_callback.reset();
-
-    if (read_task_callback.has_value())
-        read_task_callback.reset();
+    all_ranges_callback.reset();
+    read_task_callback.reset();
 }
 
 std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingExtension()

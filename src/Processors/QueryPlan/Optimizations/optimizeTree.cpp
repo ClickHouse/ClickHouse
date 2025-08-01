@@ -215,7 +215,7 @@ void optimizeTreeSecondPass(
                         *frame.node,
                         nodes,
                         optimization_settings.optimize_use_implicit_projections,
-                        optimization_settings.is_parallel_replicas_initiator);
+                        optimization_settings.is_parallel_replicas_initiator_with_projection_support);
                     if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
                 }
@@ -240,7 +240,7 @@ void optimizeTreeSecondPass(
             if (auto applied_projection = optimizeUseNormalProjections(
                 stack,
                 nodes,
-                optimization_settings.is_parallel_replicas_initiator))
+                optimization_settings.is_parallel_replicas_initiator_with_projection_support))
             {
                 applied_projection_names.insert(*applied_projection);
 

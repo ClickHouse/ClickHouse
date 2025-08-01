@@ -77,7 +77,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool is_parallel_replicas_initiator)
+    bool is_parallel_replicas_initiator_with_projection_support)
 {
     const auto & frame = stack.back();
 
@@ -354,12 +354,9 @@ std::optional<String> optimizeUseNormalProjections(
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator;
     bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
-    bool should_skip_projection_reading_on_remote_replicas = is_parallel_reading_on_remote_replicas
-        && projection_reading && typeid_cast<ReadFromMergeTree *>(projection_reading.get())
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
-
     if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
@@ -379,7 +376,7 @@ std::optional<String> optimizeUseNormalProjections(
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    if (has_parent_parts && is_parallel_replicas_initiator)
+    if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
 
     if (!query_info.is_internal && context->hasQueryContext())

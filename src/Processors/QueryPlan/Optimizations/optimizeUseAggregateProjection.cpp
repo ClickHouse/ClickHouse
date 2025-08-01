@@ -467,7 +467,7 @@ std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator)
+    bool is_parallel_replicas_initiator_with_projection_support)
 {
     if (node.children.size() != 1)
         return {};
@@ -721,8 +721,8 @@ std::optional<String> optimizeUseAggregateProjections(
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
-    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator;
-
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
+        && !is_parallel_replicas_initiator_with_projection_support;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -731,8 +731,11 @@ std::optional<String> optimizeUseAggregateProjections(
         ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_minmax_count_projection)
         /// -------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the min-max projection to avoid data duplication.
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
-        if (is_parallel_reading_on_remote_replicas)
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(
+                std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
+        else
             pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
@@ -766,8 +769,10 @@ std::optional<String> optimizeUseAggregateProjections(
         ///                                                 ReadFromPreparedSource (_exact_count_projection)
         /// ------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the exact count projection to avoid data duplication.
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
-        if (is_parallel_reading_on_remote_replicas)
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
+        else
             pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
@@ -804,9 +809,7 @@ std::optional<String> optimizeUseAggregateProjections(
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
 
         /// Only the initiator should read the projection to avoid potential data duplication.
-        bool should_skip_projection_reading_on_remote_replicas = is_parallel_reading_on_remote_replicas
-            && projection_reading && typeid_cast<ReadFromMergeTree *>(projection_reading.get())
-            && has_parent_parts;
+        bool should_skip_projection_reading_on_remote_replicas = is_parallel_reading_on_remote_replicas && has_parent_parts;
         if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
         {
             Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(
@@ -814,7 +817,7 @@ std::optional<String> optimizeUseAggregateProjections(
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 
-        if (has_parent_parts && is_parallel_replicas_initiator)
+        if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
             fallbackToLocalProjectionReading(projection_reading);
     }
 

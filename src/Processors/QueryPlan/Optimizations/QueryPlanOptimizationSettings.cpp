@@ -82,7 +82,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     String initial_query_id_,
     ExpressionActionsSettings actions_settings_,
     PreparedSetsCachePtr prepared_sets_cache_,
-    bool is_parallel_replicas_initiator_)
+    bool is_parallel_replicas_initiator_with_projection_support_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -120,7 +120,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
-    is_parallel_replicas_initiator = is_parallel_replicas_initiator_;
+    is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
