@@ -118,6 +118,9 @@ fi
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 
+# Lower all caches size to 128MB
+ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
+
 # Randomize which logger is used (until sync logger is removed, if that ever happens)
 ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 value=$((RANDOM % 2))

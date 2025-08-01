@@ -8,9 +8,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Formats/FormatParserGroup.h>
-
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 namespace DB
 {
 
@@ -36,7 +35,8 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
@@ -45,7 +45,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
@@ -82,7 +82,9 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
+
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -137,7 +139,8 @@ protected:
         SchemaCache * schema_cache,
         const LoggerPtr & log,
         size_t max_block_size,
-        FormatParserGroupPtr parser_group,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
         bool need_only_count);
 
     ReaderHolder createReader();
