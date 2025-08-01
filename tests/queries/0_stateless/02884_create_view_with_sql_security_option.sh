@@ -363,5 +363,5 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.cluster_mv" | grep -c "DEFINER = $user3"
 
-
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE $db";
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
