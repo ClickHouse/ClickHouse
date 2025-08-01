@@ -2042,8 +2042,10 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        /// input stream has to be consumed into some source proceccors/format readers
-        assert(!istr.get());
+        /// input stream might be consumed into some source proceccors/format readers
+        /// that is the case with insert queries, but select quries could read from it but they do not take ownership of the input stream,
+        /// here we reset it in order not to hold the reference to the input stream
+        istr.reset();
 
         if (set_result_details)
         {
