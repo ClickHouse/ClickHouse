@@ -27,7 +27,6 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 MAX_RETRY = 1
-NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
@@ -778,7 +777,7 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def run_impl(self):
+    def run_impl(self, jobs):
         stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
@@ -786,7 +785,7 @@ class ClickhouseIntegrationTestsRunner:
             )
         else:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_normal_check()
+                self.run_normal_check(jobs)
             )
 
         if self.soft_deadline_time < time.time():
@@ -832,7 +831,7 @@ class ClickhouseIntegrationTestsRunner:
         self._tests_by_hash = groups_by_hash[self.run_by_hash_num]
         return self._tests_by_hash
 
-    def run_normal_check(self):
+    def run_normal_check(self, jobs):
         logging.info("Pulling images")
         self._pre_pull_images()
         logging.info(
@@ -905,7 +904,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "1h", group, tests, MAX_RETRY, jobs, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
@@ -975,7 +974,7 @@ def write_results(results_file, status_file, results, status):
         out.writerow(status)
 
 
-def run():
+def run(jobs=5):
     signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
@@ -996,7 +995,7 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _test_log_paths = runner.run_impl()
+    state, description, test_results, _test_log_paths = runner.run_impl(jobs)
     logging.info("Tests finished")
 
     if IS_CI:
