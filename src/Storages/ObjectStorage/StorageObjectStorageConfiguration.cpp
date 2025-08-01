@@ -33,7 +33,9 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     ContextPtr context,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
-    bool /*if_not_exists*/)
+    bool /*if_not_exists*/,
+    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);

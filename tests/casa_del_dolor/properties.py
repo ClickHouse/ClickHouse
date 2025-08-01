@@ -320,7 +320,6 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
-        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
@@ -341,7 +340,6 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,

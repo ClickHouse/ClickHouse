@@ -364,7 +364,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         {
             if (get_request_throttler)
             {
-                UInt64 sleep_ns = get_request_throttler->add(1);
+                UInt64 sleep_ns = get_request_throttler->throttle(1);
                 UInt64 sleep_us = sleep_ns / 1000UL;
                 ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerCount);
                 ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds, sleep_us);
@@ -380,7 +380,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         {
             if (put_request_throttler)
             {
-                UInt64 sleep_ns = put_request_throttler->add(1);
+                UInt64 sleep_ns = put_request_throttler->throttle(1);
                 UInt64 sleep_us = sleep_ns / 1000UL;
                 ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerCount);
                 ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds, sleep_us);
