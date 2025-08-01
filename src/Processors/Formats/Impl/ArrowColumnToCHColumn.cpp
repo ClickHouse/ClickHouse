@@ -1211,12 +1211,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 {
                     chassert(clickhouse_columns_to_parquet);
 
+                    /// Full name of the parquet column.
+                    /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
                     auto full_name = clickhouse_columns_to_parquet->at(column_name);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
                     {
                         field_name = it->second;
                         size_t pos = field_name.rfind('.');
+                        /// Get the Clickhouse field as the last element of the name.
+                        /// For example, if we converted parquet "a.b" to clickhouse "c.d", the resulting field name would be "d".
                         if (pos != std::string::npos)
                             field_name = field_name.substr(pos + 1);
                     }
