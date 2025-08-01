@@ -1652,6 +1652,7 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 
 bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
 {
+    const Catalog * cat = nullptr;
     const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
     const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
     const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
@@ -1663,28 +1664,20 @@ bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, con
 
     if (glue_cat && (nopt < glue_cat + 1))
     {
+        cat = &sc.glue_catalog.value();
         b.catalog = CatalogTable::Glue;
-        return true;
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
         b.catalog = CatalogTable::Hive;
-        return true;
+        cat = &sc.hive_catalog.value();
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
         b.catalog = CatalogTable::REST;
-        return true;
+        cat = &sc.rest_catalog.value();
     }
-    else if (no_cat && (nopt < glue_cat + hive_cat + rest_cat + no_cat + 1))
-    {
-        return sendRequest(sc.database + "/file" + std::to_string(b.tname));
-    }
-    else
-    {
-        chassert(0);
-        return false;
-    }
+    return sendRequest(cat ? fmt::format("/{}/cat{}", cat->endpoint, b.tname) : fmt::format("{}/file{}", sc.database, b.tname));
 }
 
 void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
