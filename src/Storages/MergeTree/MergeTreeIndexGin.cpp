@@ -477,7 +477,8 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
                 return false;
             const auto & value = element.safeGet<String>();
             gin_filters.emplace_back(GinFilter());
-            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
+            gin_filters.back().addTerm(value.data(), value.size());
+            gin_filters.back().setQueryString(value.data(), value.size());
         }
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};

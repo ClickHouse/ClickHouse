@@ -1725,6 +1725,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    How many partition discoveries should be packed into batch
+    )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

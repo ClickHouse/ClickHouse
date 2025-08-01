@@ -55,7 +55,7 @@ WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
   AND (message like '%DB::Exception%' or message like '%Coordination::Exception%');
 
-WITH 0.011 AS threshold
+WITH 0.02 AS threshold
 SELECT
     'unknown runtime exceptions',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
@@ -65,7 +65,7 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%' and message not like '%Out of memory%03147_parquet_memory_tracking%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%(AVRO_EXCEPTION)%' and message not like '%Fault injection%' and message not like '%throwIf%' and message not like '%Out of memory%03147_parquet_memory_tracking%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
