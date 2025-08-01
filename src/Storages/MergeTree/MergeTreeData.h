@@ -96,12 +96,25 @@ namespace ErrorCodes
 struct DataPartsLock
 {
     std::optional<Stopwatch> wait_watch;
-    std::unique_lock<std::mutex> lock;
+    std::unique_lock<std::shared_mutex> lock;
     std::optional<Stopwatch> lock_watch;
     DataPartsLock() = default;
-    explicit DataPartsLock(std::mutex & data_parts_mutex_);
+    explicit DataPartsLock(std::shared_mutex & data_parts_mutex_);
 
     ~DataPartsLock();
+
+    DataPartsLock(const DataPartsLock&) = delete;
+    DataPartsLock& operator=(const DataPartsLock&) = delete;
+    DataPartsLock(DataPartsLock&&) = default;
+    DataPartsLock& operator=(DataPartsLock&&) = default;
+};
+using DataPartsSharedLock = std::shared_lock<std::shared_mutex>;
+
+// some functions can accept either type of lock at the caller's preference.
+class DataPartsAnyLock final {
+public:
+    DataPartsAnyLock(const DataPartsLock&) noexcept {}
+    DataPartsAnyLock(const DataPartsSharedLock&) noexcept {}
 };
 
 /// Data structure for *MergeTree engines.
@@ -287,6 +300,7 @@ public:
     using DataPartsVector = std::vector<DataPartPtr>;
 
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
+    DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
@@ -628,9 +642,9 @@ public:
 
     /// Returns sorted list of the parts with specified states
     /// out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsLock & lock, DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
     /// Returns parts in Active state.
@@ -667,7 +681,7 @@ public:
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
-    DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
+    DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsAnyLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
     DataPartsVector getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const;
 
@@ -1413,7 +1427,7 @@ protected:
     >;
 
     /// Current set of data parts.
-    mutable std::mutex data_parts_mutex;
+    mutable std::shared_mutex data_parts_mutex;
 
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
@@ -1867,14 +1881,14 @@ private:
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        std::mutex & part_loading_mutex);
+        std::shared_mutex & part_loading_mutex);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        std::mutex & part_loading_mutex,
+        std::shared_mutex & part_loading_mutex,
         size_t backoff_ms,
         size_t max_backoff_ms,
         size_t max_tries);
