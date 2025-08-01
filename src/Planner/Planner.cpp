@@ -7,8 +7,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
-#include "Common/Logger.h"
-#include "Common/StackTrace.h"
+#include <Common/Logger.h>
+#include <Common/StackTrace.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
