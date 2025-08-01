@@ -386,14 +386,15 @@ The operation maintains these properties:
     FunctionDocumentation::Syntax syntax = "arrayExcept(source, except)";
     FunctionDocumentation::Arguments arguments
         = {{"source",
-            "The source array containing elements to filter. "
-            "[`Array(T)`](/sql-reference/data-types/array)"},
+            "The source array containing elements to filter. ",
+            {"Array(T)"}
+           },
            {"except",
-            "The array containing elements to exclude from the result. "
-            "[`Array(T)`](/sql-reference/data-types/array)"}};
+            "The array containing elements to exclude from the result. ",
+            {"Array(T)"}
+           };
 
-    FunctionDocumentation::ReturnedValue returned_value{"Returns an array of the same type as input containing elements from `source` that "
-                                                        "weren't found in `except`. [`Array(T)`](/sql-reference/data-types/array)"};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same type as the input array containing elements from `source` that weren't found in `except`. ", {"Array(T)"}};
 
     FunctionDocumentation::Examples examples
         = {{"basic", "SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])", "[1, 2, 2, 4]"},
