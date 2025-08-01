@@ -1495,9 +1495,8 @@ void Planner::buildPlanForQueryNode()
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
     LOG_DEBUG(getLogger("Planner"),
-        "buildPlanForQueryNode 1 node: {}, original query: {}, at\n{}",
+        "buildPlanForQueryNode 1 node: {}, at\n{}",
         query_tree->formatConvertedASTForErrorMessage(),
-        query_tree->formatOriginalASTForErrorMessage(),
         StackTrace().toString());
 
     auto & query_node = query_tree->as<QueryNode &>();
