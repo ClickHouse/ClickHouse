@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 /**
  * Implementation Details
@@ -91,6 +93,10 @@ namespace UUIDHelpers
     }
 
     const UUID Nil{};
+
+    /// Roman
+    String uuidToStr(const UUID & uuid);
+
 }
 
 }
