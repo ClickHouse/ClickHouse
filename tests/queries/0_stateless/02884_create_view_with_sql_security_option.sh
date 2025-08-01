@@ -374,6 +374,7 @@ DROP TABLE $db.mv2;
 
 DROP TABLE $db.test_view_row_1;
 DROP TABLE $db.test_view_g_1;
+DROP TABLE $db.test_view_g_2;
 DROP TABLE $db.test_mv_row_2;
 
 DROP TABLE $db.test_view_2;

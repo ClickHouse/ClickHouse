@@ -683,12 +683,12 @@ void StorageMaterializedView::alter(
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
-    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER && new_metadata.definer != old_metadata.definer)
-    {
-        auto & instance = ViewDefinerDependencies::instance();
+    auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.removeViewDependencies(table_id);
+
+    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
         instance.addViewDependency(*new_metadata.definer, table_id);
-    }
 
     setInMemoryMetadata(new_metadata);
 
