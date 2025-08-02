@@ -119,6 +119,20 @@ String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storag
         return {".idx"};
 }
 
+std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
+{
+    size_t file_size = part_storage.getFileSize(filename);
+    return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size, file_size);
+}
+
+String readPartStorageFile(const IDataPartStorage & part_storage, const String & filename)
+{
+    auto read_buf = openForReading(part_storage, filename);
+    String content;
+    readStringUntilEOF(content, *read_buf);
+
+    return content;
+}
 }
 
 
@@ -1814,9 +1828,34 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     /// We don't need to do fsync when writing CSN, because in case of hard restart
     /// we will be able to restore CSN from transaction log in Keeper.
 
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
+    try
+    {
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+        version.writeCSN(*out, which_csn);
+        out->finalize();
+    }
+    catch (const Exception & e)
+    {
+        /// Some disks do not support WriteMode::Append
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+
+        LOG_INFO(
+            storage.log,
+            "appendCSNToVersionMetadata: writeCSN with 'WriteMode::Append' is not implemented: '{}', try with 'WriteMode::Rewrite'",
+            e.what());
+
+        String existing_content = readPartStorageFile(getDataPartStorage(), TXN_VERSION_METADATA_FILE_NAME);
+
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Rewrite);
+        out->write(existing_content.data(), existing_content.size());
+        version.writeCSN(*out, which_csn);
+        out->finalize();
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
@@ -1844,19 +1883,41 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     else
         LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
 
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeRemovalTID(*out, clear);
-    out->finalize();
+    try
+    {
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+        version.writeRemovalTID(*out, clear);
+        out->finalize();
 
-    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
-        out->sync();
-}
+        if (!clear)
+            out->sync();
+    }
+    catch (const Exception & e)
+    {
+        /// Some disks do not support WriteMode::Append
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
 
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
-{
-    size_t file_size = part_storage.getFileSize(filename);
-    return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size, file_size);
+        LOG_INFO(
+            storage.log,
+            "appendRemovalTIDToVersionMetadata: writeCSN with 'WriteMode::Append' is not implemented: '{}', try with "
+            "'WriteMode::Rewrite'",
+            e.what());
+
+        String existing_content = readPartStorageFile(getDataPartStorage(), TXN_VERSION_METADATA_FILE_NAME);
+
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+        out->write(existing_content.data(), existing_content.size());
+        version.writeRemovalTID(*out, clear);
+        out->finalize();
+
+        if (!clear)
+            out->sync();
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
