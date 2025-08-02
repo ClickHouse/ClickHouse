@@ -3037,7 +3037,7 @@ bool KeeperStorageBase::isFinalized() const
 }
 
 template<typename Container>
-void KeeperStorage<Container>::preprocessRequest(
+KeeperDigest KeeperStorage<Container>::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,
@@ -3090,7 +3090,7 @@ void KeeperStorage<Container>::preprocessRequest(
                 /// initially leader preprocessed without knowing the log idx
                 /// on the second call we have that information and can set the log idx for the correct transaction
                 last_transaction.log_idx = log_idx;
-                return;
+                return current_digest;
             }
 
             if (new_last_zxid <= last_zxid)
@@ -3105,7 +3105,11 @@ void KeeperStorage<Container>::preprocessRequest(
     }
 
     std::list<Delta> new_deltas;
-    SCOPE_EXIT({
+    bool finalized = false;
+    const auto finalize = [&]
+    {
+        if (finalized)
+            return;
         uncommitted_state.applyDeltas(new_deltas, keeper_context->digestEnabled() ? &new_digest : nullptr);
         uncommitted_state.addDeltas(std::move(new_deltas));
 
@@ -3128,6 +3132,11 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         uncommitted_state.cleanup(getZXID());
+        finalized = true;
+    };
+
+    SCOPE_EXIT({
+        chassert(finalized, "Finalize not called before returning");
     });
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -3203,7 +3212,9 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         new_deltas.emplace_back(transaction->zxid, CloseSessionDelta{session_id});
-        return;
+
+        finalize();
+        return transaction->nodes_digest;
     }
 
     const auto preprocess_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
@@ -3231,6 +3242,8 @@ void KeeperStorage<Container>::preprocessRequest(
     };
 
     callOnConcreteRequestType(*zk_request, preprocess_request);
+    finalize();
+    return transaction->nodes_digest;
 }
 
 template<typename Container>

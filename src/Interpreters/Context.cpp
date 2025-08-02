@@ -1410,40 +1410,38 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(LoggerPtr log, const std::string & path)
+static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
+    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
 
-    if (fs::exists(path))
+    if (disk->existsDirectory(""))
     {
-        /// Clearing old temporary files.
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator it(path); it != dir_end; ++it)
+        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
-            if (it->is_regular_file())
+            /// existsFile() checks for is_regular_file() for local disk
+            if (it->path().starts_with("tmp") && disk->existsFile(it->path()))
             {
-                if (startsWith(it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                    fs::remove(it->path());
-                }
-                else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path());
+                disk->removeFile(it->path());
             }
-            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
+            else
+            {
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path());
+            }
         }
     }
     else
     {
-        fs::create_directories(path);
+        disk->createDirectory("");
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary path: {}. "
-        "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
+        "Caught exception while setting up temporary disk {}:{}. "
+        "It is ok to skip this exception as cleaning old temporary files is not necessary",
+        disk->getName(), disk->getPath()));
 }
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
@@ -1467,7 +1465,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
-        setupTmpPath(shared->log, disk->getPath());
+        setupTmpPath(shared->log, disk);
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1501,16 +1499,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         /// Check that underlying disk is local (can be wrapped in decorator)
         DiskPtr disk_ptr = disk;
-
-        if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
-        {
-            const auto * disk_raw_ptr = disk_ptr.get();
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Disk '{}' ({}) is not local and can't be used for temporary files",
-                disk_ptr->getName(), typeid(*disk_raw_ptr).name());
-        }
-
-        setupTmpPath(shared->log, disk->getPath());
+        setupTmpPath(shared->log, disk);
     }
 
     std::lock_guard lock(shared->mutex);
