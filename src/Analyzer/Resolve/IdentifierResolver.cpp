@@ -189,7 +189,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         return {};
 
     if (auto * alias_storage = dynamic_cast<StorageAlias *>(storage.get()))
-        storage = alias_storage->getRefStorage(context);
+        storage = alias_storage->getReferenceTable(context);
 
     storage->updateExternalDynamicMetadataIfExists(context);
 

@@ -5,6 +5,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Common/CurrentThread.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
 namespace DB
 {
@@ -17,40 +20,27 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
-StorageAlias::StorageAlias(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context_,
-    const StorageID & ref_table_id_)
-    : IStorage(table_id_)
-    , ref_table_id(ref_table_id_)
+StorageAlias::StorageAlias(const StorageID & table_id_, const StorageID & ref_table_id_)
+    : IStorage(table_id_), ref_table_id(ref_table_id_)
 {
     if (table_id_ == ref_table_id_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself.");
-
-    StorageInMemoryMetadata storage_metadata;
-    if (columns_.empty())
-    {
-        auto ref_table = DatabaseCatalog::instance().getTable(ref_table_id, context_);
-        storage_metadata.setColumns(ref_table->getInMemoryMetadataPtr()->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
-    storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
 }
 
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
+        if (!args.columns.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "No need to define the schema of Alias table");
+
         /** Arguments of engine is following:
+          * Alias(UUID)
+          * or
           * Alias(database.table)
           * or
           * Alias(database, table)
@@ -60,61 +50,66 @@ void registerStorageAlias(StorageFactory & factory)
         if (engine_args.empty() || engine_args.size() > 2)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires 1 or 2 arguments - Alias(database.table) or Alias(database, table), where database.table is the reference table");
+                "Storage Alias requires 1 or 2 arguments - Alias(UUID) or Alias(database.table) or Alias(database, table), where UUID or database.table is towards the reference table");
 
         const ContextPtr & local_context = args.getLocalContext();
-        QualifiedTableName qualified_name;
+
         if (engine_args.size() == 1)
         {
             engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
             auto arg = checkAndGetLiteralArgument<String>(engine_args[0], "database_with_table");
-            qualified_name = QualifiedTableName::parseFromString(arg);
-        }
-        else
-        {
-            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
-            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-            auto database = checkAndGetLiteralArgument<String>(engine_args[0], "database");
-            auto table = checkAndGetLiteralArgument<String>(engine_args[1], "table");
-            qualified_name.database = std::move(database);
-            qualified_name.table = std::move(table);
+            auto qualified_name = QualifiedTableName::parseFromString(arg);
+            /// The definition is Alias(database.table)
+            if (!qualified_name.database.empty())
+                return std::make_shared<StorageAlias>(args.table_id, StorageID(qualified_name));
+            /// The definition is Alias(UUID)
+            auto uuid = UUIDHelpers::Nil;
+            ReadBufferFromMemory buffer(qualified_name.table.data(), qualified_name.table.size());
+            if (!tryReadUUIDText(uuid, buffer))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Definition of Alias table should be either Alias(database.table) or Alias(UUID)");
+            return std::make_shared<StorageAlias>(args.table_id, StorageID("", "", uuid));
         }
 
-        return std::make_shared<StorageAlias>(
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.getContext(),
-            StorageID(qualified_name));
+        /// The definition is Alias(database, table)
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], local_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
+        auto database = checkAndGetLiteralArgument<String>(engine_args[0], "database");
+        auto table = checkAndGetLiteralArgument<String>(engine_args[1], "table");
+        return std::make_shared<StorageAlias>(args.table_id, StorageID(database, table));
     },
     {
         .supports_schema_inference = true,
     });
 }
 
-StoragePtr StorageAlias::getRefStorage(ContextPtr context)
+StoragePtr StorageAlias::getReferenceTable(ContextPtr context) const
 {
-    StorageMetadataPtr metadata_snapshot;
-    StorageMetadataPtr ref_metadata_snapshot;
-    auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout];
-    {
-        auto lock = lockForShare(context->getCurrentQueryId(), lock_acquire_timeout);
-        metadata_snapshot = getInMemoryMetadataPtr();
-    }
+    if (ref_table_id.hasUUID())
+        return DatabaseCatalog::instance().getByUUID(ref_table_id.uuid).second;
+    return DatabaseCatalog::instance().getTable(ref_table_id, context);
+}
 
-    auto ref_storage =  DatabaseCatalog::instance().getTable(ref_table_id, context);
-    {
-        auto ref_lock = ref_storage->lockForShare(context->getCurrentQueryId(), lock_acquire_timeout);
-        ref_metadata_snapshot = ref_storage->getInMemoryMetadataPtr();
-    }
+ContextPtr StorageAlias::getContext() const
+{
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias table can only be used in DML or DDL queries");
+    return context;
+}
 
-    if (metadata_snapshot->getColumns()!= ref_metadata_snapshot->getColumns())
-        throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Columns of Alias table {} and its reference table {} are different", getStorageID().getFullTableName(), ref_table_id.getNameForLogs());
+StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
+{
+    return getReferenceTable(getContext())->getInMemoryMetadata();
+}
 
-    return ref_storage;
+StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr() const
+{
+    return getReferenceTable(getContext())->getInMemoryMetadataPtr();
+}
+
+void StorageAlias::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageAlias::alter() is not supported");
 }
 
 }

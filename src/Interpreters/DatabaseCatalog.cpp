@@ -348,6 +348,13 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
+DatabaseAndTable DatabaseCatalog::getByUUID(const UUID & uuid) const
+{
+    auto res = tryGetByUUID(uuid);
+    if (!res.first || !res.second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", toString(uuid));
+    return res;
+}
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,

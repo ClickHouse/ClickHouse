@@ -179,7 +179,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
     auto table = DatabaseCatalog::instance().getTable(query.table_id, current_context);
     if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        table = alias_storage->getRefStorage(current_context);
+        table = alias_storage->getReferenceTable(current_context);
     return table;
 }
 
