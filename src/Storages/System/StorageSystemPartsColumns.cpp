@@ -64,8 +64,12 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the marks for column, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        {"column_ttl_min",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
-        {"column_ttl_max",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
+        {"column_ttl_min",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
+        {"column_ttl_max",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
+
+        {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
+        {"estimated_cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The estimated cardinality of the column."},
+        {"estimated_defaults",                         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The estimated number of default values in the column."},
 
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
@@ -123,6 +127,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        auto statistics_infos = part->getStatisticInfos();
 
         using State = MergeTreeDataPartState;
 
@@ -256,6 +261,40 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 if (column_has_ttl)
                     columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            auto stat_it = statistics_infos.find(column.name);
+
+            if (columns_mask[src_index++])
+            {
+                if (stat_it != statistics_infos.end())
+                {
+                    Array types;
+                    for (const auto & type : stat_it->second.types)
+                        types.push_back(toString(type));
+
+                    columns[res_index++]->insert(types);
+                }
+                else
+                {
+                    columns[res_index++]->insertDefault();
+                }
+            }
+
+            if (columns_mask[src_index++])
+            {
+                if (stat_it != statistics_infos.end() && stat_it->second.estimated_cardinality.has_value())
+                    columns[res_index++]->insert(stat_it->second.estimated_cardinality.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                if (stat_it != statistics_infos.end() && stat_it->second.estimated_defaults.has_value())
+                    columns[res_index++]->insert(stat_it->second.estimated_defaults.value());
                 else
                     columns[res_index++]->insertDefault();
             }

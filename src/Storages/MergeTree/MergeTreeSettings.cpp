@@ -193,6 +193,9 @@ namespace ErrorCodes
     └────────┴────────────────────┘
     ```
     )", 0) \
+    DECLARE(Bool, use_statistics_for_serialization_info, false, R"(
+    If enabled, statistics will be used to determine the serialization kind for columns.
+    )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128

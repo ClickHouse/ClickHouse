@@ -17,6 +17,7 @@ class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
+class ColumnsStatistics;
 
 constexpr auto SERIALIZATION_INFO_VERSION = 0;
 
@@ -125,6 +126,7 @@ public:
     static SerializationInfoByName readJSONFromString(
         const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
 
+    static SerializationInfoByName fromStatistics(const ColumnsStatistics & statistics, const Settings & settings);
 };
 
 }

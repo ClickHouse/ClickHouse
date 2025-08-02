@@ -93,66 +93,6 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     }
 }
 
-ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
-{
-    const auto & factory = MergeTreeStatisticsFactory::instance();
-
-    for (const auto & column : columns)
-    {
-        if (!column.statistics.empty())
-            emplace(column.name, factory.get(column));
-    }
-}
-
-void ColumnsStatistics::serialize(WriteBuffer & buf) const
-{
-    static constexpr UInt8 version = 0;
-
-    writeIntBinary(version, buf);
-    writeIntBinary(size(), buf);
-
-    for (const auto & [column_name, stat] : *this)
-    {
-        writeStringBinary(column_name, buf);
-        stat->serialize(buf);
-    }
-}
-
-void ColumnsStatistics::deserialize(ReadBuffer & buf)
-{
-    UInt8 version;
-    readIntBinary(version, buf);
-
-    if (version != 0)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
-
-    size_t size;
-    readIntBinary(size, buf);
-    NameSet loaded_stats;
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        String column_name;
-        readStringBinary(column_name, buf);
-
-        auto it = find(column_name);
-
-        if (it == end())
-            continue;
-
-        it->second->deserialize(buf);
-        loaded_stats.insert(column_name);
-    }
-
-    for (auto it = begin(); it != end();)
-    {
-        if (loaded_stats.contains(it->first))
-            ++it;
-        else
-            erase(it++);
-    }
-}
-
 UInt64 IStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
@@ -263,6 +203,11 @@ Float64 ColumnStatistics::estimateRange(const Range & range) const
     return right_count - left_count;
 }
 
+UInt64 ColumnStatistics::rowCount() const
+{
+    return rows;
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (stats.contains(StatisticsType::Uniq))
@@ -271,6 +216,15 @@ UInt64 ColumnStatistics::estimateCardinality() const
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
+}
+
+UInt64 ColumnStatistics::estimateDefaults() const
+{
+    if (stats.contains(StatisticsType::Defaults))
+    {
+        return stats.at(StatisticsType::Defaults)->estimateDefaults();
+    }
+    return 0;
 }
 
 void ColumnStatistics::serialize(WriteBuffer & buf) const
@@ -316,9 +270,87 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     }
 }
 
-UInt64 ColumnStatistics::rowCount() const
+
+StatisticsInfo ColumnStatistics::getInfo() const
 {
-    return rows;
+    StatisticsInfo info;
+
+    for (const auto & [type, _] : stats)
+        info.types.insert(type);
+
+    if (stats.contains(StatisticsType::Uniq))
+        info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+
+    if (stats.contains(StatisticsType::Defaults))
+        info.estimated_defaults = stats.at(StatisticsType::Defaults)->estimateDefaults();
+
+    return info;
+}
+
+ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
+{
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            emplace(column.name, factory.get(column));
+    }
+}
+
+void ColumnsStatistics::serialize(WriteBuffer & buf) const
+{
+    static constexpr UInt8 version = 0;
+
+    writeIntBinary(version, buf);
+    writeIntBinary(size(), buf);
+
+    for (const auto & [column_name, stat] : *this)
+    {
+        writeStringBinary(column_name, buf);
+        stat->serialize(buf);
+    }
+}
+
+void ColumnsStatistics::deserialize(ReadBuffer & buf)
+{
+    UInt8 version;
+    readIntBinary(version, buf);
+
+    if (version != 0)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
+
+    size_t size;
+    readIntBinary(size, buf);
+    NameSet loaded_stats;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        String column_name;
+        readStringBinary(column_name, buf);
+
+        auto it = find(column_name);
+
+        if (it == end())
+            continue;
+
+        it->second->deserialize(buf);
+        loaded_stats.insert(column_name);
+    }
+
+    for (auto it = begin(); it != end();)
+    {
+        if (loaded_stats.contains(it->first))
+            ++it;
+        else
+            erase(it++);
+    }
+}
+
+void ColumnsStatistics::build(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+        stat->build(block.getByName(column_name).column);
 }
 
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)

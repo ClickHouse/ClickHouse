@@ -62,6 +62,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool materialize_skip_indexes_on_insert;
@@ -81,6 +82,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool use_statistics_for_serialization_info;
 }
 
 namespace ErrorCodes
@@ -542,6 +544,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = block_with_partition.block;
     MergeTreePartition & partition = block_with_partition.partition;
+    PartLevelStatistics part_level_statistics;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
@@ -714,9 +717,21 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
+    bool use_statistics_for_serialization_info = (*data_settings)[MergeTreeSetting::use_statistics_for_serialization_info];
     SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
-    SerializationInfoByName infos(columns, settings);
-    infos.add(block);
+
+    SerializationInfoByName infos;
+
+    if (use_statistics_for_serialization_info)
+    {
+        statistics.build(block);
+        infos = SerializationInfoByName::fromStatistics(statistics, settings);
+    }
+    else
+    {
+        infos = SerializationInfoByName(columns, settings);
+        infos.add(block);
+    }
 
     for (const auto & [column_name, _] : columns)
     {
@@ -725,12 +740,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             column.column = recursiveRemoveSparse(column.column);
     }
 
+
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -775,7 +790,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->ttl_infos.update(move_ttl_infos);
 
     /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
+    /// either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
@@ -785,17 +800,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    part_level_statistics.addExplicitStats(statistics, false);
+    // part_level_statistics.addStatsForSerialization(statistics, false);
+    part_level_statistics.addMinMaxIdx(minmax_idx, false);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
         columns,
         indices,
-        statistics,
+        part_level_statistics,
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings());
 
@@ -949,12 +967,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
+        PartLevelStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings());
 

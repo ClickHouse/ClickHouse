@@ -19,12 +19,11 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        const ColumnsStatistics & statistics,
+        const PartLevelStatistics & part_level_statistics_,
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
         size_t part_uncompressed_bytes,
-        bool reset_columns_ = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {});
 
@@ -86,10 +85,9 @@ private:
         ColumnsSubstreams * additional_columns_substreams = nullptr);
 
     NamesAndTypesList columns_list;
-    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
-    WriteSettings write_settings;
+    MergeTreeWriterSettings writer_settings;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Storages/Statistics/Statistics.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -343,6 +344,34 @@ SerializationInfoByName SerializationInfoByName::readJSON(
     String json_str;
     readString(json_str, in);
     return readJSONFromString(columns, settings, json_str);
+}
+
+SerializationInfoByName SerializationInfoByName::fromStatistics(const ColumnsStatistics & statistics, const Settings & settings)
+{
+    SerializationInfoByName infos;
+
+    for (const auto & [column_name, column_stats] : statistics)
+    {
+        size_t num_rows = column_stats->rowCount();
+        ISerialization::Kind kind = ISerialization::Kind::DEFAULT;
+
+        const auto & desc = column_stats->getDescription();
+        const auto & stats = column_stats->getStats();
+
+        if (desc.data_type->supportsSparseSerialization() && stats.contains(StatisticsType::Defaults))
+        {
+            size_t num_defaults = column_stats->estimateDefaults();
+            double ratio = static_cast<double>(num_defaults) / num_rows;
+
+            if (ratio > settings.ratio_of_defaults_for_sparse)
+                kind = ISerialization::Kind::SPARSE;
+        }
+
+        if (kind != ISerialization::Kind::DEFAULT)
+            infos.emplace(column_name, std::make_shared<SerializationInfo>(kind, settings));
+    }
+
+    return infos;
 }
 
 }

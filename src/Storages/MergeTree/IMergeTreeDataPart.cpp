@@ -851,7 +851,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
-
     ColumnsStatistics result(metadata_snaphost.getColumns());
 
     if (auto all_stats_file = readFileIfExists(String(ColumnsStatistics::FILENAME)))
@@ -881,6 +880,22 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     }
 
     return result;
+}
+
+StatisticsInfos IMergeTreeDataPart::getStatisticInfos() const
+{
+    std::lock_guard lock(statistics_infos_mutex);
+
+    if (statistics_infos.has_value())
+        return *statistics_infos;
+
+    statistics_infos = StatisticsInfos();
+    auto statistics = loadStatistics();
+
+    for (const auto & [column_name, stats] : statistics)
+        statistics_infos->emplace(column_name, stats->getInfo());
+
+    return *statistics_infos;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

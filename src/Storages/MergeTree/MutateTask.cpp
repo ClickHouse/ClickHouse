@@ -1755,17 +1755,19 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
+        PartLevelStatistics part_level_statistics;
+        part_level_statistics.addExplicitStats(stats_to_rewrite, false);
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
-            stats_to_rewrite,
+            part_level_statistics,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             ctx->source_part->getBytesUncompressedOnDisk(),
-            /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
 
@@ -1992,12 +1994,15 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            PartLevelStatistics part_level_statistics;
+            part_level_statistics.addExplicitStats(ctx->stats_to_recalc, false);
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ctx->stats_to_recalc,
+                part_level_statistics,
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk());

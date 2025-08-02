@@ -14,6 +14,7 @@ constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
 class Field;
+class Block;
 
 struct StatisticsUtils
 {
@@ -59,10 +60,20 @@ protected:
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 
+struct StatisticsInfo
+{
+    std::set<StatisticsType> types;
+    std::optional<UInt64> estimated_cardinality;
+    std::optional<UInt64> estimated_defaults;
+};
+
+using StatisticsInfos = std::unordered_map<String, StatisticsInfo>;
+
 /// All statistics objects for a column in a part
 class ColumnStatistics
 {
 public:
+    using StatsMap = std::map<StatisticsType, StatisticsPtr>;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
     void serialize(WriteBuffer & buf) const;
@@ -72,16 +83,22 @@ public:
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 rowCount() const;
+    UInt64 estimateCardinality() const;
+    UInt64 estimateDefaults() const;
+
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
     Float64 estimateRange(const Range & range) const;
-    UInt64 estimateCardinality() const;
+
+    const StatsMap & getStats() const { return stats; }
+    const ColumnStatisticsDescription & getDescription() const { return stats_desc; }
+    StatisticsInfo getInfo() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    std::map<StatisticsType, StatisticsPtr> stats;
+    StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
 };
 
@@ -98,6 +115,7 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
+    void build(const Block & block);
 
     static String getFileName(const String & column_name) { return column_name + STATS_FILE_SUFFIX; }
 };

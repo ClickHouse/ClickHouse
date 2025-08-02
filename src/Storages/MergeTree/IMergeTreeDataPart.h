@@ -163,6 +163,7 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    StatisticsInfos getStatisticInfos() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -712,6 +713,10 @@ private:
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
+
+    /// TODO: comment.
+    mutable std::mutex statistics_infos_mutex;
+    mutable std::optional<StatisticsInfos> statistics_infos;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

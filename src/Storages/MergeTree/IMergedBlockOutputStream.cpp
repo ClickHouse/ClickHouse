@@ -4,6 +4,11 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
 
+namespace ProfileEvents
+{
+    extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+}
+
 namespace DB
 {
 
@@ -12,27 +17,48 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
 }
 
+void PartLevelStatistics::addExplicitStats(ColumnsStatistics stats, bool need_build)
+{
+    explicit_stats = std::move(stats);
+    build_explicit_stats = need_build;
+}
+
+void PartLevelStatistics::addStatsForSerialization(ColumnsStatistics stats, bool need_build)
+{
+    stats_for_serialization = std::move(stats);
+    build_stats_for_serialization = need_build;
+}
+
+void PartLevelStatistics::addMinMaxIdx(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build)
+{
+    minmax_idx = std::move(idx);
+    build_minmax_idx = need_build;
+}
+
+void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr & metadata_snapshot)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+
+    if (build_minmax_idx)
+        explicit_stats.build(block);
+
+    if (build_stats_for_serialization)
+        stats_for_serialization.build(block);
+
+    if (build_minmax_idx)
+        minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+}
+
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeSettingsPtr & storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const NamesAndTypesList & columns_list,
-    bool reset_columns_)
+    const PartLevelStatistics & part_level_statistics_)
     : storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(data_part_storage_)
-    , reset_columns(reset_columns_)
+    , part_level_statistics(part_level_statistics_)
 {
-    if (reset_columns)
-    {
-        SerializationInfo::Settings info_settings =
-        {
-            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false,
-        };
-
-        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
-    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

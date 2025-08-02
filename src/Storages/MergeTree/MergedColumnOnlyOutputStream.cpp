@@ -18,12 +18,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
-    const ColumnsStatistics & stats_to_recalc,
+    const PartLevelStatistics & part_level_statistics_,
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetColumns * offset_columns)
-    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, part_level_statistics_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
@@ -51,7 +51,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
-        stats_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
@@ -70,7 +69,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-    new_serialization_infos.add(block);
+    part_level_statistics.update(block, metadata_snapshot);
 }
 
 MergeTreeData::DataPart::Checksums
@@ -94,7 +93,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
-    serialization_infos.replaceData(new_serialization_infos);
+    // serialization_infos.replaceData(new_serialization_infos);
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
