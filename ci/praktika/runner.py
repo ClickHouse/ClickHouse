@@ -305,7 +305,21 @@ class Runner:
                     result.start_time = start_time
                     result.dump()
 
-            result = Result.from_fs(job.name)
+            try:
+                result = Result.from_fs(job.name)
+            except Exception as e:
+                print(f"ERROR: Failed to load result for job [{job.name}]: {e}")
+                traceback.print_exc()
+                result = Result(
+                    name=job.name,
+                    status=Result.Status.ERROR,
+                    start_time=start_time,
+                    duration=Utils.timestamp() - start_time,
+                    info=f"Failed to load result.json, check result_job_name.json and job.log",
+                    files=[Result.file_name_static(job.name)],
+                )
+                result.dump()
+
             if exit_code != 0:
                 if not result.is_completed():
                     if process.timeout_exceeded:
@@ -324,7 +338,7 @@ class Runner:
                     result.set_info("---").set_info(
                         process.get_latest_log(max_lines=20)
                     ).set_info("---")
-            result.dump()
+                result.dump()
 
         return exit_code
 

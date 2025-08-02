@@ -2,9 +2,8 @@ import dataclasses
 import traceback
 from typing import List
 
-from praktika.result import Result
-
 from ci.praktika.info import Info
+from ci.praktika.result import Result
 
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "
@@ -146,6 +145,8 @@ class FTResultsProcessor:
                     info="".join(test[3])[:16384],
                 )
                 if "flaky" not in Info().job_name:
+                    # If a test were rerun in a non-flaky-check run - it's a valid retry.
+                    # Replace old result with a new one.
                     if test_name in test_names:
                         retried_tests.append(test_name)
                         index = next(
