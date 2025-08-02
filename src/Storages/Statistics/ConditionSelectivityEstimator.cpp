@@ -165,22 +165,18 @@ void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)
     total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::addStatistics(ColumnStatisticsPtr column_stat)
+void ConditionSelectivityEstimator::addStatistics(const String & column_name, ColumnStatisticsPtr column_stat)
 {
     if (column_stat != nullptr)
-        column_estimators[column_stat->columnName()].addStatistics(column_stat);
+        column_estimators[column_name].addStatistics(column_stat);
 }
 
 void ConditionSelectivityEstimator::ColumnEstimator::addStatistics(ColumnStatisticsPtr other_stats)
 {
-    /// if (part_statistics.contains(part_name))
-    ///     throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
     if (stats == nullptr)
-    {
         stats = other_stats;
-        return;
-    }
-    stats->merge(other_stats);
+    else
+        stats->merge(other_stats);
 }
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const

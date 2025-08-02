@@ -74,6 +74,9 @@ namespace ErrorCodes
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
     Minimal number of rows to create part in wide format instead of compact
     )", 0) \
+    DECLARE(Bool, statistics_compact_format, true, R"(
+    If enabled, statistics will be stored in compact format.
+    )", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
     The maximum number of streams (columns) that can be flushed in parallel
     (analog of max_insert_delayed_streams_for_parallel_write for merges). Works
@@ -1747,11 +1750,18 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
+    DECLARE(String, statistics_compression_codec, "ZSTD(3)", R"(
+    Compression encoding used by statistics, statistics are small enough and cached,
+    so the default compression is ZSTD(3).
+    )", 0) \
     DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
+    )", 0) \
+    DECLARE(NonZeroUInt64, statistics_compress_block_size, 65536, R"(
+    Statistics compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
     first use instead of on table initialization. This can save memory in the

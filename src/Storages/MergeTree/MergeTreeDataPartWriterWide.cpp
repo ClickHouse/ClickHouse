@@ -351,7 +351,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
-    calculateAndSerializeStatistics(block);
+    calculateStatistics(block);
 
     shiftCurrentMark(granules_to_write);
 }
@@ -762,7 +762,7 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
+    serializeStatisticsAndFillChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)

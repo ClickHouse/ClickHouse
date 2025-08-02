@@ -7,6 +7,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
+#include <Storages/Statistics/Statistics.h>
 
 namespace ProfileEvents
 {
@@ -16,10 +17,12 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool statistics_compact_format;
 }
 
 namespace ErrorCodes
@@ -185,12 +188,12 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
         storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, std::move(index_granularity_))
     , skip_indices(indices_to_recalc_)
-    , stats(stats_to_recalc_)
+    , stats_to_recalc(stats_to_recalc_)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
-    , execution_stats(skip_indices.size(), stats.size())
+    , execution_stats(skip_indices.size(), stats_to_recalc.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity->empty())
@@ -264,15 +267,20 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
 void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
-    for (const auto & stat_ptr : stats)
+    bool statistics_compact_format = (*storage_settings)[MergeTreeSetting::statistics_compact_format];
+
+    if (!statistics_compact_format)
     {
-        String stats_name = stat_ptr->getFileName();
-        stats_streams.emplace_back(std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<true>>(
-                                       stats_name,
-                                       data_part_storage,
-                                       stats_name, STATS_FILE_SUFFIX,
-                                       default_codec, settings.max_compress_block_size,
-                                       settings.query_write_settings));
+        for (const auto & [column_name, stat_ptr] : stats_to_recalc)
+        {
+            String stats_name = ColumnsStatistics::getFileName(column_name);
+            stats_streams.emplace_back(std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<true>>(
+                                        stats_name,
+                                        data_part_storage,
+                                        stats_name, STATS_FILE_SUFFIX,
+                                        default_codec, settings.max_compress_block_size,
+                                        settings.query_write_settings));
+        }
     }
 }
 
@@ -359,14 +367,14 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         last_index_block = primary_index_block;
 }
 
-void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
+void MergeTreeDataPartWriterOnDisk::calculateStatistics(const Block & block)
 {
-    for (size_t i = 0; i < stats.size(); ++i)
+    size_t i = 0;
+    for (const auto & [column_name, stat_ptr] : stats_to_recalc)
     {
-        const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
-        execution_stats.statistics_build_us[i] += watch.elapsed();
+        stat_ptr->build(block.getByName(column_name).column);
+        execution_stats.statistics_build_us[i++] += watch.elapsed();
     }
 }
 
@@ -519,18 +527,51 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
             stream->sync();
     }
 
-    for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part_name);
+    size_t i = 0;
+    for (const auto & [column_name, _] : stats_to_recalc)
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i++] / 1000, column_name, data_part_name);
 }
 
-void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::serializeStatisticsAndFillChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
-    for (size_t i = 0; i < stats.size(); i++)
+    bool statistics_compact_format = (*storage_settings)[MergeTreeSetting::statistics_compact_format];
+
+    if (statistics_compact_format)
     {
-        auto & stream = *stats_streams[i];
-        stats[i]->serialize(stream.compressed_hashing);
-        stream.preFinalize();
-        stream.addToChecksums(checksums);
+        String stats_file_name = String(ColumnsStatistics::FILENAME);
+        auto stats_file_stream = getDataPartStorage().writeFile(stats_file_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+        auto stats_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
+
+        CompressionCodecPtr stats_compression_codec = CompressionCodecFactory::instance().get(settings.statistics_compression_codec);
+        auto stats_compressor_stream = std::make_unique<CompressedWriteBuffer>(*stats_file_hashing_stream, stats_compression_codec, settings.statistics_compress_block_size);
+        auto stats_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*stats_compressor_stream);
+
+        stats_to_recalc.serialize(*stats_source_hashing_stream);
+
+        stats_source_hashing_stream->finalize();
+        stats_compressor_stream->finalize();
+
+        stats_file_hashing_stream->finalize();
+
+        checksums.files[stats_file_name].is_compressed = true;
+        checksums.files[stats_file_name].uncompressed_size = stats_source_hashing_stream->count();
+        checksums.files[stats_file_name].uncompressed_hash = stats_source_hashing_stream->getHash();
+
+        checksums.files[stats_file_name].file_size = stats_file_hashing_stream->count();
+        checksums.files[stats_file_name].file_hash = stats_file_hashing_stream->getHash();
+
+        stats_file_stream->preFinalize();
+    }
+    else
+    {
+        size_t i = 0;
+        for (const auto & [column_name, stat_ptr] : stats_to_recalc)
+        {
+            auto & stream = *stats_streams[i++];
+            stat_ptr->serialize(stream.compressed_hashing);
+            stream.preFinalize();
+            stream.addToChecksums(checksums);
+        }
     }
 }
 

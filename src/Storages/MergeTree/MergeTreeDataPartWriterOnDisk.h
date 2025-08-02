@@ -148,7 +148,7 @@ protected:
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
-    void calculateAndSerializeStatistics(const Block & stats_block);
+    void calculateStatistics(const Block & stats_block);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
@@ -157,7 +157,7 @@ protected:
     void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
 
-    void fillStatisticsChecksums(MergeTreeDataPartChecksums & checksums);
+    void serializeStatisticsAndFillChecksums(MergeTreeDataPartChecksums & checksums);
     void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
@@ -178,7 +178,7 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
-    const ColumnsStatistics stats;
+    const ColumnsStatistics stats_to_recalc;
     std::vector<StatisticStreamPtr> stats_streams;
 
     const String marks_file_extension;

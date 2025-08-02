@@ -852,23 +852,34 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
-    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
+    ColumnsStatistics result(metadata_snaphost.getColumns());
 
-    ColumnsStatistics result;
-    for (auto & stat : total_statistics)
+    if (auto all_stats_file = readFileIfExists(String(ColumnsStatistics::FILENAME)))
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
-        String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
-
-        if (auto stat_file = readFileIfExists(file_name))
-        {
-            CompressedReadBuffer compressed_buffer(*stat_file);
-            stat->deserialize(compressed_buffer);
-            result.push_back(stat);
-        }
-        else
-            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+        CompressedReadBuffer compressed_buffer(*all_stats_file);
+        result.deserialize(compressed_buffer);
     }
+    else
+    {
+        for (auto it = result.begin(); it != result.end();)
+        {
+            String file_name = ColumnsStatistics::getFileName(it->first) + STATS_FILE_SUFFIX;
+            String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+
+            if (auto stat_file = readFileIfExists(file_name))
+            {
+                CompressedReadBuffer compressed_buffer(*stat_file);
+                it->second->deserialize(compressed_buffer);
+                ++it;
+            }
+            else
+            {
+                LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+                result.erase(it++);
+            }
+        }
+    }
+
     return result;
 }
 

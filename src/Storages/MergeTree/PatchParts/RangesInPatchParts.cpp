@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -154,20 +155,26 @@ std::vector<MarkRanges> getRangesInPatchParts(const DataPartPtr & original_part,
 
 }
 
-void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges)
+bool RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+    bool added_ranges = false;
 
     for (const auto & patch_part : patch_parts)
     {
         auto patch_ranges = getRangesInPatchPart(original_part, patch_part, original_ranges);
 
+        LOG_DEBUG(getLogger("KEK"), "part: {}, patch: {}, patch_ranges: {}", original_part->name, patch_part.describe(), patch_ranges.describe());
+
         if (!patch_ranges.empty())
         {
+            added_ranges = true;
             auto & current_ranges = ranges_by_name[patch_part.part->getPartName()];
             current_ranges.insert(current_ranges.end(), patch_ranges.begin(), patch_ranges.end());
         }
     }
+
+    return added_ranges;
 }
 
 void RangesInPatchParts::optimize()

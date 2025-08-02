@@ -197,17 +197,26 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         {
             auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
             auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
+
             read_task_info.patch_parts = read_task_info.alter_conversions->getPatchesForColumns(all_read_columns_list, reader_settings.apply_deleted_mask);
+            bool added_ranges = ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
 
-            addPatchPartsColumns(
-                read_task_info.task_columns,
-                storage_snapshot,
-                options,
-                read_task_info.patch_parts,
-                all_read_columns,
-                has_lightweight_delete);
+            LOG_DEBUG(getLogger("KEK"), "part: {}, ranges: {}, added ranges: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.describe(), added_ranges);
 
-            ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
+            if (added_ranges)
+            {
+                addPatchPartsColumns(
+                    read_task_info.task_columns,
+                    storage_snapshot,
+                    options,
+                    read_task_info.patch_parts,
+                    all_read_columns,
+                    has_lightweight_delete);
+            }
+            else
+            {
+                read_task_info.patch_parts.clear();
+            }
         }
 
         read_task_info.const_virtual_fields = shared_virtual_fields;

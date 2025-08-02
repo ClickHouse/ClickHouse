@@ -57,25 +57,20 @@ protected:
 
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 /// All statistics objects for a column in a part
 class ColumnStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
-    void serialize(WriteBuffer & buf);
+    void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
-
-    String getFileName() const;
-    const String & columnName() const;
-
-    UInt64 rowCount() const;
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
 
+    UInt64 rowCount() const;
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
@@ -85,9 +80,25 @@ public:
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    String column_name;
     std::map<StatisticsType, StatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
+};
+
+class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
+{
+public:
+    static constexpr std::string_view FILENAME = "statistics.dat";
+
+    ColumnsStatistics() = default;
+    using Base = std::map<String, ColumnStatisticsPtr>;
+    using Base::Base;
+
+    explicit ColumnsStatistics(const ColumnsDescription & columns);
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
+
+    static String getFileName(const String & column_name) { return column_name + STATS_FILE_SUFFIX; }
 };
 
 struct ColumnDescription;
@@ -102,9 +113,7 @@ public:
 
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
-
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

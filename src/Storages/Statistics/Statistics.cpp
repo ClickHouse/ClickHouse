@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -60,8 +61,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
-    : stats_desc(stats_desc_), column_name(column_name_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
+    : stats_desc(stats_desc_)
 {
 }
 
@@ -88,6 +89,66 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
         {
             stats.insert(stat_it);
         }
+    }
+}
+
+ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
+{
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            emplace(column.name, factory.get(column));
+    }
+}
+
+void ColumnsStatistics::serialize(WriteBuffer & buf) const
+{
+    static constexpr UInt8 version = 0;
+
+    writeIntBinary(version, buf);
+    writeIntBinary(size(), buf);
+
+    for (const auto & [column_name, stat] : *this)
+    {
+        writeStringBinary(column_name, buf);
+        stat->serialize(buf);
+    }
+}
+
+void ColumnsStatistics::deserialize(ReadBuffer & buf)
+{
+    UInt8 version;
+    readIntBinary(version, buf);
+
+    if (version != 0)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
+
+    size_t size;
+    readIntBinary(size, buf);
+    NameSet loaded_stats;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        String column_name;
+        readStringBinary(column_name, buf);
+
+        auto it = find(column_name);
+
+        if (it == end())
+            continue;
+
+        it->second->deserialize(buf);
+        loaded_stats.insert(column_name);
+    }
+
+    for (auto it = begin(); it != end();)
+    {
+        if (loaded_stats.contains(it->first))
+            ++it;
+        else
+            erase(it++);
     }
 }
 
@@ -206,21 +267,20 @@ UInt64 ColumnStatistics::estimateCardinality() const
     return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
-/// -------------------------------------
-
-void ColumnStatistics::serialize(WriteBuffer & buf)
+void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
     writeIntBinary(V0, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
         stat_types_mask |= 1LL << UInt8(type);
+
     writeIntBinary(stat_types_mask, buf);
 
-    /// as the column row count is always useful, save it in any case
+    /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// write the actual statistics object
+    /// Write the actual statistics object
     for (const auto & [type, stat_ptr] : stats)
         stat_ptr->serialize(buf);
 }
@@ -234,7 +294,6 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
-
     readIntBinary(rows, buf);
 
     for (auto it = stats.begin(); it != stats.end();)
@@ -249,16 +308,6 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
             ++it;
         }
     }
-}
-
-String ColumnStatistics::getFileName() const
-{
-    return STATS_FILE_PREFIX + columnName();
-}
-
-const String & ColumnStatistics::columnName() const
-{
-    return column_name;
 }
 
 UInt64 ColumnStatistics::rowCount() const
@@ -314,7 +363,8 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    auto column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics);
+
     for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
@@ -324,15 +374,6 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & co
         column_stat->stats[type] = stat_ptr;
     }
     return column_stat;
-}
-
-ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription & columns) const
-{
-    ColumnsStatistics result;
-    for (const auto & col : columns)
-        if (!col.statistics.empty())
-            result.push_back(get(col));
-    return result;
 }
 
 }
