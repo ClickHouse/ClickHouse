@@ -286,7 +286,7 @@ public:
     MultiExistsResponse exists(TIter start, TIter end)
     {
         return multiRead<Coordination::ExistsResponse, true>(
-            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
+            start, end, [&](const auto & path) { return zkutil::makeExistsRequest(path); }, [&](const auto & path) { return asyncExists(path); });
     }
 
     MultiExistsResponse exists(const std::vector<std::string> & paths)
@@ -307,7 +307,7 @@ public:
     MultiGetResponse get(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, false>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncGet(path); });
     }
 
     MultiGetResponse get(const std::vector<std::string> & paths)
@@ -342,7 +342,7 @@ public:
     MultiTryGetResponse tryGet(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, true>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncTryGet(path); });
     }
 
     MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
