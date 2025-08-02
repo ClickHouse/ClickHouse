@@ -1726,8 +1726,7 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            # Not enabled in public
-            with_remote_database_disk = False
+            with_remote_database_disk = True
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
