@@ -499,13 +499,32 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
+    # Wrap the malloc/free and other C-style functions with our own ones
+    # to inject memory tracking mechanism into them.
+    # Sanitizers have their own way of intercepting the
+    # allocations and deallocations, so we skip this step for them.
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
+        target_link_options(${target} PRIVATE
+            "LINKER:--wrap=malloc"
+            "LINKER:--wrap=free"
+            "LINKER:--wrap=calloc"
+            "LINKER:--wrap=realloc"
+            "LINKER:--wrap=aligned_alloc"
+            "LINKER:--wrap=posix_memalign"
+            "LINKER:--wrap=valloc"
+            "LINKER:--wrap=memalign"
+            "LINKER:--wrap=reallocarray"
+        )
+        if (NOT USE_MUSL)
+            target_link_options(${target} PRIVATE
+                "LINKER:--wrap=pvalloc"
+            )
+        endif()
+    endif()
+
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # Disabled if memory tracking is disabled
-        if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
-        endif()
+        target_link_libraries (${target} PUBLIC clickhouse_new_delete)
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted

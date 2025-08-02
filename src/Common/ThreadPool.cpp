@@ -672,9 +672,12 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
-
+    // Function __cxa_thread_atexit_impl in libcxxabi/src/cxa_thread_atexit.cpp
+    // calls malloc to initialize thread-local storage destructors.
+    // So we need to defer denying the allocations.
     DB::Exception::initializeThreadFramePointers();
+
+    DENY_ALLOCATIONS_IN_SCOPE;
 
     // wait until the thread will be started
     while (thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing)
