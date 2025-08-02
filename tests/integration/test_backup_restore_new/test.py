@@ -751,12 +751,10 @@ def test_zip_archive_with_bad_compression_method():
 
     expected_error = "Unknown compression method specified for a zip archive"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_compression_method', compression_method='foobar'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', compression_method='foobar'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='archive_with_bad_compression_method'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -873,12 +871,10 @@ def test_tar_archive_with_password():
 
     expected_error = "Setting a password is not currently supported for libarchive"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_password', password='password123'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', password='password123'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='tar_archive_with_password'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -892,12 +888,10 @@ def test_tar_archive_with_bad_compression_method():
 
     expected_error = "Using compression_method and compression_level options are not supported for tar archives"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_bad_compression_method', compression_method='foobar'"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{id}', compression_method='foobar'"
     )
     assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='tar_archive_with_bad_compression_method'"
-        )
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id}'")
         == "BACKUP_FAILED\n"
     )
 
@@ -1734,43 +1728,50 @@ def test_operation_id():
 
     backup_name = new_backup_name()
 
+    first_id = uuid.uuid4().hex
+
     [id, status] = instance.query(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='first' ASYNC"
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{first_id}' ASYNC"
     ).split("\t")
 
-    assert id == "first"
+    assert id == first_id
     assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='first'",
+        f"SELECT status, error FROM system.backups WHERE id='{first_id}'",
         TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP TABLE test.table")
 
+    second_id = uuid.uuid4().hex
+
     [id, status] = instance.query(
-        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='second' ASYNC"
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='{second_id}' ASYNC"
     ).split("\t")
 
-    assert id == "second"
+    assert id == second_id
     assert status == "RESTORING\n" or status == "RESTORED\n"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE id='second'",
+        f"SELECT status, error FROM system.backups WHERE id='{second_id}'",
         TSV([["RESTORED", ""]]),
     )
 
-    # Reuse the same ID again
-    instance.query("DROP TABLE test.table")
+    other_backup_name = new_backup_name()
 
-    [id, status] = instance.query(
-        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='first'"
-    ).split("\t")
+    # It is not allowed to use the same ID again.
+    expected_error = "there is another restore with the same ID"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {other_backup_name} SETTINGS id='{second_id}'"
+    )
 
-    assert id == "first"
-    assert status == "RESTORED\n"
+    # system.backups still keeps information about the previous operation.
+    assert instance.query(
+        f"SELECT status, error FROM system.backups WHERE id='{second_id}'"
+    ) == TSV([["RESTORED", ""]])
 
 
 def test_system_backups():
