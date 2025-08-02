@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBuffer.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -345,11 +346,6 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
-}
-
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
 }
 
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
@@ -734,9 +730,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     if (query.hasInlinedData() && !async_insert)
     {
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
-
-        for (auto & buffer : owned_buffers)
-            format->addBuffer(std::move(buffer));
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
