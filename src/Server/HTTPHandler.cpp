@@ -41,6 +41,7 @@
 #include <Poco/Net/HTTPMessage.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -963,6 +964,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
 
     std::string predefined_query = config.getString(config_prefix + ".handler.query");
+    boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
