@@ -1726,14 +1726,7 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            build_opts = subprocess.check_output(
-                f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                stderr=subprocess.STDOUT,
-                shell=True,
-            ).decode()
-            with_remote_database_disk = ("NDEBUG" not in build_opts) and (
-                "-fsanitize=address" in build_opts
-            )
+            with_remote_database_disk = True
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
