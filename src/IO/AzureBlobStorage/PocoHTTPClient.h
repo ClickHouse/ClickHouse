@@ -1,10 +1,10 @@
 #pragma once
 
+#include "Common/Histogram.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
@@ -110,7 +110,7 @@ private:
 
     AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
     void addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount = 1) const;
-    void addLatency(const std::string & method, AzureLatencyType type, LatencyBuckets::Count amount = 1) const;
+    void observeLatency(const std::string & method, AzureLatencyType type, Histogram::Value latency = 1) const;
 
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;

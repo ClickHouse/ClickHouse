@@ -737,13 +737,6 @@ metric_log:
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 
-# Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval.
-latency_log:
-    database: system
-    table: latency_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
-
 # Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
 error_log:
     database: system
