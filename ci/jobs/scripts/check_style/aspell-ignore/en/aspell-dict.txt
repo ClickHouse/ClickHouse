@@ -533,6 +533,7 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
+JetStream
 Jitter
 Joda
 JoinAlgorithm
