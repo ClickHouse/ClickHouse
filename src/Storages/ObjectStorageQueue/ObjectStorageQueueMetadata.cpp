@@ -639,13 +639,11 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             return;
         }
 
-        if (code == Coordination::Error::ZBADVERSION
+        if ((code == Coordination::Error::ZBADVERSION
             || code == Coordination::Error::ZNODEEXISTS
             || code == Coordination::Error::ZNONODE
-            || code == Coordination::Error::ZSESSIONEXPIRED)
+            || code == Coordination::Error::ZSESSIONEXPIRED) && (i < max_tries - 1))
         {
-            if (i == max_tries - 1)
-                zkutil::KeeperMultiException::check(code, requests, responses);
             continue;
         }
 
