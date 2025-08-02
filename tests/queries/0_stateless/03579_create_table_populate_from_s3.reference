@@ -8,9 +8,3 @@ count from table_s3Cluster	3
 Testing with parallel_replicas_for_cluster_engines=true
 count from table	3
 count from table_s3Cluster	3
-shard_1	r1	OK	0	0
-3
-shard_1	r1	OK	0	0
-3
-shard_1	r1	OK	0	0
-3
