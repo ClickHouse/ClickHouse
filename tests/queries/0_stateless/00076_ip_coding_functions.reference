@@ -94,3 +94,10 @@
 ::ffff:77.0.0.0
 ::ffff:127.0.0.0
 ::ffff:193.0.0.0
+LowCardinality
+01
+00000000000000000000FFFF00000001
+20010DB8AC10FE01FEEDBABECAFEF00D
+LowCardinality(Nullable)
+\N
+\N
