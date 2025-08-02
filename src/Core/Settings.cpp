@@ -4824,6 +4824,9 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
     DECLARE(Bool, apply_patch_parts, true, R"(
 If true, patch parts (that represent lightweight updates) are applied on SELECTs.
 )", 0) \
+    DECLARE(NonZeroUInt64, apply_patch_parts_join_cache_buckets, 8, R"(
+The number of buckets for the temporary cache for applying patch parts in Join mode.
+)", 0) \
     DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
 A mode for `ALTER` queries that have the `UPDATE` commands.
 
