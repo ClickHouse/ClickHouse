@@ -2,6 +2,9 @@
 
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
+
+#include <Common/typeid_cast.h>
+
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -46,15 +49,28 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
 [[noreturn]] void KernelUtils::throwError(ffi::EngineError * error, const std::string & from)
 {
-    auto * kernel_error = static_cast<KernelError *>(error);
-    auto error_message_copy = kernel_error->error_message;
-    auto etype_copy = kernel_error->etype;
-    delete kernel_error;
+    if (KernelError * kernel_error = typeid_cast<KernelError *>(error); kernel_error != nullptr)
+    {
+        auto error_message_copy = kernel_error->error_message;
+        auto etype_copy = kernel_error->etype;
+        delete kernel_error;
 
-    throw DB::Exception(
-        DB::ErrorCodes::DELTA_KERNEL_ERROR,
-        "Received DeltaLake kernel error {}: {} (in {})",
-        etype_copy, error_message_copy, from);
+        throw DB::Exception(
+            DB::ErrorCodes::DELTA_KERNEL_ERROR,
+            "Received DeltaLake kernel error {}: {} (in {})",
+            etype_copy, error_message_copy, from);
+    }
+    else
+    {
+        std::string error_type = typeid(*error).name();
+        size_t error_type_hash = typeid(*error).hash_code();
+        delete error;
+
+        throw DB::Exception(
+            DB::ErrorCodes::DELTA_KERNEL_ERROR,
+            "Received unknown error from DeltaLake kernel. (Pointer: {}, Type: {}, Hash: {}) (in {})",
+            reinterpret_cast<size_t>(error), error_type, error_type_hash, from);
+    }
 }
 
 std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
