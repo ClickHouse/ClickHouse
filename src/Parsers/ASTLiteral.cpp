@@ -98,6 +98,13 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         {
             writeQuoted(value.safeGet<String>(), ostr);
         }
+        else if (value.getType() == Field::Types::Bool)
+        {
+            /// Special handling for Bool literals to avoid column name collision
+            /// Bool values are stored as UInt64, but should generate "true"/"false" column names
+            bool bool_val = value.safeGet<UInt64>() != 0;
+            writeString(bool_val ? "true" : "false", ostr);
+        }
         else
         {
             String column_name = applyVisitor(FieldVisitorToString(), value);
