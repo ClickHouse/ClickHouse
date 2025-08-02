@@ -71,6 +71,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
+    bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
