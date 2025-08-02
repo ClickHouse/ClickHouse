@@ -430,10 +430,10 @@ Calculates the distance between two points on the Earth's surface using [the gre
     }
     {
         FunctionDocumentation::Description description = R"(
-Similar to `greatCircleDistance` but calculates the distance on WGS-84 ellipsoid instead of sphere. This is a more precise approximation of the Earth Geoid.
-The performance is the same as for `greatCircleDistance` (no performance drawback). It is recommended to use `geoDistance` to calculate the distances on Earth.
+Similar to the `greatCircleDistance` function but it calculates the distance on the WGS-84 ellipsoid, which is a more accurate representation of Earth's shape than a perfect sphere.
+It offers the same performance as for `greatCircleDistance` and it is therefore recommended to use `geoDistance` to calculate distances on Earth.
 
-Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
+Technical note: for close enough points it calculates the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
         )";
         FunctionDocumentation::Syntax syntax = "geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)";
         FunctionDocumentation::Arguments arguments = {
