@@ -24,6 +24,10 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints;
+
+        void serialize(WriteBuffer & out) const;
+        static ReadFromFormatInfo deserialize(ReadBuffer & in);
+
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     };

@@ -5,6 +5,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -114,6 +117,50 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     }
 
     return res;
+}
+
+void ReadFromFormatInfo::serialize(WriteBuffer & out) const
+{
+    source_header.getNamesAndTypesList().writeTextWithNamesInStorage(out);
+    format_header.getNamesAndTypesList().writeTextWithNamesInStorage(out);
+    writeStringBinary(columns_description.toString(), out);
+    requested_columns.writeTextWithNamesInStorage(out);
+    requested_virtual_columns.writeTextWithNamesInStorage(out);
+    serialization_hints.writeJSON(out);
+    out << "\n";
+}
+
+ReadFromFormatInfo ReadFromFormatInfo::deserialize(ReadBuffer & in)
+{
+    ReadFromFormatInfo result;
+
+    NamesAndTypesList source_header_names_and_type;
+    source_header_names_and_type.readTextWithNamesInStorage(in);
+    for (const auto & name_and_type : source_header_names_and_type)
+    {
+        ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
+        result.source_header.insert(elem);
+    }
+
+    NamesAndTypesList format_header_names_and_type;
+    format_header_names_and_type.readTextWithNamesInStorage(in);
+    for (const auto & name_and_type : format_header_names_and_type)
+    {
+        ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
+        result.format_header.insert(elem);
+    }
+
+    std::string columns_desc;
+    readStringBinary(columns_desc, in);
+    result.columns_description = ColumnsDescription::parse(columns_desc);
+    result.requested_columns.readTextWithNamesInStorage(in);
+    result.requested_virtual_columns.readTextWithNamesInStorage(in);
+    std::string json;
+    readString(json, in);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+    in >> "\n";
+
+    return result;
 }
 
 }
