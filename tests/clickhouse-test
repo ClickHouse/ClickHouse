@@ -23,7 +23,6 @@ import multiprocessing.sharedctypes
 import multiprocessing.synchronize
 import os
 import os.path
-import platform
 import random
 import re
 import shutil
@@ -42,7 +41,6 @@ from ast import literal_eval as make_tuple
 from contextlib import redirect_stdout, contextmanager
 from datetime import datetime, timedelta
 from errno import ESRCH
-from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -1428,7 +1426,7 @@ class TestCase:
                 if max_value and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
-    def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
+    def __init__(self, suite: "TestSuite", case: str, args):
         self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
@@ -1445,7 +1443,7 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
+        file_suffix = f".{os.getpid()}"
         self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -2490,6 +2488,7 @@ class TestSuite:
         # They will be run, and if they succeed, the status will be changed to FAIL to notify
         # that the changes in PR fixes this test.
         self.blacklist_check: List[str] = []
+        self.tests_with_timeout_queries = None
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
@@ -2651,7 +2650,7 @@ class GlobalTimeout(Exception):
 
 def run_tests_array(
     all_tests_with_params: Tuple[
-        List[str],
+        List[Union[str, TestCase]],
         int,
         TestSuite,
         bool,
@@ -2740,7 +2739,12 @@ def run_tests_array(
             stop_tests()
             raise GlobalTimeout("Stop tests run because global time limit is exceeded")
 
-        test_case = TestCase(test_suite, case, args, is_concurrent)
+        if isinstance(case, TestCase):
+            # TestCase object can be used if generated random settings are to be preserver across reruns
+            test_case = case
+        else:
+            # Will generate random test settings on instance creation
+            test_case = TestCase(test_suite, case, args)
 
         try:
             description = ""
@@ -2780,6 +2784,9 @@ def run_tests_array(
                 if not test_result or not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
+
+            if test_result.status == TestStatus.FAIL and test_result.reason in (FailureReason.STDERR, FailureReason.EXIT_CODE) and "DB::Exception: Timeout exceeded" in test_result.description:
+                test_suite.tests_with_timeout_queries.append(test_case)
 
             # First print the description, than invoke the check result logic
             description += test_result.description
@@ -3043,6 +3050,8 @@ def do_run_tests(
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
+    tests_to_rerun_sequential = []
+
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
         jobs = min(jobs, tests_n)
@@ -3119,12 +3128,30 @@ def do_run_tests(
                         )
                         runner_process_killed.set()
                     processes.remove(p)
+        if test_suite.tests_with_timeout_queries and any(opt in args.build_flags for opt in (BuildFlags.MEMORY, BuildFlags.ADDRESS, BuildFlags.THREAD, BuildFlags.UNDEFINED)):
+            # allow timeout failures for parallel runs with sanitizers
+            tests_to_rerun_sequential = list(test_suite.tests_with_timeout_queries)
 
     if test_suite.sequential_tests:
         run_tests_array(
             (
                 list(test_suite.sequential_tests),
                 len(test_suite.sequential_tests),
+                test_suite,
+                False,
+                args,
+                exit_code,
+                server_died,
+                restarted_tests,
+            )
+        )
+
+    if tests_to_rerun_sequential:
+        print(f"Sequential rerunning: [{tests_to_rerun_sequential}]")
+        run_tests_array(
+            (
+                tests_to_rerun_sequential,
+                len(tests_to_rerun_sequential),
                 test_suite,
                 False,
                 args,
@@ -3510,6 +3537,7 @@ def main(args):
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
         test_suite.blacklist_check = blacklist_check
+        test_suite.tests_with_timeout_queries = multiprocessing_manager.list()
         total_tests_run += do_run_tests(
             args.jobs,
             test_suite,
