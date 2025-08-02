@@ -84,16 +84,10 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     auto column = createColumn();
 
     if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
-    {
         return ColumnSparse::create(std::move(column));
-    }
 
     if (serialization.getKind() == ISerialization::Kind::LOW_CARDINALITY)
-    {
-        MutableColumnPtr indexes = ColumnUInt8::create();
-        MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*this);
-        return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
-    }
+        return createEmptyLowCardinalityColumn(*this);
 
     return column;
 }
@@ -104,7 +98,6 @@ ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
     column->insert(field);
     return ColumnConst::create(std::move(column), size);
 }
-
 
 ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 {
@@ -319,15 +312,13 @@ SerializationPtr IDataType::getSparseSerialization() const
 
 SerializationPtr IDataType::getLowCardinalitySerialization() const
 {
-    return std::make_shared<SerializationLowCardinality>(getPtr());
+    return std::make_shared<SerializationLowCardinality>(getPtr(), false);
 }
 
 SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
-
-    LOG_DEBUG(getLogger("KEK"), "getSerialization... type: {}, kind: {}", getName(), ISerialization::kindToString(kind));
 
     if (isStringOrFixedString(*this) && kind == ISerialization::Kind::LOW_CARDINALITY)
         return getLowCardinalitySerialization();

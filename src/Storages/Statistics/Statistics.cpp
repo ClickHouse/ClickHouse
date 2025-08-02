@@ -274,6 +274,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 StatisticsInfo ColumnStatistics::getInfo() const
 {
     StatisticsInfo info;
+    info.rows_count = rows;
 
     for (const auto & [type, _] : stats)
         info.types.insert(type);
@@ -353,6 +354,14 @@ void ColumnsStatistics::build(const Block & block)
         stat->build(block.getByName(column_name).column);
 }
 
+StatisticsInfos ColumnsStatistics::getInfos() const
+{
+    StatisticsInfos infos;
+    for (const auto & [column_name, stat] : *this)
+        infos.emplace(column_name, stat->getInfo());
+    return infos;
+}
+
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
 {
     if (!creators.emplace(stats_type, std::move(creator)).second)
@@ -404,16 +413,23 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    auto column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics);
+    return get(column_desc.statistics);
+}
 
-    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc) const
+{
+    auto column_stat = std::make_shared<ColumnStatistics>(stats_desc);
+
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
-        auto stat_ptr = (it->second)(desc, column_desc.type);
+
+        auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
+
     return column_stat;
 }
 

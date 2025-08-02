@@ -87,6 +87,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -569,8 +570,6 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column)
             : IDataType::getSerialization(column, *it->second);
-
-        LOG_DEBUG(getLogger("KEK"), "setColumns... column {} has serialization kind {}", column.name, ISerialization::kindToString(serialization->getKind()));
 
         serializations.emplace(column.name, serialization);
 
@@ -1742,10 +1741,12 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
+    auto storage_settings = storage.getSettings();
+
     SerializationInfo::Settings settings =
     {
-        .ratio_of_defaults_for_sparse = (*storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false,
+        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .number_of_uniq_for_low_cardinality = (*storage_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
     SerializationInfoByName infos;

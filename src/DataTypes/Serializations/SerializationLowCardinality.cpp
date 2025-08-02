@@ -35,9 +35,10 @@ namespace
     }
 }
 
-SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_)
+SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
      : dictionary_type(dictionary_type_)
      , dict_inner_serialization(removeNullable(dictionary_type_)->getDefaultSerialization())
+     , is_native_low_cardinality(is_native_low_cardinality_)
 {
 }
 

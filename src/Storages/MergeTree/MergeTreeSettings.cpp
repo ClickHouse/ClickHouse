@@ -193,6 +193,9 @@ namespace ErrorCodes
     └────────┴────────────────────┘
     ```
     )", 0) \
+    DECLARE(UInt64, max_uniq_number_for_low_cardinality, 20000, R"(
+    Maximal number of unique values in a column to use LowCardinality serialization.
+    )", 0) \
     DECLARE(Bool, use_statistics_for_serialization_info, false, R"(
     If enabled, statistics will be used to determine the serialization kind for columns.
     )", 0) \

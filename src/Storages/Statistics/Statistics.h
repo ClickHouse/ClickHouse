@@ -63,6 +63,7 @@ using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 struct StatisticsInfo
 {
     std::set<StatisticsType> types;
+    UInt64 rows_count = 0;
     std::optional<UInt64> estimated_cardinality;
     std::optional<UInt64> estimated_defaults;
 };
@@ -116,6 +117,7 @@ public:
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
     void build(const Block & block);
+    StatisticsInfos getInfos() const;
 
     static String getFileName(const String & column_name) { return column_name + STATS_FILE_SUFFIX; }
 };
@@ -132,7 +134,9 @@ public:
 
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

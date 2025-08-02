@@ -21,6 +21,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsInt64 max_compress_block_size;
     extern const MergeTreeSettingsBool statistics_compact_format;
+    extern const MergeTreeSettingsBool use_statistics_for_serialization_info;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -304,6 +305,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         checksums.files[filename].file_hash = out_hashing.getHash();
 
         out->preFinalize();
+        written_files.emplace_back(std::move(out));
     };
 
     auto write_hashed_file = [&](const String & filename, auto && writer)
@@ -381,9 +383,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const auto & serialization_infos = new_part->getSerializationInfos();
     if (!serialization_infos.empty())
     {
+        bool use_statistics_for_serialization_info = (*storage_settings)[MergeTreeSetting::use_statistics_for_serialization_info];
+
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer);
+            if (use_statistics_for_serialization_info)
+                serialization_infos.writeJSON(buffer);
+            else
+                serialization_infos.writeJSONWithStats(buffer, part_level_statistics.stats_for_serialization.getInfos());
         });
     }
 

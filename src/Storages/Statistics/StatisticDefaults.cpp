@@ -3,6 +3,8 @@
 #include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -17,7 +19,7 @@ void StatisticsDefaults::build(const ColumnPtr & column)
     size_t rows = column->size();
     double ratio = column->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
 
-    row_count += rows;
+    rows_count += rows;
     num_defaults += static_cast<size_t>(ratio * rows);
 }
 
@@ -25,18 +27,18 @@ void StatisticsDefaults::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsDefaults * other = typeid_cast<const StatisticsDefaults *>(other_stats.get());
     num_defaults += other->num_defaults;
-    row_count += other->row_count;
+    rows_count += other->rows_count;
 }
 
 void StatisticsDefaults::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(row_count, buf);
+    writeIntBinary(rows_count, buf);
     writeIntBinary(num_defaults, buf);
 }
 
 void StatisticsDefaults::deserialize(ReadBuffer & buf)
 {
-    readIntBinary(row_count, buf);
+    readIntBinary(rows_count, buf);
     readIntBinary(num_defaults, buf);
 }
 

@@ -80,6 +80,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -492,11 +493,12 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
+        auto storage_settings = source_part->storage.getSettings();
 
         SerializationInfo::Settings settings
         {
-            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false
+            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .number_of_uniq_for_low_cardinality = (*storage_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
         };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
@@ -1036,7 +1038,7 @@ void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        new_data_part->getSerializationInfos().writeJSONWithStats(out_hashing, {});
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -1755,8 +1757,8 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
-        PartLevelStatistics part_level_statistics;
-        part_level_statistics.addExplicitStats(stats_to_rewrite, false);
+        PartLevelStatistics part_level_statistics(true);
+        part_level_statistics.addExplicitStats(stats_to_rewrite);
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1994,8 +1996,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            PartLevelStatistics part_level_statistics;
-            part_level_statistics.addExplicitStats(ctx->stats_to_recalc, false);
+            PartLevelStatistics part_level_statistics(true);
+            part_level_statistics.addExplicitStats(ctx->stats_to_recalc);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,

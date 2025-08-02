@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <base/EnumReflection.h>
 
@@ -36,83 +38,14 @@ constexpr auto KEY_NAME = "name";
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
-{
-    size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
-    num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * rows);
-}
-
-void SerializationInfo::Data::add(const Data & other)
-{
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
-}
-
-void SerializationInfo::Data::remove(const Data & other)
-{
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
-}
-
-void SerializationInfo::Data::addDefaults(size_t length)
-{
-    num_rows += length;
-    num_defaults += length;
-}
-
 SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_)
-    : settings(settings_)
-    , kind(kind_)
+    : settings(settings_), kind(kind_)
 {
-}
-
-SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_)
-    : settings(settings_)
-    , kind(kind_)
-    , data(data_)
-{
-}
-
-void SerializationInfo::add(const IColumn & column)
-{
-    data.add(column);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
-void SerializationInfo::add(const SerializationInfo & other)
-{
-    data.add(other.data);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
-void SerializationInfo::remove(const SerializationInfo & other)
-{
-    data.remove(other.data);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
-
-void SerializationInfo::addDefaults(size_t length)
-{
-    data.addDefaults(length);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
-void SerializationInfo::replaceData(const SerializationInfo & other)
-{
-    data = other.data;
 }
 
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind, settings, data);
+    return std::make_shared<SerializationInfo>(kind, settings);
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -169,8 +102,13 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
     object.set(KEY_KIND, ISerialization::kindToString(kind));
-    object.set(KEY_NUM_DEFAULTS, data.num_defaults);
-    object.set(KEY_NUM_ROWS, data.num_rows);
+}
+
+void SerializationInfo::toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const
+{
+    object.set(KEY_KIND, ISerialization::kindToString(kind));
+    object.set(KEY_NUM_DEFAULTS, stats.estimated_defaults.value_or(0));
+    object.set(KEY_NUM_ROWS, stats.rows_count);
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -180,15 +118,9 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
             "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
-    data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
-    data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    // data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
+    // data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
     kind = ISerialization::stringToKind(object.getValue<String>(KEY_KIND));
-}
-
-ISerialization::Kind SerializationInfo::chooseKind(const Data & data, const Settings & settings)
-{
-    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
-    return ratio > settings.ratio_of_defaults_for_sparse ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
 }
 
 SerializationInfoByName::SerializationInfoByName(
@@ -203,42 +135,6 @@ SerializationInfoByName::SerializationInfoByName(
             emplace(column.name, column.type->createSerializationInfo(settings));
 }
 
-void SerializationInfoByName::add(const Block & block)
-{
-    for (const auto & column : block)
-    {
-        auto it = find(column.name);
-        if (it == end())
-            continue;
-
-        it->second->add(*column.column);
-    }
-}
-
-void SerializationInfoByName::add(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        add(name, *info);
-}
-
-void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->add(info);
-}
-
-void SerializationInfoByName::remove(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        remove(name, *info);
-}
-
-void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->remove(info);
-}
-
 SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
 {
     auto it = find(name);
@@ -251,36 +147,24 @@ MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
     return it == end() ? nullptr : it->second;
 }
 
-void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
-{
-    for (const auto & [name, new_info] : other)
-    {
-        auto & old_info = (*this)[name];
-
-        if (old_info)
-            old_info->replaceData(*new_info);
-        else
-            old_info = new_info->clone();
-    }
-}
-
 ISerialization::Kind SerializationInfoByName::getKind(const String & column_name) const
 {
     auto it = find(column_name);
     return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+template <typename ElementWriter>
+void SerializationInfoByName::writeJSONImpl(size_t version, WriteBuffer & out, ElementWriter && write_element) const
 {
     Poco::JSON::Object object;
-    object.set(KEY_VERSION, SERIALIZATION_INFO_VERSION);
+    object.set(KEY_VERSION, version);
 
     Poco::JSON::Array column_infos;
     for (const auto & [name, info] : *this)
     {
         Poco::JSON::Object info_json;
-        info->toJSON(info_json);
         info_json.set(KEY_NAME, name);
+        write_element(name, *info, info_json);
         column_infos.add(std::move(info_json)); /// NOLINT
     }
 
@@ -293,6 +177,28 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeString(oss.str(), out);
 }
 
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+{
+    writeJSONImpl(SERIALIZATION_INFO_VERSION_WITHOUT_STATS, out,
+        [&](const String &, const SerializationInfo & info, Poco::JSON::Object & info_json)
+        {
+            info.toJSON(info_json);
+        });
+}
+
+void SerializationInfoByName::writeJSONWithStats(WriteBuffer & out, const StatisticsInfos & stats) const
+{
+    writeJSONImpl(SERIALIZATION_INFO_VERSION_WITH_STATS, out,
+        [&](const String & name, const SerializationInfo & info, Poco::JSON::Object & info_json)
+        {
+            auto it = stats.find(name);
+            if (it == stats.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missed statistics for column {}", name);
+
+            info.toJSONWithStats(info_json, it->second);
+        });
+}
+
 SerializationInfoByName SerializationInfoByName::readJSONFromString(
     const NamesAndTypesList & columns, const Settings & settings, const std::string & json_str)
 {
@@ -302,10 +208,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION)
+    if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION_WITH_STATS)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Unknown version of serialization infos ({}). Should be less or equal than {}",
-            object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION);
+            object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION_WITH_STATS);
 
     SerializationInfoByName infos;
     if (object->has(KEY_COLUMNS))
@@ -387,6 +293,29 @@ SerializationInfoByName SerializationInfoByName::fromStatistics(const ColumnsSta
     }
 
     return infos;
+}
+
+ColumnsStatistics getImplicitStatisticsForSparseSerialization(const Block & block, const SerializationInfoSettings & settings)
+{
+    if (settings.ratio_of_defaults_for_sparse >= 1.0)
+        return {};
+
+    ColumnsStatistics statistics;
+    for (const auto & column : block)
+    {
+        if (!column.type->supportsSparseSerialization())
+            continue;
+
+        ColumnStatisticsDescription desc;
+        SingleStatisticsDescription stat_desc(StatisticsType::Defaults, nullptr);
+
+        desc.data_type = column.type;
+        desc.types_to_desc.emplace(StatisticsType::Defaults, std::move(stat_desc));
+
+        statistics.emplace(column.name, MergeTreeStatisticsFactory::instance().get(desc));
+    }
+
+    return statistics;
 }
 
 }

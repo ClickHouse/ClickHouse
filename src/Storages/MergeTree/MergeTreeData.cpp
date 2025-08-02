@@ -264,6 +264,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ServerSetting
@@ -9559,6 +9560,7 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 template <typename DataPartPtr>
 static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
 {
+    UNUSED(remove);
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
     {
@@ -9572,11 +9574,12 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
             continue;
 
         chassert(new_hint->structureEquals(*info));
-        if (remove)
-            new_hint->remove(*info);
-        else
-            new_hint->add(*info);
+        // if (remove)
+        //     new_hint->remove(*info);
+        // else
+        //     new_hint->add(*info);
     }
+
 }
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
@@ -9584,7 +9587,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     SerializationInfo::Settings settings =
     {
         .ratio_of_defaults_for_sparse = (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = true,
+        .number_of_uniq_for_low_cardinality = (*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -9848,7 +9851,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        PartLevelStatistics{},
+        PartLevelStatistics(/*need_update=*/ false),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,

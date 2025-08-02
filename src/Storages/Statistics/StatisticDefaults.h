@@ -19,10 +19,11 @@ public:
     void deserialize(ReadBuffer & buf) override;
 
     UInt64 estimateDefaults() const override;
+    UInt64 rowsCount() const { return rows_count; }
 
 private:
     UInt64 num_defaults = 0;
-    UInt64 row_count = 0;
+    UInt64 rows_count = 0;
 };
 
 void defaultsStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

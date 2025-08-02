@@ -126,7 +126,7 @@ void ReadFromFormatInfo::serialize(WriteBuffer & out) const
     writeStringBinary(columns_description.toString(), out);
     requested_columns.writeTextWithNamesInStorage(out);
     requested_virtual_columns.writeTextWithNamesInStorage(out);
-    serialization_hints.writeJSON(out);
+    serialization_hints.writeJSONWithStats(out, {});
     out << "\n";
 }
 

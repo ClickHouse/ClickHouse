@@ -17,35 +17,17 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
 }
 
-void PartLevelStatistics::addExplicitStats(ColumnsStatistics stats, bool need_build)
-{
-    explicit_stats = std::move(stats);
-    build_explicit_stats = need_build;
-}
-
-void PartLevelStatistics::addStatsForSerialization(ColumnsStatistics stats, bool need_build)
-{
-    stats_for_serialization = std::move(stats);
-    build_stats_for_serialization = need_build;
-}
-
-void PartLevelStatistics::addMinMaxIdx(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build)
-{
-    minmax_idx = std::move(idx);
-    build_minmax_idx = need_build;
-}
-
 void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr & metadata_snapshot)
 {
+    if (!need_update)
+        return;
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
 
-    if (build_minmax_idx)
-        explicit_stats.build(block);
+    explicit_stats.build(block);
+    stats_for_serialization.build(block);
 
-    if (build_stats_for_serialization)
-        stats_for_serialization.build(block);
-
-    if (build_minmax_idx)
+    if (minmax_idx)
         minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 }
 

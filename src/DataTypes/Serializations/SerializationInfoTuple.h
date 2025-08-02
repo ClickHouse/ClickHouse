@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Names.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -12,13 +13,6 @@ public:
 
     bool hasCustomSerialization() const override;
     bool structureEquals(const SerializationInfo & rhs) const override;
-
-    void add(const IColumn & column) override;
-    void add(const SerializationInfo & other) override;
-    void remove(const SerializationInfo & other) override;
-    void addDefaults(size_t length) override;
-    void replaceData(const SerializationInfo & other) override;
-
     MutableSerializationInfoPtr clone() const override;
 
     MutableSerializationInfoPtr createWithType(
@@ -30,6 +24,7 @@ public:
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
     void toJSON(Poco::JSON::Object & object) const override;
+    void toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }

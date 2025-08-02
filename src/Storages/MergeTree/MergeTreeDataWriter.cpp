@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool use_statistics_for_serialization_info;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -544,7 +545,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = block_with_partition.block;
     MergeTreePartition & partition = block_with_partition.partition;
-    PartLevelStatistics part_level_statistics;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
@@ -595,10 +595,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     MergeTreeIndices indices;
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-
-    ColumnsStatistics statistics;
-    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
-        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -717,11 +713,19 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings
+    ColumnsStatistics statistics;
+    ColumnsStatistics implicit_statistics;
+
+    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    {
+        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+        statistics.build(block);
+    }
+
+    SerializationInfo::Settings serialization_settings
     {
         .ratio_of_defaults_for_sparse = (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .number_of_uniq_for_low_cardinality = 20000,
-        .choose_kind = true
+        .number_of_uniq_for_low_cardinality = (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
     SerializationInfoByName infos;
@@ -729,18 +733,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     if (use_statistics_for_serialization_info)
     {
-        statistics.build(block);
-        infos = SerializationInfoByName::fromStatistics(statistics, settings);
+        infos = SerializationInfoByName::fromStatistics(statistics, serialization_settings);
     }
     else
     {
-        infos = SerializationInfoByName(columns, settings);
-        infos.add(block);
-    }
-
-    for (const auto & [column_name, info] : infos)
-    {
-        LOG_DEBUG(getLogger("KEK"), "column {} has serialization kind {}", column_name, ISerialization::kindToString(info->getKind()));
+        implicit_statistics = getImplicitStatisticsForSparseSerialization(block, serialization_settings);
+        implicit_statistics.build(block);
+        infos = SerializationInfoByName::fromStatistics(implicit_statistics, serialization_settings);
     }
 
     for (const auto & [column_name, _] : columns)
@@ -756,11 +755,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
         if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
         {
-            MutableColumnPtr indexes = ColumnUInt8::create();
-            MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*column.type);
-            auto column_lc = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
-            column_lc->insertRangeFromFullColumn(*column.column, 0, column.column->size());
-            column.column = std::move(column_lc);
+            auto new_column = createEmptyLowCardinalityColumn(*column.type);
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
+
+            column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
+            column.column = std::move(new_column);
         }
     }
 
@@ -823,9 +822,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
-    part_level_statistics.addExplicitStats(statistics, false);
-    // part_level_statistics.addStatsForSerialization(statistics, false);
-    part_level_statistics.addMinMaxIdx(minmax_idx, false);
+    PartLevelStatistics part_level_statistics(/*need_update=*/ false);
+    part_level_statistics.addExplicitStats(statistics);
+    part_level_statistics.addStatsForSerialization(implicit_statistics);
+    part_level_statistics.addMinMaxIdx(minmax_idx);
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -908,7 +908,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
     SerializationInfoByName infos(columns, settings);
-    infos.add(block);
+    // infos.add(block);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
@@ -990,7 +990,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        PartLevelStatistics{},
+        PartLevelStatistics(false),
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
