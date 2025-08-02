@@ -15,6 +15,7 @@
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/Exception.h>
+#include "QueryPipeline/QueryPipeline.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -172,6 +173,7 @@ private:
     void calculateBytesAllocated();
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void initRegexNodes(Block & block);
     void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);

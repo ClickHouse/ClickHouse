@@ -1,6 +1,8 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
+#include <Common/CurrentThread.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -16,6 +18,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -24,6 +27,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -114,7 +118,7 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     return query_builder->composeLoadAllQuery();
 }
 
-QueryPipeline ClickHouseDictionarySource::loadAll()
+BlockIO ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
@@ -122,19 +126,19 @@ QueryPipeline ClickHouseDictionarySource::loadAll()
 QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(load_update_query);
+    return createStreamForQuery(load_update_query).pipeline;
 }
 
 QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
+    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids)).pipeline;
 }
 
 
 QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(query);
+    return createStreamForQuery(query).pipeline;
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -161,9 +165,9 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query)
+BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
-    QueryPipeline pipeline;
+    BlockIO io;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
@@ -182,16 +186,26 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
-        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
+        /// If the load is triggered by the dictionary itself, the thread is not attached to any thread group.
+        /// And the thread has to be attached to a thread group
+        /// for data like profile counters or memory usage to be collected in QueryStatus.
+        if (!CurrentThread::getGroup())
+        {
+            io.query_scope_holder = std::make_unique<CurrentThread::QueryScope>(context_copy);
+        }
+
+        context_copy->setCurrentQueryId(fmt::format("ClickHouseDictionarySource::{}", getRandomASCIIString(16)));
+
+        io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
+        io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
-        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
+        io.pipeline = QueryPipeline(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
 
-    return pipeline;
+    return io;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const

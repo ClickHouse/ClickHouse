@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include "QueryPipeline/QueryPipeline.h"
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
@@ -151,6 +152,7 @@ private:
     void updateData();
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 

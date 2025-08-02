@@ -103,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-QueryPipeline ExecutableDictionarySource::loadAll()
+BlockIO ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -114,7 +114,9 @@ QueryPipeline ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
+    BlockIO io;
+    io.pipeline = QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
+    return io;
 }
 
 QueryPipeline ExecutableDictionarySource::loadUpdatedAll()

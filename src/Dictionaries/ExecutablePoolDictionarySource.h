@@ -41,7 +41,7 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.

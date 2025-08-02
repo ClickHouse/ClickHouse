@@ -30,7 +30,7 @@ public:
 
     YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other);
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override
     {

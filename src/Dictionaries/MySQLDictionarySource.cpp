@@ -235,10 +235,12 @@ QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings));
 }
 
-QueryPipeline MySQLDictionarySource::loadAll()
+BlockIO MySQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadFromQuery(load_all_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_all_query);
+    return io;
 }
 
 QueryPipeline MySQLDictionarySource::loadUpdatedAll()
