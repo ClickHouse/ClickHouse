@@ -13,6 +13,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticDefaults.h>
 #include <Storages/StatisticsDescription.h>
 
 
@@ -155,6 +156,11 @@ void ColumnsStatistics::deserialize(ReadBuffer & buf)
 UInt64 IStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
+}
+
+UInt64 IStatistics::estimateDefaults() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Defaults estimation is not implemented for this type of statistics");
 }
 
 Float64 IStatistics::estimateEqual(const Field & /*val*/) const
@@ -337,6 +343,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
+
+    registerValidator(StatisticsType::Defaults, defaultsStatisticsValidator);
+    registerCreator(StatisticsType::Defaults, defaultsStatisticsCreator);
 
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);

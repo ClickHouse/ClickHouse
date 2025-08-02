@@ -201,8 +201,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             read_task_info.patch_parts = read_task_info.alter_conversions->getPatchesForColumns(all_read_columns_list, reader_settings.apply_deleted_mask);
             bool added_ranges = ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
 
-            LOG_DEBUG(getLogger("KEK"), "part: {}, ranges: {}, added ranges: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.describe(), added_ranges);
-
             if (added_ranges)
             {
                 addPatchPartsColumns(

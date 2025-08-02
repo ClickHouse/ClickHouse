@@ -51,7 +51,9 @@ static StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+    if (type == "defaults")
+        return StatisticsType::Defaults;
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest', 'uniq' and 'defaults'.", type);
 }
 
 String SingleStatisticsDescription::getTypeName() const
@@ -66,6 +68,8 @@ String SingleStatisticsDescription::getTypeName() const
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
+        case StatisticsType::Defaults:
+            return "defaults";
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
     }

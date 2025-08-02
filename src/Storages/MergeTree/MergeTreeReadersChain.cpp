@@ -17,19 +17,6 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , patches_results(patch_readers.size())
     , is_initialized(true)
 {
-    LOG_DEBUG(getLogger("KEK"), "num readers: {}", range_readers.size());
-
-    for (const auto & reader : range_readers)
-    {
-        LOG_DEBUG(getLogger("KEK"), "reader columns: {}", reader.getReadSampleBlock().dumpNames());
-    }
-
-    LOG_DEBUG(getLogger("KEK"), "patch readers: {}", patch_readers.size());
-
-    for (const auto & reader : patch_readers)
-    {
-        LOG_DEBUG(getLogger("KEK"), "patch: {}", reader->getPatchPart().describe());
-    }
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const

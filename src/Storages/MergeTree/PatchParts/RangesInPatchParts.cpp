@@ -164,8 +164,6 @@ bool RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchP
     {
         auto patch_ranges = getRangesInPatchPart(original_part, patch_part, original_ranges);
 
-        LOG_DEBUG(getLogger("KEK"), "part: {}, patch: {}, patch_ranges: {}", original_part->name, patch_part.describe(), patch_ranges.describe());
-
         if (!patch_ranges.empty())
         {
             added_ranges = true;

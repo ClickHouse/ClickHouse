@@ -44,6 +44,7 @@ public:
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
+    virtual UInt64 estimateDefaults() const;
 
     /// Per-value estimations.
     /// Throws if the statistics object is not able to do a meaningful estimation.
