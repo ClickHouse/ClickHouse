@@ -155,6 +155,8 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
+    # Using 5 jobs for builds with ASan leads to OOMs
+    jobs = 4 if "asan" in check_name else 5
     run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
     run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
@@ -226,7 +228,7 @@ def main():
     )
 
     try:
-        runner.run()
+        runner.run(jobs)
     except Exception as e:
         logging.error("Exception: %s", e)
         state, description, test_results, additional_logs = ERROR, "infrastructure error", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
