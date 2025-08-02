@@ -264,16 +264,18 @@ class FTResultsProcessor:
             with_info_from_results=False,
         )
 
-        if not result.is_ok():
-            order = {
-                "FAIL": 0,
-                "SERVER_DIED": 1,
-                "Timeout": 2,
-                "NOT_FAILED": 3,
-                "BROKEN": 4,
-                "OK": 5,
-                "SKIPPED": 6,
-            }
-            result.results.sort(key=lambda x: order.get(x.status, -1))
-
         return result
+
+    @staticmethod
+    def sort_by_status(results: List[Result]):
+        order = {
+            "FAIL": 0,
+            "SERVER_DIED": 1,
+            "Timeout": 2,
+            "NOT_FAILED": 3,
+            "BROKEN": 4,
+            "OK": 5,
+            "SKIPPED": 6,
+        }
+        results.sort(key=lambda x: order.get(x.status, -1))
+        return results

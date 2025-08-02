@@ -417,6 +417,8 @@ def main():
         results[-1].results = []
         if not results[-1].is_ok():
             results[-1].set_info("Found errors added into Tests results")
+        if not test_result.is_ok():
+            FTResultsProcessor.sort_by_status(test_result.results)
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
