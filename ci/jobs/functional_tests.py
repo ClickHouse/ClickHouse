@@ -1,9 +1,9 @@
 import argparse
 import os
+import random
 import re
 import time
 from pathlib import Path
-import random
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
