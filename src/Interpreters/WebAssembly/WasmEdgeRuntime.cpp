@@ -30,7 +30,7 @@
 
 namespace ProfileEvents
 {
-extern const Event WasmExecuteMicroseconds;
+extern const Event WasmGuestExecuteMicroseconds;
 }
 
 namespace DB::ErrorCodes
@@ -507,7 +507,7 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
     {
         last_exception.reset();
 
-        ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmExecuteMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmGuestExecuteMicroseconds);
         WasmEdge_Result result = WasmEdge_VMExecute(
             vm_cxt.get(),
             wasmedgeStringWrap(function_name),

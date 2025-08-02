@@ -1095,7 +1095,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
     \
-    M(WasmExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmSerializationMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmDeserializationMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmGuestExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmTotalExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
     M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \

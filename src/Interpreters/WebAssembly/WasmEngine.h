@@ -17,6 +17,8 @@ class WasmHostFunction;
 class WasmCompartment
 {
 public:
+    WasmCompartment();
+
     virtual ~WasmCompartment() = default;
 
     virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;

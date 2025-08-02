@@ -671,7 +671,7 @@ if (TARGET ch_contrib::google_cloud_cpp)
 endif()
 
 if (TARGET ch_contrib::delta_kernel_rs)
-    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+    dbms_target_link_libraries(PRIVATE ch_contrib::delta_kernel_rs)
 endif ()
 
 if (TARGET ch_contrib::sha3iuf)
@@ -683,7 +683,7 @@ if (ENABLE_BUZZHOUSE)
 endif()
 
 if (TARGET ch_contrib::wasmedge)
-    dbms_target_link_libraries(PUBLIC ch_contrib::wasmedge)
+    dbms_target_link_libraries(PRIVATE ch_contrib::wasmedge)
 endif()
 
 if (TARGET ch_contrib::wasmtime)

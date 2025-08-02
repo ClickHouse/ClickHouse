@@ -1,14 +1,26 @@
 #include <Interpreters/WebAssembly/WasmEngine.h>
 #include <Common/Exception.h>
-
+#include <Common/ProfileEvents.h>
 
 namespace DB::ErrorCodes
 {
 extern const int WASM_ERROR;
 }
 
+
+namespace ProfileEvents
+{
+extern const Event WasmModuleInstatiate;
+}
+
 namespace DB::WebAssembly
 {
+
+
+WasmCompartment::WasmCompartment()
+{
+    ProfileEvents::increment(ProfileEvents::WasmModuleInstatiate);
+}
 
 template <typename ResultType>
 ResultType WasmCompartment::invoke(std::string_view function_name, const std::vector<WasmVal> & params)

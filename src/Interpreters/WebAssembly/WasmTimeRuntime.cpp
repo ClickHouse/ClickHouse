@@ -21,13 +21,14 @@
 
 namespace ProfileEvents
 {
-extern const Event WasmExecuteMicroseconds;
+extern const Event WasmGuestExecuteMicroseconds;
+extern const Event WasmModuleInstatiate;
 }
 
 namespace DB::ErrorCodes
 {
-extern const int WASM_ERROR;
-extern const int LOGICAL_ERROR;
+    extern const int WASM_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::WebAssembly
@@ -240,7 +241,7 @@ public:
         {
             last_exception.reset();
 
-            ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmExecuteMicroseconds);
+            ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmGuestExecuteMicroseconds);
             auto call_results = wasm_func.call(store, params_values);
 
             if (last_exception)

@@ -33,10 +33,20 @@
 #include <fmt/ranges.h>
 #include <Poco/String.h>
 #include <Common/transformEndianness.h>
+#include <Columns/ColumnString.h>
 
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+
+namespace ProfileEvents
+{
+extern const Event WasmTotalExecuteMicroseconds;
+extern const Event WasmSerializationMicroseconds;
+extern const Event WasmDeserializationMicroseconds;
+}
 
 
 namespace DB
@@ -167,6 +177,8 @@ public:
     MutableColumnPtr
     executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr, size_t num_rows) const override
     {
+        ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
+
         auto get_column_element = []<typename T>(const IColumn * column, size_t row_idx, WasmVal & val)
         {
             if (auto * column_typed = checkAndGetColumn<ColumnVector<T>>(column))
@@ -300,6 +312,8 @@ public:
     MutableColumnPtr
     executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows) const override
     {
+        ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
+
         String format_name = settings.getValue("serialization_format").safeGet<String>();
 
         if (num_rows == 0)
@@ -312,6 +326,7 @@ public:
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
         {
+            ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
             WriteBufferFromOwnString buf;
             auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
             formatBlock(out, block);
@@ -337,6 +352,8 @@ public:
         WasmMemoryGuard result(wmm.get(), result_ptr);
         auto result_data = result.getMemoryView();
         ReadBufferFromMemory inbuf(result_data.data(), result_data.size());
+
+        ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
         Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
         auto pipeline = QueryPipeline(
