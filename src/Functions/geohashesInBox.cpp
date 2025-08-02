@@ -186,7 +186,7 @@ Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded str
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
 :::
 
-This function throws an exception if the size of theresulting array exceeds more than 10,000,000 items.
+This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
     )";
     FunctionDocumentation::Syntax syntax = "geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)";
     FunctionDocumentation::Arguments arguments = {
@@ -197,7 +197,7 @@ This function throws an exception if the size of theresulting array exceeds more
         {"precision", "Geohash precision. Range: `[1, 12]`.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum latitude and longitude values aren't less than the corresponding maximum values.",
+        "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum longitude and latitude values aren't less than the corresponding maximum values.",
         {"Array(String)"}
     };
     FunctionDocumentation::Examples examples = {

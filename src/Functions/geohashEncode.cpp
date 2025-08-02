@@ -113,7 +113,7 @@ private:
 REGISTER_FUNCTION(GeohashEncode)
 {
     FunctionDocumentation::Description description = R"(
-Encodes latitude and longitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
+Encodes longitude and latitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
 
 :::
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
