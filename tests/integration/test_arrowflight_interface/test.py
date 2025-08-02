@@ -34,6 +34,7 @@ def get_client():
 def start_cluster():
     try:
         cluster.start()
+        node.wait_until_port_is_ready(8888, timeout=10)
         yield cluster
     finally:
         cluster.shutdown()

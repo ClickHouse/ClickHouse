@@ -4754,15 +4754,21 @@ class ClickHouseInstance:
         self.get_docker_handle().start()
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
+        # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
+        self.wait_until_port_is_ready(9000, timeout=start_timeout, connection_timeout=connection_timeout)
+        self.is_up = True
+
+    # Waits until a specified port is ready for connections.
+    def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
         handle = self.get_docker_handle()
 
-        if start_timeout is None or start_timeout <= 0:
-            raise Exception("Invalid timeout: {}".format(start_timeout))
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
 
-        if connection_timeout is not None and connection_timeout < start_timeout:
+        if connection_timeout is not None and connection_timeout < timeout:
             raise Exception(
-                "Connection timeout {} should be grater then start timeout {}".format(
-                    connection_timeout, start_timeout
+                "Connection timeout {} should be greater then start timeout {}".format(
+                    connection_timeout, timeout
                 )
             )
 
@@ -4787,7 +4793,7 @@ class ClickHouseInstance:
                     f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
-            deadline = start_time + start_timeout
+            deadline = start_time + timeout
             # It is possible that server starts slowly.
             # If container is running, and there is some progress in log, check connection_timeout.
             if connection_timeout and status == "running" and has_new_rows_in_log():
@@ -4800,15 +4806,13 @@ class ClickHouseInstance:
                     f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
-            socket_timeout = min(start_timeout, deadline - current_time)
+            socket_timeout = min(timeout, deadline - current_time)
 
             # Repeatedly poll the instance address until there is something that listens there.
-            # Usually it means that ClickHouse is ready to accept queries.
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(socket_timeout)
-                sock.connect((self.ip_address, 9000))
-                self.is_up = True
+                sock.connect((self.ip_address, port))
                 return
             except socket.timeout:
                 continue
