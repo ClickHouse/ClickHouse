@@ -397,13 +397,13 @@ def read_file_as_binary_string(file_path):
 
 
 # First and last lines of the log
-def trim_for_log(s):
+def trim_for_log(s, limit=10000):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
+    if len(lines) > limit:
+        separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
+        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
     return "\n".join(lines)
 
 
@@ -543,23 +543,34 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 
 def kill_process_group(pgid, fatal_log):
-    print(f"Killing process group {pgid}")
-    print(f"Processes in process group {pgid}:")
-    print(
-        subprocess.check_output(
-            f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8"),
-        end="",
-    )
     try:
+        print(f"Processes left in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
+        if SANITIZED:
+            print("Wait 60 seconds to let sanitizers print the report...")
+            sleep(60)
+
+        print(f"Killing process group {pgid}")
+        print(f"Processes in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            # Wait some time for clickhouse utilities to gather stacktrace
-            if RELEASE_NON_SANITIZED:
-                sleep(0.5)
-            else:
-                sleep(10)
+            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
+            sleep(stacktrace_delay)
 
             # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
             client_printed_stacktrace = False
@@ -1680,7 +1691,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[-100:])
+            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -1760,7 +1771,7 @@ class TestCase:
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
         ):
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -2902,6 +2913,8 @@ class BuildFlags:
 
 # Release and non-sanitizer build
 RELEASE_NON_SANITIZED = False
+# Build with any sanitizer
+SANITIZED = False
 
 
 def collect_build_flags(args):
@@ -2914,12 +2927,16 @@ def collect_build_flags(args):
     )
     if b"-fsanitize=thread" in value:
         result.append(BuildFlags.THREAD)
+        SANITIZED = True
     elif b"-fsanitize=address" in value:
         result.append(BuildFlags.ADDRESS)
+        SANITIZED = True
     elif b"-fsanitize=undefined" in value:
         result.append(BuildFlags.UNDEFINED)
+        SANITIZED = True
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+        SANITIZED = True
     elif b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
