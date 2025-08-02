@@ -14,6 +14,8 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <Common/TargetSpecific.h>
+
 
 namespace DB
 {
@@ -141,8 +143,13 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     }
 }
 
-template <size_t copy_size>
-static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+namespace
+{
+
+MULTITARGET_FUNCTION_AVX512F_AVX(
+MULTITARGET_FUNCTION_HEADER(template <size_t copy_size> static void),
+deserializeBinaryImpl,
+MULTITARGET_FUNCTION_BODY((ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit) /// NOLINT
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
@@ -199,6 +206,8 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
     }
 
     data.resize_exact(offset);
+}))
+
 }
 
 
@@ -246,14 +255,43 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 
     offsets.reserve(offsets.size() + limit);
 
-    if (avg_chars_size >= 64)
-        deserializeBinaryImpl<64>(data, offsets, istr, limit);
-    else if (avg_chars_size >= 48)
-        deserializeBinaryImpl<48>(data, offsets, istr, limit);
-    else if (avg_chars_size >= 32)
-        deserializeBinaryImpl<32>(data, offsets, istr, limit);
-    else
-        deserializeBinaryImpl<16>(data, offsets, istr, limit);
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512F))
+    {
+        if (avg_chars_size >= 64)
+            deserializeBinaryImplAVX512F<64>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 48)
+            deserializeBinaryImplAVX512F<48>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 32)
+            deserializeBinaryImplAVX512F<32>(data, offsets, istr, limit);
+        else
+            deserializeBinaryImplAVX512F<16>(data, offsets, istr, limit);
+        return;
+    }
+
+    if (isArchSupported(TargetArch::AVX))
+    {
+        if (avg_chars_size >= 64)
+            deserializeBinaryImplAVX<64>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 48)
+            deserializeBinaryImplAVX<48>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 32)
+            deserializeBinaryImplAVX<32>(data, offsets, istr, limit);
+        else
+            deserializeBinaryImplAVX<16>(data, offsets, istr, limit);
+        return;
+    }
+#endif
+    {
+        if (avg_chars_size >= 64)
+            deserializeBinaryImpl<64>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 48)
+            deserializeBinaryImpl<48>(data, offsets, istr, limit);
+        else if (avg_chars_size >= 32)
+            deserializeBinaryImpl<32>(data, offsets, istr, limit);
+        else
+            deserializeBinaryImpl<16>(data, offsets, istr, limit);
+    }
 }
 
 

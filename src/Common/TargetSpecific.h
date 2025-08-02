@@ -109,7 +109,7 @@ String toString(TargetArch arch);
 #define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw")))
 #define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f")))
 #define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2")))
-#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx"))
+#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx")))
 #define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt")))
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
@@ -349,6 +349,25 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     FUNCTION_BODY \
 
 /// NOLINTNEXTLINE
+#define MULTITARGET_FUNCTION_AVX512F_AVX(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX512F \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    AVX_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+/// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
@@ -388,6 +407,11 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
+#define MULTITARGET_FUNCTION_AVX512F_AVX(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
 
 /// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
