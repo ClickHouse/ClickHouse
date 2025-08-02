@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -933,6 +934,9 @@ Block materializeBlock(const Block & block)
     {
         auto & element = res.getByPosition(i);
         element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
+
+        if (element.column->lowCardinality() && !element.type->lowCardinality())
+            element.column = recursiveRemoveLowCardinality(element.column);
     }
 
     return res;
