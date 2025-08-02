@@ -735,7 +735,7 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 
 
 SummingSortedAlgorithm::SummingSortedAlgorithm(
-    SharedHeader header_,
+    const Block & header_,
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
@@ -756,7 +756,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeConstAndSparse(inputs);
-    merged_data.initialize(*header, inputs);
+    merged_data.initialize(header, inputs);
 
     for (auto & input : inputs)
         if (input.chunk)

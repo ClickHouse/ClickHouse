@@ -13,7 +13,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <IO/NullWriteBuffer.h>
 
 namespace DB
 {
@@ -129,7 +128,6 @@ void MergeTreeDataPartWriterWide::addStreams(
     const ColumnPtr & column,
     const ASTPtr & effective_codec_desc)
 {
-    std::optional<String> prev_stream_name;
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
@@ -165,12 +163,6 @@ void MergeTreeDataPartWriterWide::addStreams(
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-
-        /// If previous stream is not null it means it was Array offsets stream.
-        /// Can't apply lossy compression for offsets.
-        if (prev_stream_name && *prev_stream_name != stream_name && column_streams[*prev_stream_name]->compressor.getCodec()->isLossyCompression())
-            column_streams[*prev_stream_name]->compressor.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
-        prev_stream_name = stream_name;
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -235,7 +227,6 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
 
-
         return &column_streams.at(stream_name)->compressed_hashing;
     };
 }
@@ -279,8 +270,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     /// In this case we use dynamic structure of the column from the first written block and adjust columns from
     /// the next blocks so they match this dynamic structure.
     initOrAdjustDynamicStructureIfNeeded(block_to_write);
-
-    initColumnsSubstreamsIfNeeded(block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -458,25 +447,8 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
-        /// require specifying the array dimensions before compression starts.
-        /// For 1D arrays, it's simply the length.
-        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
-        setVectorDimensionsIfNeeded(compression_codec, &column);
-
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());
-}
-
-ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSerializationSettings() const
-{
-    ISerialization::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
-    serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
-    serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
-    return serialize_settings;
 }
 
 /// Column must not be empty. (column.size() !== 0)
@@ -496,13 +468,18 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     if (inserted)
     {
-        auto serialize_settings = getSerializationSettings();
+        ISerialization::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+        serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
 
-    auto serialize_settings = getSerializationSettings();
+    ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
 
     for (const auto & granule : granules)
     {
@@ -691,7 +668,10 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
 void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove)
 {
-    auto serialize_settings = getSerializationSettings();
+    ISerialization::SerializeBinaryBulkSettings serialize_settings;
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
@@ -714,6 +694,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(*it, written_offset_columns ? *written_offset_columns : offset_columns);
+                serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
                 getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
@@ -893,31 +874,6 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
             /// Without offset
             rows_written_in_last_mark = 0;
         }
-    }
-}
-
-void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & block)
-{
-    if (columns_substreams.getTotalSubstreams())
-        return;
-
-    NullWriteBuffer buf;
-    auto serialize_settings = getSerializationSettings();
-    for (const auto & name_and_type : columns_list)
-    {
-        columns_substreams.addColumn(name_and_type.name);
-        serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
-            return &buf;
-        };
-
-        ISerialization::SerializeBinaryBulkStatePtr state;
-        auto serialization = getSerialization(name_and_type.name);
-        const auto & column = block.getByName(name_and_type.name);
-        serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
-        serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
 }
 

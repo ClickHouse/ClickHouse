@@ -71,7 +71,6 @@ private:
         bool allow_virtuals,
         bool allow_materialized);
 
-    LoggerPtr logger;
     ASTPtr query_ptr;
     const bool allow_materialized;
     bool no_squash = false;
@@ -90,9 +89,6 @@ private:
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
-
-    // if applicable, build pipeline for replicated MergeTree from cluster storage
-    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }

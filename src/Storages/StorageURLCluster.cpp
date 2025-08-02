@@ -1,4 +1,4 @@
-#include <Interpreters/Context_fwd.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
@@ -11,7 +11,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -115,23 +114,11 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     );
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * /* filter */,
-    const ContextPtr & context,
-    size_t) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
-
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
-    {
-        auto url = iter->next();
-        if (url.empty())
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)](size_t) mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

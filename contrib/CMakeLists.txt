@@ -242,30 +242,13 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 
 add_contrib (numactl-cmake numactl)
 
-# Google Cloud Cpp
-if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
-    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
-else()
-    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
-endif()
-option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
-if(ENABLE_GOOGLE_CLOUD_CPP)
-    add_contrib (nlohmann-json-cmake nlohmann-json)
-    add_contrib (crc32c-cmake crc32c)
-    add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
-else()
-    message(STATUS "Not using Google Cloud Cpp")
-endif()
+add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
-add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
-
 add_contrib (bech32)
-
-add_contrib (sz3-cmake sz3)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
