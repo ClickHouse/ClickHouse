@@ -368,7 +368,14 @@ def main():
         results.append(ft_res_processor.run())
         debug_files += ft_res_processor.debug_files
         test_result = results[-1]
+
+        test_result.set_timing(stopwatch=stop_watch_)
+        if test_result.info:
+            job_info = test_result.info
+            test_result.info = ""
+
         if ft_res_processor.summary and ft_res_processor.summary.retried_tests:
+            print("Retried tests found - add into the report into the separate tab")
             results.append(
                 Result(
                     name="Retried tests",
@@ -391,12 +398,7 @@ def main():
             else:
                 results[-1].set_success()
 
-        results[-1].set_timing(stopwatch=stop_watch_)
-        if results[-1].info:
-            job_info = results[-1].info
-            results[-1].info = ""
-
-        res = results[-1].is_ok()
+        res = test_result.is_ok()
 
     CH.terminate()
 

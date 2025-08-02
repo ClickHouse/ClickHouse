@@ -148,14 +148,13 @@ class FTResultsProcessor:
                     # If a test were rerun in a non-flaky-check run - it's a valid retry.
                     # Replace old result with a new one.
                     if test_name in test_names:
-                        retried_tests.append(test_name)
                         index = next(
                             i
                             for i, x in enumerate(test_results_)
                             if x.name == test_name
                         )
-                        retried_tests.append(test_results_[index])
                         res = test_results_.pop(index)
+                        retried_tests.append(res)
                         assert res.status == Result.StatusExtended.FAIL
                     else:
                         test_names.add(test_name)
