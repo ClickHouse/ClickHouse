@@ -576,7 +576,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
     {
         if (auto * alias_storage = dynamic_cast<StorageAlias *>(storage.get()))
-            storage = alias_storage->getRefStorage(context);
+            storage = alias_storage->getReferenceTable(context);
 
         if (storage->updateExternalDynamicMetadataIfExists(context))
         {

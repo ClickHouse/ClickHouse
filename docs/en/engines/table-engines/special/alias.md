@@ -16,11 +16,14 @@ The Alias table engine is a reference to another table.
 ENGINE = Alias(database_name.table_name)
 -- or
 ENGINE = Alias(database_name, table_name)
+-- or
+ENGINE = Alias(UUID)
 ```
 
-The `database_name` and `table_name` parameters specify the database and the name of the referenced table.
+- The `database_name` and `table_name` parameters specify the database and the name of the referenced table.
+- The `UUID` parameter specifies the UUID of the referenced table.
 
-Don't need to specify the table schema of the alias table. If you want to specify the table schema, it should be totally the same (including field names) as the referenced table.
+The table schema definition is prohibited for Alias table as it should always be the same as the reference table.
 
 ## Example {#example}
 
@@ -28,7 +31,8 @@ Don't need to specify the table schema of the alias table. If you want to specif
 
 ```sql
 create table ref_table (id UInt32, name String) Engine=MergeTree order by id;
-create table alias_table Engine=Alias(default, ref_table);
+create table alias_table Engine=Alias(default.ref_table);
+create table alias_table_with_uuid Engine=Alias('5a39dc94-7b13-432a-b96e-b92cb12957d3');
 ```
 
 **2.** Insert data into `ref_table` or `alias_table`:
@@ -44,12 +48,6 @@ insert into alias_table values (4, 'four');
 select * from alias_table order by id;
 ```
 
-```text
-
-```
-
 ## Details of Implementation {#details-of-implementation}
 
-The storage is replaced with the storage of the referenced table after getting the table from the in-memory database catalog. For example: in the table-resolving phase of the planner (when `allow_experimental_analyzer=1`) or in the constructor of an interpreter (when `allow_experimental_analyzer=0`).
-
-Currently, it only supports `SELECT` and `INSERT` queries. Other operations like `ALTER` is not supported.
+The storage is replaced with the storage of the referenced table after getting the table from the in-memory database catalog. For example: in the table-resolving phase of the planner (when `enable_analyzer=1`) or in the constructor of an interpreter (when `enable_analyzer=0`).
