@@ -44,7 +44,7 @@ protected:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
-    const char * getNonClusteredAnalogueStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
+    const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
     bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
     bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }

@@ -47,7 +47,7 @@ protected:
         const std::string & table_name, const String & compression_method_, bool) const override;
 
     const char * getStorageEngineName() const override { return "URLCluster"; }
-    const char * getNonClusteredAnalogueStorageEngineName() const override { return "URL"; }
+    const char * getNonClusteredStorageEngineName() const override { return "URL"; }
 };
 
 }

@@ -105,7 +105,7 @@ private:
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
-    virtual const char * getNonClusteredAnalogueStorageEngineName() const;
+    virtual const char * getNonClusteredStorageEngineName() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

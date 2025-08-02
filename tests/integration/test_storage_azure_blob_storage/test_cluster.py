@@ -344,6 +344,7 @@ def test_azure_with_rbac(cluster):
     node = cluster.instances["node_0"]
     storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
 
+    node.query("DROP USER IF EXISTS azure_user")
     node.query("CREATE USER azure_user IDENTIFIED WITH NO_PASSWORD")
     node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO azure_user")
 

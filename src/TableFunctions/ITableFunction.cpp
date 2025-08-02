@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-const char * ITableFunction::getNonClusteredAnalogueStorageEngineName() const
+const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
@@ -28,7 +28,7 @@ const char * ITableFunction::getNonClusteredAnalogueStorageEngineName() const
 std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
 {
     if (isClusterFunction())
-        return StorageFactory::instance().getSourceAccessObject(getNonClusteredAnalogueStorageEngineName());
+        return StorageFactory::instance().getSourceAccessObject(getNonClusteredStorageEngineName());
     return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
 }
 
