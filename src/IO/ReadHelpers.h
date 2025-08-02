@@ -2316,6 +2316,9 @@ bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON &
 void readTSVField(String & s, ReadBuffer & buf);
 void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
+String escapeDotInJSONKey(const String & key);
+String unescapeDotInJSONKey(const String & key);
+
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol
   */

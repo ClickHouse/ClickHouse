@@ -58,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
