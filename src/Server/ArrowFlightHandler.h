@@ -30,6 +30,7 @@
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -98,6 +99,7 @@ private:
     LoggerPtr log;
     arrow::flight::Location location;
     const Poco::Net::SocketAddress address_to_listen;
+    std::optional<ThreadFromGlobalPool> server_thread;
 
     virtual std::unique_ptr<Session> createSession(const arrow::flight::ServerCallContext & context);
 };
