@@ -2,11 +2,16 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
@@ -14,7 +19,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-
 #include <DataTypes/Serializations/SerializationDetached.h>
 
 namespace DB
@@ -78,8 +82,18 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto column = createColumn();
+
     if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
+    {
         return ColumnSparse::create(std::move(column));
+    }
+
+    if (serialization.getKind() == ISerialization::Kind::LOW_CARDINALITY)
+    {
+        MutableColumnPtr indexes = ColumnUInt8::create();
+        MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*this);
+        return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+    }
 
     return column;
 }
@@ -303,10 +317,20 @@ SerializationPtr IDataType::getSparseSerialization() const
     return std::make_shared<SerializationSparse>(getDefaultSerialization());
 }
 
+SerializationPtr IDataType::getLowCardinalitySerialization() const
+{
+    return std::make_shared<SerializationLowCardinality>(getPtr());
+}
+
 SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
+
+    LOG_DEBUG(getLogger("KEK"), "getSerialization... type: {}, kind: {}", getName(), ISerialization::kindToString(kind));
+
+    if (isStringOrFixedString(*this) && kind == ISerialization::Kind::LOW_CARDINALITY)
+        return getLowCardinalitySerialization();
 
     if (kind == ISerialization::Kind::DETACHED)
         return std::make_shared<SerializationDetached>(getDefaultSerialization());

@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Columns/ColumnSparse.h>
@@ -12,6 +13,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -353,22 +355,35 @@ SerializationInfoByName SerializationInfoByName::fromStatistics(const ColumnsSta
     for (const auto & [column_name, column_stats] : statistics)
     {
         size_t num_rows = column_stats->rowCount();
-        ISerialization::Kind kind = ISerialization::Kind::DEFAULT;
 
         const auto & desc = column_stats->getDescription();
         const auto & stats = column_stats->getStats();
+        auto non_nullable_type = removeNullable(desc.data_type);
 
         if (desc.data_type->supportsSparseSerialization() && stats.contains(StatisticsType::Defaults))
         {
-            size_t num_defaults = column_stats->estimateDefaults();
+            size_t num_defaults = stats.at(StatisticsType::Defaults)->estimateDefaults();
             double ratio = static_cast<double>(num_defaults) / num_rows;
 
             if (ratio > settings.ratio_of_defaults_for_sparse)
-                kind = ISerialization::Kind::SPARSE;
+            {
+                infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::SPARSE, settings));
+                continue;
+            }
         }
 
-        if (kind != ISerialization::Kind::DEFAULT)
-            infos.emplace(column_name, std::make_shared<SerializationInfo>(kind, settings));
+        if (isStringOrFixedString(non_nullable_type) && stats.contains(StatisticsType::Uniq))
+        {
+            size_t cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+
+            if (cardinality < settings.number_of_uniq_for_low_cardinality)
+            {
+                infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::LOW_CARDINALITY, settings));
+                continue;
+            }
+        }
+
+        infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings));
     }
 
     return infos;

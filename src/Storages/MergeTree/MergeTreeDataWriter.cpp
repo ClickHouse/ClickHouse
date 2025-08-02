@@ -717,10 +717,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    bool use_statistics_for_serialization_info = (*data_settings)[MergeTreeSetting::use_statistics_for_serialization_info];
-    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings
+    {
+        .ratio_of_defaults_for_sparse = (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .number_of_uniq_for_low_cardinality = 20000,
+        .choose_kind = true
+    };
 
     SerializationInfoByName infos;
+    bool use_statistics_for_serialization_info = (*data_settings)[MergeTreeSetting::use_statistics_for_serialization_info];
 
     if (use_statistics_for_serialization_info)
     {
@@ -733,13 +738,31 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         infos.add(block);
     }
 
+    for (const auto & [column_name, info] : infos)
+    {
+        LOG_DEBUG(getLogger("KEK"), "column {} has serialization kind {}", column_name, ISerialization::kindToString(info->getKind()));
+    }
+
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-    }
+        auto kind = infos.getKind(column_name);
 
+        if (kind != ISerialization::Kind::SPARSE)
+            column.column = recursiveRemoveSparse(column.column);
+
+        if (kind != ISerialization::Kind::LOW_CARDINALITY)
+            column.column = recursiveRemoveLowCardinality(column.column);
+
+        if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
+        {
+            MutableColumnPtr indexes = ColumnUInt8::create();
+            MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*column.type);
+            auto column_lc = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+            column_lc->insertRangeFromFullColumn(*column.column, 0, column.column->size());
+            column.column = std::move(column_lc);
+        }
+    }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));

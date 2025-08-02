@@ -46,7 +46,7 @@ void SerializationLowCardinality::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+    const auto * column_lc = data.column ? typeid_cast<const ColumnLowCardinality *>(data.column.get()) : nullptr;
 
     if (settings.use_specialized_prefixes_substreams)
     {

@@ -570,6 +570,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
             ? IDataType::getSerialization(column)
             : IDataType::getSerialization(column, *it->second);
 
+        LOG_DEBUG(getLogger("KEK"), "setColumns... column {} has serialization kind {}", column.name, ISerialization::kindToString(serialization->getKind()));
+
         serializations.emplace(column.name, serialization);
 
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
