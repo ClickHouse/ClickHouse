@@ -120,21 +120,29 @@ def cluster():
             "node1",
             main_configs=[path],
             with_azurite=True,
+            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
+            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node2",
             main_configs=[path],
             with_azurite=True,
+            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
+            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=[path],
             with_azurite=True,
+            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
+            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node4",
             main_configs=[path],
             with_azurite=True,
+            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
+            with_remote_database_disk=False,
         )
         cluster.start()
 
