@@ -171,10 +171,6 @@ fromUnixTimestamp64Second
 fuzzBits
 gccMurmurHash
 generateUUIDv4
-geoDistance
-geohashDecode
-geohashEncode
-geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
@@ -189,8 +185,6 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-greatCircleAngle
-greatCircleDistance
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -360,8 +354,6 @@ partitionId
 path
 pathFull
 pi
-pointInEllipses
-pointInPolygon
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian

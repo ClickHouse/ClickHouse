@@ -261,10 +261,6 @@ gccMurmurHash
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-geoDistance
-geohashDecode
-geohashEncode
-geohashesInBox
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
@@ -285,8 +281,6 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-greatCircleAngle
-greatCircleDistance
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -476,8 +470,6 @@ partitionId
 path
 pathFull
 pi
-pointInEllipses
-pointInPolygon
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
