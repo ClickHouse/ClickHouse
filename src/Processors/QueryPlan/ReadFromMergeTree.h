@@ -326,6 +326,8 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool isParallelReplicasLocalPlanForInitiator() const;
+
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 

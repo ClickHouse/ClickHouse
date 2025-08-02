@@ -644,9 +644,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
     /// Otherwise rows will counted multiple times
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
-    const bool parallel_replicas_local_plan_for_initiator = is_parallel_reading_from_replicas
-        && context->getSettingsRef()[Setting::parallel_replicas_local_plan] && context->canUseParallelReplicasOnInitiator();
-    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || parallel_replicas_local_plan_for_initiator;
+    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -2080,6 +2078,12 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
+bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
+{
+    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->canUseParallelReplicasOnInitiator();
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
 {
     /// if dirction is not set, use current one
@@ -2417,6 +2421,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
         reader_settings.use_query_condition_cache = false;
+
+    /// Initializing parallel replicas coordinator with empty ranges to read in case of
+    /// local plan for initiator to prevent coordinator initialization by other replicas
+    /// (which may skip index analysis).
+    if (result.parts_with_ranges.empty() && isParallelReplicasLocalPlanForInitiator())
+    {
+        const auto & client_info = context->getClientInfo();
+
+        auto extension = ParallelReadingExtension{
+            all_ranges_callback.value(),
+            read_task_callback.value(),
+            number_of_current_replica.value_or(client_info.number_of_current_replica),
+            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+
+        extension.sendInitialRequest(CoordinationMode::Default, result.parts_with_ranges, /*mark_segment_size=*/1);
+    }
 
     if (result.parts_with_ranges.empty())
     {
