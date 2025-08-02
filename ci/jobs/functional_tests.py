@@ -1,9 +1,9 @@
 import argparse
 import os
+import random
 import re
 import time
 from pathlib import Path
-import random
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -139,7 +139,9 @@ def main():
     is_parallel_replicas = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.8)
+    # nproc = int(Utils.cpu_count() * 0.8)
+    # test
+    nproc = int(Utils.cpu_count() * 1.8)
     info = Info()
 
     for to in test_options:
@@ -366,6 +368,15 @@ def main():
         results.append(ft_res_processor.run())
         debug_files += ft_res_processor.debug_files
         test_result = results[-1]
+        if ft_res_processor.summary and ft_res_processor.summary.retried_tests:
+            results.append(
+                Result(
+                    name="Retried tests",
+                    results=ft_res_processor.summary.retried_tests,
+                    status=Result.Status.SUCCESS,
+                    info="test allowed to be retried for sanitizer builds if failed with query timeout",
+                )
+            )
 
         # invert result status for bugfix validation
         if is_bugfix_validation:

@@ -4,6 +4,8 @@ from typing import List
 
 from praktika.result import Result
 
+from ci.praktika.info import Info
+
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "
 TIMEOUT_SIGN = "[ Timeout! "
@@ -42,10 +44,12 @@ class FTResultsProcessor:
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
+        retried_tests: List[Result] = None
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
         self.debug_files = []
+        self.summary = None
 
     def _process_test_output(self):
         total = 0
@@ -129,17 +133,32 @@ class FTResultsProcessor:
                     test_end = True
 
         test_results_ = []
+        test_names = set()
+        retried_tests = []
         for test in test_results:
             try:
-                test_results_.append(
-                    Result(
-                        name=test[0],
-                        status=test[1],
-                        start_time=None,
-                        duration=float(test[2]),
-                        info="".join(test[3])[:16384],
-                    )
+                test_name = test[0]
+                test_result = Result(
+                    name=test_name,
+                    status=test[1],
+                    start_time=None,
+                    duration=float(test[2]),
+                    info="".join(test[3])[:16384],
                 )
+                if "flaky" not in Info().job_name:
+                    if test_name in test_names:
+                        retried_tests.append(test_name)
+                        index = next(
+                            i
+                            for i, x in enumerate(test_results_)
+                            if x.name == test_name
+                        )
+                        retried_tests.append(test_results_[index])
+                        res = test_results_.pop(index)
+                        assert res.status == Result.StatusExtended.FAIL
+                    else:
+                        test_names.add(test_name)
+                test_results_.append(test_result)
             except Exception as e:
                 print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
@@ -170,7 +189,9 @@ class FTResultsProcessor:
             server_died=server_died,
             success_finish=success_finish,
             retries=retries,
+            retried_tests=retried_tests,
         )
+        self.summary = s
 
         return s
 
