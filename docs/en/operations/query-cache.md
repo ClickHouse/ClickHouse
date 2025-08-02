@@ -119,18 +119,18 @@ The query cache can be local (per-server) or external cache, depending on the de
 **Local query cache**
 
 By default, the query cache is local to each ClickHouse server process:
-  * Query results are stored in the memory of the local server.
-  * Cached results are not shared between servers by default.
-  * Each server maintains its own query cache, and cache hits only occur if the same query is executed on the same server.
+* Query results are stored in the memory of the local server.
+* Cached results are not shared between servers by default.
+* Each server maintains its own query cache, and cache hits only occur if the same query is executed on the same server.
 
 **External cache**
 
 To improve cache efficiency in distributed ClickHouse clusters, you can use an external cache system (e.g., Redis Cluster, or a custom key-value store).
 For example, Node A executes a query and stores its result in the distributed cache. Node B executes the same query, retrieves the result from
 the external cache immediately. In summary, the following advantages can be highlighted:
-  * Cluster-Wide Cache Sharing: all ClickHouse nodes of cluster read and write to the same external cache. Cache hits are possible even if the query
+* Cluster-Wide Cache Sharing: all ClickHouse nodes of cluster read and write to the same external cache. Cache hits are possible even if the query
 is executed on a different node than the first execution.
-  * Scalability and Consistency: Cache size scales with the external cache system. Entries can be invalidated or refreshed via TTL or explicit cache control.
+* Scalability and Consistency: Cache size scales with the external cache system. Entries can be invalidated or refreshed via TTL or explicit cache control.
 
 Setting <type>redis</type> enables external Redis as the query cache backend. Currently, Redis is the only supported external cache system.
 The lifetime of cached query results is determined by query_cache_ttl.
