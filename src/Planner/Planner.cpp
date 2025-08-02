@@ -439,7 +439,9 @@ void addExpressionStep(
 
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
+    {
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+    }
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
@@ -1557,7 +1559,6 @@ void Planner::buildPlanForQueryNode()
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
@@ -1637,16 +1638,10 @@ void Planner::buildPlanForQueryNode()
 
     auto from_stage = join_tree_query_plan.stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
+
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
-
-    LOG_TRACE(
-        log,
-        "Query from stage {} to stage {}{}",
-        QueryProcessingStage::toString(from_stage),
-        QueryProcessingStage::toString(select_query_options.to_stage),
-        select_query_options.only_analyze ? " only analyze" : "");
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;

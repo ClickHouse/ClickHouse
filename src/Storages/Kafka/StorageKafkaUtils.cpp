@@ -254,7 +254,7 @@ void registerStorageKafka(StorageFactory & factory)
         ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
 
         const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_replicated_database = args.getLocalContext()->getClientInfo().is_replicated_database_internal
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
