@@ -3,8 +3,6 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Interpreters/ZooKeeperLog.h>
 
-#include <boost/core/noncopyable.hpp>
-
 #include <vector>
 #include <memory>
 #include <cstdint>
