@@ -223,7 +223,7 @@
     contrib-sqids-cpp = { url = "github:sqids/sqids-cpp/a471f53672e98d49223f598528a533b07b085c61"; flake = false; };
     contrib-idna = { url = "github:ada-url/idna/3c8be01d42b75649f1ac9b697d0ef757eebfe667"; flake = false; };
     contrib-google-cloud-cpp = { url = "github:ClickHouse/google-cloud-cpp/83f30caadb8613fb5c408d8c2fd545291596b53f"; flake = false; };
-    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/66c644817ffae04d8fa5f81931dbb67e99745522"; flake = false; };
+    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/a23476c645046d44ccd7bd25205584b8d4ded29c"; flake = false; };
     contrib-openssl = { url = "github:ClickHouse/openssl/2aa34c68d677b447fb85c55167d8d1ab98ba4def"; flake = false; };
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
@@ -232,8 +232,7 @@
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-wasmedge = { url = "github:vdimir/WasmEdge/0170c8c43ca775d7886a2d5da41443e2765ec1b3"; flake = false; };
     contrib-spdlog = { url = "github:gabime/spdlog/27cb4c76708608465c413f6d0e6b8d99a4d84302"; flake = false; };
-    contrib-wasmtime-cpp = { url = "github:bytecodealliance/wasmtime-cpp/5bb00e82e2132c4c69dfffb71da3aead169fc1d3"; flake = false; };
-    contrib-wasmtime = { url = "github:bytecodealliance/wasmtime/a3381e48775912a3e1a68c05180932f3ce74c5b4"; flake = false; };
+    contrib-wasmtime = { url = "github:bytecodealliance/wasmtime/509af9e5fb6c43f95428c3b297882bbf746faa5e"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/e152e9dc8dad1d72c4faf011ace3573d6e01ea5d"; flake = false; };

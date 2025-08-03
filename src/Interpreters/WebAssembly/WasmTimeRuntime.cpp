@@ -21,8 +21,7 @@
 
 namespace ProfileEvents
 {
-extern const Event WasmGuestExecuteMicroseconds;
-extern const Event WasmModuleInstatiate;
+    extern const Event WasmGuestExecuteMicroseconds;
 }
 
 namespace DB::ErrorCodes

@@ -32,8 +32,11 @@ set(WASMTIME_HEADER_DST ${WASMTIME_BINARY_DIR}/include)
 set(WASMTIME_HEADER_SRC ${WASMTIME_SOURCE_DIR}/crates/c-api/include)
 target_include_directories(_ch_wasmtime SYSTEM INTERFACE ${WASMTIME_HEADER_DST})
 
-configure_file("${WASMTIME_HEADER_SRC}/wasmtime/conf.h.in" "${WASMTIME_HEADER_DST}/wasmtime/conf.h" NEWLINE_STYLE CRLF)
-file(INSTALL "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
+block()
+    set(CMAKE_INSTALL_MESSAGE NEVER)
+    configure_file("${WASMTIME_HEADER_SRC}/wasmtime/conf.h.in" "${WASMTIME_HEADER_DST}/wasmtime/conf.h" NEWLINE_STYLE CRLF)
+    file(INSTALL "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
+endblock()
 
 clickhouse_import_crate(
     MANIFEST_PATH "${WASMTIME_SOURCE_DIR}/crates/c-api/Cargo.toml"
