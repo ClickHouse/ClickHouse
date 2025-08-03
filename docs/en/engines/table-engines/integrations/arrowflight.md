@@ -1,10 +1,10 @@
 ---
 description: 'The engine allows querying remote datasets via Apache Arrow Flight.'
-sidebar\_label: 'Arrow Flight'
-sidebar\_position: 186
-slug: /engines/table-engines/integrations/arrow-flight
+sidebar_label: 'Arrow Flight'
+sidebar_position: 186
+slug: /engines/table-engines/integrations/arrowflight
 title: 'Arrow Flight'
---------------------
+---
 
 # Arrow Flight
 
@@ -53,12 +53,12 @@ SELECT * FROM remote_flight_data ORDER BY id;
 └────┴─────────┴───────┘
 ```
 
-## Notes
+## Notes {#notes}
 
 * The schema defined in ClickHouse must match the schema returned by the Flight server.
 * This engine is suitable for federated queries, data virtualization, and decoupling storage from compute.
 
-## See Also
+## See Also {#see-also}
 
 * [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
-* [Arrow format integration in ClickHouse](/interfaces/formats/arrow)
+* [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)

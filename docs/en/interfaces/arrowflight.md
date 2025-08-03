@@ -1,10 +1,10 @@
 ---
 description: 'Documentation for the Apache Arrow Flight interface in ClickHouse, allowing Flight SQL clients to connect to ClickHouse'
-sidebar\_label: 'Arrow Flight Interface'
-sidebar\_position: 26
-slug: /interfaces/arrow-flight
+sidebar_label: 'Arrow Flight Interface'
+sidebar_position: 26
+slug: /interfaces/arrowflight
 title: 'Arrow Flight Interface'
--------------------------------
+---
 
 # Apache Arrow Flight Interface
 
@@ -12,14 +12,14 @@ ClickHouse supports integration with the [Apache Arrow Flight](https://arrow.apa
 
 This interface allows Flight SQL clients to query ClickHouse and retrieve results in the Arrow format, providing high throughput and low latency for analytical workloads.
 
-## Features
+## Features {#features}
 
 * Execute SQL queries via the Arrow Flight SQL protocol
 * Stream query results in Apache Arrow format
 * Integration with BI tools and custom data applications that support Arrow Flight
 * Lightweight and performant communication over gRPC
 
-## Limitations
+## Limitations {#limitations}
 
 The Arrow Flight interface is currently experimental and under active development. Known limitations include:
 
@@ -29,7 +29,7 @@ The Arrow Flight interface is currently experimental and under active developmen
 
 If you encounter compatibility issues or would like to contribute, please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
-## Running the Arrow Flight Server
+## Running the Arrow Flight Server {#running-server}
 
 To enable the Arrow Flight server in a self-managed ClickHouse instance, add the following configuration to your server config:
 
@@ -45,7 +45,7 @@ Restart the ClickHouse server. Upon successful startup, you should see a log mes
 {} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9005
 ```
 
-## Connecting to ClickHouse via Arrow Flight SQL
+## Connecting to ClickHouse via Arrow Flight SQL {#connecting-to-clickhouse}
 
 You can use any client that supports Arrow Flight SQL. For example, using `pyarrow`:
 
@@ -60,7 +60,7 @@ for batch in reader:
     print(batch.to_pandas())
 ```
 
-## Compatibility
+## Compatibility {#compatibility}
 
 The Arrow Flight interface is compatible with tools that support Arrow Flight SQL including custom applications built with:
 
@@ -70,7 +70,7 @@ The Arrow Flight interface is compatible with tools that support Arrow Flight SQ
 
 If a native ClickHouse connector is available for your tool (e.g. JDBC, ODBC), prefer using it unless Arrow Flight is specifically required for performance or format compatibility.
 
-## Query Cancellation
+## Query Cancellation {#query-cancellation}
 
 Long-running queries can be cancelled by closing the gRPC connection from the client. Support for more advanced cancellation features is planned.
 
