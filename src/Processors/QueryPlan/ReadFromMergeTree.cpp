@@ -999,7 +999,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info &&
         !lazily_read_info &&
-        !reader_settings.use_query_condition_cache) /// the query condition cache produces incorrect results with intersecting ranges
+        !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
+        !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -1706,12 +1707,10 @@ static void buildIndexes(
     const ActionsDAG * filter_actions_dag,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
-    const StorageMetadataPtr & metadata_snapshot,
-    const LoggerPtr & log)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
 
@@ -1782,8 +1781,6 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
-    auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
-
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
@@ -1794,24 +1791,6 @@ static void buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (!all_updated_columns.empty())
-        {
-            auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-            auto required_columns_names = index_helper->getColumnsRequiredForIndexCalc();
-            auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
-
-            auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
-            {
-                return all_updated_columns.contains(column.getNameInStorage());
-            });
-
-            if (it != required_columns_list.end())
-            {
-                LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
-                continue;
-            }
-        }
 
         if (index_helper->isMergeable())
         {
@@ -1897,12 +1876,10 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info.filter_actions_dag.get(),
             data,
             getParts(),
-            mutations_snapshot,
             vector_search_parameters,
             context,
             query_info,
-            storage_snapshot->metadata,
-            log);
+            storage_snapshot->metadata);
     }
 }
 
@@ -1945,12 +1922,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.filter_actions_dag.get(),
             data,
             parts,
-            mutations_snapshot,
             vector_search_parameters,
             context_,
             query_info_,
-            metadata_snapshot,
-            log);
+            metadata_snapshot);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -2017,6 +1992,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,
+            mutations_snapshot,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,

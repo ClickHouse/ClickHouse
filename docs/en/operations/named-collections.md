@@ -46,9 +46,9 @@ url = 'https://connection.url/'
 
 In the above example:
 
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -115,9 +115,9 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 
 In the above example:
 
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ## Modifying named collections {#modifying-named-collections}
 
@@ -526,7 +526,6 @@ kafka_max_block_size = '1048576';
 ### Example of using named collections with a Kafka table {#example-of-using-named-collections-with-a-kafka-table}
 
 Both of the following examples use the same named collection `my_kafka_cluster`:
-
 
 ```sql
 CREATE TABLE queue
