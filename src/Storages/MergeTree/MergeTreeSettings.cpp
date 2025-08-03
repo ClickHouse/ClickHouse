@@ -65,9 +65,6 @@ namespace ErrorCodes
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
     )", 0) \
-    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
-    Max number of bytes to digest per segment to build GIN index.
-    )", 0) \
     \
     /** Data storing format settings. */ \
     DECLARE(UInt64, min_bytes_for_wide_part, default_min_bytes_for_wide_part, R"(
@@ -1728,6 +1725,9 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
