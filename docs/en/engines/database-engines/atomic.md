@@ -13,7 +13,7 @@ title: 'Atomic'
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default. 
 
 :::note
-On ClickHouse Cloud, the `Shared` database engine is used by default.
+On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default.
 :::
 
 ## Creating a database {#creating-a-database}
