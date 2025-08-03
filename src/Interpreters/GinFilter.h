@@ -8,8 +8,7 @@ namespace DB
 
 static constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
-/// The default bloom filter false positive rate, which is 0.1%.
-static constexpr auto DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001;
+static constexpr auto DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001; /// 0.1%
 
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 

@@ -763,10 +763,10 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
-    const UInt64 segment_digestion_threshold_bytes
+    UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
-    const double bloom_filter_false_positive_rate
+    double bloom_filter_false_positive_rate
         = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, bloom_filter_false_positive_rate, ngram_size, separators);
@@ -789,7 +789,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' argument supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
+            "Text index argument '{}' supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
@@ -800,7 +800,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index '{}' argument must be between 2 and 8, but got {}",
+                "Text index argument '{}' must be between 2 and 8, but got {}",
                 ARGUMENT_NGRAM_SIZE,
                 *ngram_size);
     }
@@ -813,23 +813,23 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 if (separator.getType() != Field::Types::String)
                     throw Exception(
                         ErrorCodes::INCORRECT_QUERY,
-                        "Element of text index argument {} expected to be String, but got {}",
+                        "Element of text index argument '{}' expected to be String, but got {}",
                         ARGUMENT_SEPARATORS,
                         separator.getTypeName());
         }
     }
 
-    const UInt64 segment_digestion_threshold_bytes
+    UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
-    const double bloom_filter_false_positive_rate
+    double bloom_filter_false_positive_rate
         = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
-    if (!std::isfinite(bloom_filter_false_positive_rate) || bloom_filter_false_positive_rate <= 0.0
-        || bloom_filter_false_positive_rate >= 1.0)
+    if (!std::isfinite(bloom_filter_false_positive_rate)
+            || bloom_filter_false_positive_rate <= 0.0 || bloom_filter_false_positive_rate >= 1.0)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' argument must be between 0.0 and 1.0, but got {}",
+            "Text index argument '{}' must be between 0.0 and 1.0, but got {}",
             ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE,
             bloom_filter_false_positive_rate);
 
@@ -855,7 +855,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`");
+            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`");
 }
 
 }

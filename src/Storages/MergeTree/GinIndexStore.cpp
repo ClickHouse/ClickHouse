@@ -1,5 +1,6 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
+#include <IO/VarInt.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
@@ -15,6 +16,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <openssl/ct.h>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
@@ -176,27 +178,39 @@ bool GinSegmentDictionaryBloomFilter::contains(std::string_view token)
 
 UInt64 GinSegmentDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
 {
+    UInt64 bytes_written = 0;
     const size_t filter_size_bytes = bloom_filter.getFilter().size() * sizeof(BloomFilter::UnderType);
 
     writeVarUInt(unique_count, write_buffer);
-    writeVarUInt(bits_per_row, write_buffer);
-    writeVarUInt(num_hashes, write_buffer);
-    writeVarUInt(filter_size_bytes, write_buffer);
-    write_buffer.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), filter_size_bytes);
+    bytes_written += getLengthOfVarUInt(unique_count);
 
-    return getLengthOfVarUInt(unique_count) + getLengthOfVarUInt(bits_per_row) + getLengthOfVarUInt(num_hashes)
-        + getLengthOfVarUInt(filter_size_bytes) + filter_size_bytes;
+    writeVarUInt(bits_per_row, write_buffer);
+    bytes_written += getLengthOfVarUInt(bits_per_row);
+
+    writeVarUInt(num_hashes, write_buffer);
+    bytes_written += getLengthOfVarUInt(num_hashes);
+
+    writeVarUInt(filter_size_bytes, write_buffer);
+    bytes_written += getLengthOfVarUInt(filter_size_bytes);
+
+    write_buffer.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), filter_size_bytes);
+    bytes_written += filter_size_bytes;
+
+    return bytes_written;
 }
 
 std::unique_ptr<GinSegmentDictionaryBloomFilter> GinSegmentDictionaryBloomFilter::deserialize(ReadBuffer & read_buffer)
 {
     UInt64 unique_count;
-    UInt64 bits_per_row = 0;
-    UInt64 num_hashes = 0;
-    UInt64 filter_size_bytes = 0;
     readVarUInt(unique_count, read_buffer);
+
+    UInt64 bits_per_row = 0;
     readVarUInt(bits_per_row, read_buffer);
+
+    UInt64 num_hashes = 0;
     readVarUInt(num_hashes, read_buffer);
+
+    UInt64 filter_size_bytes = 0;
     readVarUInt(filter_size_bytes, read_buffer);
 
     auto gin_bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>(unique_count, bits_per_row, num_hashes);
@@ -325,14 +339,14 @@ void GinIndexStore::finalize()
     if (metadata_file_stream)
         metadata_file_stream->finalize();
 
+    if (bloom_filter_file_stream)
+        bloom_filter_file_stream->finalize();
+
     if (dict_file_stream)
         dict_file_stream->finalize();
 
     if (postings_file_stream)
         postings_file_stream->finalize();
-
-    if (bloom_filter_file_stream)
-        bloom_filter_file_stream->finalize();
 }
 
 void GinIndexStore::cancel() noexcept
@@ -340,14 +354,14 @@ void GinIndexStore::cancel() noexcept
     if (metadata_file_stream)
         metadata_file_stream->cancel();
 
+    if (bloom_filter_file_stream)
+        bloom_filter_file_stream->cancel();
+
     if (dict_file_stream)
         dict_file_stream->cancel();
 
     if (postings_file_stream)
         postings_file_stream->cancel();
-
-    if (bloom_filter_file_stream)
-        bloom_filter_file_stream->cancel();
 }
 
 void GinIndexStore::initSegmentId()
@@ -375,14 +389,14 @@ void GinIndexStore::initSegmentId()
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
+    String bloom_filter_file_name = getName() + GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
-    String filter_file_name = getName() + GIN_BLOOM_FILTER_FILE_TYPE;
 
     metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
+    bloom_filter_file_stream = data_part_storage_builder->writeFile(bloom_filter_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-    bloom_filter_file_stream = data_part_storage_builder->writeFile(filter_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
 void GinIndexStore::writeSegmentId()
@@ -401,12 +415,13 @@ void GinIndexStore::writeSegmentId()
 namespace
 {
 /// Initialize bloom filter from tokens from the term dictionary
-GinSegmentDictionaryBloomFilter
-initializeBloomFilter(const GinIndexStore::GinIndexPostingsBuilderContainer & postings, double bloom_filter_false_positive_rate)
+GinSegmentDictionaryBloomFilter initializeBloomFilter(
+        const GinIndexStore::GinIndexPostingsBuilderContainer & postings,
+        double bloom_filter_false_positive_rate)
 {
     auto number_of_unique_terms = postings.size(); /// postings is a dictionary
-    const auto [bits_per_rows, hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    auto bloom_filter = GinSegmentDictionaryBloomFilter(number_of_unique_terms, bits_per_rows, hashes);
+    const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
+    GinSegmentDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
     for (const auto & [token, _] : postings)
         bloom_filter.add(token);
     return bloom_filter;
@@ -505,9 +520,9 @@ void GinIndexStore::writeSegment()
     current_segment.segment_id = getNextSegmentID();
 
     metadata_file_stream->sync();
+    bloom_filter_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
-    bloom_filter_file_stream->sync();
 }
 
 GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)
@@ -519,15 +534,16 @@ GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & st
 void GinIndexStoreDeserializer::initFileStreams()
 {
     String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
+    String bloom_filter_file_name = store->getName() + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
-    String filter_file_name = store->getName() + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE;
 
     metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
+    bloom_filter_file_stream = store->storage->readFile(bloom_filter_file_name, {}, std::nullopt, std::nullopt);
     dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
-    bloom_filter_file_stream = store->storage->readFile(filter_file_name, {}, std::nullopt, std::nullopt);
 }
+
 void GinIndexStoreDeserializer::readSegments()
 {
     UInt32 num_segments = store->getNumOfSegments();
@@ -659,7 +675,7 @@ GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(cons
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
-        if (postings_cache->find(term) != postings_cache->end())
+        if (postings_cache->contains(term))
             continue;
 
         auto container = readSegmentedPostingsLists(term);
@@ -723,9 +739,9 @@ bool isGinFile(const String & file_name)
 {
     return file_name.ends_with(GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE)
         || file_name.ends_with(GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE)
         || file_name.ends_with(GinIndexStore::GIN_DICTIONARY_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
+        || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE);
 }
 }
 
