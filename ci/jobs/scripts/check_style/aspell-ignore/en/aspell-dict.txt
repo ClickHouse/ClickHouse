@@ -1720,7 +1720,7 @@ dateName
 dateTime
 dateTimeToSnowflake
 dateTimeToSnowflakeID
-dateTimeToUUIDv
+dateTimeToUUIDv7
 dateTrunc
 datetime
 datetimes

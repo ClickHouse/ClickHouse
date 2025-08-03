@@ -144,7 +144,7 @@ public:
     bool isDeterministicInScopeOfQuery() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
-    bool isVariadic() const final { return true; }
+    bool isVariadic() const final { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -162,17 +162,17 @@ public:
     {
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
-        const auto & col_src = *arguments[0].column;
 
         if (input_rows_count)
         {
             vec_to.resize(input_rows_count);
-            // Fills in all memory stored by the column of UUIDs with random bytes. Timestamp and other bits are set later.
+
+            /// Fills in all memory stored by the column of UUIDs with random bytes. Timestamp and other bits are set later.
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
+            const auto & col_src = *arguments[0].column;
             if (const auto * col_src_non_const = typeid_cast<const ColumnDateTime *>(&col_src))
             {
-                // Get timestamp in milliseconds from the source column
                 const auto & src_data = col_src_non_const->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
@@ -208,7 +208,8 @@ public:
     using Self = FunctionDateTimeToUUIDv7;
     using Parent = TargetSpecific::Default::FunctionDateTimeToUUIDv7Base;
 
-    explicit FunctionDateTimeToUUIDv7(ContextPtr context) : selector(context)
+    explicit FunctionDateTimeToUUIDv7(ContextPtr context)
+        : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
@@ -242,7 +243,7 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Input value converted to", {"UUID"}};
     FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});

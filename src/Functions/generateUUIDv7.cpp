@@ -187,7 +187,8 @@ public:
     using Self = FunctionGenerateUUIDv7Base;
     using Parent = TargetSpecific::Default::FunctionGenerateUUIDv7Base;
 
-    explicit FunctionGenerateUUIDv7Base(ContextPtr context) : selector(context)
+    explicit FunctionGenerateUUIDv7Base(ContextPtr context)
+        : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
