@@ -10,9 +10,8 @@ title: 'Bool'
 
 Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
 
-
 ```sql
-select true as col, toTypeName(col);
+SELECT true AS col, toTypeName(col);
 ┌─col──┬─toTypeName(true)─┐
 │ true │ Bool             │
 └──────┴──────────────────┘

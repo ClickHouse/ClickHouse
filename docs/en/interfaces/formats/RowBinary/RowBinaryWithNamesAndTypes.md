@@ -22,9 +22,9 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 - N `String`s specifying column names.
 - N `String`s specifying column types.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <RowBinaryFormatSettings/>
 

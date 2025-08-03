@@ -510,7 +510,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
-        std::unordered_set<int64_t> closed_sessions;
+        std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
         struct UncommittedNode
         {
@@ -588,7 +588,7 @@ public:
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
-    void preprocessRequest(
+    KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,

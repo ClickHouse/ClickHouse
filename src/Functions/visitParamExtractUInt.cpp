@@ -19,7 +19,7 @@ REGISTER_FUNCTION(VisitParamExtractUInt)
         .syntax = "simpleJSONExtractUInt(json, field_name)",
         .arguments
         = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value = {"It returns the number parsed from the field if the field exists and contains a number, 0 otherwise."},
         .examples
         = {{.name = "simple",

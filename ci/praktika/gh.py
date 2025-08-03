@@ -68,30 +68,6 @@ class GH:
                              -f body=\'{comment_body}\''
                     print(f"Update existing comments [{id}]")
                     return cls.do_command_with_retries(cmd)
-
-        if or_append_to_comment_with_substring:
-            print(f"check comment [{comment_body}] created")
-            pr_comments = f'gh api -H "Accept: application/vnd.github.v3+json" \
-                "/repos/{repo}/issues/{pr}/comments" \
-                --jq \'.[].body\''
-            output = Shell.get_output(pr_comments)
-            if output:
-                comment_ids = []
-                try:
-                    comment_ids = [
-                        json.loads(item.strip()) for item in output.split("\n")
-                    ]
-                except Exception as ex:
-                    print(f"Failed to retrieve PR comments with [{ex}]")
-                for id in comment_ids:
-                    cmd = f'gh api \
-                       -X PATCH \
-                          -H "Accept: application/vnd.github.v3+json" \
-                             "/repos/{repo}/issues/comments/{id}" \
-                             -f body=\'{comment_body}\''
-                    print(f"Update existing comments [{id}]")
-                    return cls.do_command_with_retries(cmd)
-
         cmd = f'gh pr comment {pr} --body "{comment_body}"'
         return cls.do_command_with_retries(cmd)
 
@@ -405,9 +381,18 @@ class GH:
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
+                info = Info()
                 for failed_result in self.failed_results:
-                    body += "|{}|{}|{}|{}|{}|\n".format(
+                    job_report_url = info.get_specific_report_url(
+                        info.pr_number,
+                        info.git_branch,
+                        info.sha,
                         failed_result.name,
+                        info.workflow_name,
+                    )
+                    body += "|[{}]({})|{}|{}|{}|{}|\n".format(
+                        failed_result.name,
+                        job_report_url,
                         "",
                         failed_result.status,
                         "",

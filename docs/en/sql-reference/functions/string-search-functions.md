@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Searching in Strings'
-sidebar_label: 'Searching in Strings'
-sidebar_position: 160
+sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
 ---
@@ -757,28 +756,33 @@ Result:
 
 ## searchAny {#searchany}
 
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
+
 Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
 **Syntax**
 
 ```sql
-searchAny(input, 'needle1 needle2 ... needleN')
+searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 ```
 
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-The `'needle1 needle2 ... needleN'` are tokenized by the `default` tokenized as `tokens('needle1 needle2 ... needleN', 'default')`.
-This means both `word1;word2` and `word1,word2` would be tokenized as `['word1','word2']`.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**
@@ -791,17 +795,17 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE `text_table` (
-    `id` UInt32,
-    `msg` String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+CREATE TABLE text_table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() from `text_table` where searchAny(msg, 'a d');
+SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
 ```
 
 Result:
@@ -812,28 +816,33 @@ Result:
 
 ## searchAll {#searchall}
 
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
+
 Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
 **Syntax**
 
 ```sql
-searchAll(input, 'needle1 needle2 ... needleN')
+searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 ```
 
 **Parameters**
 
 - `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [const String](../data-types/string.md).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 
 :::note
-The `'needle1 needle2 ... needleN'` are tokenized by the `default` tokenized as `tokens('needle1 needle2 ... needleN', 'default')`.
-This means both `word1;word2` and `word1,word2` would be tokenized as `['word1','word2']`.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
+Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
+In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+
+Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
 :::
 
 **Returned value**
@@ -846,17 +855,17 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE `text_table` (
-    `id` UInt32,
-    `msg` String,
+CREATE TABLE text_table (
+    id UInt32,
+    msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() from `text_table` where searchAll(msg, 'a d');
+SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
 ```
 
 Result:
@@ -1670,8 +1679,8 @@ Result:
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
 The behavior of this function depends on the ClickHouse version:
-- in versions < v25.7, `countMatches` would stop counting at the first empty match even if a pattern accepts.
-- in versions >= 25.7, `countMatches` would continue its execution when an empty match occurs.
+- in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
+- in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
   The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
 
 **Syntax**
@@ -1886,7 +1895,7 @@ Query:
 **Examples**
 
 ```sql
-select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
@@ -1921,7 +1930,7 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 Query:
 
 ```sql
-select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:

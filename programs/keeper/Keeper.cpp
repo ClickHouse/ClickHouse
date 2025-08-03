@@ -1,4 +1,4 @@
-#include "Keeper.h"
+#include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
@@ -43,7 +43,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include "Core/Defines.h"
+#include <Core/Defines.h>
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"
@@ -53,10 +53,6 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
-#endif
-
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -656,10 +652,6 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
-
-#if USE_GWP_ASAN
-    GWPAsan::initFinished();
-#endif
 
     LOG_INFO(log, "Ready for connections.");
 

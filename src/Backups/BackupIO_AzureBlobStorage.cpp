@@ -13,6 +13,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <azure/storage/blobs/blob_options.hpp>
+#include <azure/core/context.hpp>
 
 #include <filesystem>
 
@@ -46,26 +47,43 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
         return (shared_key_a->get()->AccountName == shared_key_b->get()->AccountName);
     }
 
-    const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
-    const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
-
-    if (workload_identity_a && workload_identity_b)
+    try
     {
-        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-        return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
+        const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
+
+        if (workload_identity_a && workload_identity_b)
+        {
+            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        }
+
+        const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
+        const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
+
+        if (managed_identity_a && managed_identity_b)
+        {
+            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        }
+
+        const auto * static_credential_a = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_a);
+        const auto * static_credential_b = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_b);
+
+        if (static_credential_a && static_credential_b)
+        {
+            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            auto az_context = Azure::Core::Context();
+            return static_credential_a->get()->GetToken(tokenRequestContext, az_context).Token == static_credential_b->get()->GetToken(tokenRequestContext, az_context).Token;
+        }
     }
-
-    const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
-    const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
-
-    if (managed_identity_a && managed_identity_b)
+    catch (const Azure::Core::Credentials::AuthenticationException & e)
     {
-        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-        return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
+        LOG_DEBUG(getLogger("compareAuthMethod"), "Exception caught while comparing credentials, error = {}", e.what());
+        return false;
     }
-
     return false;
-
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
@@ -76,7 +94,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -88,8 +106,10 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
+        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL());
+        connection_params.getConnectionURL(),
+        /*common_key_prefix*/ "");
 
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
@@ -170,7 +190,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const ContextPtr & context_,
     bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -185,8 +205,10 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
+        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL());
+        connection_params.getConnectionURL(),
+        /*common_key_prefix*/ "");
 
 
     client = object_storage->getAzureBlobStorageClient();

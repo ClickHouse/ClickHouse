@@ -107,7 +107,9 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
         || zk_return_code == Error::ZOPERATIONTIMEOUT
-        || zk_return_code == Error::ZNOTREADONLY;
+        || zk_return_code == Error::ZNOTREADONLY
+        || zk_return_code == Error::ZOUTOFMEMORY
+        || zk_return_code == Error::ZNOAUTH;
 }
 
 bool isUserError(Error zk_return_code)

@@ -9,7 +9,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/Context.h>
 
-#include "isNull.h"
+#include <Functions/isNull.h>
 
 namespace DB
 {

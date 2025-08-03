@@ -22,7 +22,6 @@ Unless there is a security fix needed for ClickHouse Keeper or Apache ZooKeeper 
 ### Minor version upgrades should be adopted often {#minor-version-upgrades-should-be-adopted-often}
 It is highly recommended to always upgrade to the newest minor version as soon as it is released. Minor releases do not have breaking changes but do have important bug fixes (and may have security fixes).
 
-
 ### Test experimental features on a separate ClickHouse server running the target version {#test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version}
 
 The compatibility of experimental features can be broken at any moment in any way.  If you are using experimental features, then check the changelogs and consider setting up a separate ClickHouse server with the target version installed and test your use of the experimental features there.
@@ -47,8 +46,6 @@ If the difference between the current version and the target version is more tha
 - Upgrade with downtime (stop all servers, upgrade all servers, run all servers).
 - Or to upgrade through an intermediate version (a version less than one year more recent than the current version).
 
-
-
 ## Recommended plan {#recommended-plan}
 
 These are the recommended steps for a zero-downtime ClickHouse upgrade:
@@ -58,12 +55,11 @@ These are the recommended steps for a zero-downtime ClickHouse upgrade:
 3. Make any updates identified in the breaking changes that can be made before upgrading, and a list of the changes that will need to be made after the upgrade.
 4. Identify one or more replicas for each shard to keep up while the rest of the replicas for each shard are upgraded.
 5. On the replicas that will be upgraded, one at a time:
-   - shutdown ClickHouse server
-   - upgrade the server to the target version
-   - bring ClickHouse server up
-   - wait for the Keeper messages to indicate that the system is stable
-   - continue to the next replica
-6. Check for errors in the Keeper log and the ClickHouse log
+- shutdown ClickHouse server  
+- upgrade the server to the target version  
+- bring ClickHouse server up  
+- wait for the Keeper messages to indicate that the system is stable  
+- continue to the next replica6. Check for errors in the Keeper log and the ClickHouse log
 7. Upgrade the replicas identified in step 4 to the new version
 8. Refer to the list of changes made in steps 1 through 3 and make the changes that need to be made after the upgrade.
 
@@ -75,7 +71,6 @@ hash of uncompressed files doesn't match. (CHECKSUM_DOESNT_MATCH)  Data after me
 byte-identical to data on another replicas.
 ```
 :::
-
 
 ## ClickHouse server binary upgrade process {#clickhouse-server-binary-upgrade-process}
 

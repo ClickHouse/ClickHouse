@@ -1,6 +1,6 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -108,14 +108,18 @@ AzureObjectStorage::AzureObjectStorage(
     AzureBlobStorage::AuthMethod auth_method_,
     ClientPtr && client_,
     SettingsPtr && settings_,
+    const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
-    const String & description_)
+    const String & description_,
+    const String & common_key_prefix_)
     : name(name_)
     , auth_method(std::move(auth_method_))
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
+    , common_key_prefix(common_key_prefix_)
+    , connection_params(connection_params_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -357,7 +361,7 @@ void AzureObjectStorage::applyNewSettings(
     {
         .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
         .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(*settings.get(), is_client_for_disk),
+        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
     };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
@@ -365,24 +369,9 @@ void AzureObjectStorage::applyNewSettings(
 }
 
 
-std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
+ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
 {
-    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
-    bool is_client_for_disk = client.get()->IsClientForDisk();
-
-    AzureBlobStorage::ConnectionParams params
-    {
-        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(*new_settings, is_client_for_disk),
-    };
-
-    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
-    return std::make_unique<AzureObjectStorage>(name, params.auth_method, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getServiceEndpoint());
+    return DB::getAzureObjectStorageConnectionInfo(connection_params);
 }
 
 }

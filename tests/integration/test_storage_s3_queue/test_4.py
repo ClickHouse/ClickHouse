@@ -338,7 +338,9 @@ def test_alter_settings(started_cluster):
         max_processed_bytes_before_commit=666,
         max_processing_time_sec_before_commit=777,
         enable_hash_ring_filtering=false,
-        list_objects_batch_size=1234
+        list_objects_batch_size=1234,
+        min_insert_block_size_rows_for_materialized_views=123,
+        min_insert_block_size_bytes_for_materialized_views=321
     """
     )
 
@@ -356,6 +358,8 @@ def test_alter_settings(started_cluster):
         "max_processing_time_sec_before_commit": 777,
         "enable_hash_ring_filtering": "false",
         "list_objects_batch_size": 1234,
+        "min_insert_block_size_rows_for_materialized_views": 123,
+        "min_insert_block_size_bytes_for_materialized_views": 321,
     }
     string_settings = {"after_processing": "delete"}
 

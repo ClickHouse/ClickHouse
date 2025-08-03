@@ -1,12 +1,12 @@
+#include <Functions/generateSnowflakeID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
-#include <Common/Logger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
@@ -145,6 +145,13 @@ struct Data
     }
 };
 
+}
+
+uint64_t generateSnowflakeID()
+{
+    Data data;
+    SnowflakeId snowflake_id = data.reserveRange(getMachineId(), 1);
+    return fromSnowflakeId(snowflake_id);
 }
 
 class FunctionGenerateSnowflakeID : public IFunction

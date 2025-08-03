@@ -18,7 +18,7 @@ using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
 
-MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , client_capabilities(settings_.mysql_wire.client_capabilities)
 {
@@ -144,7 +144,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
+           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("MySQLWire");
     factory.setContentType("MySQLWire", "application/octet-stream");
 }

@@ -201,7 +201,6 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing projections metadata via ClickHouse Keeper or ZooKeeper.
