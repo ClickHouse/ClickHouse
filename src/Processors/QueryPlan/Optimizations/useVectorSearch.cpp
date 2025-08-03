@@ -285,16 +285,16 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     if (read_from_mergetree_step->isParallelReadingFromReplicas())
         return false;
 
-    /// If there is an explicit PREWHERE, we disable the optimization. The Prewhere optimization
-    /// is slightly at odds with vector search optimizations. There are 2 optimizations in vector
+    /// If there is an explicit PREWHERE, we disable the optimization. The PREWHERE optimization
+    /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
     /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
     ///    only sends the exact neighbour rows to the Sorting + Output step.
-    /// Thus explicit or implicit Prewhere after the above 2 optimizations does not bring additional benefit. Also,
-    /// the Prewhere filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
-    /// requested, we turn OFF the rescoring optimization. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere=True, we retain the rescoring optimization and disable the implicit Prewhere
+    /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
+    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
+    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
@@ -397,20 +397,20 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
                 filter_expression.removeUnusedActions();
 
                 /// Update the node with new Step
-                auto description = filter_or_prewhere_node->step->getStepDescription();
+                auto step_description = filter_or_prewhere_node->step->getStepDescription();
                 if (prewhere_expression_step)
                     filter_or_prewhere_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
                 else
                     filter_or_prewhere_node->step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-               filter_or_prewhere_node->step->setStepDescription(description);
+               filter_or_prewhere_node->step->setStepDescription(step_description);
             }
         }
 
         /// Update the node with new Step
-        auto description = expression_node->step->getStepDescription();
+        auto step_description = expression_node->step->getStepDescription();
         expression_node->step = std::make_unique<ExpressionStep>(
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
-        expression_node->step->setStepDescription(description);
+        expression_node->step->setStepDescription(step_description);
     }
 
     return true;

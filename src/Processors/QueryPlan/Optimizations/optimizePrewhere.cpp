@@ -144,7 +144,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (storage_prewhere_info)
         return;
 
-
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
     auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
@@ -165,7 +164,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (column_sizes.empty())
         return;
 
-    /// Vector index lookup and exact row seeks is a more targeted optimization, hence priority for that.
+    /// These two optimizations conflict:
+    /// - vector search lookups with disabled rescoring
+    /// - PREWHERE
+    /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;

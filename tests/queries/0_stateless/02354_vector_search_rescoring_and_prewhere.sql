@@ -8,9 +8,16 @@ SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it expl
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (id Int32, attr1 Int32, attr2 Int32, vector Array(Float32),
-                  INDEX vector_index vector TYPE vector_similarity('hnsw', 'L2Distance', 2),
-                 ) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2;
+CREATE TABLE tab (
+    id Int32,
+    attr1 Int32,
+    attr2 Int32,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2),
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES
     (0, 100, 0, [0.311, 0.311]),
@@ -34,72 +41,81 @@ INSERT INTO tab VALUES
     (18, 118, 1800, [0.612, 0.612]),
     (19, 119, 1900, [0.217, 0.217]);
 
-SELECT 'Logging reference rows using KNN';
-SELECT id, attr1, attr2, vector
-FROM tab
-ORDER BY L2Distance(vector, [0.2, 0.3]);
+SELECT 'Reference results without filters';
 
-SELECT 'Ensure optimization is effective with WHERE and prewhere optimization = 0/1';
-SELECT 'Only id 16 & 19 will be printed for next 2 queries';
-SELECT id
+SELECT id, attr1, attr2, vec
 FROM tab
-WHERE attr1 > 110
-ORDER BY L2Distance(vector, [0.2, 0.3])
-LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 0, optimize_move_to_prewhere = 0;
+ORDER BY L2Distance(vec, [0.2, 0.3]);
+
+SELECT 'Ensure rescoring optimization works with enabled and disabled PREWHERE';
+-- Expect IDs 16 & 19 for next 2 queries
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+SETTINGS query_plan_optimize_prewhere = 0,
+         optimize_move_to_prewhere = 0;
 
-SELECT 'With rescoring = ON, 18 and 17 will also be printed for above query because they are in the same granules as 16 & 19';
 SELECT id
 FROM tab
 WHERE attr1 > 110
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring=1;
+SETTINGS query_plan_optimize_prewhere = 1,
+         optimize_move_to_prewhere = 1;
 
-SELECT 'With rescoring = ON and using post filter multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17';
+SELECT 'Test with enabled rescoring';
+-- Expect 16 & 19, and additionally 18 and 17 because they are in the same granules
+
 SELECT id
 FROM tab
 WHERE attr1 > 110
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring=1, vector_search_postfilter_multiplier=3;
+SETTINGS vector_search_with_rescoring = 1;
 
-SELECT 'Ensure that explicit PREWHERE disables the optimization, _distance should not be seen';
+SELECT 'With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)';
+SELECT id
+FROM tab
+WHERE attr1 > 110
+ORDER BY L2Distance(vec, [0.2, 0.3])
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 1,
+         vector_search_postfilter_multiplier = 3;
+
+SELECT 'Check that explicit PREWHERE disables the optimization';
+-- Expect no _distance column in result
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     SELECT id
     FROM tab
     PREWHERE attr1 > 110
-    ORDER BY L2Distance(vector, [0.2, 0.3])
+    ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 4
     )
 WHERE (explain LIKE '%_distance%');
-SELECT 'Query with explicit PREWHERE succeeds';
+
+SELECT 'Query with explicit PREWHERE works';
 SELECT id
 FROM tab
 PREWHERE attr1 > 110
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2
 FROM tab
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 20;
 
 SELECT 'Ensure that optimization was effective for above query, _distance should be seen';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
-    SELECT id, attr1, attr2, L2Distance(vector, [0.2, 0.3]),
+    SELECT id, attr1, attr2, L2Distance(vec, [0.2, 0.3]),
     FROM tab
-    ORDER BY L2Distance(vector, [0.2, 0.3])
+    ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
     )
 WHERE (explain LIKE '%_distance%');
@@ -109,7 +125,7 @@ SELECT 'id 16 & 19 will be again output';
 SELECT id
 FROM tab
 WHERE attr1 > 110 AND attr2 > 50
-ORDER BY L2Distance(vector, [0.2, 0.3])
+ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4;
 
 DROP TABLE tab;

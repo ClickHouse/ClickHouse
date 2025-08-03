@@ -1,4 +1,4 @@
-Logging reference rows using KNN
+Reference results without filters
 16	116	1600	[0.252,0.252]
 1	101	100	[0.236,0.236]
 5	105	500	[0.276,0.276]
@@ -19,24 +19,23 @@ Logging reference rows using KNN
 14	114	1400	[0.94,0.94]
 10	110	1000	[0.945,0.945]
 2	102	200	[0.97,0.97]
-Ensure optimization is effective with WHERE and prewhere optimization = 0/1
-Only id 16 & 19 will be printed for next 2 queries
+Ensure rescoring optimization works with enabled and disabled PREWHERE
 16
 19
 16
 19
-With rescoring = ON, 18 and 17 will also be printed for above query because they are in the same granules as 16 & 19
+Test with enabled rescoring
 16
 19
 18
 17
-With rescoring = ON and using post filter multiplier=3, search quality will improve and 12 & 11 get ahead of 18 & 17
+With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)
 16
 19
 12
 11
-Ensure that explicit PREWHERE disables the optimization, _distance should not be seen
-Query with explicit PREWHERE succeeds
+Check that explicit PREWHERE disables the optimization
+Query with explicit PREWHERE works
 16
 19
 18
