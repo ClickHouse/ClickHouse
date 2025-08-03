@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-
-#include <base/StringRef.h>
+#include <Interpreters/ZooKeeperLog.h>
 
 #include <boost/core/noncopyable.hpp>
 
@@ -22,7 +20,6 @@ class WriteBuffer;
 namespace Coordination
 {
 
-class ZooKeeperLogElement;
 using LogElements = std::vector<ZooKeeperLogElement>;
 
 struct ZooKeeperResponse : virtual Response
