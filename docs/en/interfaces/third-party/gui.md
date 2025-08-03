@@ -6,9 +6,9 @@ slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
 ---
 
-# Visual Interfaces from Third-party Developers
+# Visual interfaces from third-party developers
 
-## Open-Source {#open-source}
+## Open-source {#open-source}
 
 ### agx {#agx}
 
@@ -42,6 +42,20 @@ Features:
 - No Signup or Credentials Needed: All functionality is accessible directly in the browser, keeping it frictionless and secure.
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
+
+### DataPup {#datapup}
+
+[DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.
+
+Features:
+
+- AI-powered SQL query assistance with intelligent suggestions
+- Native ClickHouse connection support with secure credential handling
+- Beautiful, accessible interface with multiple themes (Light, Dark, and colorful variants)
+- Advanced query result filtering and exploration
+- Cross-platform support (macOS, Windows, Linux)
+- Fast and responsive performance
+- Open-source and MIT licensed
 
 ### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
 
@@ -287,6 +301,22 @@ Features:
 - Translates chart requests from the native Kibana UI into ClickHouse query syntax.
 - Supports advanced features such as sampling and caching to enhance query performance.
 - Minimizes the learning cost for users after migrating from ElasticSearch to ClickHouse.
+
+### Telescope {#telescope}
+
+[Telescope](https://iamtelescope.net/) is a modern web interface for exploring logs stored in ClickHouse. It provides a user-friendly UI for querying, visualizing, and managing log data with fine-grained access control.
+
+Features:
+
+- Clean, responsive UI with powerful filters and customizable field selection.
+- FlyQL syntax for intuitive and expressive log filtering.
+- Time-based graph with group-by support, including nested JSON, Map, and Array fields.
+- Optional raw SQL `WHERE` query support for advanced filtering (with permission checks).
+- Saved Views: persist and share custom UI configurations for queries and layout.
+- Role-based access control (RBAC) and GitHub authentication integration.
+- No extra agents or components required on the ClickHouse side.
+
+[Telescope Source Code](https://github.com/iamtelescope/telescope) · [Live Demo](https://demo.iamtelescope.net)
 
 ## Commercial {#commercial}
 

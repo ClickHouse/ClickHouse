@@ -19,6 +19,7 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+USE_ENCRYPTED_STORAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -39,6 +40,8 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
+
+        --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -107,16 +110,30 @@ ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+
+ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
+if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+    ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
+
+# Lower all caches size to 128MB
+ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
+
+# Randomize which logger is used (until sync logger is removed, if that ever happens)
 ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
+value=$((RANDOM % 2))
+echo "Async logging: $value"
+sed --follow-symlinks -i "s|<async>[01]</async>|<async>$value</async>|" $DEST_SERVER_PATH/config.d/logger_trace.xml
+
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/forbidden_headers.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_keeper_map.xml $DEST_SERVER_PATH/config.d/
@@ -236,8 +253,14 @@ inject_auth=$((RANDOM % 2))
 if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
     inject_auth=0
 fi
-echo "Replacing inject_auth with $inject_auth"
-sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+if [[ $inject_auth -eq 1 ]]; then
+    echo "Keeper connection will use auth"
+    ln -sf $SRC_PATH/config.d/zookeeper_auth.xml $DEST_SERVER_PATH/config.d/
+else
+    echo "Keeper connection will not use auth"
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper_auth.xml ||:
+fi
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
@@ -246,14 +269,15 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
-    object_key_type="${object_key_types_options[0]}"
+object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
+object_key_type="${object_key_types_options[0]}"
 
-    if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
-      object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
-    fi
+if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
+    object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
+fi
 
+function setup_storage_policy()
+{
     case $object_key_type in
         "generate-full-key")
             ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
@@ -267,8 +291,22 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
             ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
     esac
+}
+
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    setup_storage_policy
+
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        ln -sf $SRC_PATH/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
+    else
+        ln -sf $SRC_PATH/config.d/s3_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
+    fi
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        ln -sf $SRC_PATH/config.d/azure_encrypted_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    else
+        ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    fi
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
@@ -307,9 +345,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-    echo "Replacing inject_auth with $inject_auth (for Replicated database)"
-    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
-
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
     ch_server_1_path=$DEST_SERVER_PATH/../clickhouse-server1
@@ -327,10 +362,12 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    rm $ch_server_1_path/config.d/transactions.xml
-    rm $ch_server_2_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
+    if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+        rm $ch_server_1_path/config.d/transactions.xml
+        rm $ch_server_2_path/config.d/transactions.xml
+        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
+        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
+    fi
 
 #    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
 #    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2

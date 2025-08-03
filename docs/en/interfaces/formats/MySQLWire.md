@@ -7,6 +7,6 @@ title: 'MySQLWire'
 
 ## Description {#description}
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

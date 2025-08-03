@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
@@ -31,6 +32,7 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
@@ -48,6 +50,11 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/DistributedCacheLog.h>
+#include <Interpreters/DistributedCacheServerLog.h>
+#endif
 
 #include <fmt/core.h>
 
@@ -337,6 +344,9 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
 
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
+    #endif
 #undef CREATE_PUBLIC_MEMBERS
 
 /// NOLINTEND(bugprone-macro-parentheses)
@@ -411,6 +421,9 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
 
     std::vector<ISystemLog *> result = {
         LIST_OF_ALL_SYSTEM_LOGS(GET_RAW_POINTERS)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_RAW_POINTERS)
+        #endif
     };
 #undef GET_RAW_POINTERS
 
@@ -447,6 +460,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     if (names.empty())
     {
+        if (text_log)
+            BaseDaemon::instance().flushTextLogs();
+
         for (auto * log : getAllLogs())
         {
             auto last_log_index = log->getLastLogIndex();
@@ -463,6 +479,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
         std::unordered_map<String, ISystemLog *> logs_map
         {
             LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+            #if CLICKHOUSE_CLOUD
+                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+            #endif
         };
         #undef GET_MAP_VALUES
 
@@ -477,6 +496,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             if (it->second == nullptr)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
+
+            if (it->second == text_log.get())
+                BaseDaemon::instance().flushTextLogs();
 
             auto last_log_index = it->second->getLastLogIndex();
             logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
@@ -802,5 +824,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)
+#if CLICKHOUSE_CLOUD
+SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG)
+#endif
 
 }

@@ -79,7 +79,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
     bool some_rows_were_aggregated = false;
     MutableColumns result_columns = header.cloneEmptyColumns();
 
-    if (!block) /// Empty block -- no more data, but we may still have some accumulated rows
+    if (block.empty()) /// Empty block -- no more data, but we may still have some accumulated rows
     {
         if (!aggregation_result.empty()) /// Still have some aggregated data, let's update TTL
         {
@@ -246,8 +246,14 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    if (new_ttl_info.finished())
+    {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        return;
+    }
+    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
 }
 
 }

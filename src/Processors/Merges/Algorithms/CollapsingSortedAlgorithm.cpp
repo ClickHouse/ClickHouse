@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorToString.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -21,7 +22,7 @@ namespace ErrorCodes
 }
 
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column,
@@ -39,7 +40,7 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
         out_row_sources_buf_,
         max_row_refs,
         std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_))
-    , sign_column_number(header_.getPositionByName(sign_column))
+    , sign_column_number(header_->getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , throw_if_invalid_sign(throw_if_invalid_sign_)
     , log(log_)

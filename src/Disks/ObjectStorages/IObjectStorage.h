@@ -13,6 +13,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
+#include <Disks/ObjectStorages/IObjectStorageConnectionInfo.h>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -33,6 +34,7 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
+
 #include <azure/core/credentials/credentials.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
@@ -40,8 +42,28 @@
 
 namespace DB::AzureBlobStorage
 {
+
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
+
+class StaticCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
+        : token(std::move(token_)), expires_on(expires_on_)
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+    }
+
+private:
+    std::string token;
+    std::chrono::system_clock::time_point expires_on;
+};
 
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
@@ -49,10 +71,9 @@ using AuthMethod = std::variant<
     ConnectionString,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
-
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
+    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
 }
-
 
 #endif
 
@@ -109,6 +130,7 @@ struct RelativePathWithMetadata
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
 };
 
 struct ObjectKeyWithMetadata
@@ -178,6 +200,8 @@ public:
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+
+    virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -300,12 +324,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
-
-
-private:
-    mutable std::mutex throttlers_mutex;
-    ThrottlerPtr remote_read_throttler;
-    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

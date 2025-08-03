@@ -1,7 +1,9 @@
-#include "DiskS3Utils.h"
+#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 
 #if USE_AWS_S3
+#include <Common/Macros.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Interpreters/Context.h>
 #include <IO/S3/URI.h>
 
 namespace DB
@@ -20,6 +22,14 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
 
     String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
     String object_key_template = config.getString(config_prefix + ".key_template", String());
+
+    Macros::MacroExpansionInfo info;
+    info.ignore_unknown = true;
+    info.expand_special_macros_only = true;
+    info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+    object_key_compatibility_prefix = Context::getGlobalContextInstance()->getMacros()->expand(object_key_compatibility_prefix, info);
+    info.level = 0;
+    object_key_template = Context::getGlobalContextInstance()->getMacros()->expand(object_key_template, info);
 
     if (object_key_template.empty())
     {

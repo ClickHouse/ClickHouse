@@ -84,8 +84,8 @@ ENV NUM_TRIES=1
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
-ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
+ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
+ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
@@ -111,10 +111,10 @@ ENV PYTHONPATH=".:./ci"
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

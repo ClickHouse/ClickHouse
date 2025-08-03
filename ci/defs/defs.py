@@ -17,8 +17,20 @@ class RunnerLabels:
     CI_SERVICES_EBS = "ci_services_ebs"
     BUILDER_AMD = ["self-hosted", "builder"]
     BUILDER_ARM = ["self-hosted", "builder-aarch64"]
-    FUNC_TESTER_AMD = ["self-hosted", "func-tester"]
-    FUNC_TESTER_ARM = ["self-hosted", "func-tester-aarch64"]
+    FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
+    FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
+    AMD_LARGE = ["self-hosted", "amd-large"]
+    ARM_LARGE = ["self-hosted", "arm-large"]
+    AMD_MEDIUM = ["self-hosted", "amd-medium"]
+    ARM_MEDIUM = ["self-hosted", "arm-medium"]
+    AMD_MEDIUM_CPU = ["self-hosted", "amd-medium-cpu"]
+    ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
+    AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
+    ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
+    AMD_SMALL = ["self-hosted", "amd-small"]
+    ARM_SMALL = ["self-hosted", "arm-small"]
+    AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
+    ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
@@ -157,6 +169,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
         path="./ci/docker/integration/clickhouse_with_unity_catalog",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-test-with-hms",
+        path="./ci/docker/integration/clickhouse_with_hms_catalog",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -330,7 +348,7 @@ class ArtifactNames:
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
     CH_COV_BIN = "CH_COV_BIN"
-    CH_ARM_BIN = "CH_ARM_BIN"
+    CH_ARM_BINARY = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
@@ -368,18 +386,6 @@ class ArtifactNames:
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1 = "PERF_REPORTS_AMD_1"
-    PERF_REPORTS_AMD_2 = "PERF_REPORTS_AMD_2"
-    PERF_REPORTS_AMD_3 = "PERF_REPORTS_AMD_3"
-    PERF_REPORTS_ARM_1 = "PERF_REPORTS_ARM_1"
-    PERF_REPORTS_ARM_2 = "PERF_REPORTS_ARM_2"
-    PERF_REPORTS_ARM_3 = "PERF_REPORTS_ARM_3"
-    PERF_REPORTS_AMD_1_WITH_RELEASE = "PERF_REPORTS_AMD_1_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_WITH_RELEASE"
-    PERF_REPORTS_AMD_3_WITH_RELEASE = "PERF_REPORTS_AMD_3_WITH_RELEASE"
-
-    PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
-
 
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
@@ -398,7 +404,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_COV_BIN,
-            ArtifactNames.CH_ARM_BIN,
+            ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
             ArtifactNames.CH_ARM_DARWIN_BIN,
@@ -475,21 +481,4 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    performance_reports = Artifact.Config(
-        name="*",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/perf_wd/*.html",
-    ).parametrize(
-        names=[
-            ArtifactNames.PERF_REPORTS_AMD_1,
-            ArtifactNames.PERF_REPORTS_AMD_2,
-            ArtifactNames.PERF_REPORTS_AMD_3,
-            ArtifactNames.PERF_REPORTS_ARM_1,
-            ArtifactNames.PERF_REPORTS_ARM_2,
-            ArtifactNames.PERF_REPORTS_ARM_3,
-            ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE,
-        ]
     )
