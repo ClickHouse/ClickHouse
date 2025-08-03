@@ -136,11 +136,14 @@ elseif (SANITIZE STREQUAL "thread")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 endif()
 
+# Suppress warnings
 list(APPEND RUSTFLAGS
-    # Suppress warnings in delta-kernel-rs
+    # delta-kernel-rs
     "-Adead_code"
-    # Suppress warnings in skim
+    # skim
     "-Amismatched_lifetime_syntaxes"
+    # wasmtime
+    "-Aunused_parens"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)
