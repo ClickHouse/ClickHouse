@@ -45,7 +45,6 @@ public:
 
     /// Helper class, which holds chain of buffers to write data file with marks.
     /// It is used to write: one column, skip index or all columns (in compact format).
-    template<bool only_plain_file>
     struct Stream
     {
         Stream(
@@ -88,9 +87,9 @@ public:
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_hashing;
-        std::conditional_t<!only_plain_file, CompressedWriteBuffer, void*> marks_compressor;
-        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_compressed_hashing;
+        HashingWriteBuffer marks_hashing;
+        CompressedWriteBuffer marks_compressor;
+        HashingWriteBuffer marks_compressed_hashing;
         bool compress_marks;
 
         bool is_prefinalized = false;
@@ -105,7 +104,7 @@ public:
         void addToChecksums(MergeTreeDataPartChecksums & checksums);
     };
 
-    using StreamPtr = std::unique_ptr<Stream<false>>;
+    using StreamPtr = std::unique_ptr<Stream>;
 
     MergeTreeDataPartWriterOnDisk(
         const String & data_part_name_,
