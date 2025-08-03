@@ -399,6 +399,9 @@ fi
 # Enable remote_database_disk in DEBUG and ASAN build
 build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
+    # FIXME: this is never reached
+    exit 1
+
     ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     echo "Installed remote_database_disk.xml config"
 fi
