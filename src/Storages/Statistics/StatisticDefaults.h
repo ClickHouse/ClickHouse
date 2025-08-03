@@ -26,7 +26,7 @@ private:
     UInt64 rows_count = 0;
 };
 
-void defaultsStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool defaultsStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr defaultsStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

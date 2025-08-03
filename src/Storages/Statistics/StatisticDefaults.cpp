@@ -47,8 +47,9 @@ UInt64 StatisticsDefaults::estimateDefaults() const
     return num_defaults;
 }
 
-void defaultsStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)
+bool defaultsStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)
 {
+    return true;
 }
 
 StatisticsPtr defaultsStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & /*data_type*/)

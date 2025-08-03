@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -270,7 +271,6 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     }
 }
 
-
 StatisticsInfo ColumnStatistics::getInfo() const
 {
     StatisticsInfo info;
@@ -418,8 +418,28 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", type);
-        it->second(desc, data_type);
+
+        if (!it->second(desc, data_type))
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
     }
+}
+
+ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+{
+    ColumnStatisticsDescription result;
+    result.data_type = data_type;
+
+    for (const auto & entry : stats.types_to_desc)
+    {
+        auto it = validators.find(entry.first);
+        if (it == validators.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", entry.first);
+
+        if (it->second(entry.second, data_type))
+            result.types_to_desc.insert(entry);
+    }
+
+    return result;
 }
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
@@ -435,7 +455,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest', 'uniq' and 'defaults'", type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;

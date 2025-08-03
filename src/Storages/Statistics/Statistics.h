@@ -132,8 +132,9 @@ public:
     static MergeTreeStatisticsFactory & instance();
 
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;

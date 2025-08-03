@@ -53,7 +53,9 @@ public:
 
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const;
+
     virtual void fromJSON(const Poco::JSON::Object & object);
+    virtual void fromJSONWithStats(const Poco::JSON::Object & object, StatisticsInfo & stats);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
     const SerializationInfoSettings & getSettings() const { return settings; }
@@ -86,18 +88,20 @@ public:
     void writeJSON(WriteBuffer & out) const;
     void writeJSONWithStats(WriteBuffer & out, const StatisticsInfos & stats) const;
 
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
-
-    static SerializationInfoByName readJSONFromString(
-        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
-
-    static SerializationInfoByName fromStatistics(const ColumnsStatistics & statistics, const Settings & settings);
-
 private:
     template <typename ElementWriter>
     void writeJSONImpl(size_t version, WriteBuffer & out, ElementWriter && write_element) const;
 };
+
+struct SerializationInfosLoadResult
+{
+    SerializationInfoByName infos;
+    std::optional<StatisticsInfos> stats;
+};
+
+SerializationInfosLoadResult loadSerializationInfosFromBuffer(ReadBuffer & in, const SerializationInfoSettings & settings);
+SerializationInfosLoadResult loadSerializationInfosFromString(const std::string & str, const SerializationInfoSettings & settings);
+SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatistics & statistics, const SerializationInfoSettings & settings);
 
 ColumnsStatistics getImplicitStatisticsForSparseSerialization(const Block & block, const SerializationInfoSettings & settings);
 

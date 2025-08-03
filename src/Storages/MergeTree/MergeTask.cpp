@@ -607,7 +607,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         .number_of_uniq_for_low_cardinality = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
-    SerializationInfoByName infos = SerializationInfoByName::fromStatistics(source_statistics, info_settings);
+    SerializationInfoByName infos = loadSerializationInfosFromStatistics(source_statistics, info_settings);
 
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());

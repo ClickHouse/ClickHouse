@@ -14,3 +14,9 @@ all_1_2_1	v2	Default	['Uniq','Defaults']
 all_1_2_1	v3	LowCardinality	['Uniq','Defaults']
 200000
 3	4	4
+all_1_2_1	id	Default	['Uniq','Defaults']
+all_1_2_1	v1	Sparse	['Uniq','Defaults']
+all_1_2_1	v2	Default	['Uniq','Defaults']
+all_1_2_1	v3	LowCardinality	['Uniq','Defaults']
+200000
+3	4	4

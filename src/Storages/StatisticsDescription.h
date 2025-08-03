@@ -59,11 +59,13 @@ struct ColumnStatisticsDescription
 
     /// get a vector of <column name, statistics desc> pair
     static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type);
+    static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;
     DataTypePtr data_type;
 };
+
+StatisticsType stringToStatisticsType(String type);
 
 }

@@ -41,7 +41,7 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
     return *this;
 }
 
-static StatisticsType stringToStatisticsType(String type)
+StatisticsType stringToStatisticsType(String type)
 {
     if (type == "tdigest")
         return StatisticsType::TDigest;
@@ -108,9 +108,8 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
     for (const auto & [stats_type, stats_desc]: other.types_to_desc)
     {
         if (!if_not_exists && types_to_desc.contains(stats_type))
-        {
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
-        }
+
         if (!types_to_desc.contains(stats_type))
             types_to_desc.emplace(stats_type, stats_desc);
     }
@@ -168,11 +167,12 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type)
+ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
 {
-    const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
+    const auto & stat_type_list_ast = statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatForErrorMessage());
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "At least one statistics type expected for column {}", column_name);
+
     ColumnStatisticsDescription stats;
     for (const auto & ast : stat_type_list_ast->children)
     {
@@ -180,9 +180,11 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
 
         SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone());
         if (stats.types_to_desc.contains(stat.type))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column.name, stat_type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column_name, stat_type);
+
         stats.types_to_desc.emplace(stat.type, std::move(stat));
     }
+
     stats.data_type = data_type;
     return stats;
 }

@@ -113,13 +113,22 @@ void SerializationInfo::toJSONWithStats(Poco::JSON::Object & object, const Stati
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
+    if (!object.has(KEY_KIND))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in SerializationInfo", KEY_KIND);
+
+    kind = ISerialization::stringToKind(object.getValue<String>(KEY_KIND));
+}
+
+void SerializationInfo::fromJSONWithStats(const Poco::JSON::Object & object, StatisticsInfo & stats)
+{
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
-    // data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
-    // data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    stats.types.insert(StatisticsType::Defaults);
+    stats.rows_count = object.getValue<size_t>(KEY_NUM_ROWS);
+    stats.estimated_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
     kind = ISerialization::stringToKind(object.getValue<String>(KEY_KIND));
 }
 
@@ -199,8 +208,7 @@ void SerializationInfoByName::writeJSONWithStats(WriteBuffer & out, const Statis
         });
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(
-    const NamesAndTypesList & columns, const Settings & settings, const std::string & json_str)
+SerializationInfosLoadResult loadSerializationInfosFromString(const std::string & json_str, const SerializationInfoSettings & settings)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -208,55 +216,57 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION_WITH_STATS)
+    SerializationInfosLoadResult result;
+    size_t version = object->getValue<size_t>(KEY_VERSION);
+
+    if (version > SERIALIZATION_INFO_VERSION_WITHOUT_STATS)
+    {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Unknown version of serialization infos ({}). Should be less or equal than {}",
-            object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION_WITH_STATS);
-
-    SerializationInfoByName infos;
-    if (object->has(KEY_COLUMNS))
+            version, SERIALIZATION_INFO_VERSION_WITHOUT_STATS);
+    }
+    else if (version == SERIALIZATION_INFO_VERSION_WITH_STATS)
     {
-        std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
-        for (const auto & [name, type] : columns)
-            column_type_by_name.emplace(name, type.get());
-
-        auto array = object->getArray(KEY_COLUMNS);
-        for (const auto & elem : *array)
-        {
-            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
-
-            if (!elem_object->has(KEY_NAME))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
-
-            auto name = elem_object->getValue<String>(KEY_NAME);
-            auto it = column_type_by_name.find(name);
-
-            if (it == column_type_by_name.end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Found unexpected column '{}' in serialization infos", name);
-
-            auto info = it->second->createSerializationInfo(settings);
-            info->fromJSON(*elem_object);
-            infos.emplace(name, std::move(info));
-        }
+        result.stats = StatisticsInfos();
     }
 
-    return infos;
+    if (!object->has(KEY_COLUMNS))
+        return result;
+
+    auto array = object->getArray(KEY_COLUMNS);
+    for (const auto & elem : *array)
+    {
+        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+
+        if (!elem_object->has(KEY_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_NAME);
+
+        auto name = elem_object->getValue<String>(KEY_NAME);
+        auto info = std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
+
+        if (version == SERIALIZATION_INFO_VERSION_WITHOUT_STATS)
+            info->fromJSON(*elem_object);
+        else
+            info->fromJSONWithStats(*elem_object, result.stats.value()[name]);
+
+        result.infos.emplace(name, std::move(info));
+    }
+
+    return result;
 }
 
-
-SerializationInfoByName SerializationInfoByName::readJSON(
-    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+SerializationInfosLoadResult loadSerializationInfosFromBuffer(ReadBuffer & in, const SerializationInfoSettings & settings)
 {
     String json_str;
     readString(json_str, in);
-    return readJSONFromString(columns, settings, json_str);
+    return loadSerializationInfosFromString(json_str, settings);
 }
 
-SerializationInfoByName SerializationInfoByName::fromStatistics(const ColumnsStatistics & statistics, const Settings & settings)
+SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatistics & statistics, const SerializationInfoSettings & settings)
 {
     SerializationInfoByName infos;
+    if (settings.isAlwaysDefault())
+        return infos;
 
     for (const auto & [column_name, column_stats] : statistics)
     {

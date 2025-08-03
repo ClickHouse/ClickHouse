@@ -9,7 +9,10 @@ struct SerializationInfoSettings
     const double ratio_of_defaults_for_sparse = 1.0;
     const size_t number_of_uniq_for_low_cardinality = 20000;
 
-    bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+    bool isAlwaysDefault() const
+    {
+        return ratio_of_defaults_for_sparse >= 1.0 && number_of_uniq_for_low_cardinality == 0;
+    }
 };
 
 }

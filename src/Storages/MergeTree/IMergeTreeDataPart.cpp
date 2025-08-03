@@ -863,7 +863,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     {
         for (auto it = result.begin(); it != result.end();)
         {
-            String file_name = ColumnsStatistics::getFileName(it->first) + STATS_FILE_SUFFIX;
+            String file_name = ColumnsStatistics::getFileName(it->first);
             String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
             if (auto stat_file = readFileIfExists(file_name))
@@ -1751,7 +1751,13 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
     SerializationInfoByName infos;
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
+    {
+        auto result = loadSerializationInfosFromBuffer(*in, settings);
+        infos = result.infos;
+
+        if (result.stats)
+            statistics_infos = std::move(*result.stats);
+    }
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)

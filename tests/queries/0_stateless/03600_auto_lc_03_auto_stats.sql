@@ -3,10 +3,10 @@ SET allow_experimental_statistics = 1;
 
 CREATE TABLE test_table
 (
-    id UInt64 STATISTICS(defaults, uniq),
-    v1 String STATISTICS(defaults, uniq),
-    v2 UInt64 STATISTICS(defaults, uniq),
-    v3 String STATISTICS(defaults, uniq)
+    id UInt64,
+    v1 String STATISTICS(uniq),
+    v2 UInt64 STATISTICS(tdigest),
+    v3 String
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -16,7 +16,8 @@ SETTINGS
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     ratio_of_defaults_for_sparse_serialization = 0.9,
-    max_uniq_number_for_low_cardinality = 1000;
+    max_uniq_number_for_low_cardinality = 1000,
+    statistics_types = 'uniq,defaults,minmax';
 
 SYSTEM STOP MERGES test_table;
 

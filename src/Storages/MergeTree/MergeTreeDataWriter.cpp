@@ -733,13 +733,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     if (use_statistics_for_serialization_info)
     {
-        infos = SerializationInfoByName::fromStatistics(statistics, serialization_settings);
+        infos = loadSerializationInfosFromStatistics(statistics, serialization_settings);
     }
     else
     {
         implicit_statistics = getImplicitStatisticsForSparseSerialization(block, serialization_settings);
         implicit_statistics.build(block);
-        infos = SerializationInfoByName::fromStatistics(implicit_statistics, serialization_settings);
+        infos = loadSerializationInfosFromStatistics(implicit_statistics, serialization_settings);
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
