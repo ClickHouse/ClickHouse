@@ -143,7 +143,7 @@ list(APPEND RUSTFLAGS
     # skim
     "-Amismatched_lifetime_syntaxes"
     # wasmtime
-    "-Aunused_parens"
+    "-Aunused_parens -Aunused_imports"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)

@@ -42,5 +42,7 @@ clickhouse_import_crate(
 clickhouse_config_crate_flags(wasmtime)
 
 target_link_libraries(_ch_wasmtime INTERFACE wasmtime)
+set_target_properties(_ch_wasmtime PROPERTIES
+       INTERFACE_LINK_OPTIONS "-Wl,--no-whole-archive")
 
 add_library(ch_contrib::wasmtime ALIAS _ch_wasmtime)
