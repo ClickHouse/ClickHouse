@@ -46,6 +46,9 @@ struct S3Settings
         bool validate_settings);
 
     void updateIfChanged(const S3Settings & settings);
+
+    void serialize(WriteBuffer & os, ContextPtr) const;
+    static S3Settings deserialize(ReadBuffer & is, ContextPtr context);
 };
 
 class S3SettingsByEndpoint

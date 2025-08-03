@@ -238,6 +238,7 @@ DataGrip
 DataLakeCatalog
 DataLens
 DataPacket
+DataPup
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -601,7 +602,6 @@ LogsLevel
 Logstash
 LookML
 LoongArch
-Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -2294,7 +2294,6 @@ london
 lookahead
 lookups
 loongarch
-lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -3350,6 +3349,8 @@ uploaders
 upperUTF
 uptime
 uptrace
+upsert
+upserts
 uring
 url
 urlCluster

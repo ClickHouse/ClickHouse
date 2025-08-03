@@ -192,12 +192,13 @@ void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
 {
+    std::vector<TaskRuntimeDataPtr> tasks_to_cancel;
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        pending.cancelAndRemove(id);
+        tasks_to_cancel = pending.cancelAndRemove(id);
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -205,6 +206,12 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 
         for (auto & item : tasks_to_wait)
             item->is_currently_deleting = true;
+    }
+
+    for (auto & item : tasks_to_cancel)
+    {
+        item->task->cancel();
+        item.reset();
     }
 
     /// Wait for each task to be executed
@@ -269,26 +276,19 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     String query_id;
 
-    auto complete_task = [this, &erase_from_active, &release_task, &query_id] (TaskRuntimeDataPtr && item_)
+    auto complete_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_)
     {
         std::lock_guard guard(mutex);
 
         erase_from_active(item_);
         has_tasks.notify_one();
 
-        try
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
             /// In a situation of a lack of memory this method can throw an exception,
             /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
             /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
             item_->task->onCompleted();
-        }
-        catch (...)
-        {
-            printExceptionWithRespectToAbort(log, query_id);
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            item_->task->cancel();
         }
 
         release_task(std::move(item_));
@@ -300,12 +300,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
         erase_from_active(item_);
         has_tasks.notify_one();
-
-        {
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            item_->task->cancel();
-        }
-
         release_task(std::move(item_));
     };
 
@@ -316,20 +310,31 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         ALLOW_ALLOCATIONS_IN_SCOPE;
         query_id = item->task->getQueryId();
         need_execute_again = item->task->executeStep();
+
+        if (!need_execute_again)
+        {
+            complete_task(std::move(item));
+            return;
+        }
     }
     catch (...)
     {
         if (item->task->printExecutionException())
             printExceptionWithRespectToAbort(log, query_id);
+
+        try
+        {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            item->task->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         cancel_task(std::move(item));
-        return;
-    }
-
-    if (!need_execute_again)
-    {
-        complete_task(std::move(item));
         return;
     }
 
@@ -341,6 +346,8 @@ template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
+
+    current_thread->flushUntrackedMemory();
 
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -369,6 +376,8 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             });
         }
+
+        current_thread->flushUntrackedMemory();
     }
 }
 
