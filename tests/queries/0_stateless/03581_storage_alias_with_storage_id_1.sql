@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 drop table if exists ref_table;
 drop table if exists alias_table;
 
@@ -40,5 +41,5 @@ create table ref_table (id UInt32, b Int32, c UInt32) Engine=MergeTree order by 
 insert into ref_table values (1, 2, 3);
 select * from alias_table order by id;
 
-drop table ref_table;
 drop table alias_table;
+drop table ref_table;
