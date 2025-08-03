@@ -4,3 +4,4 @@ services:
     ports:
       - "5005:5005"
     command: ["python", "flight_server.py"]
+    stop_signal: SIGINT

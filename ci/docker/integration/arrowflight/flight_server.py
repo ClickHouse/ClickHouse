@@ -4,6 +4,7 @@ import pyarrow as pa
 class FlightServer(fl.FlightServerBase):
     def __init__(self, location):
         super().__init__(location)
+        self._location = location
 
     def do_get(self, context, ticket):
         schema = pa.schema([('column1', pa.string()), ('column2', pa.string())])
@@ -21,16 +22,11 @@ class FlightServer(fl.FlightServerBase):
     def do_action(self, context, action):
         return fl.FlightDescriptor.for_command("Action executed")
 
-    def do_flight_info(self, context, descriptor):
+    def get_flight_info(self, context, descriptor):
         schema = pa.schema([('column1', pa.string()), ('column2', pa.string())])
-        return fl.FlightInfo(
-            schema,
-            descriptor,
-            1,
-            0,
-            None,
-            None
-        )
+        dataset = descriptor.path[0].decode('utf-8')
+        endpoints = [pa.flight.FlightEndpoint(dataset, [self._location])]
+        return fl.FlightInfo(schema, descriptor, endpoints)
 
 if __name__ == "__main__":
     location = "grpc+tcp://0.0.0.0:5005"
