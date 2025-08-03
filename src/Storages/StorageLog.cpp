@@ -6,6 +6,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
+#include <Common/logger_useful.h>
+#include <Columns/ColumnString.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -409,11 +411,11 @@ private:
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
-
 void LogSink::consume(Chunk & chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
+//    static const auto & logger = getLogger("LogSink");
 
     for (auto & stream : streams | boost::adaptors::map_values)
         stream.written = false;
@@ -422,6 +424,17 @@ void LogSink::consume(Chunk & chunk)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
         writeData(NameAndTypePair(column.name, column.type), *column.column);
+/*
+        const auto & col = block.getByPosition(i).column;
+        if (const auto * col_str = typeid_cast<const DB::ColumnString *>(col.get()))
+        {
+            for (size_t row = 0; row < col_str->size(); ++row)
+            {
+                std::string value = col_str->getDataAt(row).toString();
+                LOG_INFO(logger, "LogSink::consume Column {} columnName: {} Row {}: {}", i, column.name, row, value);
+            }
+        }
+        */
     }
 }
 
