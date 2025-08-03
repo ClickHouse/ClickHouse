@@ -58,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"optimize_if_transform_const_strings_to_lowcardinality", false, false, "New setting to allow optimizing results of const branches from if/multiif/transform into LowCardinality"},
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
