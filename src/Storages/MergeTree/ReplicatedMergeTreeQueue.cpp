@@ -19,7 +19,7 @@
 #include <base/defines.h>
 #include <base/sort.h>
 #include <cassert>
-
+#include <ranges>
 #include <Poco/Timestamp.h>
 
 namespace DB
@@ -1512,7 +1512,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         constexpr auto fmt_string = "Not executing log entry {} of type {} "
                            "because recently it has failed. According to exponential backoff policy, put aside this log entry for {} ms.";
 
-        LOG_DEBUG(LogToStr(out_postpone_reason, LogFrequencyLimiter(log, 10)), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
+        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
         return false;
     }
 
