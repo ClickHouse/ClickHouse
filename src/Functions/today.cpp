@@ -83,10 +83,10 @@ public:
 
 REGISTER_FUNCTION(Today)
 {
-    FunctionDocumentation::Description description = "Returns the current date at moment of query analysis. It is the same as `toDate(now())`.";
+    FunctionDocumentation::Description description = "Returns the current date at moment of query analysis. Same as `toDate(now())`.";
     FunctionDocumentation::Syntax syntax = "today()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date", {"Date"}};
     FunctionDocumentation::Examples example = {
         {
             "Usage example",
@@ -95,7 +95,7 @@ R"(
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
+│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
 └────────────┴────────────┴──────────────┘
 )"
         }
