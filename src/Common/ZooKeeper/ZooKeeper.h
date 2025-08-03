@@ -7,6 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <future>
 #include <memory>
@@ -816,7 +817,7 @@ void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & 
 {
     if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
     {
-        auto request = std::make_shared<Coordination::CheckRequest>();
+        auto request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
         request->path = path;
         request->not_exists = true;
         requests.push_back(std::move(request));
