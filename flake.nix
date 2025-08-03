@@ -123,7 +123,7 @@
     contrib-jemalloc = { url = "github:jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355"; flake = false; };
     contrib-google-protobuf = { url = "github:ClickHouse/google-protobuf/74211c0dfc2777318ab53c2cd2c317a2ef9012de"; flake = false; };
     contrib-boost = { url = "github:ClickHouse/boost/ae94606a70f1e298ce2a5718db858079185c4d9c"; flake = false; };
-    contrib-arrow = { url = "github:ClickHouse/arrow/210f686ab96733180bed04e36098911825d70345"; flake = false; };
+    contrib-arrow = { url = "github:ClickHouse/arrow/68dd24ec070e18633a1b78112a463cfa333c6ada"; flake = false; };
     contrib-thrift = { url = "github:apache/thrift/2a93df80f27739ccabb5b885cb12a8dc7595ecdf"; flake = false; };
     contrib-libhdfs3 = { url = "github:ClickHouse/libhdfs3/d0ae7d2568151feef61d3ec7896803262f0e0f91"; flake = false; };
     contrib-libxml2 = { url = "github:GNOME/libxml2/74f3154320df8950eceae4951975cc9dfc3a254d"; flake = false; };
