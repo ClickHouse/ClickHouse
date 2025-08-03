@@ -139,9 +139,7 @@ def main():
     is_parallel_replicas = False
     runner_options = ""
     # optimal value for most of the jobs
-    # nproc = int(Utils.cpu_count() * 0.8)
-    # test
-    nproc = int(Utils.cpu_count() * 1.8)
+    nproc = int(Utils.cpu_count() * 0.8)
     info = Info()
 
     for to in test_options:
