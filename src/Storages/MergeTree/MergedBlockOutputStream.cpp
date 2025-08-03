@@ -463,18 +463,24 @@ void convertToCorrectSerializations(Block & block, const SerializationInfoByName
         auto kind = infos.getKind(column.name);
 
         if (kind != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-
-        if (kind != ISerialization::Kind::LOW_CARDINALITY)
-            column.column = recursiveRemoveLowCardinality(column.column);
-
-        if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
         {
-            auto new_column = createEmptyLowCardinalityColumn(*column.type);
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
+            column.column = recursiveRemoveSparse(column.column);
+        }
 
-            column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
-            column.column = std::move(new_column);
+        if (!column.type->lowCardinality())
+        {
+            if (kind != ISerialization::Kind::LOW_CARDINALITY)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+            }
+            else if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
+            {
+                auto new_column = createEmptyLowCardinalityColumn(*column.type);
+                auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
+
+                column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
+                column.column = std::move(new_column);
+            }
         }
     }
 }

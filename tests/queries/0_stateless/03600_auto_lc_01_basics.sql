@@ -10,7 +10,13 @@ CREATE TABLE test_table
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS use_statistics_for_serialization_info = 1, min_bytes_for_wide_part = 0;
+SETTINGS
+    use_statistics_for_serialization_info = 1,
+    min_bytes_for_wide_part = 0,
+    enable_block_number_column = 0,
+    enable_block_offset_column = 0,
+    ratio_of_defaults_for_sparse_serialization = 0.9,
+    max_uniq_number_for_low_cardinality = 1000;
 
 SYSTEM STOP MERGES test_table;
 

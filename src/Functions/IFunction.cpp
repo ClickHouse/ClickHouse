@@ -82,11 +82,6 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
             if (indexes)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
 
-            const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
-
             if (can_be_executed_on_default_arguments)
             {
                 /// Normal case, when function can be executed on values' default.
@@ -103,7 +98,7 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
             }
 
             num_rows = column.column->size();
-            column.type = low_cardinality_type->getDictionaryType();
+            column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
 
@@ -381,28 +376,42 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     ColumnPtr result;
+    ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
     if (useDefaultImplementationForLowCardinalityColumns())
     {
-        ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
 
-        if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
+        DataTypePtr dictionary_type = recursiveRemoveLowCardinality(result_type);
+
+        bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+
+        size_t num_low_cardinality_columns = 0;
+        size_t num_full_columns = 0;
+
+        for (const auto & arg : arguments)
         {
-            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+            if (checkAndGetColumn<ColumnLowCardinality>(arg.column.get()))
+                ++num_low_cardinality_columns;
+            else if (!isColumnConst(*arg.column))
+                ++num_full_columns;
+        }
 
-            const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
+        if (num_low_cardinality_columns == 1 && num_full_columns == 0)
+        {
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
                 columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
-            size_t new_input_rows_count
-                = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            size_t new_input_rows_count = columns_without_low_cardinality.empty()
+                ? input_rows_count
+                : columns_without_low_cardinality.front().column->size();
+
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
-
             auto keys = res_is_constant ? res->cloneResized(1)->convertToFullColumnIfConst() : res;
 
-            auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
+            auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
@@ -411,19 +420,12 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes);
 
-            if (res_is_constant)
-                result = ColumnConst::create(std::move(result), input_rows_count);
-        }
-        else
-        {
-            convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
-            result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
+            return res_is_constant ? ColumnConst::create(std::move(result), input_rows_count) : result;
         }
     }
-    else
-        result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
 
-    return result;
+    convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+    return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 ColumnPtr IExecutableFunction::execute(
@@ -569,16 +571,21 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
                     ++num_full_low_cardinality_columns;
             }
             else if (!is_const)
+            {
                 ++num_full_ordinary_columns;
+            }
         }
 
         convertLowCardinalityColumnsToFull(args_without_low_cardinality);
-
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1
-            && num_full_ordinary_columns == 0 && type_without_low_cardinality->canBeInsideLowCardinality())
+        if (canBeExecutedOnLowCardinalityDictionary()
+            && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1
+            && num_full_ordinary_columns == 0
+            && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
+
         return type_without_low_cardinality;
     }
 

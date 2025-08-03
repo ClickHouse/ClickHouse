@@ -1,0 +1,2 @@
+foo	foo	3	3	LowCardinality(String)	LowCardinality(String)	LowCardinality(UInt64)	LowCardinality(UInt64)
+barbar	barbar	6	6	LowCardinality(String)	LowCardinality(String)	LowCardinality(UInt64)	LowCardinality(UInt64)

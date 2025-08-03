@@ -17,7 +17,7 @@ private:
 
 public:
     SerializationLowCardinality(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_);
-    ISerialization::Kind getKind() const override { return ISerialization::Kind::LOW_CARDINALITY; }
+    ISerialization::Kind getKind() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

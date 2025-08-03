@@ -42,6 +42,11 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
+ISerialization::Kind SerializationLowCardinality::getKind() const
+{
+    return is_native_low_cardinality ? ISerialization::Kind::DEFAULT : ISerialization::Kind::LOW_CARDINALITY;
+}
+
 void SerializationLowCardinality::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

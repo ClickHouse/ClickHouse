@@ -320,7 +320,7 @@ SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
-    if (isStringOrFixedString(*this) && kind == ISerialization::Kind::LOW_CARDINALITY)
+    if (canBeInsideLowCardinality() && kind == ISerialization::Kind::LOW_CARDINALITY)
         return getLowCardinalitySerialization();
 
     if (kind == ISerialization::Kind::DETACHED)

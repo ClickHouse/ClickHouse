@@ -31,6 +31,8 @@ public:
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -46,11 +48,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, arguments[0].column->getName());
-    }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
-    {
-        return DataTypeString().createColumnConst(1, arguments[0].type->createColumn()->getName());
     }
 };
 
