@@ -2,8 +2,13 @@
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
-namespace DB::WebAssembly
+#include <Common/Exception.h>
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
+namespace DB::WebAssembly
 {
 
 class WasmHostFunction;
@@ -22,7 +27,15 @@ public:
     virtual ~WasmCompartment() = default;
 
     virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
-    template <typename T> T & getRef(WasmPtr ptr) { return *reinterpret_cast<T *>(getMemory(ptr, sizeof(T))); }
+
+    template <typename T>
+    T & getRef(WasmPtr ptr)
+    {
+        auto * raw = getMemory(ptr, sizeof(T));
+        if (reinterpret_cast<uintptr_t>(raw) % alignof(T) != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Alignment error");
+        return *reinterpret_cast<T *>(raw);
+    }
 
     virtual WasmPtr growMemory(WasmSizeT num_pages) = 0;
 

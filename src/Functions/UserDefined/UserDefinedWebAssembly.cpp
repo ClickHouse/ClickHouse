@@ -234,7 +234,7 @@ struct WasmBuffer
 static_assert(sizeof(WasmBuffer) == 8, "WasmBuffer size must be 8 bytes");
 static_assert(alignof(WasmBuffer) == 4, "WasmBuffer alignment must be 4 bytes");
 
-class WasmMemoryManagerV1 : public WasmMemoryManager
+class WasmMemoryManagerV1 final : public WasmMemoryManager
 {
 public:
     constexpr static std::string_view allocate_function_name = "clickhouse_create_buffer";
@@ -250,6 +250,9 @@ public:
 
     std::span<uint8_t> getMemoryView(WasmPtr handle) const override
     {
+        if (handle == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wasm buffer is nullptr");
+
         const auto & buffer = compartment->getRef<WasmBuffer>(handle);
         return {compartment->getMemory(buffer.ptr, buffer.size), buffer.size};
     }
