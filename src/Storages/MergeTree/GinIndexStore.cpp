@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <openssl/ct.h>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
