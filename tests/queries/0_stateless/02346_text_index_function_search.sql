@@ -45,7 +45,7 @@ SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 
 
 DROP TABLE tab;
 
-SELECT 'Default tokenizer';
+SELECT '-- Default tokenizer';
 
 CREATE TABLE tab
 (
@@ -86,7 +86,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
 
 DROP TABLE tab;
 
-SELECT 'Ngram tokenizer';
+SELECT '-- Ngram tokenizer';
 
 CREATE TABLE tab
 (
@@ -121,7 +121,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['efgh', 'cdef', 'defg']
 
 DROP TABLE tab;
 
-SELECT 'Split tokenizer';
+SELECT '-- Split tokenizer';
 
 CREATE TABLE tab
 (
@@ -156,7 +156,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['bc', 'd']);
 
 DROP TABLE tab;
 
-SELECT 'NoOp tokenizer';
+SELECT '-- NoOp tokenizer';
 
 CREATE TABLE tab
 (
@@ -210,12 +210,13 @@ SELECT count() FROM tab WHERE searchAll(message, ['hello', 'hello']);
 DROP TABLE tab;
 
 SELECT 'Combination with the tokens function';
-SELECT 'Default tokenizer';
+
+SELECT '-- Default tokenizer';
 CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'default'),
+    INDEX idx(message) TYPE text(tokenizer = 'default'),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -250,7 +251,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc fo', 'defaul
 
 DROP TABLE tab;
 
-SELECT 'Ngram tokenizer';
+SELECT '-- Ngram tokenizer';
 
 CREATE TABLE tab
 (
@@ -285,7 +286,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, arrayConcat(tokens('cdef
 
 DROP TABLE tab;
 
-SELECT 'Split tokenizer';
+SELECT '-- Split tokenizer';
 
 CREATE TABLE tab
 (
@@ -320,7 +321,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('bc\\d', 'split',
 
 DROP TABLE tab;
 
-SELECT 'NoOp tokenizer';
+SELECT '-- NoOp tokenizer';
 
 CREATE TABLE tab
 (
