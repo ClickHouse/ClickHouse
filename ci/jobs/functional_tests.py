@@ -139,7 +139,7 @@ def main():
     is_parallel_replicas = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.8)
+    nproc = int(Utils.cpu_count() * 0.3)
     info = Info()
 
     for to in test_options:
@@ -179,8 +179,11 @@ def main():
     if is_database_replicated or is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options:
+        if "binary" in args.options and len(test_options) < 3:
+            # plain binary job works fast with high concurrency
             nproc = int(Utils.cpu_count() * 1.2)
+        elif is_database_replicated:
+            nproc = int(Utils.cpu_count() * 0.4)
         else:
             pass
 
