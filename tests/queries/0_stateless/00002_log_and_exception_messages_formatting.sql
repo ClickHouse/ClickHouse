@@ -263,9 +263,9 @@ select 'number of noisy messages',
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
-    select message_format_string, any(toValidUTF8(message)) as any_message from logs
+    select replaceRegexpAll(message_format_string, '\.$', '') AS message_format_string, any(toValidUTF8(replaceRegexpAll(message, '\.$', '') AS message)) as any_message from logs
     where ((rand() % 8) = 0)
-    and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
+    and message not like (replaceRegexpAll(message_format_string, '\{[:.0-9dfx]*\}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')
     and message not like ('%Exception: '||s||'%')
     and message not like ('%(skipped % similar messages)%')
