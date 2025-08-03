@@ -11,4 +11,4 @@ FROM
 )
 ORDER BY
     msg ASC,
-    time ASC
+    toDateTime(intDiv(ms, 1000)) AS time ASC

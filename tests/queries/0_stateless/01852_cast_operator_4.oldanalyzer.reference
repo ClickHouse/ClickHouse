@@ -9,11 +9,11 @@ SELECT CAST(CAST(\'[1,2,3]\', \'Array(UInt64)\')[CAST(CAST([number, number], \'A
 FROM numbers(3)
 3
 WITH [3, 4, 5] AS x
-SELECT CAST(x[1], \'Int32\')
+SELECT CAST(([3, 4, 5] AS x)[1], \'Int32\')
 3
 SELECT CAST((3, 4, 5).1, \'Int32\')
 4
 SELECT CAST(CAST((3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\').1, \'Int32\')
 3
 WITH (3, 4, 5) AS x
-SELECT CAST(x.1, \'Int32\')
+SELECT CAST((tuple(3, 4, 5) AS x).1, \'Int32\')
