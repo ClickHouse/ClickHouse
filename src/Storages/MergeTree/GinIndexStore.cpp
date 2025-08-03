@@ -1,16 +1,13 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include <IO/VarInt.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
-#include <Common/HashTable/HashSet.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/BloomFilterHash.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -157,67 +154,6 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     }
 }
 
-GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
-    : unique_count(unique_count_)
-    , bits_per_row(bits_per_rows_)
-    , num_hashes(num_hashes_)
-    , bloom_filter(((bits_per_row * unique_count) + sizeof(BloomFilter::UnderType) - 1) / sizeof(BloomFilter::UnderType), num_hashes, 0)
-{
-}
-
-void GinSegmentDictionaryBloomFilter::add(std::string_view token)
-{
-    bloom_filter.add(token.data(), token.size());
-}
-
-bool GinSegmentDictionaryBloomFilter::contains(std::string_view token)
-{
-    return bloom_filter.find(token.data(), token.size());
-}
-
-UInt64 GinSegmentDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
-{
-    UInt64 bytes_written = 0;
-    const size_t filter_size_bytes = bloom_filter.getFilter().size() * sizeof(BloomFilter::UnderType);
-
-    writeVarUInt(unique_count, write_buffer);
-    bytes_written += getLengthOfVarUInt(unique_count);
-
-    writeVarUInt(bits_per_row, write_buffer);
-    bytes_written += getLengthOfVarUInt(bits_per_row);
-
-    writeVarUInt(num_hashes, write_buffer);
-    bytes_written += getLengthOfVarUInt(num_hashes);
-
-    writeVarUInt(filter_size_bytes, write_buffer);
-    bytes_written += getLengthOfVarUInt(filter_size_bytes);
-
-    write_buffer.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), filter_size_bytes);
-    bytes_written += filter_size_bytes;
-
-    return bytes_written;
-}
-
-std::unique_ptr<GinSegmentDictionaryBloomFilter> GinSegmentDictionaryBloomFilter::deserialize(ReadBuffer & read_buffer)
-{
-    UInt64 unique_count;
-    readVarUInt(unique_count, read_buffer);
-
-    UInt64 bits_per_row = 0;
-    readVarUInt(bits_per_row, read_buffer);
-
-    UInt64 num_hashes = 0;
-    readVarUInt(num_hashes, read_buffer);
-
-    UInt64 filter_size_bytes = 0;
-    readVarUInt(filter_size_bytes, read_buffer);
-
-    auto gin_bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>(unique_count, bits_per_row, num_hashes);
-    read_buffer.readStrict(reinterpret_cast<char *>(gin_bloom_filter->bloom_filter.getFilter().data()), filter_size_bytes);
-
-    return gin_bloom_filter;
-}
-
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     : name(name_)
     , storage(storage_)
@@ -228,13 +164,11 @@ GinIndexStore::GinIndexStore(
     const String & name_,
     DataPartStoragePtr storage_,
     MutableDataPartStoragePtr data_part_storage_builder_,
-    UInt64 segment_digestion_threshold_bytes_,
-    double bloom_filter_false_positive_rate_)
+    UInt64 segment_digestion_threshold_bytes_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , segment_digestion_threshold_bytes(segment_digestion_threshold_bytes_)
-    , bloom_filter_false_positive_rate(bloom_filter_false_positive_rate_)
 {
 }
 
@@ -338,9 +272,6 @@ void GinIndexStore::finalize()
     if (metadata_file_stream)
         metadata_file_stream->finalize();
 
-    if (bloom_filter_file_stream)
-        bloom_filter_file_stream->finalize();
-
     if (dict_file_stream)
         dict_file_stream->finalize();
 
@@ -352,9 +283,6 @@ void GinIndexStore::cancel() noexcept
 {
     if (metadata_file_stream)
         metadata_file_stream->cancel();
-
-    if (bloom_filter_file_stream)
-        bloom_filter_file_stream->cancel();
 
     if (dict_file_stream)
         dict_file_stream->cancel();
@@ -388,12 +316,10 @@ void GinIndexStore::initSegmentId()
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
-    String bloom_filter_file_name = getName() + GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
     metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
-    bloom_filter_file_stream = data_part_storage_builder->writeFile(bloom_filter_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
@@ -411,39 +337,21 @@ void GinIndexStore::writeSegmentId()
     ostr->finalize();
 }
 
-namespace
-{
-/// Initialize bloom filter from tokens from the term dictionary
-GinSegmentDictionaryBloomFilter initializeBloomFilter(
-        const GinIndexStore::GinIndexPostingsBuilderContainer & postings,
-        double bloom_filter_false_positive_rate)
-{
-    auto number_of_unique_terms = postings.size(); /// postings is a dictionary
-    const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    GinSegmentDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
-    for (const auto & [token, _] : postings)
-        bloom_filter.add(token);
-    return bloom_filter;
-}
-}
-
 void GinIndexStore::writeSegment()
 {
     if (metadata_file_stream == nullptr)
         initFileStreams();
 
-    /// Write segment
-    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
-
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
+    /// Write segment
+    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
     TokenPostingsBuilderPairs token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
+
     for (const auto & [token, postings_list] : current_postings)
         token_postings_list_pairs.push_back({token, postings_list});
-
-    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
@@ -463,11 +371,7 @@ void GinIndexStore::writeSegment()
         i++;
         current_segment.postings_start_offset += posting_list_byte_size;
     }
-
-    /// Write bloom filter
-    current_segment.bloom_filter_start_offset += bloom_filter.serialize(*bloom_filter_file_stream);
-
-    /// Write item dictionary
+    ///write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
     FST::FstBuilder fst_builder(write_buf);
@@ -519,7 +423,6 @@ void GinIndexStore::writeSegment()
     current_segment.segment_id = getNextSegmentID();
 
     metadata_file_stream->sync();
-    bloom_filter_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
 }
@@ -533,74 +436,52 @@ GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & st
 void GinIndexStoreDeserializer::initFileStreams()
 {
     String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
-    String bloom_filter_file_name = store->getName() + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
     metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
-    bloom_filter_file_stream = store->storage->readFile(bloom_filter_file_name, {}, std::nullopt, std::nullopt);
     dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
-
 void GinIndexStoreDeserializer::readSegments()
 {
     UInt32 num_segments = store->getNumOfSegments();
     if (num_segments == 0)
         return;
 
+    using GinIndexSegments = std::vector<GinIndexSegment>;
+    GinIndexSegments segments (num_segments);
+
     assert(metadata_file_stream != nullptr);
 
-    if (store->getVersion() == GinIndexStore::Format::v1)
+    metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
+    for (UInt32 i = 0; i < num_segments; ++i)
     {
-        std::vector<GinIndexSegment> segments(num_segments);
-        metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
-        for (UInt32 i = 0; i < num_segments; ++i)
-        {
-            auto seg_dict = std::make_shared<GinSegmentDictionary>();
-            seg_dict->postings_start_offset = segments[i].postings_start_offset;
-            seg_dict->dict_start_offset = segments[i].dict_start_offset;
-            seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
-            store->segment_dictionaries[segments[i].segment_id] = seg_dict;
-        }
+        auto seg_id = segments[i].segment_id;
+        auto seg_dict = std::make_shared<GinSegmentDictionary>();
+        seg_dict->postings_start_offset = segments[i].postings_start_offset;
+        seg_dict->dict_start_offset = segments[i].dict_start_offset;
+        store->segment_dictionaries[seg_id] = seg_dict;
     }
 }
 
-void GinIndexStoreDeserializer::prepareSegmentsForReading()
+void GinIndexStoreDeserializer::readSegmentDictionaries()
 {
     for (UInt32 seg_index = 0; seg_index < store->getNumOfSegments(); ++seg_index)
-        prepareSegmentForReading(seg_index);
+        readSegmentDictionary(seg_index);
 }
 
-void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
+void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
 {
     /// Check validity of segment_id
     auto it = store->segment_dictionaries.find(segment_id);
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
-    const GinSegmentDictionaryPtr & seg_dict = it->second;
-    switch (auto version = store->getVersion(); version)
-    {
-        case GinIndexStore::Format::v1: {
-            /// V1 supports bloom filter, so we can delay reading a segment until it's needed.
-
-            /// Set file pointer of filter file
-            assert(bloom_filter_file_stream != nullptr);
-            bloom_filter_file_stream->seek(it->second->bloom_filter_start_offset, SEEK_SET);
-            seg_dict->bloom_filter = GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_file_stream);
-            break;
-        }
-    }
-}
-
-void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_dictionary)
-{
     /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
-    dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
+    dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
 
-    segment_dictionary->fst = std::make_unique<FST::FiniteStateTransducer>();
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1: {
@@ -609,8 +490,8 @@ void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_d
             readVarUInt(fst_size_header, *dict_file_stream);
 
             size_t uncompressed_fst_size = fst_size_header >> 1;
-            segment_dictionary->fst->getData().clear();
-            segment_dictionary->fst->getData().resize(uncompressed_fst_size);
+            it->second->offsets.getData().clear();
+            it->second->offsets.getData().resize(uncompressed_fst_size);
             if (fst_size_header & 0x1) /// FST is compressed
             {
                 /// Read compressed FST size
@@ -621,14 +502,12 @@ void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_d
                 dict_file_stream->readStrict(buf.data(), compressed_fst_size);
                 const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
                 codec->decompress(
-                    buf.data(),
-                    static_cast<UInt32>(compressed_fst_size),
-                    reinterpret_cast<char *>(segment_dictionary->fst->getData().data()));
+                    buf.data(), static_cast<UInt32>(compressed_fst_size), reinterpret_cast<char *>(it->second->offsets.getData().data()));
             }
             else
             {
                 /// Read uncompressed FST blob
-                dict_file_stream->readStrict(reinterpret_cast<char *>(segment_dictionary->fst->getData().data()), uncompressed_fst_size);
+                dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), uncompressed_fst_size);
             }
             break;
         }
@@ -644,17 +523,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     {
         auto segment_id = seg_dict.first;
 
-        if (seg_dict.second->fst == nullptr)
-        {
-            /// Segment dictionary is not loaded, first check the term in bloom filter
-            if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
-                continue;
-
-            /// Term might be in segment dictionary
-            readSegmentFST(seg_dict.second);
-        }
-
-        auto [offset, found] = seg_dict.second->fst->getOutput(term);
+        auto [offset, found] = seg_dict.second->offsets.getOutput(term);
         if (!found)
             continue;
 
@@ -674,7 +543,7 @@ GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(cons
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
-        if (postings_cache->contains(term))
+        if (postings_cache->find(term) != postings_cache->end())
             continue;
 
         auto container = readSegmentedPostingsLists(term);
@@ -713,7 +582,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String & name, DataPartStorageP
 
         GinIndexStoreDeserializer deserializer(store);
         deserializer.readSegments();
-        deserializer.prepareSegmentsForReading();
+        deserializer.readSegmentDictionaries();
 
         stores[key] = store;
 
@@ -736,12 +605,9 @@ void GinIndexStoreFactory::remove(const String & part_path)
 
 bool isGinFile(const String & file_name)
 {
-    return file_name.ends_with(GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_DICTIONARY_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE);
+    return file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid");
 }
+
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -37,7 +37,6 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES = "segment_digestion_threshold_bytes";
-static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(const String & index_name_)
     : index_name(index_name_)
@@ -124,14 +123,14 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
         return;
 
     const auto & index_column_name = index_columns[0];
-    const auto & index_column = block.getByName(index_column_name);
+    const auto & column = block.getByName(index_column_name).column;
 
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
     size_t current_position = *pos;
     for (size_t i = 0; i < rows_read; ++i)
     {
-        auto ref = index_column.column->getDataAt(current_position + i);
+        auto ref = column->getDataAt(current_position + i);
         addToGinFilter(start_row_id + i, ref.data, ref.size, granule->gin_filter);
         store->incrementCurrentSizeBy(ref.size);
     }
@@ -670,7 +669,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     /// should not be called: createIndexAggregatorForPart should be used
-    chassert(false);
+    assert(false);
     return nullptr;
 }
 
@@ -709,7 +708,7 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
     if (auto it = options.find(option); it != options.end())
     {
         const Field & value = it->second;
-        Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
+        Field::Types::Which expected_type = Field::TypeToEnum<Type>::value;
         if (value.getType() != expected_type)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
@@ -763,13 +762,10 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
-    UInt64 segment_digestion_threshold_bytes
+    const UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
-    double bloom_filter_false_positive_rate
-        = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
-
-    GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, bloom_filter_false_positive_rate, ngram_size, separators);
+    GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -789,7 +785,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
@@ -800,7 +796,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}' must be between 2 and 8, but got {}",
+                "Text index '{}' argument must be between 2 and 8, but got {}",
                 ARGUMENT_NGRAM_SIZE,
                 *ngram_size);
     }
@@ -813,30 +809,18 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                 if (separator.getType() != Field::Types::String)
                     throw Exception(
                         ErrorCodes::INCORRECT_QUERY,
-                        "Element of text index argument '{}' expected to be String, but got {}",
+                        "Element of text index argument {} expected to be String, but got {}",
                         ARGUMENT_SEPARATORS,
                         separator.getTypeName());
         }
     }
 
-    UInt64 segment_digestion_threshold_bytes
+    const UInt64 segment_digestion_threshold_bytes
         = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
-
-    double bloom_filter_false_positive_rate
-        = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
-
-    if (!std::isfinite(bloom_filter_false_positive_rate)
-            || bloom_filter_false_positive_rate <= 0.0 || bloom_filter_false_positive_rate >= 1.0)
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' must be between 0.0 and 1.0, but got {}",
-            ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE,
-            bloom_filter_false_positive_rate);
 
     GinFilterParameters gin_filter_params(
         tokenizer.value(),
         segment_digestion_threshold_bytes,
-        bloom_filter_false_positive_rate,
         ngram_size,
         getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 
@@ -855,7 +839,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`");
+            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`");
 }
 
 }
