@@ -47,7 +47,7 @@ workflow = Workflow.Config(
         *[
             j.set_dependency(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                if "sequential" in j.name
+                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
@@ -104,6 +104,16 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # test: remove
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_jobs_coverage
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_jobs_azure_master_only
+        ],
+
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
