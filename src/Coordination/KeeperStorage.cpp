@@ -3393,7 +3393,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             }
 
             /// Watches for this requests are added to the watches lists
-            const auto update_watches = [this, session_id](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp)
+            const auto update_watches = [&](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp)
             {
                 if (resp->error == Coordination::Error::ZOK)
                 {
