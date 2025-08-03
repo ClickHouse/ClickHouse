@@ -138,7 +138,7 @@ ORDER BY [...]
 ```
 
 These HNSW-specific parameters are available:
-- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
+- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
 - `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
 - `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
@@ -419,6 +419,22 @@ ORDER BY event_time_microseconds;
 ```
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
+
+**Quantization**
+
+[Embedding Quanitation](https://sbert.net/examples/sentence_transformer/applications/embedding-quantization/README.html) is a technique to reduce memory consumption of vectors and speed up vector index builds. ClickHouse supports the following quantization options -
+
+|Quantization Option|Storage Per Dimension|
+|-------------------|---------------------|
+|   f16             |  2 bytes            |
+|   bf16            |  2 bytes            |
+|   i8              |  1 byte             |
+|   b1              |  1 bit              |
+
+Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or neglible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantizations cause measurable loss in precision and thus cause a drop in the quality of similarily search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with a multiplier to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
+
+Binary quantization is recommended only for embedding vectors normalized to length 1 (e.g OpenAI's models) and vector similarity computed using `cosine` distance. A binary quantized vector index uses `Hamming` distance metric internally to construct and update the proximity graph. The rescoring step will use the full precision vectors stored in the table and compute `cosine` distance to identify the nearest neighbours.
+
 
 **Tuning Data Transfer**
 
