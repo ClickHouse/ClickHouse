@@ -416,6 +416,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
+    ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,
     MergeTreeAllRangesCallback all_ranges_callback_,
     MergeTreeReadTaskCallback read_task_callback_,
@@ -429,7 +430,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         data,
         getQueryInfo(),
         getStorageSnapshot(),
-        getContext(),
+        context_,
         block_size.max_block_size_rows,
         requested_num_streams,
         max_block_numbers_to_read,
