@@ -742,27 +742,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         infos = SerializationInfoByName::fromStatistics(implicit_statistics, serialization_settings);
     }
 
-    for (const auto & [column_name, _] : columns)
-    {
-        auto & column = block.getByName(column_name);
-        auto kind = infos.getKind(column_name);
-
-        if (kind != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-
-        if (kind != ISerialization::Kind::LOW_CARDINALITY)
-            column.column = recursiveRemoveLowCardinality(column.column);
-
-        if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
-        {
-            auto new_column = createEmptyLowCardinalityColumn(*column.type);
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
-
-            column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
-            column.column = std::move(new_column);
-        }
-    }
-
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
@@ -822,10 +801,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
-    PartLevelStatistics part_level_statistics(/*need_update=*/ false);
-    part_level_statistics.addExplicitStats(statistics);
-    part_level_statistics.addStatsForSerialization(implicit_statistics);
-    part_level_statistics.addMinMaxIdx(minmax_idx);
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addExplicitStats(std::move(statistics), false);
+    part_level_statistics.addStatsForSerialization(std::move(implicit_statistics), false);
+    part_level_statistics.addMinMaxIndex(std::move(minmax_idx), false);
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -990,7 +969,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        PartLevelStatistics(false),
+        PartLevelStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,

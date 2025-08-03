@@ -299,6 +299,17 @@ ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
     }
 }
 
+ColumnsStatistics ColumnsStatistics::cloneEmpty() const
+{
+    ColumnsStatistics result;
+    for (const auto & [column_name, stat] : *this)
+    {
+        auto new_stat = MergeTreeStatisticsFactory::instance().get(stat->getDescription());
+        result.emplace(column_name, std::move(new_stat));
+    }
+    return result;
+}
+
 void ColumnsStatistics::serialize(WriteBuffer & buf) const
 {
     static constexpr UInt8 version = 0;

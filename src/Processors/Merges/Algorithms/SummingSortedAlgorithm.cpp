@@ -755,7 +755,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeConstAndSparse(inputs);
+    removeConstAndSparse(*header, inputs);
     merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
@@ -767,7 +767,7 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(input);
+    removeConstAndSparse(*header, input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }

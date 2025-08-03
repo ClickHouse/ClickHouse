@@ -113,6 +113,7 @@ public:
     using Base::Base;
 
     explicit ColumnsStatistics(const ColumnsDescription & columns);
+    ColumnsStatistics cloneEmpty() const;
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);

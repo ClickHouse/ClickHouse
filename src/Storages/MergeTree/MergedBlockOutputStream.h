@@ -88,6 +88,7 @@ private:
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
     MergeTreeWriterSettings writer_settings;
+    SerializationInfoByName serialization_infos;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

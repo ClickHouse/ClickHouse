@@ -1,3 +1,5 @@
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -38,6 +40,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const WriteSettings & write_settings_)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, part_level_statistics_)
     , default_codec(default_codec_)
+    , serialization_infos(data_part->getSerializationInfos())
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
@@ -380,17 +383,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         });
     }
 
-    const auto & serialization_infos = new_part->getSerializationInfos();
-    if (!serialization_infos.empty())
+    const auto & new_serialization_infos = new_part->getSerializationInfos();
+    if (!new_serialization_infos.empty())
     {
         bool use_statistics_for_serialization_info = (*storage_settings)[MergeTreeSetting::use_statistics_for_serialization_info];
 
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
             if (use_statistics_for_serialization_info)
-                serialization_infos.writeJSON(buffer);
+                new_serialization_infos.writeJSON(buffer);
             else
-                serialization_infos.writeJSONWithStats(buffer, part_level_statistics.stats_for_serialization.getInfos());
+                new_serialization_infos.writeJSONWithStats(buffer, part_level_statistics.stats_for_serialization.getInfos());
         });
     }
 
@@ -453,6 +456,29 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
+void convertToCorrectSerializations(Block & block, const SerializationInfoByName & infos)
+{
+    for (auto & column : block)
+    {
+        auto kind = infos.getKind(column.name);
+
+        if (kind != ISerialization::Kind::SPARSE)
+            column.column = recursiveRemoveSparse(column.column);
+
+        if (kind != ISerialization::Kind::LOW_CARDINALITY)
+            column.column = recursiveRemoveLowCardinality(column.column);
+
+        if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
+        {
+            auto new_column = createEmptyLowCardinalityColumn(*column.type);
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
+
+            column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
+            column.column = std::move(new_column);
+        }
+    }
+}
+
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
@@ -460,9 +486,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    writer->write(block, permutation);
-    part_level_statistics.update(block, metadata_snapshot);
-
+    Block block_to_write = block;
+    convertToCorrectSerializations(block_to_write, serialization_infos);
+    writer->write(block_to_write, permutation);
+    part_level_statistics.update(block_to_write, metadata_snapshot);
     rows_count += rows;
 }
 

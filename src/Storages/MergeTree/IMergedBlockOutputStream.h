@@ -15,18 +15,19 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 struct PartLevelStatistics
 {
-    explicit PartLevelStatistics(bool need_update_) : need_update(need_update_)
-    {
-    }
-
-    bool need_update = false;
     ColumnsStatistics explicit_stats;
-    ColumnsStatistics stats_for_serialization;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    bool build_explicit_stats = false;
 
-    void addExplicitStats(ColumnsStatistics stats) { explicit_stats = std::move(stats); }
-    void addStatsForSerialization(ColumnsStatistics stats) { stats_for_serialization = std::move(stats); }
-    void addMinMaxIdx(IMergeTreeDataPart::MinMaxIndexPtr idx) { minmax_idx = std::move(idx); }
+    ColumnsStatistics stats_for_serialization;
+    bool build_stats_for_serialization = false;
+
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    bool build_minmax_idx = false;
+
+    void addExplicitStats(ColumnsStatistics stats, bool need_build);
+    void addStatsForSerialization(ColumnsStatistics stats, bool need_build);
+    void addMinMaxIndex(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build);
+
     void update(const Block & block, const StorageMetadataPtr & metadata_snapshot);
 };
 

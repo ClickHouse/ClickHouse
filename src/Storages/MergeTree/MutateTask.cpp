@@ -1757,8 +1757,8 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
-        PartLevelStatistics part_level_statistics(true);
-        part_level_statistics.addExplicitStats(stats_to_rewrite);
+        PartLevelStatistics part_level_statistics;
+        part_level_statistics.addExplicitStats(stats_to_rewrite, true);
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1996,8 +1996,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            PartLevelStatistics part_level_statistics(true);
-            part_level_statistics.addExplicitStats(ctx->stats_to_recalc);
+            PartLevelStatistics part_level_statistics;
+            part_level_statistics.addExplicitStats(ctx->stats_to_recalc, true);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
