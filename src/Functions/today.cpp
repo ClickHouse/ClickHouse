@@ -91,13 +91,13 @@ REGISTER_FUNCTION(Today)
         {
             "Usage example",
             "SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty",
-            R"(
+R"(
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
 │ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
 └────────────┴────────────┴──────────────┘    
-            )"
+)"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
