@@ -5,6 +5,8 @@
 
 #include <base/StringRef.h>
 
+#include <boost/core/noncopyable.hpp>
+
 #include <vector>
 #include <memory>
 #include <cstdint>
