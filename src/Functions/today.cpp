@@ -96,14 +96,14 @@ R"(
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
 │ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
-└────────────┴────────────┴──────────────┘    
+└────────────┴────────────┴──────────────┘
 )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-    
+
     factory.registerFunction<TodayOverloadResolver>(documentation);
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
