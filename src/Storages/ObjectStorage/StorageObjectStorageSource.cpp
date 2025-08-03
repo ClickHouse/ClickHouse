@@ -313,7 +313,8 @@ Chunk StorageObjectStorageSource::generate()
                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                  .filename = &filename,
                  .last_modified = object_info->metadata->last_modified,
-                 .etag = &(object_info->metadata->etag)},
+                 .etag = &(object_info->metadata->etag),
+                 .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
                 read_context);
 
             // The order is important, it must be added after virtual columns..
@@ -550,15 +551,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        std::shared_ptr<const ActionsDAG> transformer;
-        if (object_info->data_lake_metadata)
-            transformer = object_info->data_lake_metadata->transform;
-        if (!transformer)
-            transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
-
-        if (transformer)
+        std::optional<ActionsDAG> transformer;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
+            transformer = object_info->data_lake_metadata->transform->clone();
+            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
+            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
+            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
+            transformer->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+        }
+        if (!transformer)
+        {
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info->getPath()))
+                transformer = schema_transformer->clone();
+        }
+
+        if (transformer.has_value())
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
