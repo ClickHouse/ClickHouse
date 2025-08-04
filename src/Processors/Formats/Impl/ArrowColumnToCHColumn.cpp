@@ -861,6 +861,7 @@ struct ReadColumnFromArrowColumnSettings
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
@@ -874,6 +875,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
@@ -1019,6 +1021,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
+                full_column_name,
                 dictionary_infos,
                 nested_type_hint,
                 false /*is_nullable_column*/,
@@ -1122,6 +1125,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
+                Nested::concatenateName(full_column_name, "list.element"),
                 dictionary_infos,
                 nested_type_hint,
                 is_nested_nullable_column,
@@ -1207,13 +1211,17 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 
+                auto initial_field_name = field_name;
                 if (parquet_columns_to_clickhouse)
                 {
                     chassert(clickhouse_columns_to_parquet);
 
+                    auto column_to_search = full_column_name;
+                    if (column_to_search.ends_with("list.element"))
+                        column_to_search = column_to_search.substr(0, column_to_search.size() - 13);
                     /// Full name of the parquet column.
                     /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
-                    auto full_name = clickhouse_columns_to_parquet->at(column_name);
+                    auto full_name = clickhouse_columns_to_parquet->at(column_to_search);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
                     {
@@ -1229,6 +1237,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
                 auto column_with_type_and_name = readColumnFromArrowColumn(nested_arrow_column,
                     field_name,
+                    Nested::concatenateName(full_column_name, field_name),
                     dictionary_infos,
                     nested_type_hint,
                     field->nullable(),
@@ -1243,7 +1252,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
                 tuple_elements.emplace_back(std::move(column_with_type_and_name.column));
                 tuple_types.emplace_back(std::move(column_with_type_and_name.type));
-                tuple_names.emplace_back(std::move(column_with_type_and_name.name));
+                tuple_names.emplace_back(std::move(initial_field_name));
             }
 
             ColumnPtr tuple_column;
@@ -1272,6 +1281,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
                 auto dict_column = readColumnFromArrowColumn(arrow_dict_column,
                     column_name,
+                    full_column_name,
                     dictionary_infos,
                     nullptr /*nested_type_hint*/,
                     false /*is_nullable_column*/,
@@ -1367,6 +1377,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
@@ -1392,6 +1403,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
         auto nested_column = readNonNullableColumnFromArrowColumn(arrow_column,
             column_name,
+            full_column_name,
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
@@ -1413,6 +1425,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
     return readNonNullableColumnFromArrowColumn(arrow_column,
         column_name,
+        full_column_name,
         dictionary_infos,
         type_hint,
         is_map_nested_column,
@@ -1487,6 +1500,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
         auto sample_column = readColumnFromArrowColumn(
             arrow_column,
+            field->name(),
             field->name(),
             dict_infos,
             nullptr /*nested_type_hint*/,
@@ -1624,6 +1638,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                     {
                         readColumnFromArrowColumn(arrow_column.column,
                             nested_table_name,
+                            nested_table_name,
                             dictionary_infos,
                             nested_table_type,
                             arrow_column.field->nullable() /*is_nullable_column*/,
@@ -1667,6 +1682,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         {
             const auto & arrow_column = name_to_arrow_column.find(search_column_name)->second;
             column = readColumnFromArrowColumn(arrow_column.column,
+                header_column.name,
                 header_column.name,
                 dictionary_infos,
                 header_column.type,
