@@ -406,7 +406,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM_MEM,
+                runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
             for total_batches in (2,)
@@ -469,26 +469,27 @@ class JobConfigs:
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_COV_BIN],
-            )
-            for total_batches in (6,)
-            for batch in range(1, total_batches + 1)
-        ]
+        Job.ParamSet(
+            parameter=f"arm_coverage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_COV_BIN],
+        ),
+        Job.ParamSet(
+            parameter=f"arm_coverage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            requires=[ArtifactNames.CH_COV_BIN],
+        ),
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
                 parameter="arm_asan, azure, parallel",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_MEDIUM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
             Job.ParamSet(
                 parameter="arm_asan, azure, sequential",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_SMALL_MEM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
         )
