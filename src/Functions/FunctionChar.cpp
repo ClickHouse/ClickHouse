@@ -126,9 +126,9 @@ has the value of the corresponding argument. Accepts multiple arguments of numer
 If the value of the argument is out of range of the `UInt8` data type, then it is converted
 to `UInt8` with possible rounding and overflow.
         )";
-    FunctionDocumentation::Syntax syntax = "char(num1, [num2, ..., numN]);";
+    FunctionDocumentation::Syntax syntax = "char(num1[, num2[, ...]]);";
     FunctionDocumentation::Arguments arguments = {
-        {"num1, num2, ..., numN", "Numerical arguments interpreted as integers.", {"(U)Int8/16/32/64", "Float*"}}
+        {"num1[, num2[, num3 ...]]", "Numerical arguments interpreted as integers.", {"(U)Int8/16/32/64", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string of the given bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {

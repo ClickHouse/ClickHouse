@@ -342,14 +342,14 @@ public:
 REGISTER_FUNCTION(BitToArray)
 {
     FunctionDocumentation::Description bitPositionsToArray_description = R"(
-Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`,
-in ascending order.
+This function returns the positions (in ascending order) of the 1 bits in the binary representation of an unsigned integer.
+Signed input integers are first casted to an unsigned integer.
     )";
     FunctionDocumentation::Syntax bitPositionsToArray_syntax = "bitPositionsToArray(arg)";
     FunctionDocumentation::Arguments bitPositionsToArray_arguments = {
         {"arg", "An integer value.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue bitPositionsToArray_returned_value = {"Returns an array containing a list of positions of bits that equal `1`, in ascending order.", {"Array(UInt64)"}};
+    FunctionDocumentation::ReturnedValue bitPositionsToArray_returned_value = {"Returns an array with the ascendingly ordered positions of 1 bits in the binary representation of the input.", {"Array(UInt64)"}};
     FunctionDocumentation::Examples bitPositionsToArray_examples =
     {
         {
@@ -376,12 +376,12 @@ in ascending order.
     FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
 
     FunctionDocumentation::Description bitmaskToArray_description = R"(
-Accepts an integer and returns an array of `UInt64` numbers containing the list of powers of two that total the source number when summed.
-Numbers in the array are in ascending order.
+This function decomposes an integer into a sum of powers of two.
+The powers of two are returned as an ascendingly ordered array.
     )";
     FunctionDocumentation::Syntax bitmaskToArray_syntax = "bitmaskToArray(num)";
     FunctionDocumentation::Arguments bitmaskToArray_arguments = {{"num", "An integer value.", {"(U)Int*"}}};
-    FunctionDocumentation::ReturnedValue bitmaskToArray_returned_value = {"Returns an Array of `UInt64` numbers containing powers of two that sum to the input number.", {"Array(UInt64)"}};
+    FunctionDocumentation::ReturnedValue bitmaskToArray_returned_value = {"Returns an array with the ascendingly ordered powers of two which sum up to the input number.", {"Array(UInt64)"}};
     FunctionDocumentation::Examples bitmaskToArray_examples = {
         {
             "Basic example",
@@ -407,7 +407,7 @@ Numbers in the array are in ascending order.
     FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
 
     FunctionDocumentation::Description bitmaskToList_description = R"(
-Accepts an integer and returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
+Like bitmaskToArray but returns the powers of two as a comma-separated string.
     )";
     FunctionDocumentation::Syntax bitmaskToList_syntax = "bitmaskToList(num)";
     FunctionDocumentation::Arguments bitmaskToList_arguments = {
@@ -423,14 +423,6 @@ Accepts an integer and returns a string containing the list of powers of two tha
 └───────────────┘
            )"
         },
-        {
-            "Single power of two", "SELECT bitmaskToList(8) AS powers_list",
-            R"(
-┌─powers_list─┐
-│ 8           │
-└─────────────┘
-            )"
-        }
     };
     FunctionDocumentation::IntroducedIn bitmaskToList_introduced_in = {1, 1};
     FunctionDocumentation::Category bitmaskToList_category = FunctionDocumentation::Category::Encoding;
