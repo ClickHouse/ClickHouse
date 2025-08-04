@@ -4,8 +4,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
-#include <Common/SharedMutex.h>
 #include <Common/TargetSpecific.h>
+#include <Functions/UUIDv7.h>
 
 namespace DB
 {
@@ -17,115 +17,6 @@ namespace ErrorCodes
 namespace
 {
 
-/* Bit layouts of UUIDv7
-
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-*/
-/// bit counts
-constexpr auto rand_a_bits_count = 12;
-constexpr auto rand_b_bits_count = 62;
-constexpr auto rand_b_low_bits_count = 32;
-constexpr auto counter_high_bits_count = rand_a_bits_count;
-constexpr auto counter_low_bits_count = 30;
-constexpr auto bits_in_counter = counter_high_bits_count + counter_low_bits_count;
-constexpr uint64_t counter_limit = (1ull << bits_in_counter);
-
-/// bit masks for UUIDv7 components
-constexpr uint64_t variant_2_mask  = (2ull << rand_b_bits_count);
-constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
-constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;
-constexpr uint64_t rand_b_with_counter_bits_mask = (1ull << rand_b_low_bits_count) - 1;
-constexpr uint64_t counter_low_bits_mask = (1ull << counter_low_bits_count) - 1;
-constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
-
-uint64_t dateTimeToMillisecond(UInt32 date_time)
-{
-    return static_cast<uint64_t>(date_time) * 1000;
-}
-
-void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
-{
-    UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & rand_a_bits_mask) | (timestamp << 16) | 0x7000;
-}
-
-void setVariant(UUID & uuid)
-{
-    UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_bits_mask) | variant_2_mask;
-}
-
-struct CounterFields
-{
-    uint64_t last_timestamp = 0;
-    uint64_t counter = 0;
-
-    void resetCounter(const UUID & uuid)
-    {
-        const uint64_t counter_low_bits = (UUIDHelpers::getLowBytes(uuid) >> rand_b_low_bits_count) & counter_low_bits_mask;
-        const uint64_t counter_high_bits = UUIDHelpers::getHighBytes(uuid) & counter_high_bits_mask;
-        counter = (counter_high_bits << 30) | counter_low_bits;
-    }
-
-    void incrementCounter(UUID & uuid)
-    {
-        if (++counter == counter_limit) [[unlikely]]
-        {
-            ++last_timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-        else
-        {
-            UUIDHelpers::getHighBytes(uuid) = (last_timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
-            UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask | ((counter & counter_low_bits_mask) << rand_b_low_bits_count);
-        }
-    }
-
-    void generate(UUID & uuid, uint64_t timestamp)
-    {
-        const bool need_to_increment_counter = (last_timestamp == timestamp) || ((last_timestamp > timestamp) & (last_timestamp < timestamp + 10000));
-        if (need_to_increment_counter)
-        {
-            incrementCounter(uuid);
-        }
-        else
-        {
-            last_timestamp = timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-    }
-};
-
-struct Data
-{
-    /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline CounterFields fields;
-    static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
-    std::lock_guard<SharedMutex> guard;
-
-    Data()
-        : guard(mutex)
-    {}
-
-    void generate(UUID & uuid, uint64_t timestamp)
-    {
-        fields.generate(uuid, timestamp);
-    }
-};
-
-}
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
@@ -176,18 +67,18 @@ public:
                 const auto & src_data = col_src_non_const->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    uint64_t timestamp = dateTimeToMillisecond(src_data[i]);
-                    Data data;
+                    uint64_t timestamp = UUIDv7Helpers::dateTimeToMillisecond(src_data[i]);
+                    UUIDv7Helpers::Data data;
                     data.generate(vec_to[i], timestamp);
                 }
             }
             else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
             {
                 const auto src_data = col_src_const->getValue<UInt32>();
-                uint64_t timestamp = dateTimeToMillisecond(src_data);
+                uint64_t timestamp = UUIDv7Helpers::dateTimeToMillisecond(src_data);
                 for (UUID & uuid : vec_to)
                 {
-                    Data data;
+                    UUIDv7Helpers::Data data;
                     data.generate(uuid, timestamp);
                 }
             }
@@ -248,5 +139,6 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 
+}
 }
 }
