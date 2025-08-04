@@ -190,6 +190,9 @@ class KeeperClient(object):
     def rm(self, path: str, version: Optional[int] = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
+    def rmr(self, path: str) -> None:
+        self.execute_query(f"rmr '{path}'")
+
     def exists(self, path: str, timeout: float = 60.0) -> bool:
         return bool(int(self.execute_query(f"exists '{path}'", timeout)))
 

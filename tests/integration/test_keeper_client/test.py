@@ -30,6 +30,13 @@ def client(started_cluster):
         yield keeper_client
 
 
+def drop_node_if_exists(client: KeeperClient, node_path: str, recursive=False):
+    if client.exists(node_path):
+        if recursive:
+            client.rmr(node_path)
+        else:
+            client.rm(node_path)
+
 def test_big_family(client: KeeperClient):
     client.touch("/test_big_family")
     client.touch("/test_big_family/1")
@@ -122,14 +129,20 @@ def test_delete_stale_backups(client: KeeperClient):
 
 
 def test_base_commands(client: KeeperClient):
-    client.create("/test_create_zk_node1", "testvalue1")
-    client.create("/test_create_zk_node_2", "testvalue2")
-    assert client.get("/test_create_zk_node1") == "testvalue1"
+    try:
+        client.create("/test_create_zk_node1", "testvalue1")
 
-    client.create("/123", "1=2")
-    client.create("/123/321", "foo;bar")
-    assert client.get("/123") == "1=2"
-    assert client.get("/123/321") == "foo;bar"
+        client.create("/test_create_zk_node_2", "testvalue2")
+        assert client.get("/test_create_zk_node1") == "testvalue1"
+
+        client.create("/123", "1=2")
+        client.create("/123/321", "foo;bar")
+        assert client.get("/123") == "1=2"
+        assert client.get("/123/321") == "foo;bar"
+    finally:
+        drop_node_if_exists(client, "/test_create_zk_node1")
+        drop_node_if_exists(client, "/test_create_zk_node_2")
+        drop_node_if_exists(client, "/123", recursive=True)
 
 
 def test_four_letter_word_commands(client: KeeperClient):
@@ -175,52 +188,61 @@ def test_rm_without_version(client: KeeperClient):
 
 
 def test_set_with_version(client: KeeperClient):
-    node_path = "/test_set_with_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    try:
+        node_path = "/test_set_with_version_node"
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    client.set(node_path, "value1", 0)
-    assert client.get(node_path) == "value1"
+        client.set(node_path, "value1", 0)
+        assert client.get(node_path) == "value1"
 
-    with pytest.raises(KeeperException) as ex:
-        client.set(node_path, "value2", 2)
+        with pytest.raises(KeeperException) as ex:
+            client.set(node_path, "value2", 2)
 
-    ex_as_str = str(ex)
-    assert "Coordination error: Bad version" in ex_as_str
-    assert node_path in ex_as_str
-    assert client.get(node_path) == "value1"
+        ex_as_str = str(ex)
+        assert "Coordination error: Bad version" in ex_as_str
+        assert node_path in ex_as_str
+        assert client.get(node_path) == "value1"
 
-    client.set(node_path, "value2", 1)
-    assert client.get(node_path) == "value2"
+        client.set(node_path, "value2", 1)
+        assert client.get(node_path) == "value2"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_set_without_version(client: KeeperClient):
-    node_path = "/test_set_without_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    try:
+        node_path = "/test_set_without_version_node"
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    client.set(node_path, "value1")
-    assert client.get(node_path) == "value1"
+        client.set(node_path, "value1")
+        assert client.get(node_path) == "value1"
 
-    client.set(node_path, "value2")
-    assert client.get(node_path) == "value2"
+        client.set(node_path, "value2")
+        assert client.get(node_path) == "value2"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_quoted_argument_parsing(client: KeeperClient):
     node_path = "/test_quoted_argument_parsing_node"
-    client.create(node_path, "value")
+    try:
+        client.create(node_path, "value")
 
-    client.execute_query(f"set '{node_path}' 'value1 with some whitespace'")
-    assert client.get(node_path) == "value1 with some whitespace"
+        client.execute_query(f"set '{node_path}' 'value1 with some whitespace'")
+        assert client.get(node_path) == "value1 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' 'value2 with some whitespace' 1")
-    assert client.get(node_path) == "value2 with some whitespace"
+        client.execute_query(f"set '{node_path}' 'value2 with some whitespace' 1")
+        assert client.get(node_path) == "value2 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' \"value3 with some whitespace\"")
-    assert client.get(node_path) == "value3 with some whitespace"
+        client.execute_query(f"set '{node_path}' \"value3 with some whitespace\"")
+        assert client.get(node_path) == "value3 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
-    assert client.get(node_path) == "value4 with some whitespace"
+        client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
+        assert client.get(node_path) == "value4 with some whitespace"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def get_direct_children_number(client: KeeperClient):
