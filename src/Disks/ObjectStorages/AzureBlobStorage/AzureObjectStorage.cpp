@@ -64,6 +64,12 @@ public:
         options.PageSizeHint = static_cast<int>(max_list_size);
     }
 
+    ~AzureIteratorAsync() override
+    {
+        if (!deactivated)
+            deactivate();
+    }
+
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
