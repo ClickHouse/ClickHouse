@@ -207,7 +207,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         commands = [
             f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"test -z \"$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})\"",
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
         ]
 
         return Result.from_commands_run(

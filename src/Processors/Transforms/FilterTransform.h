@@ -41,7 +41,8 @@ private:
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
-    bool always_false = false;
+
+    ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;

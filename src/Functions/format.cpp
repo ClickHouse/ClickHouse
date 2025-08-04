@@ -104,7 +104,7 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)

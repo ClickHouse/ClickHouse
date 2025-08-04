@@ -1673,9 +1673,6 @@ CONV_FN(ComplicatedExpr, expr)
             TableToString(ret, expr.table());
             ret += ".*";
             break;
-        case ExprType::kLambda:
-            LambdaExprToString(ret, expr.lambda());
-            break;
         default:
             ret += "1";
     }
@@ -1830,10 +1827,6 @@ CONV_FN(FileFunc, ff)
     {
         ret += OutFormat_Name(ff.outformat()).substr(4);
     }
-    else if (ff.has_inoutformat())
-    {
-        ret += InOutFormat_Name(ff.inoutformat()).substr(6);
-    }
     else
     {
         ret += "CSV";
@@ -1847,7 +1840,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_fcomp())
     {
         ret += ", '";
-        ret += ff.fcomp();
+        ret += FileCompression_Name(ff.fcomp()).substr(4);
         ret += "'";
     }
     ret += ")";
@@ -1941,22 +1934,20 @@ CONV_FN(RemoteFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
-    if (rfunc.has_user())
+    if (tof.has_est())
     {
-        ret += ", '";
-        ret += rfunc.user();
-        ret += "'";
-    }
-    if (rfunc.has_password())
-    {
-        ret += ", '";
-        ret += rfunc.password();
-        ret += "'";
-    }
-    if (rfunc.has_sharding_key())
-    {
-        ret += ", ";
-        ExprToString(ret, rfunc.sharding_key());
+        if (rfunc.has_user() && !rfunc.user().empty())
+        {
+            ret += ", '";
+            ret += rfunc.user();
+            ret += "'";
+        }
+        if (rfunc.has_password())
+        {
+            ret += ", '";
+            ret += rfunc.password();
+            ret += "'";
+        }
     }
     ret += ")";
 }
@@ -2005,50 +1996,6 @@ CONV_FN(SQLiteFunc, sfunc)
     ret += "', '";
     ret += sfunc.rtable();
     ret += "')";
-}
-
-CONV_FN(RedisFunc, rfunc)
-{
-    ret += "redis('";
-    ret += rfunc.address();
-    ret += "', ";
-    ExprToString(ret, rfunc.key());
-    ret += ", ";
-    ExprToString(ret, rfunc.structure());
-    if (rfunc.has_db_index())
-    {
-        ret += ", ";
-        ret += std::to_string(rfunc.db_index());
-    }
-    if (rfunc.has_password())
-    {
-        ret += ", '";
-        ret += rfunc.password();
-        ret += "'";
-    }
-    if (rfunc.has_pool_size())
-    {
-        ret += ", ";
-        ret += std::to_string(rfunc.pool_size());
-    }
-    ret += ")";
-}
-
-CONV_FN(MongoDBFunc, mfunc)
-{
-    ret += "mongodb('";
-    ret += mfunc.address();
-    ret += "', '";
-    ret += mfunc.database();
-    ret += "', '";
-    ret += mfunc.collection();
-    ret += "', '";
-    ret += mfunc.user();
-    ret += "', '";
-    ret += mfunc.password();
-    ret += "', ";
-    ExprToString(ret, mfunc.structure());
-    ret += ")";
 }
 
 CONV_FN(S3Func, sfunc)
@@ -2220,10 +2167,11 @@ CONV_FN(ClusterFunc, cluster)
     ClusterToString(ret, false, cluster.cluster());
     ret += ", ";
     TableOrFunctionToString(ret, true, tof);
-    if (cluster.has_sharding_key())
+    if (tof.has_est() && cluster.has_sharding_key())
     {
-        ret += ", ";
-        ExprToString(ret, cluster.sharding_key());
+        ret += ", '";
+        ret += cluster.sharding_key();
+        ret += "'";
     }
     ret += ")";
 }
@@ -2237,21 +2185,7 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
         ret += ", with_marks = ";
         ret += mfunc.with_marks() ? "true" : "false";
     }
-    if (mfunc.has_with_minmax())
-    {
-        ret += ", with_minmax = ";
-        ret += mfunc.with_minmax() ? "true" : "false";
-    }
     ret += ")";
-}
-
-CONV_FN(MergeTreeProjectionFunc, mfunc)
-{
-    ret += "mergeTreeProjection(";
-    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    ret += ", '";
-    ProjectionToString(ret, mfunc.proj());
-    ret += "')";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2274,14 +2208,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
         ret += std::to_string(grfunc.max_array_length());
     }
     ret += ")";
-}
-
-CONV_FN(KeyValuePair, kvp)
-{
-    ret += kvp.key();
-    ret += " = '";
-    ret += kvp.value();
-    ret += "'";
 }
 
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
@@ -2362,15 +2288,6 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
-            break;
-        case TableFunctionType::kRedis:
-            RedisFuncToString(ret, tf.redis());
-            break;
-        case TableFunctionType::kMongodb:
-            MongoDBFuncToString(ret, tf.mongodb());
-            break;
-        case TableFunctionType::kMtproj:
-            MergeTreeProjectionFuncToString(ret, tf.mtproj());
             break;
         default:
             ret += "numbers(10)";
@@ -2702,10 +2619,6 @@ CONV_FN(SetQuery, setq)
 
 CONV_FN(CTEquery, cteq)
 {
-    if (cteq.recursive())
-    {
-        ret += "RECURSIVE ";
-    }
     TableToString(ret, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());
@@ -3159,9 +3072,6 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
             break;
-        case TableEngineParamType::kKvalue:
-            KeyValuePairToString(ret, tep.kvalue());
-            break;
         default:
             ret += "c0";
     }
@@ -3221,14 +3131,13 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 CONV_FN(TTLEntry, ttl_entry)
 {
     ExprToString(ret, ttl_entry.time_expr());
+    ret += " ";
     if (ttl_entry.has_update())
     {
-        ret += " ";
         TTLUpdateToString(ret, ttl_entry.update());
     }
     else if (ttl_entry.has_group_by())
     {
-        ret += " ";
         TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }
@@ -3501,7 +3410,7 @@ CONV_FN(Insert, insert)
         if (insert_file.has_fcomp())
         {
             ret += " COMPRESSION '";
-            ret += insert_file.fcomp();
+            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
             ret += "'";
         }
         if (insert.has_setting_values())
@@ -4551,7 +4460,7 @@ CONV_FN(SelectIntoFile, intofile)
     if (intofile.has_compression())
     {
         ret += " COMPRESSION '";
-        ret += intofile.compression();
+        ret += FileCompression_Name(intofile.compression()).substr(4);
         ret += "'";
         if (intofile.has_level())
         {

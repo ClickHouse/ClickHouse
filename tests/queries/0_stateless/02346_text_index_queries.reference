@@ -33,3 +33,5 @@ Test text(tokenizer = "ngram", ngram_size = 2) on UTF-8 data
 af	text
 102	clickhouse你好
 1
+Test max_rows_per_postings_list
+1
