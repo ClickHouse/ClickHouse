@@ -869,7 +869,7 @@ quit
             "minio_server_logs",
         ]
 
-        if "_tasn" in Info.job_name:
+        if "_tsan" in Info().job_name:
             print("minio_audit_logs scrapping is too slow with tsan - skip")
             TABLES.remove("minio_audit_logs")
 
