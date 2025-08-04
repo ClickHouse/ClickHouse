@@ -77,27 +77,6 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 
 using namespace Iceberg;
 
-namespace
-{
-
-std::pair<Int32, Poco::JSON::Object::Ptr>
-parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name)
-{
-    auto schema_json_string = deserializer.tryGetAvroMetadataValue(f_schema);
-    if (!schema_json_string.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            manifest_file_name, f_schema);
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 schema_object_id = schema_object->getValue<int>(f_schema_id);
-    return {schema_object_id, schema_object};
-}
-
-}
-
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -140,7 +119,6 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
         if (current_schema->getValue<int>(f_schema_id) == current_schema_id)
         {
             schema = current_schema;
-            break;
         }
     }
 
@@ -284,12 +262,23 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`",
             configuration_ptr->getPathForRead().path,
             relevant_snapshot_id);
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 j = 0; j < schemas->size(); ++j)
+    {
+        auto schema = schemas->getObject(j);
+        schema_processor.addIcebergTableSchema(schema);
+    }
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    bool successfully_found_snapshot = false;
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
+        schema_processor.registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == relevant_snapshot_id)
         {
+            successfully_found_snapshot = true;
             if (!snapshot->has(f_manifest_list))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -316,7 +305,6 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             if (column_mapper)
             {
                 Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
-                auto schemas = metadata_object->getArray(f_schemas);
                 std::unordered_map<String, Int64> column_name_to_parquet_field_id;
                 for (UInt32 j = 0; j < schemas->size(); ++j)
                 {
@@ -343,14 +331,14 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     configuration_ptr->getPathForRead().path);
             relevant_snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
             addTableSchemaById(relevant_snapshot_schema_id, metadata_object);
-            return;
         }
     }
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
-        relevant_snapshot_id,
-        configuration_ptr->getPathForRead().path);
+    if (!successfully_found_snapshot)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
+            relevant_snapshot_id,
+            configuration_ptr->getPathForRead().path);
 }
 
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed)
@@ -528,11 +516,15 @@ void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context
 
     for (const auto & manifest_list_entry : manifest_list_ptr)
     {
-        auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        auto manifest_file_ptr = getManifestFile(
+            local_context,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
         for (const auto & manifest_file_entry : manifest_file_ptr->getFiles())
         {
             if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
-                schema_id_by_data_file.emplace(std::get<DataFileEntry>(manifest_file_entry.file).file_name, manifest_file_ptr->getSchemaId());
+                schema_id_by_data_file.emplace(std::get<DataFileEntry>(manifest_file_entry.file).file_name, manifest_file_entry.schema_id);
         }
     }
 
@@ -564,9 +556,19 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
             const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
             const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
             Int64 added_sequence_number = 0;
+            auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
+            if (added_snapshot_id.isNull())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has null value for field '{}', but it is required",
+                    i,
+                    f_added_snapshot_id);
+
             if (format_version > 1)
+            {
                 added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
-            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number);
+            }
+            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>());
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
@@ -672,7 +674,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     return iceberg_history;
 }
 
-ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const
+ManifestFilePtr IcebergMetadata::getManifestFile(
+    ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
 {
     auto configuration_ptr = configuration.lock();
 
@@ -687,24 +690,23 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
 
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
-        auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
-        schema_processor.addIcebergTableSchema(schema_object);
+
         return std::make_shared<ManifestFileContent>(
             manifest_file_deserializer,
+            filename,
             format_version,
             configuration_ptr->getPathForRead().path,
-            schema_id,
-            schema_object,
             schema_processor,
             inherited_sequence_number,
+            inherited_snapshot_id,
             table_location,
             local_context);
     };
 
     if (manifest_cache)
     {
-        auto manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
-        schema_processor.addIcebergTableSchema(manifest_file->getSchemaObject());
+        auto manifest_file
+            = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -727,19 +729,39 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         if (!relevant_snapshot)
             return {};
 
+
         for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
         {
-            auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
-            ManifestFilesPruner pruner(
-                schema_processor, relevant_snapshot_schema_id,
-                use_partition_pruning ? filter_dag : nullptr,
-                *manifest_file_ptr, local_context);
+            Int64 previous_entry_schema = -1;
+            std::optional<ManifestFilesPruner> pruner;
+            auto manifest_file_ptr = getManifestFile(
+                local_context,
+                manifest_list_entry.manifest_file_path,
+                manifest_list_entry.added_sequence_number,
+                manifest_list_entry.added_snapshot_id);
             const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
             for (const auto & manifest_file_entry : data_files_in_manifest)
             {
+                // Trying to reuse already initialized pruner
+                if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
+                {
+                    previous_entry_schema = manifest_file_entry.schema_id;
+                    if (previous_entry_schema > manifest_file_entry.schema_id)
+                    {
+                        LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
+                    }
+                    pruner.emplace(
+                        schema_processor,
+                        relevant_snapshot_schema_id,
+                        manifest_file_entry.schema_id,
+                        filter_dag ? filter_dag : nullptr,
+                        *manifest_file_ptr,
+                        local_context);
+                }
+
                 if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
-                    if (!pruner.canBePruned(manifest_file_entry))
+                    if (!use_partition_pruning || !pruner->canBePruned(manifest_file_entry))
                     {
                         if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                             data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
@@ -755,6 +777,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         cached_unprunned_files_for_last_processed_snapshot = data_files;
         return cached_unprunned_files_for_last_processed_snapshot.value();
     }
+
 
     return data_files;
 }
@@ -783,7 +806,11 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     Int64 result = 0;
     for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        auto manifest_file_ptr = getManifestFile(
+            local_context,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
         auto count = manifest_file_ptr->getRowsCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
@@ -814,7 +841,11 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     Int64 result = 0;
     for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
+        auto manifest_file_ptr = getManifestFile(
+            local_context,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
         auto count = manifest_file_ptr->getBytesCountInAllDataFiles();
         if (!count.has_value())
             return {};
