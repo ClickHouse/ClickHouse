@@ -104,7 +104,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"max_bytes_to_merge_at_max_space_in_pool", bytesRangeSetting},
        {"max_bytes_to_merge_at_min_space_in_pool", bytesRangeSetting},
        {"max_compress_block_size", highRangeSetting},
-       {"max_digestion_size_per_segment", highRangeSetting},
        {"max_file_name_length",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        {"max_files_to_modify_in_alter_columns",
