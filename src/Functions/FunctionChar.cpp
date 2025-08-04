@@ -119,7 +119,47 @@ private:
 
 REGISTER_FUNCTION(Char)
 {
-    factory.registerFunction<FunctionChar>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns a String with length equal to the number of arguments passed where each byte
+has the value of the corresponding argument. Accepts multiple arguments of numeric types.
+
+If the value of the argument is out of range of the `UInt8` data type, then it is converted
+to `UInt8` with possible rounding and overflow.
+        )";
+    FunctionDocumentation::Syntax syntax = "char(num1, [num2, ..., numN]);";
+    FunctionDocumentation::Arguments arguments = {
+        {"num1, num2, ..., numN", "Numerical arguments interpreted as integers.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string of the given bytes.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic example",
+            "SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;",
+            R"(
+┌─hello─┐
+│ hello │
+└───────┘
+              )"
+        },
+        {
+            "Constructing arbitrary encodings",
+            R"(
+-- You can construct a string of arbitrary encoding by passing the corresponding bytes.
+-- for example UTF8
+SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
+            )",
+            R"(
+┌─hello──┐
+│ привет │
+└────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionChar>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }
