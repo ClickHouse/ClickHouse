@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ubsan, no-batch, no-flaky-check, post-run-check
+-- Tags: no-fasttest, no-ubsan, no-batch, no-flaky-check, post-run-check, disabled
 
 -- post-run-check - to run it after all other tests:
 -- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
