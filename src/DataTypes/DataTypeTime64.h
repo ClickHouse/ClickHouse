@@ -29,7 +29,7 @@ public:
     explicit DataTypeTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
     DataTypeTime64() : DataTypeTime64(default_scale) {}
-    
+
     bool hasExplicitTimeZone() const { return false; }
     const DateLUTImpl & getTimeZone() const;
     String getTimeZoneID() const { return {}; }
