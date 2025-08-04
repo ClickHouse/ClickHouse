@@ -1705,8 +1705,15 @@ void ZooKeeper::multi(
 
     ZooKeeperMultiRequest request(requests, default_acls);
 
-    if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+    if (request.getOpNum() == OpNum::MultiRead)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
+
+        for (const auto & subrequest : request.requests)
+            if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+    }
 
     Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::multi);
 
