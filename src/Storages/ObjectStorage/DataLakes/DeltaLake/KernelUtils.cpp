@@ -3,8 +3,7 @@
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
-
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
@@ -83,7 +82,7 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     LOG_TRACE(
         getLogger("KernelUtils"),
         "Allocated KernelError (Pointer: {}, EType: {}, Message: {})",
-        ptrToInt(error), magic_enum::enum_name(etype), error->error_message);
+        ptrToInt(error), etype, error->error_message);
 
     return error;
 }
