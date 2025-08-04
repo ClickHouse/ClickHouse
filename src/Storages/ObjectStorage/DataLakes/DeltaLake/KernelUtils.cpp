@@ -9,8 +9,6 @@
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
-#include <Common/typeid_cast.h>
-
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -94,16 +92,16 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 {
     if (isKernelErrorAllocation(error))
     {
+        LOG_TRACE(
+            getLogger("KernelUtils"),
+            "Deallocating KernelError (Pointer: {})",
+            ptrToInt(error));
+
         KernelError * kernel_error = static_cast<KernelError *>(error);
         auto error_message_copy = kernel_error->error_message;
         auto etype_copy = kernel_error->etype;
         delete kernel_error;
         forgetKernelErrorAllocation(error);
-
-        LOG_TRACE(
-            getLogger("KernelUtils"),
-            "KernelError Deallocated (Pointer: {})",
-            ptrToInt(error));
 
         throw DB::Exception(
             DB::ErrorCodes::DELTA_KERNEL_ERROR,
@@ -124,7 +122,7 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
             "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            reinterpret_cast<size_t>(error), etype, from);
+            ptrToInt(error), etype, from);
     }
 }
 
