@@ -140,12 +140,12 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 
 inline void KeyPrefetch(const StringRef & key)
 {
-    const size_t CACHE_LINE_SIZE = 64;
-    const size_t MAX_PREFETCH = 256;
-    size_t n = key.size < MAX_PREFETCH ? key.size : MAX_PREFETCH;
+    const size_t cache_line_size = 64;
+    const size_t max_prefetch = 256;
+    const size_t n = key.size < max_prefetch ? key.size : max_prefetch;
     const char * ptr = key.data;
     const char * end = ptr + n;
-    for (; ptr < end; ptr += CACHE_LINE_SIZE)
+    for (; ptr < end; ptr += cache_line_size)
     {
         __builtin_prefetch(ptr);
     }
