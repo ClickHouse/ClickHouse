@@ -1,3 +1,4 @@
+#include <vector>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -681,10 +682,21 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
         if (!truncate_outcome)
             return;
 
-        chassert(truncate_outcome->objects_to_remove.empty(), "Lets see when it works");
-
         if (!truncate_outcome->objects_to_remove.empty())
+        {
             object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
+
+            auto get_debug_info = [](const std::vector<StoredObject> & objects)
+            {
+                auto new_range = objects | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {}", obj.local_path, obj.remote_path); });
+                return fmt::join(new_range, ", ");
+            };
+
+            LOG_FATAL(getLogger("TruncateFileObjectStorageOperation"),
+                      "Truncate file operation for path '{}' resulted in removing objects: {}",
+                      path,
+                      get_debug_info(truncate_outcome->objects_to_remove));
+        }
     }
 };
 
