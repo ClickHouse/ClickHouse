@@ -558,7 +558,7 @@ public:
         Block block_header_,
         ContextPtr context_,
         GenerateRandomStatePtr state_)
-        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
+        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
         , block_size(block_size_)
         , max_array_length(max_array_length_)
         , max_string_length(max_string_length_)
@@ -707,6 +707,7 @@ Pipe StorageGenerateRandom::read(
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
+        chassert(estimated_block_size_bytes != 0);
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {

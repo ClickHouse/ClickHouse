@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <base/map.h>
 #include <base/range.h>
 
 
@@ -122,7 +123,7 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)

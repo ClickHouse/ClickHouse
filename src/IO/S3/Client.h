@@ -221,22 +221,10 @@ public:
         return client_configuration.for_disk_s3;
     }
 
-    ProviderType getProviderType() const { return provider_type; }
-    std::string getGCSOAuthToken() const
-    {
-        if (provider_type != ProviderType::GCS)
-            return "";
-
-        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
-        return client.getBearerToken();
-    }
-
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
-
-    const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
 protected:
     // visible for testing
@@ -287,9 +275,6 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
-
-    /// Returns true if a specified error means that the credentials used are expired or may have changed.
-    bool checkIfCredentialsChanged(const Aws::S3::S3Error & error) const;
 
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;

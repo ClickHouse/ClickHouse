@@ -21,8 +21,8 @@ struct ListNode
 
     struct
     {
-        uint64_t active_in_map : 1;
-        uint64_t free_key : 1;
+        bool active_in_map : 1;
+        bool free_key : 1;
         uint64_t version : 62;
     } node_metadata{false, false, 0};
 
@@ -227,7 +227,10 @@ public:
         return std::make_pair(it, false);
     }
 
-    void reserve(size_t node_num) { map.reserve(node_num); }
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+    }
 
     void insertOrReplace(const std::string & key, V value)
     {

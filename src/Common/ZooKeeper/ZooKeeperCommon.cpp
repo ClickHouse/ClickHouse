@@ -805,16 +805,11 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 
 std::string ZooKeeperMultiRequest::toStringImpl(bool short_format) const
 {
-    auto out = fmt::memory_buffer();
-    static constexpr size_t subrequests_to_print_in_short_format = 5;
-    std::span requests_to_print{requests};
-    if (short_format && requests_to_print.size() > subrequests_to_print_in_short_format)
-    {
-        fmt::format_to(std::back_inserter(out), "Subrequests size = {}\nFirst {} requests\n", requests.size(), subrequests_to_print_in_short_format);
-        requests_to_print = requests_to_print.subspan(0, subrequests_to_print_in_short_format);
-    }
+    if (short_format)
+        return fmt::format("Subrequests size = {}", requests.size());
 
-    for (const auto & request : requests_to_print)
+    auto out = fmt::memory_buffer();
+    for (const auto & request : requests)
     {
         const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
         fmt::format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
@@ -1269,40 +1264,6 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to)
         return EXACT;
 
     return *first_it == '/' ? IS_CHILD : NOT_MATCH;
-}
-
-namespace
-{
-size_t findLastSlash(StringRef path)
-{
-    if (path.size == 0)
-        return std::string::npos;
-
-    for (size_t i = path.size - 1; i > 0; --i)
-    {
-        if (path.data[i] == '/')
-            return i;
-    }
-
-    if (path.data[0] == '/')
-        return 0;
-
-    return std::string::npos;
-}
-}
-
-StringRef parentNodePath(StringRef path)
-{
-    auto rslash_pos = findLastSlash(path);
-    if (rslash_pos > 0)
-        return StringRef{path.data, rslash_pos};
-    return "/";
-}
-
-StringRef getBaseNodeName(StringRef path)
-{
-    size_t basename_start = findLastSlash(path);
-    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
 }
 
 }
