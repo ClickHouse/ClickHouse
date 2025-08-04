@@ -1,5 +1,11 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
+#include <Common/logger_useful.h>
+
+#include <base/defines.h>
+
+#include <magic_enum.hpp>
+
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
@@ -33,10 +39,40 @@ void * KernelUtils::allocateString(ffi::KernelStringSlice slice)
 
 namespace
 {
+
 struct KernelError : public ffi::EngineError
 {
     std::string error_message;
 };
+
+std::mutex mutex;
+std::unordered_set<uintptr_t> allocated_errors;
+
+uintptr_t ptrToInt(void * error)
+{
+    return reinterpret_cast<uintptr_t>(error);
+}
+
+void recordKernelErrorAllocation(void * error)
+{
+    std::lock_guard guard(mutex);
+    bool inserted = allocated_errors.insert(ptrToInt(error)).second;
+    chassert(inserted);
+}
+
+void forgetKernelErrorAllocation(void * error)
+{
+    std::lock_guard guard(mutex);
+    bool erased = allocated_errors.erase(ptrToInt(error));
+    chassert(erased);
+}
+
+bool isKernelErrorAllocation(void * error)
+{
+    std::lock_guard guard(mutex);
+    return allocated_errors.contains(ptrToInt(error));
+}
+
 }
 
 ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::KernelStringSlice message)
@@ -44,16 +80,30 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     auto * error = new KernelError;
     error->etype = etype;
     error->error_message = std::string(message.ptr, message.len);
+    recordKernelErrorAllocation(error);
+
+    LOG_TRACE(
+        getLogger("KernelUtils"),
+        "Allocated KernelError (Pointer: {}, EType: {}, Message: {})",
+        ptrToInt(error), magic_enum::enum_name(etype), error->error_message);
+
     return error;
 }
 
 [[noreturn]] void KernelUtils::throwError(ffi::EngineError * error, const std::string & from)
 {
-    if (KernelError * kernel_error = typeid_cast<KernelError *>(error); kernel_error != nullptr)
+    if (isKernelErrorAllocation(error))
     {
+        KernelError * kernel_error = static_cast<KernelError *>(error);
         auto error_message_copy = kernel_error->error_message;
         auto etype_copy = kernel_error->etype;
         delete kernel_error;
+        forgetKernelErrorAllocation(error);
+
+        LOG_TRACE(
+            getLogger("KernelUtils"),
+            "KernelError Deallocated (Pointer: {})",
+            ptrToInt(error));
 
         throw DB::Exception(
             DB::ErrorCodes::DELTA_KERNEL_ERROR,
@@ -62,14 +112,19 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     }
     else
     {
-        std::string error_type = typeid(*error).name();
-        size_t error_type_hash = typeid(*error).hash_code();
+        ffi::KernelError etype = error->etype;
+
+        LOG_ERROR(
+            getLogger("KernelUtils"),
+            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
+            ptrToInt(error), etype, from);
+
         delete error;
 
         throw DB::Exception(
-            DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, Type: {}, Hash: {}) (in {})",
-            reinterpret_cast<size_t>(error), error_type, error_type_hash, from);
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
+            reinterpret_cast<size_t>(error), etype, from);
     }
 }
 
