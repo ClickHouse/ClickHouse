@@ -845,10 +845,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
                 if (auto result = can_use_index(index_and_condition.index); !result)
-                {   
+                {
                     LOG_TRACE(log, "{}", result.error().text);
                     continue;
-                }                
+                }
 
                 if (!use_skip_indexes_on_data_read)
                 {
