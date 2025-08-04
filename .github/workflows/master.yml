@@ -1351,7 +1351,7 @@ jobs:
           fi
 
   install_packages_release:
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAocmVsZWFzZSk=') }}
     name: "Install packages (release)"
@@ -1392,7 +1392,7 @@ jobs:
           fi
 
   install_packages_aarch64:
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYWFyY2g2NCk=') }}
     name: "Install packages (aarch64)"
@@ -4247,7 +4247,7 @@ jobs:
 
   RegressionTestsRelease:
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'REMOVE_BEFORE_MERGE_QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->')}}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -4259,7 +4259,7 @@ jobs:
       workflow_config: ${{ needs.config_workflow.outputs.data }}
   RegressionTestsAarch64:
     needs: [config_workflow, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'REMOVE_BEFORE_MERGE_QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64-->')}}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64-->')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
