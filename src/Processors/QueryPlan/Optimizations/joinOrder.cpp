@@ -229,7 +229,7 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
             continue;
 
         auto pinned = query_graph.pinned[edge];
-        if (!isSubsetOf(pinned, left) && !isSubsetOf(pinned, right))
+        if (!isSubsetOf(pinned, left | right))
             continue;
 
         applicable.push_back(&edge);
@@ -382,11 +382,11 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
 
     JoinOrderOptimizer reorderer(std::move(query_graph));
-    auto best_dp = reorderer.solve();
-    if (!best_dp)
+    auto best_plan = reorderer.solve();
+    if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
-    return best_dp;
+    return best_plan;
 }
 
 }
