@@ -175,6 +175,7 @@ def _update_workflow_with_native_jobs(workflow):
         workflow.enable_merge_ready_status
         or workflow.post_hooks
         or workflow.enable_automerge
+        or workflow.enable_cidb  # to write cpu and storage usage summary into cidb
     ):
         from .native_jobs import _final_job
 
