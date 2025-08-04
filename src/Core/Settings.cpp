@@ -6791,6 +6791,16 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, kill_throw_if_noop, true, R"(
+Enables or disables throwing an exception if an [KILL](../../sql-reference/statements/kill.md) query didn't perform a kill.
+
+By default, `KILL` will throw an exception if `WHERE` expression matched zero rows either from `system.mutations` or `system.processes`. If it is set to false, no exception will be thrown even if it didn't do anything.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
