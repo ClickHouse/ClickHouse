@@ -422,7 +422,7 @@ For production use-cases, we recommend that the cache is sized large enough so t
 
 **Quantization**
 
-[Embedding Quanitation](https://sbert.net/examples/sentence_transformer/applications/embedding-quantization/README.html) is a technique to reduce memory consumption of vectors and speed up vector index builds. ClickHouse supports the following quantization options -
+[Embedding Quantization](https://sbert.net/examples/sentence_transformer/applications/embedding-quantization/README.html) is a technique to reduce memory consumption of vectors and speed up vector index builds. ClickHouse supports the following quantization options -
 
 |Quantization Option|Storage Per Dimension|
 |-------------------|---------------------|
@@ -431,9 +431,9 @@ For production use-cases, we recommend that the cache is sized large enough so t
 |   i8              |  1 byte             |
 |   b1              |  1 bit              |
 
-Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or neglible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantizations cause measurable loss in precision and thus cause a drop in the quality of similarily search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with a multiplier to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
+Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or negligible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantization cause measurable loss in precision and thus cause a drop in the quality of similarity search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with a multiplier to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
 
-Binary quantization is recommended only for embedding vectors normalized to length 1 (e.g OpenAI's models) and vector similarity computed using `cosine` distance. A binary quantized vector index uses `Hamming` distance metric internally to construct and update the proximity graph. The rescoring step will use the full precision vectors stored in the table and compute `cosine` distance to identify the nearest neighbours.
+Binary quantization is recommended only for embedding vectors normalized to length 1 (e.g OpenAI models) and vector similarity computed using `cosine` distance. A binary quantized vector index uses `Hamming` distance metric internally to construct and update the proximity graph. The rescoring step will use the full precision vectors stored in the table and compute `cosine` distance to identify the nearest neighbours.
 
 
 **Tuning Data Transfer**
