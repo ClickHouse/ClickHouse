@@ -832,7 +832,7 @@ ObjectIterator IcebergMetadata::iterate(
     ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
-    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback);
+    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback, static_cast<UInt64>(relevant_snapshot_id));
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

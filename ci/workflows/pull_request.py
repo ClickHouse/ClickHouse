@@ -47,7 +47,7 @@ workflow = Workflow.Config(
         *[
             j.set_dependency(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                if "sequential" in j.name
+                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
