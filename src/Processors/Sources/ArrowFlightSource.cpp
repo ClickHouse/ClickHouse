@@ -41,7 +41,7 @@ ArrowFlightSource::ArrowFlightSource(
 void ArrowFlightSource::initializeStream()
 {
     arrow::flight::FlightCallOptions options;
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Command(query);
+    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({query});
 
     auto flight_info_result = client->GetFlightInfo(options, descriptor);
     if (!flight_info_result.ok())
