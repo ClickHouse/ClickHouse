@@ -193,17 +193,46 @@ export function noArrivalsScenario(selector, opts)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function runScenario()
+export const SCENARIOS = {
+    'explainDemo': 'Small demo with 20 parts using maxWa merge strategy with 7 merges',
+    'binaryTree': 'Creates 16 equal-sized parts and merges them in a binary tree pattern',
+    'aggressiveMerging': 'Demonstrates aggressive merging by merging all parts after each insert',
+    'randomMess': 'Creates chaotic state with 100 random inserts followed by 30 random merges',
+    'maxWaDemo': 'Long-running demo with 300 iterations of inserts and maxWa merges',
+    'simple1000': 'Inserts 1000 parts and applies simple merge strategy',
+    'maxWa1000': 'Inserts 1000 parts and applies maxWa merge strategy with adaptive scoring',
+    'oneBigMerge': 'Creates 16 parts and merges them all into one large part',
+    'simple10000Period': 'Periodic scenario with 1000 iterations of 10 inserts and simple merges',
+    'maxWa10000Period': 'Periodic scenario with 1000 iterations of 10 inserts and maxWa merges',
+    'noArrivalsScenario': 'Fixed base merge scenario with 256 parts and base factor of 4'
+};
+
+export function runScenario(scenarioName = 'simple1000')
 {
-    // return explainDemo();
-    // return binaryTree();
-    // return aggressiveMerging();
-    // return randomMess();
-    // return maxWaDemo();
-    return simple1000();
-    // return maxWa1000();
-    // return oneBigMerge();
-    // return simple10000Period();
-    // return maxWa10000Period();
-    // return noArrivalsScenario(fixedBaseMerges, {base: 4, parts: 256});
+    switch (scenarioName) {
+        case 'explainDemo':
+            return explainDemo();
+        case 'binaryTree':
+            return binaryTree();
+        case 'aggressiveMerging':
+            return aggressiveMerging();
+        case 'randomMess':
+            return randomMess();
+        case 'maxWaDemo':
+            return maxWaDemo();
+        case 'simple1000':
+            return simple1000();
+        case 'maxWa1000':
+            return maxWa1000();
+        case 'oneBigMerge':
+            return oneBigMerge();
+        case 'simple10000Period':
+            return simple10000Period();
+        case 'maxWa10000Period':
+            return maxWa10000Period();
+        case 'noArrivalsScenario':
+            return noArrivalsScenario(fixedBaseMerges, {base: 4, parts: 256});
+        default:
+            throw new Error(`Unknown scenario: ${scenarioName}. Available scenarios: ${Object.keys(SCENARIOS).join(', ')}`);
+    }
 }

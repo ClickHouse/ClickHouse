@@ -1,7 +1,7 @@
 import { Chart } from './Chart.js';
 import { MergeTree } from './MergeTree.js';
 import { SimulationContainer } from './SimulationContainer.js';
-import { runScenario, noArrivalsScenario } from './Scenarios.js';
+import { runScenario, noArrivalsScenario, SCENARIOS } from './Scenarios.js';
 import { sequenceInserter } from './sequenceInserter.js';
 import { customScenario } from './customScenario.js';
 import { fixedBaseMerges } from './fixedBaseMerges.js';
@@ -13,6 +13,16 @@ import { floatLayerMerges } from './floatLayerMerges.js';
 import { factorizeNumber, allFactorPermutations } from './factorization.js';
 import { clickHousePartsInserter } from './clickHousePartsInserter.js';
 import { delayMs } from './util.js';
+
+// Global pages configuration including scenarios and other functions
+export const PAGES = {
+    // Include all scenarios
+    ...Object.fromEntries(
+        Object.entries(SCENARIOS).map(([key, desc]) => [key, { description: desc, type: 'scenario' }])
+    ),
+    // Add other functions (parallel merging)
+    'periodicArrivals': { description: 'Simulation with periodic part arrivals and float layer merges (parallel merging)', type: 'function' }
+};
 
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
 {
@@ -114,176 +124,138 @@ function argMin(array, func)
     return result;
 }
 
-function runSelector(selectorGen, opts)
-{
-    let mt = noArrivalsScenario(selectorGen(opts), opts);
-    const { count, total_time, ...other_opts } = opts;
-    mt.title = `${selectorGen.name} ║ ${JSON.stringify(other_opts)} ║`;
-    mt.selectorGen = selectorGen;
-    const time_integral = mt.integral_active_part_count;
-    const y = time_integral / total_time;
-    return {y: y, mt};
+function createNavigationPage() {
+    // Hide all existing containers
+    const containers = ['opt-container', 'metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
+    containers.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.style.display = 'none';
+        }
+    });
+
+    // Create or get navigation container
+    let navContainer = document.getElementById('nav-container');
+    if (!navContainer) {
+        navContainer = document.createElement('div');
+        navContainer.id = 'nav-container';
+        navContainer.className = 'container-fluid';
+        document.body.insertBefore(navContainer, document.body.firstChild);
+    }
+
+    navContainer.style.display = 'block';
+
+    // Create navigation content using Bootstrap
+    navContainer.innerHTML = `
+        <div class="row">
+            <div class="col-12">
+                <div class="jumbotron jumbotron-fluid bg-primary text-white text-center">
+                    <div class="container">
+                        <h1 class="display-4">ClickHouse Merge Selector Lab</h1>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <h2 class="text-success border-bottom border-success pb-2 mb-4">Single-Threaded Merging Scenarios</h2>
+                <div class="row" id="scenarios-grid"></div>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-12">
+                <h2 class="text-primary border-bottom border-primary pb-2 mb-4">Parallel Merging Simulations</h2>
+                <div class="row" id="functions-grid"></div>
+            </div>
+        </div>
+    `;
+
+    // Populate scenarios
+    const scenariosGrid = document.getElementById('scenarios-grid');
+    const functionsGrid = document.getElementById('functions-grid');
+
+    Object.entries(PAGES).forEach(([key, page]) => {
+        const card = document.createElement('div');
+        card.className = 'col-lg-4 col-md-6 col-sm-12 mb-3';
+
+        const cardColor = page.type === 'scenario' ? 'success' : 'primary';
+
+        card.innerHTML = `
+            <div class="card h-100 border-${cardColor}" style="cursor: pointer; transition: all 0.2s;">
+                <div class="card-body">
+                    <h5 class="card-title text-${cardColor}">${key}</h5>
+                    <p class="card-text text-muted">${page.description}</p>
+                </div>
+            </div>
+        `;
+
+        // Add hover effects
+        const cardElement = card.querySelector('.card');
+        cardElement.addEventListener('mouseenter', () => {
+            cardElement.classList.add(`bg-${cardColor}`, 'text-white');
+            cardElement.querySelector('.card-text').classList.remove('text-muted');
+            cardElement.querySelector('.card-text').classList.add('text-white-50');
+        });
+
+        cardElement.addEventListener('mouseleave', () => {
+            cardElement.classList.remove(`bg-${cardColor}`, 'text-white');
+            cardElement.querySelector('.card-text').classList.add('text-muted');
+            cardElement.querySelector('.card-text').classList.remove('text-white-50');
+        });
+
+        cardElement.addEventListener('click', () => {
+            window.location.hash = key;
+            runPage(key);
+        });
+
+        if (page.type === 'scenario') {
+            scenariosGrid.appendChild(card);
+        } else {
+            functionsGrid.appendChild(card);
+        }
+    });
 }
 
-async function minimizeAvgPartCount(parts, chart)
-{
-    const total_time = (new MergeTree()).mergeDuration(1 << 20, 2) * parts * Math.log2(parts);
+function showContainers() {
+    // Show all existing containers
+    const containers = ['opt-container', 'metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
+    containers.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.style.display = '';
+        }
+    });
 
-    let results = {};
-
-    // results.analytical = await iterateAnalyticalSolution(chart.addSeries("Analytic"), parts, total_time);
-    const numerical_futures = [
-        //iteratePartsFactors(factorsAsBaseMerges, chart.addSeries("FactorBases", showSimulation), parts, total_time),
-        // iterateBaseLinear(fixedBaseMerges, chart.addSeries("FixedBase", showSimulation), parts, total_time),
-    ];
-
-    results.base_2 = runSelector(floatBaseMerges, {parts, total_time, base: 2});
-    results.base_2_5 = runSelector(floatBaseMerges, {parts, total_time, base: 2.5});
-    results.base_e = runSelector(floatBaseMerges, {parts, total_time, base: Math.E});
-    results.base_3 = runSelector(floatBaseMerges, {parts, total_time, base: 3});
-    results.base_3_5 = runSelector(floatBaseMerges, {parts, total_time, base: 3.5});
-
-    // Simple merge selector for reference
-    results.simple = runSelector(simpleMerges, {parts, total_time});
-
-    // Wait all simulations to finish before we select the best
-    let numerical_results = [];
-    for (let future of numerical_futures)
-        numerical_results.push(await future);
-
-    // Return best solutions
-    // results.numerical = argMin(numerical_results, d => d.y);
-    return results;
+    // Hide navigation
+    const navContainer = document.getElementById('nav-container');
+    if (navContainer) {
+        navContainer.style.display = 'none';
+    }
 }
 
-export async function demo()
+function runPage(pageKey) {
+    const page = PAGES[pageKey];
+    if (!page) {
+        console.error(`Unknown page: ${pageKey}`);
+        return;
+    }
+
+    // Show the original containers
+    showContainers();
+
+    // Run the appropriate function
+    if (page.type === 'scenario') {
+        demo(pageKey);
+    } else if (pageKey === 'periodicArrivals') {
+        periodicArrivals();
+    }
+}export async function demo(scenarioName = null)
 {
     const simContainer = new SimulationContainer();
-    const mt = runScenario();
+    const mt = scenarioName ? runScenario(scenarioName) : runScenario();
     simContainer.update({mt}, true);
     if (mt.time > 30 * 86400)
         simContainer.rewinder.setMinTime(30 * 86400);
-}
-
-export async function compareAvgPartCount()
-{
-    const optimal_chart = new Chart(
-        d3.select("#opt-container"),
-        "Initial number of parts to merge",
-        "Avg Part Count",
-        `This chart shows how different <i>Merge Selectors</i> are compared according to average count of parts over time.
-        For fair comparison the same time interval is selected for all simulations.
-        So basically we compare time integral of part count against initial number of parts.
-        <br><b>Click a point to see corresponding tree of merges.</b>`
-    );
-
-    const variants_chart = new Chart(
-        d3.select("#var-container"),
-        "Base (Part count for 1st level merges)",
-        "Avg Part Count",
-        `This chart shows results of multiple simulations with <i>numerical algorithms</i> that explore possible merge tree structures.
-        Every simulation has different <i>parameters</i>.
-        This is done in attempt to find the best merging approach in given scenario.
-        Best (lowest) point is then returned as a <u>numerical</u> result and is shown on another chart.
-        It represents best guess we could hope for given optimization goal: minimize avg part count.
-        <br><b>Click a point to see corresponding tree of merges.</b>`
-    );
-    variants_chart.trackMin();
-
-    // let analytical_series = optimal_chart.addSeries("Analytical", showSimulation);
-    // let numerical_series = optimal_chart.addSeries("Numerical", showSimulation);
-    // let simple_series = optimal_chart.addSeries("SimpleMergeSelector", showSimulation);
-    let series = {};
-    for (let parts = 100; parts <= 1000; parts+=100)
-    {
-        const results = await minimizeAvgPartCount(parts, variants_chart);
-        for (let name in results)
-        {
-            if (!(name in series))
-                series[name] = optimal_chart.addSeries(name, showSimulation);
-            series[name].addPoint({x: parts, ...results[name]});
-        }
-        await delayMs(10);
-
-        // Show what simple selector is doing
-        // showSimulation(simple, true);
-        //await delayMs(100);
-
-        // analytical_series.addPoint({x: parts, y: analytical.y});
-        // analytical_series.addPoint({x: parts, y: analytical.base});
-        // numerical_series.addPoint({x: parts, y: numerical.y, mt: numerical.mt});
-        // numerical_series.addPoint({x: parts, y: numerical.mt.base, mt: numerical.mt});
-        // simple_series.addPoint({x: parts, y: simple.y, mt: simple.mt});
-
-        variants_chart.clear();
-    }
-}
-
-async function custom()
-{
-    const simContainer = new SimulationContainer();
-
-    const scenario = {
-        inserts: [
-            // sequenceInserter({
-            //     start_time: 0,
-            //     interval: 0,
-            //     parts: 260,
-            //     bytes: 10 << 20,
-            // }),
-            clickHousePartsInserter({
-                host: "http://localhost:8123",
-                user: "default",
-                password: "",
-                query: "SELECT * FROM parts WHERE active = 1 AND database='colossus_metrics_loadtest' AND table='local_samples' AND partition='202411' ORDER BY database, table, partition, min_block_number"
-                // database: "colossus_metrics_loadtest",
-                // table: "local_samples",
-                // partition: "202411",
-            }),
-        ],
-        selector: simpleMerges(),
-        pool_size: 1,
-    }
-
-    let show_postponed = false;
-    function showMergeTree({sim, mt}) {
-        simContainer.update({mt}, true);
-        if (!show_postponed)
-        {
-            show_postponed = true;
-            sim.postpone("show", async () => {
-                //show_postponed = false;
-                await delayMs(10);
-            });
-        }
-    }
-
-    let shown = false;
-    function showMergeTreeOnce({mt}) {
-        if (!shown)
-            simContainer.update({mt}, true);
-        shown = true;
-    }
-
-    async function updateMergeTree({mt}) {
-        simContainer.update({mt}, true);
-        await delayMs(100);
-    }
-
-    async function everySecond({mt}) {
-        updateMergeTree({mt}, true);
-        await delayMs(1);
-    }
-
-    const signals = {
-        on_merge_begin: updateMergeTree,
-        on_merge_end: updateMergeTree,
-        // on_insert: updateMergeTree,
-        on_every_real_second: everySecond,
-    };
-
-    const mt = await customScenario(scenario, signals);
-    simContainer.update({mt}, true);
 }
 
 async function periodicArrivals()
@@ -325,9 +297,21 @@ async function periodicArrivals()
 
 export async function main()
 {
-    // demo();
-    // compareAvgPartCount();
-    // custom();
-    // solverTest();
-    periodicArrivals();
+    // Handle browser navigation
+    window.addEventListener('popstate', () => {
+        const hash = window.location.hash.slice(1);
+        if (hash && PAGES[hash]) {
+            runPage(hash);
+        } else {
+            createNavigationPage();
+        }
+    });
+
+    // Check if there's a hash in the URL
+    const hash = window.location.hash.slice(1);
+    if (hash && PAGES[hash]) {
+        runPage(hash);
+    } else {
+        createNavigationPage();
+    }
 }
