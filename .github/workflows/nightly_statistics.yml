@@ -29,6 +29,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "{JOB_NAME_GH}"
 
       - name: Note report location to summary
         env:
@@ -38,6 +42,10 @@ jobs:
           REPORT_LINK=https://s3.amazonaws.com/altinity-build-artifacts/$PR_NUMBER/$COMMIT_SHA/ci_run_report.html
           echo "Workflow Run Report: [View Report]($REPORT_LINK)" >> $GITHUB_STEP_SUMMARY
 
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Config Workflow"
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -75,7 +83,15 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "{JOB_NAME_GH}"
 
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Collect Statistics"
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp

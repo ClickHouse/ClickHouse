@@ -147,6 +147,10 @@ jobs:
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "{JOB_NAME_GH}"
       - name: Prepare env script
         run: |
           rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
