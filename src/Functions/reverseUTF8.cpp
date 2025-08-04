@@ -44,31 +44,30 @@ struct ReverseUTF8Impl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset j = prev_offset;
-            while (j < offsets[i] - 1)
+            while (j < offsets[i])
             {
                 if (data[j] < 0xBF)
                 {
-                    res_data[offsets[i] + prev_offset - 2 - j] = data[j];
+                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
                     j += 1;
                 }
                 else if (data[j] < 0xE0)
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 1], &data[j], 2);
+                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 1], &data[j], 2);
                     j += 2;
                 }
                 else if (data[j] < 0xF0)
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 2], &data[j], 3);
+                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 2], &data[j], 3);
                     j += 3;
                 }
                 else
                 {
-                    res_data[offsets[i] + prev_offset - 2 - j] = data[j];
+                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
                     j += 1;
                 }
             }
 
-            res_data[offsets[i] - 1] = 0;
             prev_offset = offsets[i];
         }
     }

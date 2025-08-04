@@ -71,7 +71,7 @@ struct LowerUpperUTF8Impl
 
             if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
             {
-                size_t new_size = curr_offset + dst_size + 1;
+                size_t new_size = curr_offset + dst_size;
                 res_data.resize(new_size);
 
                 error_code = U_ZERO_ERROR;
@@ -92,8 +92,7 @@ struct LowerUpperUTF8Impl
                     std::string_view(src, src_size),
                     src_size);
 
-            res_data[curr_offset + dst_size] = 0;
-            curr_offset += dst_size + 1;
+            curr_offset += dst_size;
             res_offsets[row_i] = curr_offset;
         }
 

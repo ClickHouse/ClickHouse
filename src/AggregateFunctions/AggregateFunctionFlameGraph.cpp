@@ -186,12 +186,11 @@ struct AggregateFunctionFlameGraphTree
 static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
 {
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + length + 1;
+    const size_t new_size = old_size + length;
 
     chars.resize(new_size);
     if (length)
         memcpy(chars.data() + old_size, pos, length);
-    chars[old_size + length] = 0;
     offsets.push_back(new_size);
 }
 

@@ -97,10 +97,9 @@ private:
                 src_offset = src_offsets[i];
                 dst_offset += src_length;
 
-                if (src_length > 1 && dst_data[dst_offset - 2] != static_cast<UInt8>(trailing_char_str.front()))
+                if (src_length > 1 && dst_data[dst_offset - 1] != static_cast<UInt8>(trailing_char_str.front()))
                 {
-                    dst_data[dst_offset - 1] = trailing_char_str.front();
-                    dst_data[dst_offset] = 0;
+                    dst_data[dst_offset] = trailing_char_str.front();
                     ++dst_offset;
                 }
 

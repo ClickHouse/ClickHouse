@@ -69,20 +69,17 @@ struct ExtractURLParameterImpl
 
                 size_t param_size = param_end - param_begin;
 
-                res_data.resize(res_offset + param_size + 1);
+                res_data.resize(res_offset + param_size);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], param_begin, param_size);
                 res_offset += param_size;
             }
             else
             {
                 /// No parameter found, put empty string in result.
-                res_data.resize(res_offset + 1);
+                res_data.resize(res_offset);
             }
 
-            res_data[res_offset] = 0;
-            ++res_offset;
             res_offsets[i] = res_offset;
-
             prev_offset = cur_offset;
         }
     }

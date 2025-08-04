@@ -85,9 +85,6 @@ private:
                 current_dst_string_offset += bytes_to_copy;
             }
 
-            dst_chars[current_dst_string_offset] = 0;
-            ++current_dst_string_offset;
-
             dst_string_offsets[i] = current_dst_string_offset;
         }
 

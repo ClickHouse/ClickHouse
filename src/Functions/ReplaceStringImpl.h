@@ -378,10 +378,9 @@ struct ReplaceStringImpl
     do \
     { \
         const size_t len = begin + n * (i + 1) - pos; \
-        res_data.resize(res_data.size() + len + 1); \
+        res_data.resize(res_data.size() + len); \
         memcpy(&res_data[res_offset], pos, len); \
         res_offset += len; \
-        res_data[res_offset++] = 0; \
         res_offsets[i] = res_offset; \
         pos = begin + n * (i + 1); \
         ++i; \

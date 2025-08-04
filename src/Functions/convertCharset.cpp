@@ -144,14 +144,10 @@ private:
                 current_to_offset += res;
             }
 
-            if (to_chars.size() < current_to_offset + 1)
-                to_chars.resize(current_to_offset + 1);
+            if (to_chars.size() < current_to_offset)
+                to_chars.resize(current_to_offset);
 
-            to_chars[current_to_offset] = 0;
-
-            ++current_to_offset;
             to_offsets[i] = current_to_offset;
-
             current_from_offset = from_offsets[i];
         }
 

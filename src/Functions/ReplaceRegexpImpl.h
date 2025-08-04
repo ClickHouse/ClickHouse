@@ -184,8 +184,6 @@ struct ReplaceRegexpImpl
             }
         }
 
-        res_data.resize(res_data.size() + 1);
-        res_data[res_offset] = 0;
         ++res_offset;
     }
 

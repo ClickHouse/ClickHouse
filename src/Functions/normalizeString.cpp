@@ -105,7 +105,7 @@ struct NormalizeUTF8Impl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t from_size = offsets[i] - current_from_offset - 1;
+            size_t from_size = offsets[i] - current_from_offset;
 
             from_uchars.resize(from_size + 1);
             int32_t from_code_points = 0;
@@ -131,7 +131,7 @@ struct NormalizeUTF8Impl
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
 
-            size_t max_to_size = current_to_offset + 4 * to_code_points + 1;
+            size_t max_to_size = current_to_offset + 4 * to_code_points;
             if (res_data.size() < max_to_size)
                 res_data.resize(max_to_size);
 
@@ -147,8 +147,6 @@ struct NormalizeUTF8Impl
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strToUTF8): {}", u_errorName(err));
 
             current_to_offset += to_size;
-            res_data[current_to_offset] = 0;
-            ++current_to_offset;
             res_offsets[i] = current_to_offset;
 
             current_from_offset = offsets[i];

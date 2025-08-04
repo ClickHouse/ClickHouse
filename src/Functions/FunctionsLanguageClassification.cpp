@@ -99,12 +99,10 @@ struct FunctionDetectLanguageImpl
                 res = "un";
             }
 
-            res_data.resize(res_offset + res.size() + 1);
+            res_data.resize(res_offset + res.size());
             memcpy(&res_data[res_offset], res.data(), res.size());
 
-            res_data[res_offset + res.size()] = 0;
-            res_offset += res.size() + 1;
-
+            res_offset += res.size();
             res_offsets[i] = res_offset;
         }
     }

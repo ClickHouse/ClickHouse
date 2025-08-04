@@ -35,7 +35,7 @@ struct ExtractImpl
             size_t cur_offset = offsets[i];
 
             unsigned count
-                = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
+                = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset, matches, capture + 1);
             if (count > capture && matches[capture].offset != std::string::npos)
             {
                 const auto & match = matches[capture];
@@ -45,13 +45,10 @@ struct ExtractImpl
             }
             else
             {
-                res_data.resize(res_offset + 1);
+                res_data.resize(res_offset);
             }
 
-            res_data[res_offset] = 0;
-            ++res_offset;
             res_offsets[i] = res_offset;
-
             prev_offset = cur_offset;
         }
     }
