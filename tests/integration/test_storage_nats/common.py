@@ -4,9 +4,6 @@ import os.path as p
 import subprocess
 import time
 import nats
-from typing import Optional
-
-from nats.js import api
 
 from helpers.cluster import check_nats_is_available, nats_connect_ssl
 from helpers.test_tools import TSV
@@ -70,129 +67,6 @@ def revive_nats(nats_id, nats_port):
     p = subprocess.Popen(("docker", "start", nats_id), stdout=subprocess.PIPE)
     p.communicate()
     wait_nats_to_start(nats_port)
-
-
-async def produce_messages(cluster_inst, subject, messages=(), bytes=None):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    for message in messages:
-        await nc.publish(subject, message.encode())
-    if bytes is not None:
-        await nc.publish(subject, bytes)
-    await nc.flush()
-    logging.debug("Finished publishing to " + subject)
-
-    await nc.close()
-    return messages
-
-async def receive_messages_from_stream(cluster_inst, stream_name, consumer_name, subject, decode_data=True):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    js = nc.jetstream()
-
-    result = []
-
-    sub = await js.pull_subscribe(stream=stream_name, durable=consumer_name, subject=subject)
-
-    try:
-        while True:
-            msgs = await sub.fetch(1)
-            for msg in msgs:
-                result.append(msg.data.decode() if decode_data else msg.data)
-                await msg.ack()
-    except nats.errors.TimeoutError:
-        pass
-   
-    await sub.unsubscribe()
-
-    await nc.drain()
-    await nc.close()
-
-    return result
-
-
-async def add_stream(cluster_inst, stream_name, stream_subjects):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    # Create JetStream context.
-    js = nc.jetstream()
-        
-    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
-    logging.debug("added NATS jet stream: " + str(stream_info))
-    
-    await nc.close()
-
-async def delete_stream(cluster_inst, stream_name):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    # Create JetStream context.
-    js = nc.jetstream()
-        
-    # Persist messages on 'foo's subject.
-    await js.delete_stream(name=stream_name)
-
-    await nc.close()
-
-
-async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    # Create JetStream context.
-    js = nc.jetstream()
-    
-    consumer_config = api.ConsumerConfig(name=consumer_name, durable_name=consumer_name)
-
-    # Persist messages on 'foo's subject.
-    consumer_info = await js.add_consumer(stream=stream_name, config=consumer_config)
-    logging.debug("added durable NATS jet stream consumer: " + str(consumer_info))
-
-    await nc.close()
-
-async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
-    nc = await nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    # Create JetStream context.
-    js = nc.jetstream()
-        
-    # Persist messages on 'foo's subject.
-    await js.delete_consumer(stream_name, consumer_name)
-
-    await nc.close()
-
 
 def create_consumer(cluster_inst, subject, messages=(), bytes=None):
     nc = nats_connect_ssl(

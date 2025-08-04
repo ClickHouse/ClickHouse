@@ -1,14 +1,11 @@
 import asyncio
 import json
 import logging
-import math
 import os.path as p
 import random
-import subprocess
 import threading
 import time
-from random import randrange
-from typing import Optional
+import nats
 
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
@@ -19,6 +16,8 @@ from helpers.test_tools import TSV
 
 from . import common as nats_helpers
 from . import nats_pb2
+
+from nats.js import api
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -32,6 +31,147 @@ instance = cluster.add_instance(
     with_nats=True,
     clickhouse_path_dir="clickhouse_path",
 )
+
+# Helpers
+
+async def produce_messages(cluster_inst, stream, subject, messages=(), bytes=None):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    for message in messages:
+        await nc.jetstream().publish(subject, message.encode(), stream=stream)
+    if bytes is not None:
+        await nc.jetstream().publish(subject, bytes, stream=stream)
+    await nc.flush()
+    logging.debug("Finished publishing to " + subject)
+
+    await nc.close()
+
+async def receive_messages(cluster_inst, stream_name, consumer_name, subject, decode_data=True):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    js = nc.jetstream()
+
+    result = []
+
+    sub = await js.pull_subscribe(stream=stream_name, durable=consumer_name, subject=subject)
+
+    try:
+        while True:
+            msgs = await sub.fetch(1)
+            for msg in msgs:
+                result.append(msg.data.decode() if decode_data else msg.data)
+                await msg.ack()
+    except nats.errors.TimeoutError:
+        pass
+   
+    await sub.unsubscribe()
+
+    await nc.drain()
+    await nc.close()
+
+    return result
+
+
+async def add_stream(cluster_inst, stream_name, stream_subjects):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    # Create JetStream context.
+    js = nc.jetstream()
+        
+    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
+    logging.debug("added NATS jet stream: " + str(stream_info))
+    
+    await nc.close()
+
+async def get_stream_info(cluster_inst, stream_name) -> api.StreamInfo:
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    # Create JetStream context.
+    js = nc.jetstream()
+        
+    stream_info = await js.stream_info(stream_name)
+    logging.debug("recived NATS jet stream info: " + str(stream_info))
+    
+    await nc.close()
+    return stream_info
+
+async def delete_stream(cluster_inst, stream_name):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    # Create JetStream context.
+    js = nc.jetstream()
+        
+    # Persist messages on 'foo's subject.
+    await js.delete_stream(name=stream_name)
+
+    await nc.close()
+
+
+async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    # Create JetStream context.
+    js = nc.jetstream()
+    
+    consumer_config = api.ConsumerConfig(name=consumer_name, durable_name=consumer_name)
+
+    # Persist messages on 'foo's subject.
+    consumer_info = await js.add_consumer(stream=stream_name, config=consumer_config)
+    logging.debug("added durable NATS jet stream consumer: " + str(consumer_info))
+
+    await nc.close()
+
+async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    logging.debug("NATS connection status: " + str(nc.is_connected))
+
+    # Create JetStream context.
+    js = nc.jetstream()
+        
+    # Persist messages on 'foo's subject.
+    await js.delete_consumer(stream_name, consumer_name)
+
+    await nc.close()
+
 
 # Fixtures
 
@@ -54,11 +194,11 @@ def nats_setup_teardown():
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
-    asyncio.run(nats_helpers.add_stream(cluster, "test_stream", ["test_subject", "right_insert1" ,"right_insert2"]))
+    asyncio.run(add_stream(cluster, "test_stream", ["test_subject", "right_insert1" ,"right_insert2"]))
     
     yield  # run test
 
-    asyncio.run(nats_helpers.delete_stream(cluster, "test_stream"))
+    asyncio.run(delete_stream(cluster, "test_stream"))
 
     instance.query("DROP DATABASE test")
 
@@ -67,7 +207,7 @@ def nats_setup_teardown():
 
 def test_nats_select_empty(nats_cluster):
     
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
     
     instance.query(
         f"""
@@ -87,7 +227,7 @@ def test_nats_select_empty(nats_cluster):
 
 def test_nats_select(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -110,14 +250,14 @@ def test_nats_select(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_json_without_delimiter(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -141,20 +281,20 @@ def test_nats_json_without_delimiter(nats_cluster):
         messages += json.dumps({"key": i, "value": i}) + "\n"
 
     all_messages = [messages]
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", all_messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", all_messages))
 
     messages = ""
     for i in range(25, 50):
         messages += json.dumps({"key": i, "value": i}) + "\n"
     all_messages = [messages]
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", all_messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", all_messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_csv_with_delimiter(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -178,7 +318,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}, {i}".format(i=i))
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     time.sleep(1)
 
@@ -197,7 +337,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
 
 def test_nats_tsv_with_delimiter(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -221,14 +361,14 @@ def test_nats_tsv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}\t{i}".format(i=i))
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_macros(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -250,14 +390,14 @@ def test_nats_macros(nats_cluster):
     message = ""
     for i in range(50):
         message += json.dumps({"key": i, "value": i}) + "\n"
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", [message]))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [message]))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_materialized_view(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -286,7 +426,7 @@ def test_nats_materialized_view(nats_cluster):
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_result("SELECT * FROM test.view ORDER BY key")
     nats_helpers.check_result("SELECT * FROM test.view2 ORDER BY key")
@@ -294,7 +434,7 @@ def test_nats_materialized_view(nats_cluster):
 
 def test_nats_materialized_view_with_subquery(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -317,14 +457,14 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_many_materialized_views(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -352,7 +492,7 @@ def test_nats_many_materialized_views(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -369,7 +509,7 @@ def test_nats_many_materialized_views(nats_cluster):
 
 def test_nats_protobuf(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -396,7 +536,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", bytes=data))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
     
     data = b""
     for i in range(20, 21):
@@ -405,7 +545,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", bytes=data))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
     
     data = b""
     for i in range(21, 50):
@@ -414,14 +554,14 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", bytes=data))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_big_message(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     # Create batchs of messages of size ~100Kb
     nats_messages = 100
@@ -448,13 +588,13 @@ def test_nats_big_message(nats_cluster):
         """
     )
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", batch_messages * nats_messages)
 
 def test_nats_mv_combo(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     NUM_MV = 5
     NUM_CONSUMERS = 4
@@ -494,7 +634,7 @@ def test_nats_mv_combo(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+        asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     threads = []
     threads_num = 20
@@ -505,23 +645,23 @@ def test_nats_mv_combo(nats_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     time_limit_sec = 300
     deadline = time.monotonic() + time_limit_sec
-    
+
+    expected_result = messages_num * threads_num * NUM_MV
+
     while time.monotonic() < deadline:
         result = 0
         for mv_id in range(NUM_MV):
             result += int(
                 instance.query("SELECT count() FROM test.combo_{0}".format(mv_id))
             )
-        if int(result) == messages_num * threads_num * NUM_MV:
+        if int(result) == expected_result:
             break
         time.sleep(1)
-    
-    assert int(result) == messages_num * threads_num * NUM_MV
-
-    for thread in threads:
-        thread.join()
 
     for mv_id in range(NUM_MV):
         instance.query(
@@ -533,14 +673,21 @@ def test_nats_mv_combo(nats_cluster):
             )
         )
 
+    if int(result) == expected_result:
+        return
+
+    stream_info = asyncio.run(get_stream_info(nats_cluster, "test_stream"))
+    assert (stream_info.state.messages == messages_num * threads_num
+    ), "NATS server lost some messages: {}".format(stream_info.state.messages)
+    
     assert (
-        int(result) == messages_num * threads_num * NUM_MV
-    ), "ClickHouse lost some messages: {}".format(result)
+        int(result) == expected_result
+    ), "Clickhouse server lost some messages: {}".format(result)
 
 
 def test_nats_insert(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -568,7 +715,7 @@ def test_nats_insert(nats_cluster):
                 continue
             else:
                 raise
-    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
+    insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
 
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
@@ -576,7 +723,7 @@ def test_nats_insert(nats_cluster):
 
 def test_fetching_messages_without_mv(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -605,7 +752,7 @@ def test_fetching_messages_without_mv(nats_cluster):
             else:
                 raise
     
-    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
+    insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
@@ -663,7 +810,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
 
 def test_nats_many_subjects_insert_right(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -696,14 +843,14 @@ def test_nats_many_subjects_insert_right(nats_cluster):
             else:
                 raise
 
-    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "right_insert1"))
+    insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "right_insert1"))
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
 
 def test_nats_many_inserts(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -777,7 +924,7 @@ def test_nats_many_inserts(nats_cluster):
 
 def test_nats_overloaded_insert(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -857,7 +1004,7 @@ def test_nats_overloaded_insert(nats_cluster):
 
 def test_nats_virtual_column(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -880,7 +1027,7 @@ def test_nats_virtual_column(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", message_num)
 
     result = instance.query(
@@ -908,7 +1055,7 @@ def test_nats_virtual_column(nats_cluster):
 
 def test_nats_virtual_column_with_materialized_view(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -934,7 +1081,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", message_num)
 
     result = instance.query("SELECT key, value, subject FROM test.view ORDER BY key")
@@ -966,7 +1113,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", f"test_consumer_{table_id}"))
+        asyncio.run(add_durable_consumer(cluster, "test_stream", f"test_consumer_{table_id}"))
 
         logging.debug(f"Setting up table {table_id}")
         instance.query(
@@ -994,7 +1141,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+        asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     threads = []
     threads_num = 20
@@ -1004,11 +1151,10 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
     for thread in threads:
         time.sleep(random.uniform(0, 1))
         thread.start()
-
-    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.destination", messages_num * threads_num * num_tables)
-
     for thread in threads:
         thread.join()
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.destination", messages_num * threads_num * num_tables)
 
     for consumer_id in range(num_tables):
         instance.query(
@@ -1029,7 +1175,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
 
 def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
     
     instance.query(
         f"""
@@ -1098,7 +1244,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     with nats_cluster.pause_container("nats1"):
         nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
@@ -1124,7 +1270,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
 
 def test_nats_no_connection_at_startup_2(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1155,7 +1301,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
         instance.query("ATTACH TABLE test.cs")
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         """
@@ -1168,7 +1314,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     messages = []
     for i in range(messages_num):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     for _ in range(20):
         result = instance.query("SELECT count() FROM test.view")
@@ -1183,7 +1329,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
 
 def test_nats_format_factory_settings(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1209,7 +1355,7 @@ def test_nats_format_factory_settings(nats_cluster):
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", [message]))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [message]))
     while True:
         result = instance.query("SELECT date FROM test.view")
         if result == expected:
@@ -1218,7 +1364,7 @@ def test_nats_format_factory_settings(nats_cluster):
     assert result == expected
 
 def test_nats_bad_args(nats_cluster):
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1246,7 +1392,7 @@ def test_nats_bad_args(nats_cluster):
 
 def test_nats_drop_mv(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1268,7 +1414,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(20):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", 20)
 
@@ -1278,7 +1424,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(20, 40):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     instance.query(
         """
@@ -1294,7 +1440,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(40, 50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     instance.query(
         """
@@ -1307,7 +1453,7 @@ def test_nats_drop_mv(nats_cluster):
 
 def test_nats_predefined_configuration(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1321,7 +1467,7 @@ def test_nats_predefined_configuration(nats_cluster):
         """
     )
 
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", [json.dumps({"key": 1, "value": 2})]))
+    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 2})]))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -1338,7 +1484,7 @@ def test_nats_predefined_configuration(nats_cluster):
 
 def test_format_with_prefix_and_suffix(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1356,7 +1502,7 @@ def test_format_with_prefix_and_suffix(nats_cluster):
         "INSERT INTO test.nats select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
     )
 
-    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
+    insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     assert (
         "".join(insert_messages)
         == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
@@ -1365,8 +1511,8 @@ def test_format_with_prefix_and_suffix(nats_cluster):
 
 def test_max_rows_per_message(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "external_consumer"))
 
     instance.query(
         f"""
@@ -1390,7 +1536,7 @@ def test_max_rows_per_message(nats_cluster):
         f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
     )
 
-    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", "test_subject"))
+    insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", "test_subject"))
     assert (
         "".join(insert_messages)
         == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
@@ -1412,8 +1558,8 @@ def test_max_rows_per_message(nats_cluster):
 
 def test_row_based_formats(nats_cluster):
     
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "external_consumer"))
 
     num_rows = 10
 
@@ -1458,7 +1604,7 @@ def test_row_based_formats(nats_cluster):
             f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows})"
         )
         
-        insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", 'test_subject', decode_data=False))
+        insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", 'test_subject', decode_data=False))
         assert len(insert_messages) == num_rows
 
         attempt = 0
@@ -1481,7 +1627,7 @@ def test_row_based_formats(nats_cluster):
 
 def test_block_based_formats_1(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         f"""
@@ -1508,7 +1654,7 @@ def test_block_based_formats_1(nats_cluster):
             attempt += 1
     
     data = []
-    for message in asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject")):
+    for message in asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject")):
         splitted = message.split("\n")
 
         assert len(splitted) >= 3
@@ -1532,8 +1678,8 @@ def test_block_based_formats_1(nats_cluster):
 
 def test_block_based_formats_2(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "external_consumer"))
 
     num_rows = 100
 
@@ -1568,7 +1714,7 @@ def test_block_based_formats_2(nats_cluster):
             f"INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;"
         )
 
-        insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", "test_subject", decode_data=False))
+        insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", "test_subject", decode_data=False))
         assert len(insert_messages) == 9
 
         attempt = 0
@@ -1590,7 +1736,7 @@ def test_block_based_formats_2(nats_cluster):
 
 def test_hiding_credentials(nats_cluster):
 
-    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     table_name = 'test_hiding_credentials'
     instance.query(
