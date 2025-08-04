@@ -3323,8 +3323,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
                 auto responses = processWatchesImpl(delta.path, watches, list_watches, sessions_and_watchers, Coordination::Event::DELETED);
+                total_watches_count -= responses.size();
                 results.insert(results.end(), responses.begin(), responses.end());
-                total_watches_count -= results.size();
             }
         }
 

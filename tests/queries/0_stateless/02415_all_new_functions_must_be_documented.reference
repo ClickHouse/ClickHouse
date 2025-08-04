@@ -163,7 +163,6 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromDaysSinceYearZero32
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
@@ -580,7 +579,6 @@ toIntervalYear
 toJSONString
 toLowCardinality
 toNullable
-toStartOfMillisecond
 toString
 toStringCutToZero
 toTime
@@ -622,7 +620,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-today
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
