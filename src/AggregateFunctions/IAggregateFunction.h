@@ -371,8 +371,6 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-#if USE_EMBEDDED_COMPILER
-
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
@@ -380,8 +378,7 @@ public:
     virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void
-    compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
     virtual void compileMerge(
@@ -389,8 +386,6 @@ public:
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
-
-#endif
 
 protected:
     DataTypes argument_types;

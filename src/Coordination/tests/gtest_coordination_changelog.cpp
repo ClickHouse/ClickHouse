@@ -97,7 +97,6 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
 
 TYPED_TEST(CoordinationChangelogTest, ChangelogReadWrite)
 {
-
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
 

@@ -103,6 +103,9 @@ struct DataLakeStorageSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    void serialize(WriteBuffer & out) const;
+    static DataLakeStorageSettings deserialize(ReadBuffer & in);
+
 private:
     std::unique_ptr<DataLakeStorageSettingsImpl> impl;
 };

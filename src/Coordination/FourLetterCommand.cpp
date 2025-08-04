@@ -206,6 +206,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
         factory.registerCommand(profile_events_command);
 
+        FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
+        factory.registerCommand(toggle_request_logging);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -690,6 +693,14 @@ String ProfileEventsCommand::run()
 #endif
 
     return ret.str();
+}
+
+String ToggleRequestLogging::run()
+{
+    const auto & keeper_context = keeper_dispatcher.getKeeperContext();
+    auto old_value = keeper_context->shouldLogRequests();
+    keeper_context->setLogRequests(!old_value);
+    return old_value ? "disabled" : "enabled";
 }
 
 }

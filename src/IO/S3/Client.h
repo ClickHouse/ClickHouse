@@ -236,6 +236,8 @@ public:
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
+    const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
+
 protected:
     // visible for testing
     Client(size_t max_redirects_,
