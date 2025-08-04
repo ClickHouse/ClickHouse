@@ -6,7 +6,6 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
-#include <Columns/IColumn_fwd.h>
 
 namespace boost
 {
@@ -82,7 +81,6 @@ struct MergeTreeSettings
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 

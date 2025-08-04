@@ -1,21 +1,21 @@
 ---
-description: 'Documentation for Exact and Approximate Vector Search'
-keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor', 'vector search']
-sidebar_label: 'Exact and Approximate Vector Search'
+description: 'Documentation for Exact and Approximate Nearest Neighbor Search'
+keywords: ['vector similarity search', 'ann', 'knn', 'hnsw', 'indices', 'index', 'nearest neighbor']
+sidebar_label: 'Exact and Approximate Nearest Neighbor Search'
 slug: /engines/table-engines/mergetree-family/annindexes
-title: 'Exact and Approximate Vector Search'
+title: 'Exact and Approximate Nearest Neighbor Search'
 ---
 
 import BetaBadge from '@theme/badges/BetaBadge';
 
-# Exact and approximate vector search
+# Exact and Approximate Nearest Neighbor Search
 
-The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
-Two general approaches exist for solving vector search:
-- Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
-- Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
+The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search).
+Two general approaches exist for solving nearest neighbor search:
+- Exact nearest neighbor search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact nearest neighbor search can be too slow for real-world use.
+- Approximate nearest neighbor search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact nearest neighbor search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
 
-A vector search (exact or approximate) can be written in SQL as follows:
+A nearest neighbor search (exact or approximate) can be written in SQL as follows:
 
 ```sql
 WITH [...] AS reference_vector
@@ -32,13 +32,13 @@ The reference vector is a constant array and given as a common table expression.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
 `<N>` specifies how many neighbors should be returned.
 
-## Exact vector search {#exact-nearest-neighbor-search}
+## Exact Nearest Neighbor Search {#exact-nearest-neighbor-search}
 
-An exact vector search can be performed using above SELECT query as is.
+An exact nearest neighbor search can be performed using above SELECT query as is.
 The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
 Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](../../../operations/settings/settings.md#max_threads)).
 
-One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
+One common approach to speed up exact nearest neighbor search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if the vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, then the data size is cut in half, and the query runtimes are expected to go down by half as well.
 This method is know as quantization and it might reduce the result accuracy despite an exhaustive scan of all vectors.
 If the precision loss is acceptable depends on the use case and typically requires experimentation.
@@ -67,15 +67,15 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate vector search {#approximate-nearest-neighbor-search}
+## Approximate Nearest Neighbor Search {#approximate-nearest-neighbor-search}
 
 <BetaBadge/>
 
-ClickHouse provides a special "vector similarity" index to perform approximate vector search.
+ClickHouse provides a special "vector similarity" index to perform approximate nearest neighbor search.
 
 :::note
-Vector similarity indexes are currently beta.
-To enable them, please first run `SET enable_vector_similarity_index = 1`.
+Vector similarity indexes are currently experimental.
+To enable them, please first run `SET allow_experimental_vector_similarity_index = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -105,7 +105,7 @@ Accordingly, above `ALTER TABLE` statement only causes the index to be build for
 To build the index for existing data as well, you need to materialize it:
 
 ```sql
-ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
+ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutations_sync = 2;
 ```
 
 Function `<distance_function>` must be
@@ -291,7 +291,7 @@ LIMIT 10
 Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
 By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
-As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
+As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
 As an example, we can query again but with multiplier `3.0`:
 
@@ -308,55 +308,7 @@ ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in e
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
-**Rescoring**
-
-Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup in a skip index (internally) returns a list of potentially matching granules which reduces the number of read data in the subsequent scan.
-This works well for skip indexes in general but in the case of vector similarity indexes, it creates a "granularity mismatch".
-In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector, but it then needs to extrapolate these row numbers to granule numbers.
-ClickHouse will then load these granules from disk, and repeat the distance calculation for all vectors in these granules.
-This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
-
-ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is enabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
-The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
-To see this, run a vector search query with `EXPLAIN header = 1`:
-
-```sql
-EXPLAIN header = 1
-WITH [0., 2.] AS reference_vec
-SELECT id
-FROM tab
-ORDER BY L2Distance(vec, reference_vec) ASC
-LIMIT 3
-SETTINGS vector_search_with_rescoring = 0
-```
-
-```result
-Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
-
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-:::note
-A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
-:::
-
-### Performance tuning {#performance-tuning}
+### Performance Tuning {#performance-tuning}
 
 **Tuning Compression**
 
@@ -404,7 +356,7 @@ The current size of the vector similarity index cache is shown in [system.metric
 ```sql
 SELECT metric, value
 FROM system.metrics
-WHERE metric = 'VectorSimilarityIndexCacheBytes'
+WHERE metric = 'VectorSimilarityIndexCacheSize'
 ```
 
 The cache hits and misses for a query with some query id can be obtained from [system.query_log](../../../operations/system-tables/query_log.md):
@@ -420,47 +372,7 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
-**Tuning Data Transfer**
-
-The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
-Typical Python code which runs a vector search in ClickHouse might look like this
-
-```python
-search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
-
-params = {'search_v': search_v}
-result = chclient.query(
-   "SELECT id FROM items
-    ORDER BY cosineDistance(vector, %(search_v)s)
-    LIMIT 10",
-    parameters = params)
-```
-
-Embedding vectors (`search_v` in above snippet) could have a very large dimension.
-For example, OpenAI provides models that generate embeddings vectors with 1536 or even 3072 dimensions.
-In above code, the ClickHouse Python driver substitutes the embedding vector by a human readable string and subsequently send the SELECT query entirely as a string.
-Assuming the embedding vector consists of 1536 single-precision floating point values, the sent string reaches a length of 20 kB.
-This creates a high CPU usage for tokenizing, parsing and performing thousands of string-to-float conversions.
-Also, significant space is required in the ClickHouse server log file, causing bloat in `system.query_log` as well.
-
-Note that most LLM models return an embedding vector as a list or NumPy array of native floats.
-We therefore recommend Python applications to bind the reference vector parameter in binary form by using the following style:
-
-```python
-search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
-
-params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
-result = chclient.query(
-   "SELECT id FROM items
-    ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
-    LIMIT 10"
-    parameters = params)
-```
-
-In the example, the reference vector is sent as-is in binary form and reinterpreted as array of floats on the server.
-This saves CPU time on the server side, and avoids bloat in the server logs and `system.query_log`.
-
-### Administration and monitoring {#administration}
+### Administration and Monitoring {#administration}
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
 
@@ -478,7 +390,7 @@ Example output:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
+### Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
 
 As all regular [skipping indexes](/optimize/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).
 For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`, then each indexed block will contain 16384 rows.

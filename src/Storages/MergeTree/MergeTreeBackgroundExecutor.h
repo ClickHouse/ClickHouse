@@ -80,19 +80,17 @@ public:
         queue.push_back(std::move(item));
     }
 
-    std::vector<TaskRuntimeDataPtr> cancelAndRemove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
-        std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
             if (item->task->getStorageID() == id)
-                res.push_back(item);
+                item->task->cancel();
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
             [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
-        return res;
     }
 
     void setCapacity(size_t count) { queue.set_capacity(count); }
@@ -125,18 +123,16 @@ public:
         std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
-    std::vector<TaskRuntimeDataPtr> cancelAndRemove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
-        std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
             if (item->task->getStorageID() == id)
-                res.push_back(item);
+                item->task->cancel();
         }
 
         std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
-        return res;
     }
 
     void setCapacity(size_t count) { buffer.reserve(count); }
@@ -165,9 +161,9 @@ public:
         std::visit([&] (auto && queue) { queue.push(std::move(item)); }, impl);
     }
 
-    std::vector<TaskRuntimeDataPtr> cancelAndRemove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
-        return std::visit([&] (auto && queue) { return queue.cancelAndRemove(id); }, impl);
+        std::visit([&] (auto && queue) { queue.cancelAndRemove(id); }, impl);
     }
 
     void setCapacity(size_t count)

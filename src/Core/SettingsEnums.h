@@ -388,7 +388,6 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
-    NONE,
     ICEBERG_REST,
     UNITY,
     GLUE,
@@ -396,14 +395,6 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
-
-enum class FileCachePolicy : uint8_t
-{
-    LRU,
-    SLRU,
-};
-
-DECLARE_SETTING_ENUM(FileCachePolicy)
 
 enum class VectorSearchFilterStrategy : uint8_t
 {

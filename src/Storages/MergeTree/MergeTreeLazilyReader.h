@@ -25,7 +25,7 @@ class MergeTreeLazilyReader
 {
 public:
     MergeTreeLazilyReader(
-        SharedHeader header_,
+        const Block & header_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const LazilyReadInfoPtr & lazily_read_info_,

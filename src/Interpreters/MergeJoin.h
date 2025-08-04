@@ -20,25 +20,13 @@ enum class JoinTableSide : uint8_t;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
-
-    struct NotProcessed
-    {
-        Block block;
-        size_t left_position;
-        size_t left_key_tail;
-        size_t right_position;
-        size_t right_block;
-
-        bool empty() const { return block.empty(); }
-    };
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
     std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    JoinResultPtr joinBlock(Block block) override;
-    void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);
+    void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
     void setTotals(const Block &) override;
 
@@ -53,6 +41,14 @@ public:
 
 private:
     friend class NotJoinedMerge;
+
+    struct NotProcessed : public ExtraBlock
+    {
+        size_t left_position;
+        size_t left_key_tail;
+        size_t right_position;
+        size_t right_block;
+    };
 
     struct RightBlockInfo
     {
@@ -127,7 +123,7 @@ private:
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>
-    std::optional<NotProcessed> extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+    ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                              size_t left_position, size_t left_key_tail, size_t right_position,
                              size_t right_block_number);
 
@@ -136,7 +132,7 @@ private:
     template <bool in_memory>
     size_t rightBlocksCount() const;
     template <bool in_memory, bool is_all>
-    void joinSortedBlock(Block & block, std::optional<NotProcessed> & not_processed);
+    void joinSortedBlock(Block & block, ExtraBlockPtr & not_processed);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos) const;
 
