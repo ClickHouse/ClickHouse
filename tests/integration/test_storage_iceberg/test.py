@@ -2361,10 +2361,9 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_time_travel_bug_fix_validation(started_cluster,storage_type):
+def test_time_travel_bug_fix_validation(started_cluster):
     instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
 
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
 
@@ -2372,7 +2371,7 @@ def test_time_travel_bug_fix_validation(started_cluster,storage_type):
 
     default_download_directory(
         started_cluster,
-        storage_type,
+        "local",
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
