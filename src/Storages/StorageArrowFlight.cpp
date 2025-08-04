@@ -147,33 +147,17 @@ Pipe StorageArrowFlight::read(
 class ArrowFlightSink : public SinkToStorage
 {
 public:
+    using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
+
     explicit ArrowFlightSink(
-        const StorageArrowFlight & /*storage*/,
         const StorageMetadataPtr & metadata_snapshot_,
-        const String & host_,
-        const int port_,
-        const String & dataset_name_,
-        bool)
+        const FlightClientPtr & client_,
+        const String & dataset_name_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
+        , client(client_)
         , dataset_name(dataset_name_)
     {
-        arrow::flight::Location location;
-        auto location_result = arrow::flight::Location::ForGrpcTcp(host_, port_);
-        if (!location_result.ok())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Arrow Flight endpoint specified: {}", location_result.status().ToString());
-        }
-        location = std::move(location_result).ValueOrDie();
-        auto client_result = arrow::flight::FlightClient::Connect(location);
-        if (!client_result.ok())
-        {
-            throw Exception(
-                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE,
-                "Failed to connect to Arrow Flight server: {}",
-                client_result.status().ToString());
-        }
-        client = std::move(client_result).ValueOrDie();
     }
 
     String getName() const override { return "ArrowFlightSink"; }
@@ -255,14 +239,14 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
+    FlightClientPtr client;
     String dataset_name;
-    std::unique_ptr<arrow::flight::FlightClient> client;
 };
 
 SinkToStoragePtr
-StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool async_write)
+StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool /*async_write*/)
 {
-    return std::make_shared<ArrowFlightSink>(*this, metadata_snapshot, config.host, config.port, config.dataset_name, async_write);
+    return std::make_shared<ArrowFlightSink>(metadata_snapshot, client, config.dataset_name);
 }
 
 void registerStorageArrowFlight(StorageFactory & factory)

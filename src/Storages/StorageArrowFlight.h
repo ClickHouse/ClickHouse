@@ -22,7 +22,6 @@ public:
         String dataset_name;
     };
 
-
     using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
 
     StorageArrowFlight(
@@ -53,7 +52,7 @@ public:
 private:
     StorageArrowFlight::Configuration config;
 
-    std::unique_ptr<arrow::flight::FlightClient> client;
+    FlightClientPtr client;
 
     Poco::Logger * log;
 };

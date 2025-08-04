@@ -24,13 +24,13 @@ extern const int ARROWFLIGHT_INTERNAL_ERROR;
 }
 
 ArrowFlightSource::ArrowFlightSource(
-    std::unique_ptr<arrow::flight::FlightClient> & client_,
+    const FlightClientPtr & client_,
     const std::string & query_,
     const Block & sample_block_,
     const std::vector<std::string> & column_names_,
     UInt64 /*max_block_size_*/)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
-    , client(std::move(client_))
+    , client(client_)
     , query(query_)
     , sample_block(sample_block_)
     , column_names(column_names_)
