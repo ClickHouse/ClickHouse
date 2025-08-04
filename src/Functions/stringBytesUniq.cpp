@@ -48,9 +48,9 @@ REGISTER_FUNCTION(StringBytesUniq)
     FunctionDocumentation::Description description = "Counts the number of distinct bytes in a string.";
     FunctionDocumentation::Syntax syntax = "stringBytesUniq(s);";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to analyze.", {"String"}}
+        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The number of distinct bytes in the string", {"UInt16"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The number of distinct bytes in the string. [UInt16](../../sql-reference/data-types/int-uint.md).";
     FunctionDocumentation::Examples examples = {
         {"Example", "SELECT stringBytesUniq('Hello, world!');", "10"}
     };

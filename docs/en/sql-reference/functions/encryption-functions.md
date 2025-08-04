@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Encryption Functions'
 sidebar_label: 'Encryption'
+sidebar_position: 70
 slug: /sql-reference/functions/encryption-functions
 title: 'Encryption Functions'
 ---
 
-# Encryption functions
+# Encryption Functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
@@ -275,7 +276,7 @@ Now let's try to decrypt all that data.
 Query:
 
 ```sql
-SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
+SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test
 ```
 
 Result:

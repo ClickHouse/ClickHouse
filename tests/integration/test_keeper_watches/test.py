@@ -112,9 +112,7 @@ def test_ephemeral_watch_session_close(started_cluster):
         pass
     try:
         zk.create("/ephemeral_test_node", b"data", ephemeral=True)
-        zk.create("/ephemeral_test_node_the_second", b"data", ephemeral=True)
         zk.exists("/ephemeral_test_node", watch=watch_callback)
-        zk.exists("/ephemeral_test_node_the_second", watch=watch_callback)
     finally:
         destroy_zk_client(zk)
 

@@ -322,12 +322,13 @@ struct ProcessListForUser
     /// Clears MemoryTracker for the user.
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
     ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
+    /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
     void resetTrackers()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
-
-        /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
+        if (user_throttler)
+            user_throttler.reset();
     }
 };
 

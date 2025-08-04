@@ -524,6 +524,14 @@ Number of threads in the ParallelFormattingOutputFormatThreads thread pool.
 
 Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.
 
+### ParallelParsingInputFormatThreads {#parallelparsinginputformatthreads}
+
+Number of threads in the ParallelParsingInputFormat thread pool.
+
+### ParallelParsingInputFormatThreadsActive {#parallelparsinginputformatthreadsactive}
+
+Number of threads in the ParallelParsingInputFormat thread pool running a task.
+
 ### PartMutation {#partmutation}
 
 Number of mutations (ALTER DELETE/UPDATE)

@@ -268,24 +268,6 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true);
 }
 
-String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
-{
-    auto name_from_escaped = escapeForFileName(name_from);
-    if (file_name.starts_with(name_from_escaped))
-        return escapeForFileName(name_to) + file_name.substr(0, name_from_escaped.size());
-
-    auto nested_storage_name_escaped = escapeForFileName(Nested::extractTableName(name_from));
-    if (file_name.starts_with(nested_storage_name_escaped))
-        return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(0, nested_storage_name_escaped.size());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "File name {} doesn't correspond to column {}", file_name, name_from);
-}
-
-String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name)
-{
-    return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
-}
-
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 {
     return getSubcolumnNameForStream(path, path.size());
