@@ -742,6 +742,40 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
     auto optimized = optimizeJoinOrder(std::move(query_graph));
     auto sequence = getJoinTreePostOrderSequence(optimized);
+
+    if (sequence.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join tree is empty");
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> usage_level_map;
+
+    for (size_t i = 0; i < sequence.size(); ++i)
+    {
+        const auto & entry = sequence[i];
+        for (const auto & action : entry->join_operator.expression)
+            usage_level_map[action.getNode()] = i;
+        for (const auto & action : entry->join_operator.residual_filter)
+            usage_level_map[action.getNode()] = i;
+    }
+
+    for (const auto & out : global_actions_dag->getOutputs())
+        usage_level_map[out] = sequence.size();
+
+    {
+        std::stack<std::pair<const ActionsDAG::Node *, size_t>> stack;
+        for (const auto & entry : usage_level_map)
+            stack.push(std::make_pair(entry.first, entry.second));
+
+        while (!stack.empty())
+        {
+            const auto & [node, level] = stack.top();
+            stack.pop();
+            for (const auto * child : node->children)
+                stack.push(std::make_pair(child, level));
+            auto & map_level = usage_level_map[node];
+            map_level = std::max(map_level, level);
+        }
+    }
+
     std::stack<QueryPlan::Node *> nodeStack;
     auto & input_nodes = query_graph_builder.inputs;
 
@@ -770,8 +804,9 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     }
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
-    for (auto * entry : sequence)
+    for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
+        auto * entry = sequence[entry_idx];
         if (entry->isLeaf())
         {
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
@@ -843,6 +878,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 auto [rel_idx, input_node] = current_input_nodes[input_pos];
                 if (!joined_mask.test(rel_idx))
                     continue;
+
+                if (usage_level_map[input_node] < entry_idx)
+                    continue;
+
                 current_inputs[input_node] = input_node;
 
                 const auto * out_node = input_node;
@@ -880,6 +919,9 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             {
                 auto [rel_idx, input_node] = current_input_nodes[input_pos];
                 if (!joined_mask.test(rel_idx))
+                    continue;
+
+                if (usage_level_map[input_node] <= entry_idx)
                     continue;
 
                 auto mapped_it = join_expression_map.find(input_node);
@@ -925,22 +967,22 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     auto result = std::move(nodes.back());
     nodes.pop_back();
 
-    {
-        ActionsDAG::NodeMapping current_inputs;
-        auto all_outputs = global_actions_dag->getOutputs();
-        size_t outputs_num = all_outputs.size();
-        for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
-        {
-            auto [rel_idx, input_node] = current_input_nodes[input_pos];
-            current_inputs[input_node] = input_node;
-            /// Add all inputs to outputs to make sure all of them are used in this dag
-            all_outputs.push_back(input_node);
-        }
-        auto final_dag = ActionsDAG::foldActionsByProjection(current_inputs, all_outputs);
-        /// Keep only original outputs
-        final_dag.getOutputs().resize(outputs_num);
-        makeExpressionNodeOnTopOf(result, std::move(final_dag), nodes, "Actions After Join Reorder");
-    }
+    // {
+    //     ActionsDAG::NodeMapping current_inputs;
+    //     auto all_outputs = global_actions_dag->getOutputs();
+    //     size_t outputs_num = all_outputs.size();
+    //     for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
+    //     {
+    //         auto [rel_idx, input_node] = current_input_nodes[input_pos];
+    //         current_inputs[input_node] = input_node;
+    //         /// Add all inputs to outputs to make sure all of them are used in this dag
+    //         all_outputs.push_back(input_node);
+    //     }
+    //     auto final_dag = ActionsDAG::foldActionsByProjection(current_inputs, all_outputs);
+    //     /// Keep only original outputs
+    //     final_dag.getOutputs().resize(outputs_num);
+    //     makeExpressionNodeOnTopOf(result, std::move(final_dag), nodes, "Actions After Join Reorder");
+    // }
 
     return result;
 }
