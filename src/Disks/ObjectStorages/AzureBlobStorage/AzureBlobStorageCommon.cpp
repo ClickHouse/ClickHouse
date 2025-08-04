@@ -433,58 +433,62 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
     return getManagedIdentityCredential();
 }
 
-BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & settings, bool for_disk)
+BlobClientOptions getClientOptions(
+    const ContextPtr & context,
+    const Settings & settings,
+    const RequestSettings & request_settings,
+    bool for_disk)
 {
     Azure::Core::Http::Policies::RetryOptions retry_options;
-    retry_options.MaxRetries = static_cast<Int32>(settings.sdk_max_retries);
-    retry_options.RetryDelay = std::chrono::milliseconds(settings.sdk_retry_initial_backoff_ms);
-    retry_options.MaxRetryDelay = std::chrono::milliseconds(settings.sdk_retry_max_backoff_ms);
+    retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
+    retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
+    retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
 
-    if (context->getSettingsRef()[Setting::azure_sdk_use_native_client])
+    if (settings[Setting::azure_sdk_use_native_client])
     {
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
-        if (context->getSettingsRef()[Setting::azure_max_get_rps] > 0 || context->getSettingsRef()[Setting::azure_max_get_burst] > 0)
+        if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
         {
             get_request_throttler = std::make_shared<Throttler>(
-                context->getSettingsRef()[Setting::azure_max_get_rps],
-                context->getSettingsRef()[Setting::azure_max_get_burst],
+                settings[Setting::azure_max_get_rps],
+                settings[Setting::azure_max_get_burst],
                 ProfileEvents::AzureGetRequestThrottlerCount,
                 ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
         }
 
-        if (context->getSettingsRef()[Setting::azure_max_put_rps] > 0 || context->getSettingsRef()[Setting::azure_max_put_burst] > 0)
+        if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
         {
             put_request_throttler = std::make_shared<Throttler>(
-                context->getSettingsRef()[Setting::azure_max_put_rps],
-                context->getSettingsRef()[Setting::azure_max_put_burst],
+                settings[Setting::azure_max_put_rps],
+                settings[Setting::azure_max_put_burst],
                 ProfileEvents::AzurePutRequestThrottlerCount,
                 ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
         }
 
         auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
-        auto tcp_keep_alive_milliseconds = static_cast<size_t>(context->getSettingsRef()[Setting::tcp_keep_alive_timeout].totalMilliseconds());
+        auto tcp_keep_alive_milliseconds = static_cast<size_t>(settings[Setting::tcp_keep_alive_timeout].totalMilliseconds());
 
         PocoAzureHTTPClientConfiguration conf{
             .remote_host_filter = context->getRemoteHostFilter(),
-            .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
+            .max_redirects = settings[Setting::azure_max_redirects],
             .for_disk_azure = for_disk,
             .get_request_throttler = get_request_throttler,
             .put_request_throttler = put_request_throttler,
             .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
-            .connect_timeout_ms = context->getSettingsRef()[Setting::azure_connect_timeout_ms],
-            .request_timeout_ms = context->getSettingsRef()[Setting::azure_request_timeout_ms],
+            .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
+            .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
             .tcp_keep_alive_interval_ms = tcp_keep_alive_milliseconds,
-            .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
+            .use_adaptive_timeouts = settings[Setting::azure_use_adaptive_timeouts],
             .http_keep_alive_timeout = http_keep_alive_seconds, // Convert seconds to milliseconds
             .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
-            .http_max_fields = context->getSettingsRef()[Setting::http_max_fields],
-            .http_max_field_name_size = context->getSettingsRef()[Setting::http_max_field_name_size],
-            .http_max_field_value_size = context->getSettingsRef()[Setting::http_max_field_value_size]};
+            .http_max_fields = settings[Setting::http_max_fields],
+            .http_max_field_name_size = settings[Setting::http_max_field_name_size],
+            .http_max_field_value_size = settings[Setting::http_max_field_value_size]};
 
         client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
     }
@@ -492,7 +496,7 @@ BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & s
     {
         Azure::Core::Http::CurlTransportOptions curl_options;
         curl_options.NoSignal = true;
-        curl_options.IPResolve = settings.curl_ip_resolve;
+        curl_options.IPResolve = request_settings.curl_ip_resolve;
         client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     }
 

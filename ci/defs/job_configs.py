@@ -3,6 +3,8 @@ from praktika.utils import Utils
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
+LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
+
 build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
@@ -26,7 +28,7 @@ common_ft_job_config = Job.Config(
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
-    run_in_docker="clickhouse/stateless-test+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
+    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -307,7 +309,7 @@ class JobConfigs:
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan, flaky check",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
     )
@@ -332,7 +334,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, distributed plan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
             for total_batches in (2,)
@@ -340,53 +342,53 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="amd_asan, distributed plan, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
             parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
             parameter="amd_binary, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
             parameter="amd_binary, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
             parameter="amd_debug, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_debug, AsyncInsert, s3 storage, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_debug, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_debug, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (2,)
@@ -395,7 +397,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (2,)
@@ -404,7 +406,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
             for total_batches in (2,)
@@ -413,7 +415,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
             for total_batches in (2,)
@@ -421,33 +423,33 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="amd_ubsan, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_ubsan, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_debug, distributed plan, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_debug, distributed plan, s3 storage, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_tsan, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, s3 storage, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
             for total_batches in (2,)
@@ -455,38 +457,39 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="arm_binary, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
             parameter="arm_binary, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_COV_BIN],
-            )
-            for total_batches in (6,)
-            for batch in range(1, total_batches + 1)
-        ]
+        Job.ParamSet(
+            parameter=f"arm_coverage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_COV_BIN],
+        ),
+        Job.ParamSet(
+            parameter=f"arm_coverage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            requires=[ArtifactNames.CH_COV_BIN],
+        ),
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
                 parameter="arm_asan, azure, parallel",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_MEDIUM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
             Job.ParamSet(
                 parameter="arm_asan, azure, sequential",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                runs_on=RunnerLabels.ARM_SMALL_MEM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
         )

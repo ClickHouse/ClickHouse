@@ -188,6 +188,7 @@ public:
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const { return false; }
+    virtual bool initializedWithEmptyRanges() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -235,6 +236,8 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     bool isReadingCompleted() const override;
+
+    bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -1175,7 +1178,9 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
                 replicas);
 
-            chassert(!replicas_used.empty());
+            if (pimpl && !pimpl->initializedWithEmptyRanges())
+                chassert(!replicas_used.empty());
+
             (*read_completed_callback)(replicas_to_exclude);
             read_completed_callback.reset();
         }
