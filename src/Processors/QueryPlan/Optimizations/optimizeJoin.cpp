@@ -879,7 +879,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 if (!joined_mask.test(rel_idx))
                     continue;
 
-                if (usage_level_map[input_node] < entry_idx)
+                if (!input_node)
                     continue;
 
                 current_inputs[input_node] = input_node;
@@ -888,6 +888,12 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 if (auto it2 = current_step_type_changes.find(input_pos); it2 != current_step_type_changes.end())
                     out_node = it2->second;
                 required_output_nodes.push_back(out_node);
+            }
+
+            if (entry_idx == sequence.size() - 1)
+            {
+                for (const auto * output_node : global_actions_dag->getOutputs())
+                    required_output_nodes.push_back(output_node);
             }
 
             JoinExpressionActions current_expression_actions(left_header, right_header,
@@ -917,17 +923,32 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             /// Columns returned from JOIN is input with possibly corrected type
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
-                auto [rel_idx, input_node] = current_input_nodes[input_pos];
+                auto & [rel_idx, input_node] = current_input_nodes[input_pos];
                 if (!joined_mask.test(rel_idx))
                     continue;
 
                 if (usage_level_map[input_node] <= entry_idx)
+                {
+                    input_node = nullptr;
                     continue;
+                }
 
                 auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
                 dag_outputs.push_back(mapped_it->second);
+            }
+
+            if (entry_idx == sequence.size() - 1)
+            {
+                dag_outputs.clear();
+                for (const auto * output_node : global_actions_dag->getOutputs())
+                {
+                    auto mapped_it = join_expression_map.find(output_node);
+                    if (mapped_it == join_expression_map.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", output_node->result_name);
+                    dag_outputs.push_back(mapped_it->second);
+                }
             }
 
             /// FIXME:
