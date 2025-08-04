@@ -99,8 +99,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
         KernelError * kernel_error = static_cast<KernelError *>(error);
         auto error_message_copy = kernel_error->error_message;
         auto etype_copy = kernel_error->etype;
-        delete kernel_error;
         forgetKernelErrorAllocation(error);
+        delete kernel_error;
 
         throw DB::Exception(
             DB::ErrorCodes::DELTA_KERNEL_ERROR,
