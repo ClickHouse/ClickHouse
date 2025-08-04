@@ -120,11 +120,11 @@ private:
 REGISTER_FUNCTION(Char)
 {
     FunctionDocumentation::Description description = R"(
-Returns a String with length equal to the number of arguments passed where each byte
+Returns a string with length equal to the number of arguments passed where each byte
 has the value of the corresponding argument. Accepts multiple arguments of numeric types.
 
 If the value of the argument is out of range of the `UInt8` data type, then it is converted
-to `UInt8` with possible rounding and overflow.
+to `UInt8` with potential rounding and overflow.
         )";
     FunctionDocumentation::Syntax syntax = "char(num1[, num2[, ...]]);";
     FunctionDocumentation::Arguments arguments = {
