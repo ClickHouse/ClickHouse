@@ -390,27 +390,27 @@ void TableSnapshot::initSnapshot() const
 
 void TableSnapshot::initSnapshotImpl() const
 {
-    LOG_TEST(log, "Initializing snapshot");
+    std::cerr << "Initializing snapshot\n";
 
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     snapshot = KernelUtils::unwrapResult(
         ffi::snapshot(KernelUtils::toDeltaString(helper->getTableLocation()), engine.get()), "snapshot");
     snapshot_version = ffi::version(snapshot.get());
-    LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
+    std::cerr << fmt::format("Snapshot version: {}", snapshot_version) << '\n';
 
     scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 
-    LOG_TRACE(log, "Initialized scan state");
+    std::cerr << "Initialized scan state\n";
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
-    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
+    std::cerr << fmt::format("Table logical schema: {}", fmt::join(table_schema.getNames(), ", ")) << '\n';
 
     read_schema = getReadSchemaFromSnapshot(scan.get());
-    LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
+    std::cerr << fmt::format("Table read schema: {}", fmt::join(read_schema.getNames(), ", ")) << '\n';
 
     partition_columns = getPartitionColumnsFromSnapshot(snapshot.get());
-    LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
+    std::cerr << fmt::format("Partition columns: {}", fmt::join(partition_columns, ", ")) << '\n';
 }
 
 DB::ObjectIterator TableSnapshot::iterate(

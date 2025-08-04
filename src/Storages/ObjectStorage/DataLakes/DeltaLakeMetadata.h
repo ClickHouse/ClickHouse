@@ -69,6 +69,8 @@ public:
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 
+    bool supportsWrites() const override { return true; }
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

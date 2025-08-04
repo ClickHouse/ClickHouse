@@ -2283,3 +2283,177 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+
+def test_writes(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_partition_columns")
+    result_file = f"{TABLE_NAME}"
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "INT")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
+        .execute()
+    )
+    num_rows = 9
+
+    schema = StructType(
+        [
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
+        ]
+    )
+
+    now = datetime.now()
+    for i in range(1, num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i),
+                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").save(
+            f"/{TABLE_NAME}"
+        )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"""
+    )
+
+    result = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+    assert result == num_rows
+
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	2	{now}	true	2.22	false
+3	test3	2000-01-03	3	2012-01-03 12:34:56.789123	false	3.33	true
+4	test4	2000-01-04	4	{now}	true	4.44	false
+5	test5	2000-01-05	5	2012-01-05 12:34:56.789123	false	5.55	true
+6	test6	2000-01-06	6	{now}	true	6.66	false
+7	test7	2000-01-07	7	2012-01-07 12:34:56.789123	false	7.77	true
+8	test8	2000-01-08	8	{now}	true	8.88	false
+9	test9	2000-01-09	9	2012-01-09 12:34:56.789123	false	9.99	true"""
+
+    assert (
+        expected_output
+        == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
+    )
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (10, 'test10', toDate('2000-01-01'), 1, toDateTime64('2012-01-01 12:34:56.789123', 6), false, 1.11, true);")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == num_rows + 1
+
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	2	{now}	true	2.22	false
+3	test3	2000-01-03	3	2012-01-03 12:34:56.789123	false	3.33	true
+4	test4	2000-01-04	4	{now}	true	4.44	false
+5	test5	2000-01-05	5	2012-01-05 12:34:56.789123	false	5.55	true
+6	test6	2000-01-06	6	{now}	true	6.66	false
+7	test7	2000-01-07	7	2012-01-07 12:34:56.789123	false	7.77	true
+8	test8	2000-01-08	8	{now}	true	8.88	false
+9	test9	2000-01-09	9	2012-01-09 12:34:56.789123	false	9.99	true
+10	test10	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true"""
+
+    assert (
+        instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL").strip()
+        == expected_output
+    )
+
+def test_writes_with_partitioned_table(started_cluster):
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = randomize_table_name("test_types")
+    spark = started_cluster.spark_session
+    result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "LONG", nullable=True)
+        .addColumn("b", "LONG", nullable=True)
+        .partitionedBy("a")
+        .execute()
+    )
+    data = [
+        (
+            123,
+            456,
+        )
+    ]
+
+    schema = StructType(
+        [
+            StructField("a", LongType(), nullable=True),
+            StructField("b", LongType(), nullable=True),
+        ]
+    )
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").partitionBy("a").format("delta").saveAsTable(TABLE_NAME)
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"""
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
+    assert (
+        instance.query(f"SELECT b FROM {TABLE_NAME}").strip()
+        == "456"
+    )
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1000-7, 69)")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+    assert (
+        instance.query(f"SELECT b FROM {TABLE_NAME} ORDER BY ALL").strip()
+        == "69\n456"
+    )
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123,1488)")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
+    assert (
+        instance.query(f"SELECT b FROM {TABLE_NAME} ORDER BY ALL").strip()
+        == "69\n456\n1488"
+    )

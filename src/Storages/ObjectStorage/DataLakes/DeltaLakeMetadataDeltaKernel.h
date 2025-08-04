@@ -60,6 +60,8 @@ public:
         size_t list_batch_size,
         ContextPtr context) const override;
 
+    bool supportsWrites() const override { return true; }
+
 private:
     const LoggerPtr log;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;

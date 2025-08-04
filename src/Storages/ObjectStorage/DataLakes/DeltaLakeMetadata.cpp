@@ -254,6 +254,7 @@ struct DeltaLakeMetadataImpl
             String json_str;
             readJSONObjectPossiblyInvalid(json_str, *buf);
 
+            std::cerr << "extracting " << metadata_file_path << ' ' << json_str << '\n';
             if (json_str.empty())
                 continue;
 

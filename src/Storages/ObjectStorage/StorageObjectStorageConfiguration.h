@@ -121,7 +121,13 @@ public:
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
-    virtual bool isDataLakeConfiguration() const { return false; }
+    enum class ConfigurationType
+    {
+        NonDataLake,
+        Iceberg,
+        Delta
+    };
+    virtual ConfigurationType getConfigurationType() const { return ConfigurationType::NonDataLake; }
 
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }

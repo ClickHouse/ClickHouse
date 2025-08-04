@@ -24,6 +24,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Common/parseGlobs.h>
+#include "Storages/ObjectStorage/StorageObjectStorageConfiguration.h"
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -334,7 +335,7 @@ Chunk StorageObjectStorageSource::generate()
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// (Because it does not make sense to support it in a nice way
                     /// because the code will be removed ASAP anyway)
-                    if (configuration->isDataLakeConfiguration())
+                    if (configuration->getConfigurationType() != StorageObjectStorageConfiguration::ConfigurationType::NonDataLake)
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;

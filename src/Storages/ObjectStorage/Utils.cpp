@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include "Storages/ObjectStorage/StorageObjectStorageConfiguration.h"
 
 namespace DB
 {
@@ -55,7 +56,7 @@ void resolveSchemaAndFormat(
 {
     if (format == "auto")
     {
-        if (configuration->isDataLakeConfiguration())
+        if (configuration->getConfigurationType() != StorageObjectStorageConfiguration::ConfigurationType::NonDataLake)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -66,7 +67,7 @@ void resolveSchemaAndFormat(
 
     if (columns.empty())
     {
-        if (configuration->isDataLakeConfiguration())
+        if (configuration->getConfigurationType() != StorageObjectStorageConfiguration::ConfigurationType::NonDataLake)
         {
             auto table_structure = configuration->tryGetTableStructureFromMetadata();
             if (table_structure)

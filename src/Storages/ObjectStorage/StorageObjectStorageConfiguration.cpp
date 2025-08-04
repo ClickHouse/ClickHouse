@@ -72,7 +72,7 @@ void StorageObjectStorageConfiguration::initialize(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
 
-    if (configuration_to_initialize.isDataLakeConfiguration())
+    if (configuration_to_initialize.getConfigurationType() != StorageObjectStorageConfiguration::ConfigurationType::NonDataLake)
     {
         if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
         {
@@ -87,7 +87,7 @@ void StorageObjectStorageConfiguration::initialize(
 
     if (configuration_to_initialize.format == "auto")
     {
-        if (configuration_to_initialize.isDataLakeConfiguration())
+        if (configuration_to_initialize.getConfigurationType() != StorageObjectStorageConfiguration::ConfigurationType::NonDataLake)
         {
             configuration_to_initialize.format = "Parquet";
         }

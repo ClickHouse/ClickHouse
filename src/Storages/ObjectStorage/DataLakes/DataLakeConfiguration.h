@@ -18,8 +18,11 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <Common/ErrorCodes.h>
+#include "Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h"
+#include "Storages/ObjectStorage/StorageObjectStorageConfiguration.h"
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 
@@ -63,7 +66,14 @@ class DataLakeConfiguration : public BaseStorageConfiguration, public std::enabl
 public:
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
-    bool isDataLakeConfiguration() const override { return true; }
+    StorageObjectStorageConfiguration::ConfigurationType getConfigurationType() const override
+    {
+        if constexpr (std::is_same_v<IDataLakeMetadata, DeltaLakeMetadata>)
+            return StorageObjectStorageConfiguration::ConfigurationType::Delta;
+        if constexpr (std::is_same_v<IDataLakeMetadata, DeltaLakeMetadataDeltaKernel>)
+            return StorageObjectStorageConfiguration::ConfigurationType::Delta;
+        return StorageObjectStorageConfiguration::ConfigurationType::Delta;
+    }
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 

@@ -33,6 +33,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaWrites.h>
 
 #include <Poco/Logger.h>
 
@@ -120,7 +121,7 @@ StorageObjectStorage::StorageObjectStorage(
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
-        && !configuration->isDataLakeConfiguration();
+        && configuration->getConfigurationType() == StorageObjectStorageConfiguration::ConfigurationType::NonDataLake;
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
@@ -455,8 +456,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    /// Delta lake does not support writes yet.
-    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
+    if (configuration->getConfigurationType() == StorageObjectStorageConfiguration::ConfigurationType::Iceberg && configuration->supportsWrites())
     {
 #if USE_AVRO
         if (local_context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
@@ -476,6 +476,18 @@ SinkToStoragePtr StorageObjectStorage::write(
                 "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
 #endif
     }
+
+    if (configuration->getConfigurationType() == StorageObjectStorageConfiguration::ConfigurationType::Delta && configuration->supportsWrites())
+    {
+        return std::make_shared<DeltaLakeStorageSink>(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            local_context
+        );
+    }
+
 
     /// Not a data lake, just raw object storage
 
