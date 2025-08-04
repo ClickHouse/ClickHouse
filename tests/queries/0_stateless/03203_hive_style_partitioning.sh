@@ -13,6 +13,7 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE FILE HIVE PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
+set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT column0, column1 FROM file('$DATA_DIR/data_hive/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
