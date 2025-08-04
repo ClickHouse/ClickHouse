@@ -559,10 +559,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             if (!minmax_index_exists)
             {
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, metadata.columns, context);
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, metadata.columns, context);
                 metadata.secondary_indices.push_back(new_index);
             }
         }
@@ -984,13 +981,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
                     ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
             {
-                auto index_type = makeASTFunction("minmax");
-                index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
-                                                                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
-                index.definition_ast->as<ASTIndexDeclaration>()->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
             }
             else
+            {
                 rename_visitor.visit(index.definition_ast);
+            }
         }
     }
     else if (type == MODIFY_SQL_SECURITY)
