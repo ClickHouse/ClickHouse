@@ -677,4 +677,14 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
     return success;
 }
 
+bool KeeperContext::shouldLogRequests() const
+{
+    return log_requests.load(std::memory_order_relaxed);
+}
+
+void KeeperContext::setLogRequests(bool log_requests_)
+{
+    log_requests.store(log_requests_, std::memory_order_relaxed);
+}
+
 }

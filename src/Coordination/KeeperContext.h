@@ -107,6 +107,9 @@ public:
     void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+
+    bool shouldLogRequests() const;
+    void setLogRequests(bool log_requests_);
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -170,6 +173,8 @@ private:
 
     CoordinationSettingsPtr coordination_settings;
     bool block_acl = false;
+
+    std::atomic<bool> log_requests = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
