@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
-#include "QueryPipeline/QueryPipeline.h"
+#include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/Context.h>
 #include <base/itoa.h>
 #include <base/range.h>

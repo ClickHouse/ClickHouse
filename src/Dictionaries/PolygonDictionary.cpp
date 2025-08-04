@@ -5,7 +5,7 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
-#include "QueryPipeline/QueryPipeline.h"
+#include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>

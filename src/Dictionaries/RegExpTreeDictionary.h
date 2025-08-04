@@ -15,7 +15,7 @@
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/Exception.h>
-#include "QueryPipeline/QueryPipeline.h"
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>

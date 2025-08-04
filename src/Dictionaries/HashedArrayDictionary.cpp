@@ -2,7 +2,7 @@
 #include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
-#include "QueryPipeline/QueryPipeline.h"
+#include <QueryPipeline/QueryPipeline.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -986,7 +986,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
             loadDataImpl(io.pipeline, parallel_loader.get());
             io.onFinish();
         }
-        catch(...)
+        catch (...)
         {
             io.onException();
             throw;

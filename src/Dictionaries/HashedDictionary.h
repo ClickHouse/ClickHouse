@@ -1164,7 +1164,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
             loadDataImpl(io.pipeline, parallel_loader.get());
             io.onFinish();
         }
-        catch(...)
+        catch (...)
         {
             io.onException();
             throw;
