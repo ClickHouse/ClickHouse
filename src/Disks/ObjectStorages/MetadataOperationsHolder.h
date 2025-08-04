@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <vector>
+#include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Common/SharedMutex.h>
@@ -24,7 +25,7 @@ private:
 
 protected:
     void addOperation(MetadataOperationPtr && operation);
-    void commitImpl(SharedMutex & metadata_mutex);
+    void commitImpl(const TransactionCommitOptionsVariant & options, SharedMutex & metadata_mutex);
 };
 
 }

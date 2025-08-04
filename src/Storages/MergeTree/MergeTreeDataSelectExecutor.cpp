@@ -52,6 +52,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <base/sleep.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
@@ -673,6 +674,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
     RangesInDataParts parts_with_ranges,
     StorageMetadataPtr metadata_snapshot,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const ContextPtr & context,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
@@ -794,6 +796,40 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
+            const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+
+            auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+            {
+                if (all_updated_columns.empty())
+                    return {};
+
+                auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+                auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
+                auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+                auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                {
+                    return all_updated_columns.contains(column.getNameInStorage());
+                });
+
+                if (it == required_columns_list.end())
+                    return {};
+
+                return std::unexpected(PreformattedMessage::create(
+                    "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
+                    index->index.name, index->index.name, it->getNameInStorage()));
+            };
+
+            auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
+            {
+                for (const auto & index : indices)
+                {
+                    if (auto result = can_use_index(index); !result)
+                        return result;
+                }
+                return {};
+            };
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -807,6 +843,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+
+                if (auto result = can_use_index(index_and_condition.index); !result)
+                {   
+                    LOG_TRACE(log, "{}", result.error().text);
+                    continue;
+                }                
 
                 if (!use_skip_indexes_on_data_read)
                 {
@@ -840,6 +882,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto & indices_and_condition = skip_indexes.merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+
+                if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
+                {
+                    LOG_TRACE(log, "{}", result.error().text);
+                    continue;
+                }
 
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 if (!use_skip_indexes_on_data_read)

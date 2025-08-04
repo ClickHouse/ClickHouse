@@ -194,6 +194,7 @@ public:
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
