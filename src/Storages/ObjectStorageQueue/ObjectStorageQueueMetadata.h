@@ -20,6 +20,7 @@ class StorageObjectStorageQueue;
 struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
+using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.
@@ -121,13 +122,10 @@ public:
     /// active = true:
     ///     We also want to register nodes only for a period when they are active.
     ///     For this we create ephemeral nodes in "zookeeper_path / registry / <node_info>"
-    void registerNonActive(const StorageID & storage_id, bool & created_new_metadata);
-    void registerActive(const StorageID & storage_id);
-
+    void registerIfNot(const StorageID & storage_id, bool active);
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
-    void unregisterActive(const StorageID & storage_id);
-    void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
+    size_t unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
     /// According to current *active* registered tables,
@@ -154,6 +152,12 @@ private:
 
     void migrateToBucketsInKeeper(size_t value);
 
+    void registerNonActive(const StorageID & storage_id);
+    void registerActive(const StorageID & storage_id);
+
+    size_t unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
+    size_t unregisterActive(const StorageID & storage_id);
+
     void updateRegistryFunc();
     void updateRegistry(const DB::Strings & registered_);
 
@@ -172,7 +176,6 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;
