@@ -64,9 +64,9 @@ def setup_nodes():
 
 def test_keeper_invalid_digest(started_cluster):
     if (
-        started_node.is_built_with_thread_sanitizer()
-        or started_node.is_built_with_address_sanitizer()
-        or started_node.is_built_with_memory_sanitizer()
+        node1.is_built_with_thread_sanitizer()
+        or node1.is_built_with_address_sanitizer()
+        or node1.is_built_with_memory_sanitizer()
     ):
         pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
