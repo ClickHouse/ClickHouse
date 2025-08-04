@@ -1386,6 +1386,23 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
+MinIOIntegration::MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+    : ClickHouseIntegration(fcc, ssc)
+{
+    if (ssc.glue_catalog.has_value() && !sendRequest(ssc.glue_catalog.value().endpoint))
+    {
+        LOG_WARNING(fcc.log, "Failed to create Glue catalog endpoint");
+    }
+    if (ssc.hive_catalog.has_value() && !sendRequest(ssc.hive_catalog.value().endpoint))
+    {
+        LOG_WARNING(fcc.log, "Failed to create Hive catalog endpoint");
+    }
+    if (ssc.rest_catalog.has_value() && !sendRequest(ssc.rest_catalog.value().endpoint))
+    {
+        LOG_WARNING(fcc.log, "Failed to create REST catalog endpoint");
+    }
+}
+
 bool MinIOIntegration::sendRequest(const String & resource)
 {
     struct tm ttm;
@@ -1652,32 +1669,30 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 
 bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
 {
-    const Catalog * cat = nullptr;
     const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
     const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
     const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
     const uint32_t no_cat = 15;
-
     const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
     if (glue_cat && (nopt < glue_cat + 1))
     {
-        cat = &sc.glue_catalog.value();
         b.catalog = CatalogTable::Glue;
+        return true;
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
         b.catalog = CatalogTable::Hive;
-        cat = &sc.hive_catalog.value();
+        return true;
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
         b.catalog = CatalogTable::REST;
-        cat = &sc.rest_catalog.value();
+        return true;
     }
-    return sendRequest(cat ? fmt::format("/{}/cat{}", cat->endpoint, b.tname) : fmt::format("{}/file{}", sc.database, b.tname));
+    return sendRequest(fmt::format("{}/file{}", sc.database, b.tname));
 }
 
 void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)

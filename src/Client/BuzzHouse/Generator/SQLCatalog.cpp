@@ -68,17 +68,14 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
             default:
                 break;
         }
-        if (cat)
-        {
-            return fmt::format("http://{}:{}/{}/cat{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname);
-        }
-        return fmt::format(
-            "http://{}:{}{}/file{}{}",
-            client ? sc.client_hostname : sc.server_hostname,
-            sc.port,
-            sc.database,
-            tname,
-            isS3Engine() ? "" : "/");
+        return cat ? fmt::format("http://{}:{}/{}/cat{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname)
+                   : fmt::format(
+                         "http://{}:{}{}/file{}{}",
+                         client ? sc.client_hostname : sc.server_hostname,
+                         sc.port,
+                         sc.database,
+                         tname,
+                         isS3Engine() ? "" : "/");
     }
     if (isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine())
     {

@@ -302,10 +302,7 @@ private:
     String getConnectionURL(bool client);
 
 public:
-    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-        : ClickHouseIntegration(fcc, ssc)
-    {
-    }
+    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc);
 
     void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
 
