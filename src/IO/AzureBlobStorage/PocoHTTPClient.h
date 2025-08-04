@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Histogram.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -8,6 +7,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
+#include <Common/Histogram.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
