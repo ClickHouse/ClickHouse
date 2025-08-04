@@ -350,25 +350,26 @@ in ascending order.
         {"arg", "An integer value.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue bitPositionsToArray_returned_value = {"Returns an array containing a list of positions of bits that equal `1`, in ascending order.", {"Array(UInt64)"}};
-    FunctionDocumentation::Examples bitPositionsToArray_examples = {
+    FunctionDocumentation::Examples bitPositionsToArray_examples =
+    {
         {
-	    "Single bit set",
-	    "SELECT bitPositionsToArray(toInt8(1)) AS bit_positions",
+            "Single bit set",
+            "SELECT bitPositionsToArray(toInt8(1)) AS bit_positions",
             R"(
 ┌─bit_positions─┐
 │ [0]           │
 └───────────────┘
             )"
-	},
+        },
         {
-	    "All bits set",
-	    "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
+            "All bits set",
+            "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
             R"(
 ┌─bit_positions─────┐
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
             )"
-	}
+        }
     };
     FunctionDocumentation::IntroducedIn bitPositionsToArray_introduced_in = {21, 7};
     FunctionDocumentation::Category bitPositionsToArray_category = FunctionDocumentation::Category::Encoding;
