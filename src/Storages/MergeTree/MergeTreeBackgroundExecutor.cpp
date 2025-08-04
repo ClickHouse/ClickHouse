@@ -347,8 +347,6 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
 
-    current_thread->flushUntrackedMemory();
-
     DENY_ALLOCATIONS_IN_SCOPE;
 
     while (true)
@@ -376,8 +374,6 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             });
         }
-
-        current_thread->flushUntrackedMemory();
     }
 }
 

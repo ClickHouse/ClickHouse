@@ -16,15 +16,15 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER B
 
 function thread_optimize()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    while true;
     do
         ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL;" 2>&1 | tr -d '\n' | rg -v 'Cancelled merging parts' ||:
     done
 }
 
 TIMEOUT=15
-thread_optimize 2> /dev/null &
+export -f thread_optimize
+timeout $TIMEOUT bash -c thread_optimize 2> /dev/null &
 
 for i in {1..100};
 do

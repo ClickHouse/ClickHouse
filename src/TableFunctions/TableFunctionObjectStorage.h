@@ -156,7 +156,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(), args, context, true);
+        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -177,12 +177,9 @@ public:
             Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
-    void setPartitionBy(const ASTPtr & partition_by_) override
-    {
-        partition_by = partition_by_;
-    }
-
 protected:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -196,15 +193,14 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
-    StorageObjectStorageConfigurationPtr getConfiguration() const;
+    ConfigurationPtr getConfiguration() const;
 
     static std::shared_ptr<Settings> createEmptySettings();
 
-    mutable StorageObjectStorageConfigurationPtr configuration;
+    mutable ConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
-    ASTPtr partition_by;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };

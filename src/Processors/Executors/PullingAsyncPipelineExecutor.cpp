@@ -45,7 +45,7 @@ PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader());
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
     pipeline.complete(lazy_format);
 }
 
