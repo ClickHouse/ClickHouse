@@ -2362,3 +2362,62 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
 
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_schema_evolution_with_where_condition(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_schema_evolution_with_where_condition_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster,
+            storage_type,
+            TABLE_NAME,
+            query,
+        )
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                a int
+            )
+            USING iceberg
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1)")
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (b INT)")
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2)")
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        allow_dynamic_metadata_for_data_lakes=False,
+    )
+
+    table_select_expression = table_creation_expression
+
+    print(f"Table select expression: {table_select_expression}")
+
+    instance.query(f"SELECT * FROM {table_select_expression} WHERE b >= 2 ORDER BY ALL")
