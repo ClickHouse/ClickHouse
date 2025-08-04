@@ -103,7 +103,7 @@ void TableFunctionObjectStorageClusterFallback<Definition, Base>::parseArguments
         args.erase(args.begin());
     }
     else
-        BaseSimple::parseArgumentsImpl(args, context);
+        BaseSimple::parseArgumentsImpl(args, context); // NOLINT(bugprone-parent-virtual-call)
 }
 
 template <typename Definition, typename Base>
@@ -122,7 +122,7 @@ StoragePtr TableFunctionObjectStorageClusterFallback<Definition, Base>::executeI
         return result;
     }
     else
-        return BaseSimple::executeImpl(ast_function, context, table_name, cached_columns, is_insert_query);
+        return BaseSimple::executeImpl(ast_function, context, table_name, cached_columns, is_insert_query); // NOLINT(bugprone-parent-virtual-call)
 }
 
 template <typename Definition, typename Base>

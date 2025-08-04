@@ -531,7 +531,10 @@ void StorageObjectStorageCluster::truncate(
 {
     /// Full query if fall back to pure storage.
     if (getClusterName(local_context).empty())
-        return pure_storage->truncate(query, metadata_snapshot, local_context, lock_holder);
+    {
+        pure_storage->truncate(query, metadata_snapshot, local_context, lock_holder);
+        return;
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
 }

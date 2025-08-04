@@ -3,7 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 
 namespace DB
 {

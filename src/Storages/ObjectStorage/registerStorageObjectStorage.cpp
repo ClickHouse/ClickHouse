@@ -37,7 +37,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 
     const auto context = args.getLocalContext();
 
-    std::string cluster_name = "";
+    std::string cluster_name;
 
     if (args.storage_def->settings)
     {
