@@ -860,6 +860,7 @@ ObjectIterator IcebergMetadata::iterate(
      size_t /* list_batch_size */,
      ContextPtr local_context) const
 {
+    SharedLockGuard lock(mutex);
     auto position_deletes_files
         = std::make_unique<std::vector<Iceberg::ManifestFileEntry>>(getPositionalDeleteFiles(filter_dag, local_context));
     auto data_files = getDataFiles(filter_dag, local_context, *position_deletes_files);
