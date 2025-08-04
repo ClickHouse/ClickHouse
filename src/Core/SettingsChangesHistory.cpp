@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
@@ -143,7 +144,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"update_parallel_mode", "auto", "auto", "A new setting"},
             {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
-            {"apply_patch_parts", false, true, "A new setting"},
+            {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
@@ -804,6 +805,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
