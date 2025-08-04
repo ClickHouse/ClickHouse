@@ -52,7 +52,8 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
        {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
        {OutFormat::OUT_Values, InFormat::IN_Values}};
 
-const DB::Strings StatementGenerator::fileCompress = {"auto", "none", "gzip", "deflate", "br", "xz", "zstd", "lz4", "bz2", "snappy"};
+const DB::Strings StatementGenerator::compression
+    = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
@@ -753,7 +754,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             : ((cluster_func && (nopt2 < engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
                                                                           : TableFunctionUsage::RemoteCall);
 
-        setTableFunction(rg, usage, t, tof->mutable_tfunc());
+        setTableFunction(rg, usage, true, t, tof->mutable_tfunc());
     }
     else if ((is_url = (url_func && (nopt2 < engine_func + cluster_func + remote_func + url_func + 1))))
     {

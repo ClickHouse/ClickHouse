@@ -163,7 +163,7 @@ public:
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    String file_comp;
+    String file_comp, partition_strategy, partition_columns_in_data_file;
     std::optional<InOutFormat> file_format;
     CatalogTable catalog = CatalogTable::None;
 

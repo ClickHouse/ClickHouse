@@ -183,6 +183,10 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
+            if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+            }
             if (t.isURLEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers"}));
@@ -191,10 +195,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
-        }
-        else if (t.isMergeEngine())
-        {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
         else if (t.isDistributedEngine())
         {
@@ -205,6 +205,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
     }
     return rel;
 }
@@ -985,6 +986,28 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos)
+{
+    String buf;
+    bool first = true;
+    const bool allCols = allow_chaos && rg.nextSmallNumber() < 4;
+
+    flatTableColumnPath(to_remote_entries, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
+    std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    for (const auto & entry : this->remote_entries)
+    {
+        buf += fmt::format(
+            "{}{} {}{}",
+            first ? "" : ", ",
+            entry.getBottomName(),
+            entry.getBottomType()->typeName(true),
+            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+        first = false;
+    }
+    this->remote_entries.clear();
+    return buf;
+}
+
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
@@ -1022,7 +1045,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_svalue(b.getTablePath(fc, false));
         if (rg.nextBool())
         {
-            b.file_comp = rg.pickRandomly(fileCompress);
+            b.file_comp = rg.pickRandomly(compression);
             te->add_params()->set_svalue(b.file_comp);
         }
     }
@@ -1247,10 +1270,7 @@ void StatementGenerator::generateEngineDetails(
         /// Optional compression
         if (rg.nextBool())
         {
-            static const DB::Strings & URLCompress
-                = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
-
-            b.file_comp = rg.pickRandomly(URLCompress);
+            b.file_comp = rg.pickRandomly(compression);
             te->add_params()->set_svalue(b.file_comp);
         }
     }
@@ -1277,17 +1297,7 @@ void StatementGenerator::generateEngineDetails(
         {
             te->add_params()->set_svalue(b.getTablePath(fc, false));
         }
-        /// Set format
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        te->add_params()->set_in_out(b.file_format.value());
-        if (rg.nextBool())
-        {
-            /// Optional compression
-            static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-            b.file_comp = rg.pickRandomly(ObjectCompress);
-            te->add_params()->set_svalue(b.file_comp);
-        }
+        setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {

@@ -224,7 +224,8 @@ void StatementGenerator::generateDerivedTable(
     }
 }
 
-void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc)
+void StatementGenerator::setTableFunction(
+    RandomGenerator & rg, const TableFunctionUsage usage, const bool allow_chaos, const SQLTable & t, TableFunction * tfunc)
 {
     if ((usage == TableFunctionUsage::EngineReplace && t.isMySQLEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasMySQLPeer()))
     {
@@ -287,18 +288,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
-            sfunc->set_resource(t.getTablePath(fc, false) + ((!t.isS3Engine() && rg.nextBool()) ? "*" : ""));
+            sfunc->set_resource(t.getTablePath(fc, false) + ((!allow_chaos && t.isS3Engine() && rg.nextBool()) ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
-            if (t.file_format.has_value())
-            {
-                sfunc->set_format(t.file_format.value());
-            }
-            structure = rg.nextMediumNumber() < 96 ? sfunc->mutable_structure() : nullptr;
-            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
-            {
-                sfunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
-            }
         }
         else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
         {
@@ -320,18 +312,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             }
             afunc->set_connection_string(sc.server_hostname);
             afunc->set_container(sc.container);
-            afunc->set_blobpath(t.getTablePath(fc, false) + ((!t.isAzureEngine() && rg.nextBool()) ? "*" : ""));
+            afunc->set_blobpath(t.getTablePath(fc, false) + ((allow_chaos && !t.isAzureEngine() && rg.nextBool()) ? "*" : ""));
             afunc->set_user(sc.user);
             afunc->set_password(sc.password);
-            if (t.file_format.has_value())
-            {
-                afunc->set_format(t.file_format.value());
-            }
-            structure = rg.nextMediumNumber() < 96 ? afunc->mutable_structure() : nullptr;
-            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
-            {
-                afunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
-            }
         }
         else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
         {
@@ -349,15 +332,18 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ffunc->set_fname(val);
             }
-            ffunc->set_path(t.getTablePath(fc, false) + ((!t.isFileEngine() && rg.nextBool()) ? "*" : ""));
-            if (t.file_format.has_value())
+            ffunc->set_path(t.getTablePath(fc, false) + ((allow_chaos && !t.isFileEngine() && rg.nextBool()) ? "*" : ""));
+            if (t.isFileEngine())
             {
-                ffunc->set_inoutformat(t.file_format.value());
-            }
-            structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
-            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
-            {
-                ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
+                if (t.file_format.has_value())
+                {
+                    ffunc->set_inoutformat(t.file_format.value());
+                }
+                structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
+                if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
+                {
+                    ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
+                }
             }
         }
         else if (t.isURLEngine())
@@ -386,7 +372,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             const ServerCredentials & sc = fc.redis_server.value();
 
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-            setRandomShardKey(rg, t, rfunc->mutable_key());
+            if (allow_chaos)
+            {
+                setRandomShardKey(rg, t, rfunc->mutable_key());
+            }
             structure = rg.nextMediumNumber() < 96 ? rfunc->mutable_structure() : nullptr;
             if (rg.nextBool())
             {
@@ -417,44 +406,29 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         if (structure)
         {
-            String buf;
-            bool first = true;
-            const bool allCols = rg.nextSmallNumber() < 4;
-
-            flatTableColumnPath(to_remote_entries, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
-            std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
-            for (const auto & entry : this->remote_entries)
-            {
-                buf += fmt::format(
-                    "{}{} {}{}",
-                    first ? "" : ", ",
-                    entry.getBottomName(),
-                    entry.getBottomType()->typeName(true),
-                    entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
-                first = false;
-            }
-            this->remote_entries.clear();
-            structure->mutable_lit_val()->set_string_lit(std::move(buf));
+            structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, allow_chaos));
         }
-        if ((sfunc || afunc || ffunc) && rg.nextMediumNumber() < 86)
+        if (sfunc || afunc || t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine())
         {
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
 
+            if (sfunc)
+            {
+                setObjectStoreParams<SQLTable, S3Func>(rg, const_cast<SQLTable &>(t), allow_chaos, sfunc);
+            }
+            else if (afunc)
+            {
+                setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, afunc);
+            }
+            else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine())
+            {
+                setObjectStoreParams<SQLTable, FileFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, ffunc);
+            }
             if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
             {
                 svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : ffunc->mutable_setting_values());
                 generateSettingValues(rg, engineSettings, svs);
-            }
-            if (t.has_metadata && rg.nextSmallNumber() < 9)
-            {
-                svs = svs ? svs
-                          : (sfunc ? sfunc->mutable_setting_values()
-                                   : (afunc ? afunc->mutable_setting_values() : ffunc->mutable_setting_values()));
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-                sv->set_property("iceberg_metadata_file_path");
-                sv->set_value("'" + t.getMetadataPath(fc, false) + "'");
             }
         }
     }
@@ -1077,7 +1051,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_replaceable_table_lambda)).get();
 
         /// I think it's not possible to call final on table functions
-        setTableFunction(rg, TableFunctionUsage::EngineReplace, tt, tof->mutable_tfunc());
+        setTableFunction(rg, TableFunctionUsage::EngineReplace, true, tt, tof->mutable_tfunc());
         addTableRelation(rg, true, rel_name, tt);
     }
     else if (
@@ -2272,7 +2246,7 @@ void StatementGenerator::generateTopSelect(
         }
         if (rg.nextSmallNumber() < 4)
         {
-            sif->set_compression(rg.pickRandomly(fileCompress));
+            sif->set_compression(rg.pickRandomly(compression));
         }
         if (rg.nextSmallNumber() < 4)
         {

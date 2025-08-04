@@ -2460,6 +2460,11 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
 message SetValue {
     required string property = 1;
     required string value = 2;
@@ -2489,7 +2494,8 @@ message FileFunc {
     }
     optional Expr structure = 7;
     optional string fcomp = 8;
-    optional SettingValues setting_values = 9;
+    repeated KeyValuePair params = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message FormatFunc {
@@ -2588,10 +2594,8 @@ message S3Func {
     required string resource = 3;
     required string user = 4;
     required string password = 5;
-    required InOutFormat format = 6;
-    required Expr structure = 7;
-    optional string fcomp = 8;
-    optional SettingValues setting_values = 9;
+    repeated KeyValuePair params = 6;
+    optional SettingValues setting_values = 7;
 }
 
 message AzureBlobStorageFunc {
@@ -2610,10 +2614,8 @@ message AzureBlobStorageFunc {
     required string blobpath = 5;
     optional string user = 6;
     optional string password = 7;
-    optional InOutFormat format = 8;
-    optional string fcomp = 9;
-    optional Expr structure = 10;
-    optional SettingValues setting_values = 11;
+    repeated KeyValuePair params = 8;
+    optional SettingValues setting_values = 9;
 }
 
 message URLFunc {
@@ -2665,11 +2667,6 @@ message GenerateRandomFunc {
     optional uint64 random_seed = 2;
     optional uint32 max_string_length = 3;
     optional uint64 max_array_length = 4;
-}
-
-message KeyValuePair {
-    required string key = 1;
-    required string value = 2;
 }
 
 message ValuesStatement {

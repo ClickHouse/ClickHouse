@@ -1810,6 +1810,13 @@ CONV_FN(JoinClause, jc)
     }
 }
 
+CONV_FN(KeyValuePair, kvp)
+{
+    ret += kvp.key();
+    ret += " = ";
+    ret += kvp.value();
+}
+
 CONV_FN(SetValue, setv)
 {
     ret += setv.property();
@@ -1838,24 +1845,25 @@ CONV_FN(FileFunc, ff)
     }
     ret += "'";
     ret += ff.path();
-    ret += "', '";
+    ret += "'";
     if (ff.has_informat())
     {
+        ret += ", '";
         ret += InFormat_Name(ff.informat()).substr(3);
+        ret += "'";
     }
     else if (ff.has_outformat())
     {
+        ret += ", '";
         ret += OutFormat_Name(ff.outformat()).substr(4);
+        ret += "'";
     }
     else if (ff.has_inoutformat())
     {
+        ret += ", '";
         ret += InOutFormat_Name(ff.inoutformat()).substr(6);
+        ret += "'";
     }
-    else
-    {
-        ret += "CSV";
-    }
-    ret += "'";
     if (ff.has_structure())
     {
         ret += ", ";
@@ -1866,6 +1874,11 @@ CONV_FN(FileFunc, ff)
         ret += ", '";
         ret += ff.fcomp();
         ret += "'";
+    }
+    for (int i = 0; i < ff.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, ff.params(i));
     }
     if (ff.has_setting_values())
     {
@@ -2095,19 +2108,11 @@ CONV_FN(S3Func, sfunc)
     ret += sfunc.user();
     ret += "', '";
     ret += sfunc.password();
-    ret += "', '";
-    ret += InOutFormat_Name(sfunc.format()).substr(6);
     ret += "'";
-    if (sfunc.has_structure())
+    for (int i = 0; i < sfunc.params_size(); i++)
     {
         ret += ", ";
-        ExprToString(ret, sfunc.structure());
-    }
-    if (sfunc.has_fcomp())
-    {
-        ret += ", '";
-        ret += sfunc.fcomp();
-        ret += "'";
+        KeyValuePairToString(ret, sfunc.params(i));
     }
     if (sfunc.has_setting_values())
     {
@@ -2145,22 +2150,10 @@ CONV_FN(AzureBlobStorageFunc, azure)
         ret += azure.password();
         ret += "'";
     }
-    if (azure.has_format())
-    {
-        ret += ", '";
-        ret += InOutFormat_Name(azure.format()).substr(6);
-        ret += "'";
-    }
-    if (azure.has_fcomp())
-    {
-        ret += ", '";
-        ret += azure.fcomp();
-        ret += "'";
-    }
-    if (azure.has_structure())
+    for (int i = 0; i < azure.params_size(); i++)
     {
         ret += ", ";
-        ExprToString(ret, azure.structure());
+        KeyValuePairToString(ret, azure.params(i));
     }
     if (azure.has_setting_values())
     {
@@ -2317,14 +2310,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
         ret += std::to_string(grfunc.max_array_length());
     }
     ret += ")";
-}
-
-CONV_FN(KeyValuePair, kvp)
-{
-    ret += kvp.key();
-    ret += " = '";
-    ret += kvp.value();
-    ret += "'";
 }
 
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
