@@ -1055,6 +1055,7 @@ void ZooKeeper::receiveEvent()
             {
                 if (subrequest->watch_callback)
                 {
+                    chassert(isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES));
                     update_watch_callbacks(subrequest, subresponse, subrequest->watch_callback);
                 }
             }
