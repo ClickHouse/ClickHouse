@@ -67,6 +67,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+
+void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
+{
+    if (node->is_group())
+    {
+        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+        for (int i = 0; i < group->field_count(); ++i)
+            traverseAllFields(group->field(i), fields_mapping, Nested::concatenateName(current_path, group->name()));
+    }
+    int field_id = node->field_id();
+    fields_mapping[field_id] = Nested::concatenateName(current_path, node->name());
+}
+
+}
+
 #define THROW_ARROW_NOT_OK(status)                                     \
     do                                                                 \
     {                                                                  \
@@ -639,7 +657,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
     if (format_filter_info && format_filter_info->column_mapper)
     {
         auto header = getPort().getHeader();
@@ -648,13 +665,13 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         std::unordered_map<Int64, String> parquet_field_ids;
         parquet_names_to_clickhouse = std::unordered_map<String, String>{};
         for (int i = 0; i < group_node->field_count(); ++i)
-            parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
+            traverseAllFields(group_node->field(i), parquet_field_ids);
 
-        auto result = format_filter_info->column_mapper->makeMapping(header, parquet_field_ids);
-        clickhouse_to_parquet_names = std::move(result.first);
+        auto result = format_filter_info->column_mapper->makeMapping(parquet_field_ids);
+        clickhouse_names_to_parquet = std::move(result.first);
         parquet_names_to_clickhouse = std::move(result.second);
     }
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_names_to_parquet);
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
@@ -899,6 +916,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             "Parquet",
             format_settings,
             parquet_names_to_clickhouse,
+            clickhouse_names_to_parquet,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,

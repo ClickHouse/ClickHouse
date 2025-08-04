@@ -1,6 +1,8 @@
 #include "config.h"
 #include <memory>
 #include <optional>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -310,12 +312,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     if (schema->getValue<Int32>(f_schema_id) != schema_id)
                         continue;
 
-                    auto fields = schema->getArray(f_fields);
-                    for (UInt32 field_ind = 0; field_ind < fields->size(); ++field_ind)
-                    {
-                        auto field = fields->getObject(field_ind);
-                        column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
-                    }
+                    column_name_to_parquet_field_id = IcebergSchemaProcessor::traverseSchema(schema->getArray(Iceberg::f_fields));
                 }
                 column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
             }
