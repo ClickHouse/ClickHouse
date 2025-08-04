@@ -28,7 +28,6 @@ Checks: [
   '-bugprone-unchecked-optional-access',
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-not-null-terminated-result',
-  '-bugprone-forward-declaration-namespace',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',

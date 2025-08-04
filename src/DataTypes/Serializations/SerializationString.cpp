@@ -14,6 +14,12 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <base/unit.h>
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -141,8 +147,8 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     }
 }
 
-template <size_t copy_size>
-static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+template <int UNROLL_TIMES>
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
@@ -172,24 +178,27 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
+#ifdef __SSE2__
             /// An optimistic branch in which more efficient copying is possible.
-            if (offset + copy_size <= data.capacity() && istr.position() + size + copy_size <= istr.buffer().end())
+            if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
-                const char * src_pos = istr.position();
-                const char * src_end = src_pos + size;
-                auto * dst_pos = &data[offset - size - 1];
+                const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
+                const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
+                __m128i * sse_dst_pos = reinterpret_cast<__m128i *>(&data[offset - size - 1]);
 
-                while (src_pos < src_end)
+                while (sse_src_pos < sse_src_end)
                 {
-                    __builtin_memcpy(dst_pos, src_pos, copy_size);
+                    for (size_t j = 0; j < UNROLL_TIMES; ++j)
+                        _mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
-                    src_pos += copy_size;
-                    dst_pos += copy_size;
+                    sse_src_pos += UNROLL_TIMES;
+                    sse_dst_pos += UNROLL_TIMES;
                 }
 
                 istr.position() += size;
             }
             else
+#endif
             {
                 istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
             }
@@ -202,15 +211,8 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
 }
 
 
-void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
+void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-    for (size_t i = 0; i < rows_offset; ++i)
-    {
-        UInt64 size;
-        readVarUInt(size, istr);
-        istr.ignore(size);
-    }
-
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
@@ -247,13 +249,13 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     offsets.reserve(offsets.size() + limit);
 
     if (avg_chars_size >= 64)
-        deserializeBinaryImpl<64>(data, offsets, istr, limit);
+        deserializeBinarySSE2<4>(data, offsets, istr, limit);
     else if (avg_chars_size >= 48)
-        deserializeBinaryImpl<48>(data, offsets, istr, limit);
+        deserializeBinarySSE2<3>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
-        deserializeBinaryImpl<32>(data, offsets, istr, limit);
+        deserializeBinarySSE2<2>(data, offsets, istr, limit);
     else
-        deserializeBinaryImpl<16>(data, offsets, istr, limit);
+        deserializeBinarySSE2<1>(data, offsets, istr, limit);
 }
 
 

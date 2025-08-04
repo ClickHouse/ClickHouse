@@ -10,6 +10,7 @@
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
@@ -68,6 +69,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
           AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, result_type_),
           max_elems(max_elems_) {}
+
 
     String getName() const override { return "groupUniqArray"; }
 

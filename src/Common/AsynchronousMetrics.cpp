@@ -8,12 +8,10 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
-#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
@@ -25,25 +23,20 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if defined(OS_LINUX)
-#    include <netinet/tcp.h>
-#endif
 
+namespace ProfileEvents
+{
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+}
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-}
 
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -51,62 +44,24 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
+    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
+
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            out.emplace(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        out.emplace(filename, small_buffer_size);
 }
 
-std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
+static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -132,8 +87,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
-    openFileIfExists("/proc/net/tcp", net_tcp);
-    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
@@ -160,10 +113,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
 
     openFileIfExists("/proc/meminfo", meminfo);
-
-    openFileIfExists("/proc/pressure/memory", memory_pressure);
-    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-    openFileIfExists("/proc/pressure/io", io_pressure);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -221,10 +170,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
+
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
-        std::filesystem::directory_options::skip_permission_denied))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
     {
         String device_name = device_dir.path().filename();
 
@@ -645,19 +594,6 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 
 
 #if defined(OS_LINUX)
-
-void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
-{
-    new_values["CGroupUserTime"]
-        = {delta_values.user * multiplier,
-           "The ratio of time the CPU core was running userspace code."
-           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
-           "stalls, branch mispredictions, running another SMT core)."};
-    new_values["CGroupSystemTime"]
-        = {delta_values.system * multiplier, "The ratio of time the CPU core was running OS kernel (system) code."};
-}
-
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
@@ -734,25 +670,6 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
-void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
-{
-    chassert(num_cpus_to_normalize);
-
-    new_values["CGroupUserTimeNormalized"]
-        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
-           "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
-           "interval regardless of the number of cores."
-           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
-    new_values["CGroupSystemTimeNormalized"]
-        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
-           "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
-           "interval regardless of the number of cores."
-           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
-}
-
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
 {
@@ -819,57 +736,6 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
-
-void readPressureFile(
-    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
-    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
-{
-    in.rewind();
-    /// The shape of this file is:
-    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
-    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
-
-    /// We need the first field to capture whether it's a partial or total stall.
-    /// We also ignore the time averages as well. Recording the counter (the last field)
-    /// lets us recreate any average, with better identification of any short spikes
-    while (!in.eof())
-    {
-        String stall_type;
-        readStringUntilWhitespace(stall_type, in);
-
-        String skip;
-        // skip avg10=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg60=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg300=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip total=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-
-        uint64_t counter;
-        readText(counter, in);
-
-        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
-
-        if (!first_run)
-        {
-            uint64_t prev = prev_pressure_vals[metric_key];
-
-                uint64_t delta = counter - prev;
-            new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
-                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
-        }
-
-        prev_pressure_vals[metric_key] = counter;
-        skipToNextLineOrEOF(in);
-    }
-}
 #endif
 
 // Warnings for pending mutations
@@ -888,20 +754,6 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-
-    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
-        num_pending_mutations_over_execution_time > 0)
-    {
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-            PreformattedMessage::create(
-                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
-                num_pending_mutations_over_execution_time));
-    }
-    else
-    {
-        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
-    }
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
@@ -1018,8 +870,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 #endif
-
-    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1153,7 +1003,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    if (cgroupcpu_stat || cgroupcpuacct_stat)
+    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
+    if (cgroup_cpu_metrics_present)
     {
         try
         {
@@ -1197,13 +1048,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
-                const ProcStatValuesCPU delta_values = current_values - cgroup_values_all_cpus;
-                applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
+                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
+                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
-                    applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
+                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
-            cgroup_values_all_cpus = current_values;
+            proc_stat_values_all_cpus = current_values;
         }
         catch (...)
         {
@@ -1237,6 +1088,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
+                    if (cgroup_cpu_metrics_present)
+                    {
+                        /// Skip the CPU metrics if we already have them from cgroup
+                        ProcStatValuesCPU current_values{};
+                        current_values.read(*proc_stat);
+                        continue;
+                    }
+
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1323,7 +1182,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0)
+                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
@@ -1500,46 +1359,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-
-    if (cpu_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/cpu", memory_pressure);
-        }
-    }
-
-    if (memory_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/memory", memory_pressure);
-        }
-    }
-
-    if (io_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/io", io_pressure);
-        }
-    }
-
     if (file_nr)
     {
         try
@@ -1593,7 +1412,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-3;
+            static constexpr double time_multiplier = 1e-6;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1789,132 +1608,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
-    }
-
-    if (net_tcp || net_tcp6)
-    {
-        UInt64 total_sockets = 0;
-        UInt64 sockets_by_state[16] = {};
-        UInt64 transmit_queue_size = 0;
-        UInt64 receive_queue_size = 0;
-        UInt64 unrecovered_retransmits = 0;
-        std::unordered_set<std::string> remote_addresses;
-
-        auto process_net = [&](const char * path, auto & file)
-        {
-            try
-            {
-                file->rewind();
-                /// Header
-                skipToNextLineOrEOF(*file);
-
-                while (!file->eof())
-                {
-                    /// Line number
-                    skipWhitespaceIfAny(*file, true);
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Local address and port
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Remote address and port
-                    String remote_address_and_port;
-                    readStringUntilWhitespace(remote_address_and_port, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
-                        remote_address_and_port.resize(pos);
-                    remote_addresses.emplace(remote_address_and_port);
-
-                    /// Socket state
-                    UInt8 state = 0;
-                    char state_hex[2]{};
-                    readPODBinary(state_hex, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    state = unhex2(state_hex);
-                    if (state < 16)
-                        ++sockets_by_state[state];
-
-                    /// tx_queue:rx_queue
-                    String tx_rx_queue;
-                    readStringUntilWhitespace(tx_rx_queue, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
-                    {
-                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
-                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
-
-                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
-                        {
-                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
-                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
-
-                            transmit_queue_size += tx_queue_size;
-                            receive_queue_size += rx_queue_size;
-                        }
-                    }
-
-                    /// tr:when
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Retransmits
-                    String retransmits_str;
-                    readStringUntilWhitespace(retransmits_str, *file);
-                    if (retransmits_str.size() == 8)
-                    {
-                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
-                        unrecovered_retransmits += retransmits;
-                    }
-
-                    skipToNextLineOrEOF(*file);
-                    ++total_sockets;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                openFileIfExists(path, file);
-            }
-        };
-
-        if (net_tcp)
-            process_net("/proc/net/tcp", net_tcp);
-
-        if (net_tcp6)
-            process_net("/proc/net/tcp6", net_tcp6);
-
-        new_values["NetworkTCPSockets"] = { total_sockets,
-            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
-
-        auto process_socket_state = [&](UInt8 state, const char * description)
-        {
-            if (state < 16 && sockets_by_state[state])
-                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
-                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
-        };
-
-        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
-        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
-        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
-        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
-        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
-        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
-        process_socket_state(TCP_CLOSE, "CLOSE");
-        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
-        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
-        process_socket_state(TCP_LISTEN, "LISTEN");
-        process_socket_state(TCP_CLOSING, "CLOSING");
-
-        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
-            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
-            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
-            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
-            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
     if (vm_max_map_count)
@@ -2150,7 +1843,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+    new_values["OSCPUOverload"] = { getCPUOverloadMetric(), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
     /// Add more metrics as you wish.
 
@@ -2171,6 +1864,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
     }
+}
+
+double AsynchronousMetrics::getCPUOverloadMetric()
+{
+    Int64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
+
+    prev_cpu_wait_microseconds = curr_cpu_wait_microseconds;
+    prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
+
+    /// If we used less than one CPU core, we cannot detect overload.
+    if (os_cpu_virtual_time_microseconds < 1'000'000 || os_cpu_wait_microseconds <= 0)
+        return 0;
+
+    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
 }

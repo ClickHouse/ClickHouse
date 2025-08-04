@@ -7,9 +7,9 @@
 #include <base/types.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
-
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
@@ -31,13 +31,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement) \
-    M(DeadLetterQueueElement)
-
-#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
-    M(DistributedCacheLogElement) \
-    M(DistributedCacheServerLogElement) \
-
+    M(QueryMetricLogElement)
 
 namespace Poco
 {
@@ -89,8 +83,6 @@ public:
     virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
-
-    virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;
