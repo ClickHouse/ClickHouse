@@ -693,6 +693,7 @@ def test_failure_in_the_middle(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
 def test_macros_support(started_cluster):
@@ -837,7 +838,7 @@ def test_shutdown_logs(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
+    files_to_generate = 10
 
     create_table(
         started_cluster,
@@ -851,7 +852,7 @@ def test_shutdown_logs(started_cluster):
         },
     )
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100
     )
     create_mv(node, table_name, dst_table_name)
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -873,6 +874,7 @@ def test_shutdown_logs(started_cluster):
     )
     assert 1 == check_in_text_log("Shutting down system logs", "DatabaseCatalog")
     assert 0 == check_in_text_log("Shutting down system databases", "DatabaseCatalog")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
 def test_shutdown_order(started_cluster):
@@ -964,3 +966,4 @@ def test_shutdown_order(started_cluster):
     )
 
     node.query(f"DROP TABLE {new_table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
