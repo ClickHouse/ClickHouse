@@ -1323,7 +1323,7 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine())
+        if (b.isAnyS3Engine() && rg.nextBool())
         {
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();

@@ -1679,13 +1679,17 @@ bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, con
 
     if (glue_cat && (nopt < glue_cat + 1))
     {
+        const Catalog & cat = sc.glue_catalog.value();
+
         b.catalog = CatalogTable::Glue;
-        return true;
+        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
+        const Catalog & cat = sc.hive_catalog.value();
+
         b.catalog = CatalogTable::Hive;
-        return true;
+        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
