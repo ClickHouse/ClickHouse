@@ -1,3 +1,4 @@
+#include <vector>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -682,8 +683,6 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
         if (!truncate_outcome)
             return;
 
-        chassert(truncate_outcome->objects_to_remove.empty(), "Lets see when it works");
-
         if (!truncate_outcome->objects_to_remove.empty())
             to_remove.append_range(std::move(truncate_outcome->objects_to_remove));
     }
@@ -1090,8 +1089,19 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
     for (const auto & operation : operations_to_execute)
         operation->finalize(objects_to_remove);
 
+    auto get_debug_info = [](const std::vector<StoredObject> & objects)
+    {
+        auto new_range = objects | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {}", obj.local_path, obj.remote_path); });
+        return fmt::join(new_range, ", ");
+    };
+
+    LOG_FATAL(getLogger("DiskObjectStorageTransaction"),
+                "Trunsaction resulted in removing objects: {}",
+                get_debug_info(objects_to_remove));
+
     object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
+
     is_committed = true;
 }
 
@@ -1163,6 +1173,16 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
         operation->finalize(objects_to_remove);
+
+    auto get_debug_info = [](const std::vector<StoredObject> & objects)
+    {
+        auto new_range = objects | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {}", obj.local_path, obj.remote_path); });
+        return fmt::join(new_range, ", ");
+    };
+
+    LOG_FATAL(getLogger("DiskObjectStorageTransaction"),
+                "Trunsaction resulted in removing objects: {}",
+                get_debug_info(objects_to_remove));
 
     object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
