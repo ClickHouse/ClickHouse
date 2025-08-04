@@ -1288,26 +1288,6 @@ void StatementGenerator::generateEngineDetails(
             b.file_comp = rg.pickRandomly(ObjectCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
-        if (b.isAnyIcebergEngine() && rg.nextSmallNumber() < 9)
-        {
-            /// Add metadata file to Iceberg Tables
-            b.has_metadata = true;
-            const String metadataClientPath = b.getMetadataPath(fc, true);
-            svs = svs ? svs : te->mutable_setting_values();
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            if (std::filesystem::create_directory(metadataClientPath))
-            {
-                std::ofstream versionHint(metadataClientPath + "/version-hint.text");
-
-                versionHint
-                    << (rg.nextSmallNumber() < 2 ? rg.nextString("", true, rg.nextStrlen()) : std::to_string(rg.randomInt<uint32_t>(0, 10)))
-                    << std::endl;
-                versionHint.close();
-            }
-            sv->set_property("iceberg_metadata_file_path");
-            sv->set_value("'" + b.getMetadataPath(fc, false) + "'");
-        }
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
