@@ -6662,8 +6662,8 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", BETA) \
-    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
-Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
+    DECLARE(Float, vector_search_index_fetch_multiplier, 1.0, R"(
+Fetch additional nearest neighbors from the vector similarity index indicated by this multiplier. This multiplier is helpful for use-cases like rescoring and post-filtering on other predicates.
 )", BETA) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
@@ -7048,6 +7048,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
+    MAKE_OBSOLETE(M, Float, vector_search_postfilter_multiplier, 1.0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

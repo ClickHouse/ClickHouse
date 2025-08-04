@@ -1,0 +1,29 @@
+Inserting 20 rows using the reinterpret() technique
+Results using KNN
+<dbpedia:Honda>
+<dbpedia:Tata_Motors>
+<dbpedia:Saab_Automobile>
+<dbpedia:Bugatti_Automobiles>
+Results using ANN
+<dbpedia:Honda>
+<dbpedia:Tata_Motors>
+<dbpedia:Saab_Automobile>
+<dbpedia:Bugatti_Automobiles>
+Verifying vector index is used
+Description: vector_similarity GRANULARITY 100000000
+Running a couple of ANN queries on the bq index
+<dbpedia:Pizza>
+<dbpedia:Hamburger>
+<dbpedia:Salad>
+<dbpedia:Idli>
+<dbpedia:Database_theory>
+<dbpedia:Database_index>
+<dbpedia:Database_tuning>
+<dbpedia:Database_transaction>
+Verifying index is small
+Good
+Verifying binary quantization is only allowed if distance metric is Cosine
+Result without rescoring
+1
+Result with rescoring
+2

@@ -40,8 +40,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
-    extern const SettingsFloat vector_search_postfilter_multiplier;
+    extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
+    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace ServerSetting
@@ -419,18 +420,19 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , index_column(index_column_)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
-    , postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
+    , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
+    , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
 {
     static constexpr auto MAX_POSTFILTER_MULTIPLIER = 1000.0;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
-    if (!std::isfinite(postfilter_multiplier)
-        || postfilter_multiplier <= 0.0 || postfilter_multiplier > MAX_POSTFILTER_MULTIPLIER
-        || (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be greater than 0.0 and less than {}", MAX_POSTFILTER_MULTIPLIER);
+    if (!std::isfinite(index_fetch_multiplier)
+        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_POSTFILTER_MULTIPLIER
+        || (parameters && !std::isfinite(index_fetch_multiplier * parameters->limit)))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_POSTFILTER_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -473,9 +475,9 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
             parameters->reference_vector.size(), index->dimensions());
 
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present)
-        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
-        limit = std::min(static_cast<size_t>(limit * postfilter_multiplier), max_limit);
+    if (parameters->additional_filters_present || is_rescoring)
+        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor. If rescoring is specified (e.g for quantized index), fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY..LIMIT.
+        limit = std::min(static_cast<size_t>(limit * index_fetch_multiplier), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
@@ -599,6 +601,8 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
         if (quantizationToScalarKind.at(index.arguments[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k && distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index is only supported for Cosine distance metric");
+        if (quantizationToScalarKind.at(index.arguments[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k && (index.arguments[2].safeGet<UInt64>() % 8 != 0))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index is only supported if dimension is a multiple of 8");
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
         UInt64 connectivity = index.arguments[4].safeGet<UInt64>();
