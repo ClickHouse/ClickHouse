@@ -34,12 +34,14 @@ SELECT a FROM file('$DATA_DIR/data_hive/partitioning/a=b/a=b/sample.parquet') LI
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
+set send_logs_level = 'fatal';
 
 SELECT * FROM file('$DATA_DIR/data_hive/partitioning/column0=Elizabeth/column0=Elizabeth1/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "INCORRECT_DATA"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 0;
+set send_logs_level = 'fatal';
 
 SELECT *, non_existing_column FROM file('$DATA_DIR/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -57,6 +59,7 @@ SELECT * FROM url('http://localhost:11111/test/hive_partitioning/non_existing_co
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 0;
+set send_logs_level = 'fatal';
 
 SELECT *, _column0 FROM url('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -79,6 +82,7 @@ SELECT _path FROM s3('http://localhost:11111/test/hive_partitioning/column0=Arth
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 0;
+set send_logs_level = 'fatal';
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -F -q "UNKNOWN_IDENTIFIER" && echo "OK" || echo "FAIL";
