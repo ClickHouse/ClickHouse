@@ -35,6 +35,8 @@ void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
     const bool inserted = storages.emplace(storage).second;
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+
+    LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
 }
 
 void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool if_exists)
@@ -42,19 +44,26 @@ void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool 
     std::lock_guard lock(mutex);
 
     if (shutdown_called)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+    {
+        /// We can call unregisterTable from table shutdown.
+        return;
+    }
 
     auto it = storages.find(storage);
     if (it == storages.end())
     {
         if (if_exists)
+        {
+            LOG_DEBUG(getLogger("ObjectStorageQueueFactory"), "Table does not exist, nothing to unregister");
             return;
+        }
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Table with storage id {} is not registered", storage.getNameForLogs());
     }
     storages.erase(it);
+    LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
 }
 
 void ObjectStorageQueueFactory::renameTable(const StorageID & from, const StorageID & to)
@@ -67,12 +76,19 @@ void ObjectStorageQueueFactory::renameTable(const StorageID & from, const Storag
     if (from_it == storages.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
 
-    auto to_it = storages.find(to);
-    if (to_it != storages.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is already registered", to.getNameForLogs());
-
     storages.erase(from_it);
-    storages.emplace(to);
+
+    auto to_it = storages.find(to);
+    if (to_it == storages.end())
+    {
+        storages.emplace(to);
+        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
+    }
+    else
+    {
+        /// This could happen because of exchange/replace tables.
+        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
+    }
 }
 
 void ObjectStorageQueueFactory::shutdown()
@@ -84,7 +100,6 @@ void ObjectStorageQueueFactory::shutdown()
         shutdown_storages = std::vector<StorageID>(storages.begin(), storages.end());
     }
 
-    auto log = getLogger("ObjectStorageFactory::shutdown");
     if (shutdown_storages.empty())
     {
         LOG_DEBUG(log, "There are no queue storages to shutdown");
@@ -122,7 +137,8 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
     ObjectStorageQueueMetadataPtr metadata,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    bool & created_new_metadata)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -139,12 +155,16 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id, false);
+    it->second.metadata->registerNonActive(storage_id, created_new_metadata);
     *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadataFactory::remove(
+    const std::string & zookeeper_path,
+    const StorageID & storage_id,
+    bool is_drop,
+    bool keep_data_in_keeper)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -154,18 +174,22 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     *it->second.ref_count -= 1;
 
-    try
-    {
-        const auto registry_size = it->second.metadata->unregister(
-            storage_id,
-            /* active */ false,
-            remove_metadata_if_no_registered);
+    LOG_TRACE(
+        log, "Removed table {} (is drop: {}, keep data in keeper: {})",
+        storage_id.getNameForLogs(), is_drop, keep_data_in_keeper);
 
-        LOG_TRACE(log, "Remaining registry size: {}", registry_size);
-    }
-    catch (...)
+    if (is_drop)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            it->second.metadata->unregisterNonActive(
+                storage_id,
+                /* remove_metadata_if_no_registered */is_drop && !keep_data_in_keeper);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     if (*it->second.ref_count == 0)
