@@ -799,7 +799,7 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
     )";
     FunctionDocumentation::Syntax unhex_syntax = "unhex(arg)";
     FunctionDocumentation::Arguments unhex_arguments = {{"arg", "A string containing any number of hexadecimal digits.", {"String", "FixedString"}}};
-    FunctionDocumentation::ReturnedValue unhex_returned_value = {"A binary string (BLOB).", {"String"}};
+    FunctionDocumentation::ReturnedValue unhex_returned_value = {"Returns a binary string (BLOB).", {"String"}};
     FunctionDocumentation::Examples unhex_examples =
     {
         {
@@ -839,7 +839,7 @@ to the following logic for different types:
     )";
     FunctionDocumentation::Syntax bin_syntax = "bin(arg)";
     FunctionDocumentation::Arguments bin_arguments = {{"arg", "A value to convert to binary.", {"String", "FixedString", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}};
-    FunctionDocumentation::ReturnedValue bin_returned_value = {"A string with the binary representation of the argument.", {"String"}};
+    FunctionDocumentation::ReturnedValue bin_returned_value = {"Returns a string with the binary representation of the argument.", {"String"}};
     FunctionDocumentation::Examples bin_examples =
     {
         {

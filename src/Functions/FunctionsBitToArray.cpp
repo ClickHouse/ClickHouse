@@ -365,9 +365,9 @@ in ascending order.
             "All bits set",
             "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
             R"(
-┌─bit_positions─────┐
-│ [0,1,2,3,4,5,6,7] │
-└───────────────────┘
+┌─bit_positions─────────────┐
+│ [0, 1, 2, 3, 4, 5, 6, 7]  │
+└───────────────────────────┘
             )"
         }
     };
@@ -376,7 +376,7 @@ in ascending order.
     FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
 
     FunctionDocumentation::Description bitmaskToArray_description = R"(
-Accepts an integer and returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed.
+Accepts an integer and returns an array of `UInt64` numbers containing the list of powers of two that total the source number when summed.
 Numbers in the array are in ascending order.
     )";
     FunctionDocumentation::Syntax bitmaskToArray_syntax = "bitmaskToArray(num)";

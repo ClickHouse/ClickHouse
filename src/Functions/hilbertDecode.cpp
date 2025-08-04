@@ -102,7 +102,7 @@ numbers at most.
 hilbertDecode(tuple_size, code)
 )";
     FunctionDocumentation::Arguments arguments = {
-        {"tuple_size", "Integer value of no more than `2`.", {"Int*"}},
+        {"tuple_size", "Integer value of no more than `2`.", {"UInt8/16/32/64", "Tuple(UInt8/16/32/64)"}},
         {"code", "`UInt64` code.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};

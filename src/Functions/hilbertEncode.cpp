@@ -121,8 +121,8 @@ hilbertEncode(args)
 hilbertEncode(range_mask, args)
 )";
     FunctionDocumentation::Arguments arguments = {
-        {"args", "Up to two `UInt*` values or columns of the type `UInt*`.", {"(U)Int*"}},
-        {"range_mask", "For the expanded mode, up to two `UInt*` values or columns of type `UInt*`.", {"(U)Int*"}}
+        {"args", "Up to two `UInt` values or columns of type `UInt`.", {"UInt8/16/32/64"}},
+        {"range_mask", "For the expanded mode, up to two `UInt` values or columns of type `UInt`.", {"UInt8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` code.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
