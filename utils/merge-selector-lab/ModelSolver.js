@@ -51,8 +51,8 @@ export class ModelSolver {
     // Estimate the best solution for given parameters using training data
     // Returns array of x[0] values for L = 1..Lopt values,
     // representing optimal number of parts to merge for L-layered plan
-    // Length of returned array equals optimal L (number of layers) to minimize objective function
-    solve({parts, workers, maxSourceParts, maxPartSize, insertPartSize}) {
+    // Length of returned array might not equal optimal L
+    solve({parts, workers, maxPartSize, insertPartSize}) {
         if (workers > parts / 2)
             return this.#getSolutionsForUnlimitedWorkers(parts);
 
@@ -61,10 +61,6 @@ export class ModelSolver {
             (maxPartSize == null ?
             parts : // Max part size is unlimited - we merge all parts into one big part
             maxPartSize / insertPartSize);
-
-        // TODO(serxa): Constraints
-        const xSum = Math.log(finalSize);
-        const xMax = Math.log(maxSourceParts);
 
         // Find points for interpolation
         const i = Math.log2(finalSize / this.partsMin) / this.partsStep;
@@ -110,7 +106,7 @@ export class ModelSolver {
         return result;
     }
 
-    // Objective function for lowest layer given x[0] value
+    // Objective function (avg number of parts) for lowest layer given x[0] value
     F0(x0, parts, workers) {
         const n0 = Math.exp(x0);
         const merges = parts / n0;
