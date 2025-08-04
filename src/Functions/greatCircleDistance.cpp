@@ -371,9 +371,94 @@ private:
 
 REGISTER_FUNCTION(GeoDistance)
 {
-    factory.registerFunction("greatCircleAngle", [](ContextPtr context) { return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context)); });
-    factory.registerFunction("greatCircleDistance", [](ContextPtr context) { return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context)); });
-    factory.registerFunction("geoDistance", [](ContextPtr context) { return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context)); });
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the central angle between two points on the Earth's surface using the [great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+This function returns the angle in degrees between two points on a sphere.
+        )";
+        FunctionDocumentation::Syntax syntax = "greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)";
+        FunctionDocumentation::Arguments arguments = {
+            {"lon1Deg", "Longitude of the first point in degrees. Range: `[-180°, 180°]`", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat1Deg", "Latitude of the first point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lon2Deg", "Longitude of the second point in degrees. Range: `[-180°, 180°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat2Deg", "Latitude of the second point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the central angle between the two points in degrees", {"Float64"}};
+        FunctionDocumentation::Examples examples = {
+            {
+                "Basic usage",
+                "SELECT greatCircleAngle(0, 0, 45, 0) AS angle",
+                R"(
+┌─angle─┐
+│    45 │
+└───────┘
+                )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation);
+    }
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+        )";
+        FunctionDocumentation::Syntax syntax = "greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)";
+        FunctionDocumentation::Arguments arguments = {
+            {"lon1Deg", "Longitude of the first point in degrees. Range: `[-180°, 180°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat1Deg", "Latitude of the first point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lon2Deg", "Longitude of the second point in degrees. Range: `[-180°, 180°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat2Deg", "Latitude of the second point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the distance between two points on the Earth's surface, in meters", {"Float64"}};
+        FunctionDocumentation::Examples examples = {
+            {
+                "Basic usage",
+                "SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance",
+                R"(
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+                )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
+    }
+    {
+        FunctionDocumentation::Description description = R"(
+Similar to the `greatCircleDistance` function but it calculates the distance on the WGS-84 ellipsoid, which is a more accurate representation of Earth's shape than a perfect sphere.
+It offers the same performance as for `greatCircleDistance` and it is therefore recommended to use `geoDistance` to calculate distances on Earth.
+
+Technical note: for close enough points it calculates the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
+        )";
+        FunctionDocumentation::Syntax syntax = "geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)";
+        FunctionDocumentation::Arguments arguments = {
+            {"lon1Deg", "Longitude of the first point in degrees. Range: `[-180°, 180°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat1Deg", "Latitude of the first point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lon2Deg", "Longitude of the second point in degrees. Range: `[-180°, 180°]`.", {"(U)Int*", "Float*", "Decimal"}},
+            {"lat2Deg", "Latitude of the second point in degrees. Range: `[-90°, 90°]`.", {"(U)Int*", "Float*", "Decimal"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the distance between two points on the Earth's surface, in meters", {"Float64"}};
+        FunctionDocumentation::Examples examples = {
+            {
+                "Basic usage",
+                "SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance",
+                R"(
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+                )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation);
+    }
 }
 
 }

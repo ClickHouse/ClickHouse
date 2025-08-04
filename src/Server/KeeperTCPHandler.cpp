@@ -240,6 +240,7 @@ KeeperTCPHandler::KeeperTCPHandler(
     : Poco::Net::TCPServerConnection(socket_)
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
+    , keeper_context(keeper_dispatcher->getKeeperContext())
     , operation_timeout(
           0,
           config_ref.getUInt(
@@ -319,7 +320,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
     {
-        if (!keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+        if (!keeper_context->getCoordinationSettings()[CoordinationSetting::use_xid_64])
             throw Exception(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
@@ -457,7 +458,7 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
+    auto operation_max_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
     {
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
@@ -658,7 +659,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
     {
-        if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
+        if (!keeper_context->isOperationSupported(current_request.getOpNum()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", current_request.getOpNum(), current_request.getPath());
     };
 
@@ -675,6 +676,10 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
+
+    if (keeper_context->shouldLogRequests())
+        LOG_TRACE(log, "Received request:\n{}", request->toString(/*short_format=*/true));
+
     return std::make_pair(opnum, xid);
 }
 
@@ -699,11 +704,11 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
-        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
+        if (request && elapsed_ms > static_cast<Int64>(keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
         {
             LOG_INFO(
                 log,
-                "Total time to process a request in session {} took too long ({}ms).\nRequest info: {}",
+                "Total time to process a request in session {} took too long ({}ms).\nRequest info:\n{}",
                 session_id,
                 elapsed_ms,
                 request->toString(/*short_format=*/true));

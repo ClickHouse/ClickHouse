@@ -868,6 +868,11 @@ quit
             "minio_audit_logs",
             "minio_server_logs",
         ]
+
+        if "_tsan" in Info().job_name:
+            print("minio_audit_logs scrapping is too slow with tsan - skip")
+            TABLES.remove("minio_audit_logs")
+
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
