@@ -62,7 +62,7 @@ public:
         const auto * data_type_datetime64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
 
         if (!data_type_datetime64)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected DataTypeDateTime64, got {}", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected a DateTime64, got {}", type->getName());
 
         auto col_res = ColumnDateTime64::create(input_rows_count, data_type_datetime64->getScale());
         auto & vec_res = col_res->getData();

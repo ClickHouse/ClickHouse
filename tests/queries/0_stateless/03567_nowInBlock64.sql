@@ -8,4 +8,4 @@ SELECT nowInBlock64(3, 3); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT nowInBlock64(3, 'string'); --{serverError BAD_ARGUMENTS}
 
 SELECT count() FROM (SELECT DISTINCT nowInBlock64(), nowInBlock64(3), nowInBlock64(3, 'Pacific/Pitcairn') FROM system.numbers LIMIT 3);
-SELECT nowInBlock(NULL) IS NULL;
+SELECT nowInBlock64(NULL) IS NULL;
