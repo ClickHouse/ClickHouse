@@ -1,16 +1,11 @@
-#include <filesystem>
 #include <iostream>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/ICompressionCodec.h>
-#include <Core/Defines.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-
-
-namespace fs = std::filesystem;
 
 
 /** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
@@ -50,8 +45,6 @@ namespace fs = std::filesystem;
 /// Instance of EncryptDecryptApplication is needed in order to initialize Poco::Net::SSLManager for certificates loading
 class EncryptDecryptApplication : public Poco::Util::Application
 {
-public:
-    EncryptDecryptApplication() { }
 };
 
 int main(int argc, char ** argv)
@@ -87,7 +80,7 @@ int main(int argc, char ** argv)
             zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
             EncryptDecryptApplication app;
-            Poco::Util::LayeredConfiguration& conf = Poco::Util::Application::instance().config();
+            Poco::Util::LayeredConfiguration & conf = Poco::Util::Application::instance().config();
             conf.add(bootstrap_configuration);
 
             auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
