@@ -4,6 +4,7 @@
 
 #include <math.h>
 
+#include <memory>
 #include <new>
 #include <utility>
 
@@ -22,6 +23,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/logger_useful.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -626,7 +628,6 @@ protected:
         Container * container;
         cell_type * ptr;
         cell_type * next_ptr = nullptr;
-        cell_type * buf_end = nullptr;
         DB::PrefetchingHelper prefetching;
 
 
@@ -634,7 +635,7 @@ protected:
 
         struct RingBuffer
         {
-            static constexpr size_t CAPACITY = 256;
+            static constexpr size_t CAPACITY = 4;
             cell_type * buf[CAPACITY];
             size_t head;
             size_t tail;
@@ -677,22 +678,22 @@ protected:
 
     public:
         iterator_base() {} /// NOLINT
-        iterator_base(Container * container_, cell_type * ptr_, bool prefetch_ = false) : container(container_), ptr(ptr_), prefetch(prefetch_)
-        {
-            chassert(container->buf != nullptr);
-            buf_end = container->buf + container->grower.bufSize();
-        }
+        iterator_base(Container * container_, cell_type * ptr_, bool prefetch_ = false) : container(container_), ptr(ptr_), prefetch(prefetch_) {}
 
         bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
 
         Derived & operator++()
         {
+            // LOG_ERROR(getLogger("iterator_base"), "xxx next_ptr: {}", next_ptr - container->buf);
             /// Use prefetching to speed up iteration.
             if (CouldPrefetchKey<cell_type> && prefetch)
             {
-                if (!next_ptr)
-                    next_ptr = ptr;
+                if (ptr->isZero(*container)) [[unlikely]]
+                    next_ptr = container->buf;
+                else if (!next_ptr) [[unlikely]]
+                    next_ptr = ptr + 1;
+
                 prepareNext();
             }
             else
@@ -704,7 +705,7 @@ protected:
                     ++ptr;
 
                 /// Skip empty cells in the main buffer.
-                // auto * buf_end = container->buf + container->grower.bufSize();
+                auto * buf_end = container->buf + container->grower.bufSize();
                 while (ptr < buf_end && ptr->isZero(*container))
                     ++ptr;
             }
@@ -742,14 +743,8 @@ protected:
     private:
         void prepareNext()
         {
+            auto * buf_end = container->buf + container->grower.bufSize();
             iter_count++;
-            if (next_ptr < buf_end)
-            {
-                if (unlikely(next_ptr->isZero(*container)))
-                    next_ptr = container->buf;
-                else
-                    next_ptr += 1;
-            }
             if (prefetch_buffer.size() <  prefetch_ahead && next_ptr < buf_end) [[likely]]
             {
                 if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
@@ -768,7 +763,7 @@ protected:
                     {
                         prefetch_buffer.push(next_ptr);
                         last_ptr = next_ptr;
-                        next_ptr += i + 1 < n ? 1 : 0; /// If we are at the last iteration, do not increment next_ptr.
+                        next_ptr++;
                     }
                     else
                         break;
