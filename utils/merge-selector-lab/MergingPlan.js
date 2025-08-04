@@ -12,9 +12,9 @@ const WORKER_SPEED = 1;
 // Description of a group of parts of similar size, that only hold aggregate value required for planning
 export class PartGroup {
     constructor() {
-        this.source_parts = 0;        // Number of parts in children groups
-        this.target_parts = 0;        // Number of parts in this group
+        this.parts = 0;               // Number of parts in group
         this.bytes = 0;               // Total size of parts in group
+        this.log_bytes = undefined;   // log2(bytes)
         this.utility = 0;             // Sum of utility of source parts
         this.max_workers = undefined; // Limit on the number of worker to work on the merges
 
@@ -40,14 +40,14 @@ export class PartGroup {
 
     // Add a part (only for initial groups)
     addPart(part) {
-        this.target_parts++;
+        this.parts++;
         this.bytes += part.bytes;
         this.utility += part.utility;
     }
 
     // Add a child group
     addGroup(group) {
-        this.source_parts += group.target_parts;
+        this.parts += group.parts;
         this.bytes += group.bytes;
         this.utility += group.utility;
         this.children.push(group);
@@ -55,39 +55,36 @@ export class PartGroup {
 
     #onSeal(time) {
         this.sealed = time;
-        for (const child of children) {
-            child.attach(time, this);
-        }
-
+        this.log_bytes = Math.log2(this.bytes);
 
         // A better model will take into account only number of bytes left `this.bytes - this.bytes_written`
         // But it would mean that workers should be released one by one, which is not always correct
         // So to simplify we instead keep all workers busy until the end
-        this.max_workers = this.target_parts;
+        this.max_workers = this.bytes / this.target_size;
     }
 
     // Group is fully formed.
     // Should be called when all groups are added
-    seal(time) {
-        if (this.source_parts == 0)
+    seal(time, target_size) {
+        if (this.parts == 0)
             throw { message: "Attempt to seal an empty group", group: this };
-        if (this.target_size == undefined)
-            throw { message: "Attempt to seal group without target_size", group: this };
-        this.source_size = this.bytes / this.source_parts;
+        this.source_size = this.bytes / this.parts;
+        this.target_size = target_size;
         if (this.target_size < this.source_size)
             throw { message: "Attempt to seal group with too low target size", group: this };
         if (this.bytes < this.target_size)
             throw { message: "Attempt to seal group with too high target size", group: this };
-        this.target_parts = this.bytes / this.target_size;
+        this.parts = this.bytes / target_size;
         this.#onSeal(time);
     }
 
     // Group is fully formed.
     // Should be called when all parts are added into initial group
     sealInitial(time) {
-        if (this.target_parts == 0)
-            throw { message: "Attempt to seal an empty initial group", group: this };
-        this.target_size = this.bytes / this.target_parts;
+        if (this.parts == 0)
+            throw { message: "Attempt to seal an empty group", group: this };
+        this.source_size = this.bytes / this.parts;
+        this.target_size = this.source_size;
         this.#onSeal(time);
     }
 
@@ -165,6 +162,10 @@ export class MergingPlan {
         this.total_bytes_written = 0;
         this.total_integral_active_part_count = 0;
 
+        // Aggregates
+        this.utility = 0; // utility sum over all merges in the plan
+        this.entropy = 0; // utility per byte
+
         // Current state of planning
         this.time = 0;
         this.available_workers = total_workers;
@@ -198,26 +199,32 @@ export class MergingPlan {
 
         for (const key in initial_groups) {
             initial_groups[key].sealInitial(this.time);
-            this.#insertGroup(initial_groups[key]);
+            insertGroup(initial_groups[key]);
         }
+
+        this.utility = this.total_bytes * Math.log2(this.total_bytes) - this.total_utility;
+        this.entropy = this.utility / this.total_bytes;
     }
 
     // Create a new merge job and corresponding group
-    #startMerge(group) {
-        group.seal(this.time);
-        // Try assign as many workers as possible
-        const workers = Math.min(this.available_workers, group.max_workers);
+    startMerge(groups_to_merge, target_size, workers) {
+        const result = new PartGroup();
+        for (let g of groups_to_merge) {
+            g.attach(this.time, result);
+            result.addGroup(g);
+        }
+        result.seal(this.time, target_size);
         this.available_workers -= workers;
-        group.addWorkers(workers);
-        this.merging_groups.push(group);
-        return group;
+        result.addWorkers(workers);
+        this.merging_groups.push(result);
+        return result;
     }
 
     // Finishes the merge job and redistribute workers
-    #finishMerge(group) {
+    finishMerge(group) {
         const workers_released = group.merge(this.time);
         this.available_workers += workers_released;
-        this.#insertGroup(group);
+        this.insertGroup(group);
 
         // Redistribute workers to existing merge jobs if possible
         for (const g of this.merging_groups) {
@@ -232,40 +239,22 @@ export class MergingPlan {
         }
     }
 
-    // Build the plan according to given strategies and computes total costs
+    // Build the plan according to given `strategy` and computes total costs
     // Should be called after initialize()
-    build(do_assign, do_improve) {
+    build(strategy) {
         while (true) {
-            // First, run merge jobs until we run out of work or workers
-            let job = new PartGroup();
-
-            // Check with strategy if we should add more groups to the merge job
-            while (this.available_workers > 0
-                && this.current_groups.size() > 0
-                && do_assign(job, this.current_groups.peek(), this.available_workers))
-            {
-                this.current_groups.pop();
-            }
-
-            // If we have formed the set of groups to merge - start the merge job
-            if (job.children.length > 0) {
-                this.#startMerge(job);
+            // Run strategy until we run out of work or workers
+            if (this.available_workers > 0 && this.current_groups.size() > 0) {
+                strategy(this);
                 continue;
             }
-
-            // If we have available workers not assigned to one of running merge jobs,
-            // then there may be a way to improve merging plan by adjusting target sizes
-            while (this.available_workers > 0) {
-                this.available_workers -= do_improve(this.merging_groups, this.available_workers);
-            }
-
-            // Second, advance time to the next group merged to release workers
+            // Then advance time to the next group merged
             if (this.merging_groups.length > 0) {
                 // Find and pop group that finish the merge first
                 const group_index = this.merging_groups.reduce((minIdx, cur, idx, arr) => cur.deadline < arr[minIdx].deadline ? idx : minIdx, 0);
                 const [merged_group] = this.merging_groups.splice(group_index, 1);
                 this.time = merged_group.deadline;
-                this.#finishMerge(merged_group);
+                this.finishMerge(merged_group);
                 continue;
             }
             break; // All groups processed
@@ -273,7 +262,7 @@ export class MergingPlan {
     }
 
     // Add group as available for scheduling a new merge
-    #insertGroup(group) {
+    insertGroup(group) {
         // Update metrics
         this.total_bytes_written = 0;
         this.total_integral_active_part_count = 0;
