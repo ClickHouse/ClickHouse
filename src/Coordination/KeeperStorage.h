@@ -588,7 +588,7 @@ public:
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
-    void preprocessRequest(
+    KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,

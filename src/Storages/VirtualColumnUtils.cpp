@@ -129,7 +129,8 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())}};
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
@@ -280,6 +281,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         {
             if (virtual_values.etag)
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_data_lake_snapshot_version")
+        {
+            if (virtual_values.data_lake_snapshot_version)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.data_lake_snapshot_version)->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
