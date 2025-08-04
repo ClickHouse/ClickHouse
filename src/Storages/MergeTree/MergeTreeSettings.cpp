@@ -196,10 +196,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_uniq_number_for_low_cardinality, 20000, R"(
     Maximal number of unique values in a column to use LowCardinality serialization.
     )", 0) \
-    DECLARE(Bool, use_statistics_for_serialization_info, false, R"(
+    DECLARE(Bool, use_statistics_for_serialization_info, true, R"(
     If enabled, statistics will be used to determine the serialization kind for columns.
     )", 0) \
-    DECLARE(String, statistics_types, "", R"(
+    DECLARE(String, statistics_types, "defaults,uniq", R"(
     Comma-separated list of statistics types to use for auto-statistics.
     )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(

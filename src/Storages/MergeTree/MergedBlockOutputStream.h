@@ -62,15 +62,13 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        const GatheredData * gathered_data = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        const GatheredData * gathered_data = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -82,7 +80,7 @@ private:
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
         MergeTreeData::DataPart::Checksums & checksums,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        const ColumnsSubstreams & additional_columns_substreams);
 
     NamesAndTypesList columns_list;
     size_t rows_count = 0;

@@ -163,7 +163,8 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
-    StatisticsInfos getStatisticInfos() const;
+    Estimates getEstimates() const;
+    void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -715,8 +716,8 @@ private:
     ColumnsDescription columns_description_with_collected_nested;
 
     /// TODO: comment.
-    mutable std::mutex statistics_infos_mutex;
-    mutable std::optional<StatisticsInfos> statistics_infos;
+    mutable std::mutex estimates_mutex;
+    mutable std::optional<Estimates> estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

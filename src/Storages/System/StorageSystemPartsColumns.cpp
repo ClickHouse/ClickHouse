@@ -127,7 +127,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
-        auto statistics_infos = part->getStatisticInfos();
+        auto estimates = part->getEstimates();
 
         using State = MergeTreeDataPartState;
 
@@ -265,14 +265,14 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            auto stat_it = statistics_infos.find(column.name);
+            auto estimate_it = estimates.find(column.name);
 
             if (columns_mask[src_index++])
             {
-                if (stat_it != statistics_infos.end())
+                if (estimate_it != estimates.end())
                 {
                     Array types;
-                    for (const auto & type : stat_it->second.types)
+                    for (const auto & type : estimate_it->second.types)
                         types.push_back(toString(type));
 
                     columns[res_index++]->insert(types);
@@ -285,16 +285,16 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
             {
-                if (stat_it != statistics_infos.end() && stat_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(stat_it->second.estimated_cardinality.value());
+                if (estimate_it != estimates.end() && estimate_it->second.estimated_cardinality.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
                 else
                     columns[res_index++]->insertDefault();
             }
 
             if (columns_mask[src_index++])
             {
-                if (stat_it != statistics_infos.end() && stat_it->second.estimated_defaults.has_value())
-                    columns[res_index++]->insert(stat_it->second.estimated_defaults.value());
+                if (estimate_it != estimates.end() && estimate_it->second.estimated_defaults.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_defaults.value());
                 else
                     columns[res_index++]->insertDefault();
             }

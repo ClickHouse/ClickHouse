@@ -44,6 +44,13 @@ public:
 
     using WrittenOffsetColumns = std::set<std::string>;
 
+    struct GatheredData
+    {
+        MergeTreeData::DataPart::Checksums checksums;
+        ColumnsSubstreams columns_substreams;
+        PartLevelStatistics part_level_statistics;
+    };
+
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 

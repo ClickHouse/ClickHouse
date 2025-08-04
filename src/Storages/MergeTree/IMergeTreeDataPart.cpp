@@ -883,20 +883,26 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     return result;
 }
 
-StatisticsInfos IMergeTreeDataPart::getStatisticInfos() const
+Estimates IMergeTreeDataPart::getEstimates() const
 {
-    std::lock_guard lock(statistics_infos_mutex);
+    std::lock_guard lock(estimates_mutex);
 
-    if (statistics_infos.has_value())
-        return *statistics_infos;
+    if (estimates.has_value())
+        return *estimates;
 
-    statistics_infos = StatisticsInfos();
+    estimates = Estimates();
     auto statistics = loadStatistics();
 
     for (const auto & [column_name, stats] : statistics)
-        statistics_infos->emplace(column_name, stats->getInfo());
+        estimates->emplace(column_name, stats->getEstimate());
 
-    return *statistics_infos;
+    return *estimates;
+}
+
+void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
+{
+    std::lock_guard lock(estimates_mutex);
+    estimates = new_estimates;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1756,7 +1762,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         infos = result.infos;
 
         if (result.stats)
-            statistics_infos = std::move(*result.stats);
+            estimates = std::move(*result.stats);
     }
 
     std::optional<int32_t> loaded_metadata_version;

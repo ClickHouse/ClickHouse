@@ -72,10 +72,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     part_level_statistics.update(block, metadata_snapshot);
 }
 
-MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::fillChecksums(
-    MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums)
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & gathered_data)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
@@ -83,24 +80,30 @@ MergedColumnOnlyOutputStream::fillChecksums(
     writer->fillChecksums(checksums, checksums_to_remove);
 
     for (const auto & filename : checksums_to_remove)
-        all_checksums.files.erase(filename);
+        gathered_data.checksums.files.erase(filename);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+    {
         checksums.addFile(
             projection_name + ".proj",
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
+    }
+
+    if (part_level_statistics.build_explicit_stats)
+        gathered_data.part_level_statistics.explicit_stats.replace(part_level_statistics.explicit_stats);
+
+    if (part_level_statistics.build_stats_for_serialization)
+        gathered_data.part_level_statistics.stats_for_serialization.replace(part_level_statistics.stats_for_serialization);
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
-    // serialization_infos.replaceData(new_serialization_infos);
-
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
     for (const String & removed_file : removed_files)
     {
         new_part->getDataPartStorage().removeFileIfExists(removed_file);
-        all_checksums.files.erase(removed_file);
+        gathered_data.checksums.files.erase(removed_file);
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());

@@ -4,6 +4,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "Processors/Chunk.h"
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -35,12 +37,14 @@ ColumnGathererStream::ColumnGathererStream(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    bool is_result_sparse_)
+    bool is_result_sparse_,
+    DataTypePtr data_type_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
     , is_result_sparse(is_result_sparse_)
+    , data_type(std::move(data_type_))
 {
     if (num_inputs == 0)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
@@ -51,6 +55,14 @@ void ColumnGathererStream::updateStats(const IColumn & column)
     merged_rows += column.size();
     merged_bytes += column.allocatedBytes();
     ++merged_blocks;
+}
+
+static void convertToFullIfLowCardinality(Chunk & chunk)
+{
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveLowCardinality(column);
+    chunk.setColumns(std::move(columns), chunk.getNumRows());
 }
 
 void ColumnGathererStream::initialize(Inputs inputs)
@@ -64,6 +76,15 @@ void ColumnGathererStream::initialize(Inputs inputs)
 
         if (!is_result_sparse)
             convertToFullIfSparse(inputs[i].chunk);
+
+        const auto & input_column = inputs[i].chunk.getColumns().at(0);
+
+        if (input_column->size() == 0)
+            continue;
+
+        /// TODO: better...
+        if (input_column->lowCardinality() && !data_type->lowCardinality())
+            convertToFullIfLowCardinality(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -198,7 +219,7 @@ ColumnGathererTransform::ColumnGathererTransform(
     bool is_result_sparse_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_, header->getByPosition(0).type)
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {

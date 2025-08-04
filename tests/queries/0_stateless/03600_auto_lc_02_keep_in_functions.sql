@@ -20,3 +20,5 @@ SELECT
     toColumnTypeName(lc_len)
 FROM t_auto_lc
 ORDER BY id;
+
+DROP TABLE IF EXISTS t_auto_lc;

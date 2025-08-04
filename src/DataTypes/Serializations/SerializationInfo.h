@@ -52,10 +52,10 @@ public:
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
     virtual void toJSON(Poco::JSON::Object & object) const;
-    virtual void toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const;
+    virtual void toJSONWithStats(Poco::JSON::Object & object, const Estimate & stats) const;
 
     virtual void fromJSON(const Poco::JSON::Object & object);
-    virtual void fromJSONWithStats(const Poco::JSON::Object & object, StatisticsInfo & stats);
+    virtual void fromJSONWithStats(const Poco::JSON::Object & object, Estimate & stats);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
     const SerializationInfoSettings & getSettings() const { return settings; }
@@ -86,7 +86,7 @@ public:
     ISerialization::Kind getKind(const String & column_name) const;
 
     void writeJSON(WriteBuffer & out) const;
-    void writeJSONWithStats(WriteBuffer & out, const StatisticsInfos & stats) const;
+    void writeJSONWithStats(WriteBuffer & out, const Estimates & stats) const;
 
 private:
     template <typename ElementWriter>
@@ -96,7 +96,7 @@ private:
 struct SerializationInfosLoadResult
 {
     SerializationInfoByName infos;
-    std::optional<StatisticsInfos> stats;
+    std::optional<Estimates> stats;
 };
 
 SerializationInfosLoadResult loadSerializationInfosFromBuffer(ReadBuffer & in, const SerializationInfoSettings & settings);

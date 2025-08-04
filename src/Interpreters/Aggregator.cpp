@@ -1671,7 +1671,6 @@ bool Aggregator::executeOnBlock(Columns columns,
             key_columns[i] = materialized_columns.back().get();
         }
 
-
         if (!result.isLowCardinality())
         {
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());

@@ -193,25 +193,27 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const GatheredData * gathered_data)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_substreams).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, gathered_data).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const GatheredData * gathered_data)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
     NameSet checksums_to_remove;
 
-    if (additional_column_checksums)
-        checksums = std::move(*additional_column_checksums);
+    if (gathered_data)
+    {
+        checksums = gathered_data->checksums;
+        part_level_statistics.explicit_stats.merge(gathered_data->part_level_statistics.explicit_stats);
+        part_level_statistics.stats_for_serialization.merge(gathered_data->part_level_statistics.stats_for_serialization);
+    }
 
     /// Finish columns serialization.
     writer->fillChecksums(checksums, checksums_to_remove);
@@ -245,6 +247,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     // }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
+    ColumnsSubstreams additional_columns_substreams = gathered_data ? gathered_data->columns_substreams : ColumnsSubstreams{};
     written_files = finalizePartOnDisk(new_part, checksums, additional_columns_substreams);
 
     new_part->rows_count = rows_count;
@@ -253,7 +256,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -265,6 +267,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())
         new_part->setIndex(std::move(*computed_index));
+
+    if (!part_level_statistics.explicit_stats.empty())
+        new_part->setEstimates(part_level_statistics.explicit_stats.getEstimates());
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
@@ -282,7 +287,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const ColumnsSubstreams & additional_columns_substreams)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
@@ -393,7 +398,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             if (use_statistics_for_serialization_info)
                 new_serialization_infos.writeJSON(buffer);
             else
-                new_serialization_infos.writeJSONWithStats(buffer, part_level_statistics.stats_for_serialization.getInfos());
+                new_serialization_infos.writeJSONWithStats(buffer, part_level_statistics.stats_for_serialization.getEstimates());
         });
     }
 
@@ -418,7 +423,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     /// from writer because of expired TTL.
     auto columns_substreams = ColumnsSubstreams::merge(
         writer->getColumnsSubstreams(),
-        additional_columns_substreams ? *additional_columns_substreams : ColumnsSubstreams{},
+        additional_columns_substreams,
         new_part->getColumns().getNames());
 
     if (!columns_substreams.empty())
@@ -495,6 +500,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     Block block_to_write = block;
     convertToCorrectSerializations(block_to_write, serialization_infos);
     writer->write(block_to_write, permutation);
+
     part_level_statistics.update(block_to_write, metadata_snapshot);
     rows_count += rows;
 }

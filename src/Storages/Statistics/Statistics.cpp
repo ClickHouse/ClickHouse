@@ -271,9 +271,9 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     }
 }
 
-StatisticsInfo ColumnStatistics::getInfo() const
+Estimate ColumnStatistics::getEstimate() const
 {
-    StatisticsInfo info;
+    Estimate info;
     info.rows_count = rows;
 
     for (const auto & [type, _] : stats)
@@ -365,12 +365,36 @@ void ColumnsStatistics::build(const Block & block)
         stat->build(block.getByName(column_name).column);
 }
 
-StatisticsInfos ColumnsStatistics::getInfos() const
+void ColumnsStatistics::merge(const ColumnsStatistics & other)
 {
-    StatisticsInfos infos;
+    for (const auto & [column_name, stat] : other)
+    {
+        auto it = find(column_name);
+        if (it == end())
+            emplace(column_name, stat);
+        else
+            it->second->merge(stat);
+    }
+}
+
+void ColumnsStatistics::replace(const ColumnsStatistics & other)
+{
+    for (const auto & [column_name, stat] : other)
+    {
+        auto it = find(column_name);
+        if (it == end())
+            emplace(column_name, stat);
+        else
+            it->second = stat;
+    }
+}
+
+Estimates ColumnsStatistics::getEstimates() const
+{
+    Estimates estimates;
     for (const auto & [column_name, stat] : *this)
-        infos.emplace(column_name, stat->getInfo());
-    return infos;
+        estimates.emplace(column_name, stat->getEstimate());
+    return estimates;
 }
 
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)

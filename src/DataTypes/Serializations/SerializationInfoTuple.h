@@ -24,7 +24,7 @@ public:
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
     void toJSON(Poco::JSON::Object & object) const override;
-    void toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const override;
+    void toJSONWithStats(Poco::JSON::Object & object, const Estimate & stats) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }

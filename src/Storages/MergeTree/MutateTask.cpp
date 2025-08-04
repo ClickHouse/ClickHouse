@@ -1790,8 +1790,9 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
+        /// TODO: fix...
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
+            ctx->new_data_part, ctx->need_sync, nullptr, nullptr);
         ctx->out.reset();
     }
 
@@ -2029,9 +2030,12 @@ private:
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
+            /// TODO: fix...
+            IMergedBlockOutputStream::GatheredData gathered_data;
+
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
+                    ctx->new_data_part, gathered_data);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();

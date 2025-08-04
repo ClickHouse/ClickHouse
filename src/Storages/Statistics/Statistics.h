@@ -60,7 +60,7 @@ protected:
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 
-struct StatisticsInfo
+struct Estimate
 {
     std::set<StatisticsType> types;
     UInt64 rows_count = 0;
@@ -68,7 +68,7 @@ struct StatisticsInfo
     std::optional<UInt64> estimated_defaults;
 };
 
-using StatisticsInfos = std::unordered_map<String, StatisticsInfo>;
+using Estimates = std::unordered_map<String, Estimate>;
 
 /// All statistics objects for a column in a part
 class ColumnStatistics
@@ -94,7 +94,7 @@ public:
 
     const StatsMap & getStats() const { return stats; }
     const ColumnStatisticsDescription & getDescription() const { return stats_desc; }
-    StatisticsInfo getInfo() const;
+    Estimate getEstimate() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -118,7 +118,9 @@ public:
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
     void build(const Block & block);
-    StatisticsInfos getInfos() const;
+    void merge(const ColumnsStatistics & other);
+    void replace(const ColumnsStatistics & other);
+    Estimates getEstimates() const;
 
     static String getFileName(const String & column_name) { return column_name + STATS_FILE_SUFFIX; }
 };

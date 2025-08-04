@@ -104,7 +104,7 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindToString(kind));
 }
 
-void SerializationInfo::toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const
+void SerializationInfo::toJSONWithStats(Poco::JSON::Object & object, const Estimate & stats) const
 {
     object.set(KEY_KIND, ISerialization::kindToString(kind));
     object.set(KEY_NUM_DEFAULTS, stats.estimated_defaults.value_or(0));
@@ -119,7 +119,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
     kind = ISerialization::stringToKind(object.getValue<String>(KEY_KIND));
 }
 
-void SerializationInfo::fromJSONWithStats(const Poco::JSON::Object & object, StatisticsInfo & stats)
+void SerializationInfo::fromJSONWithStats(const Poco::JSON::Object & object, Estimate & stats)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -195,7 +195,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         });
 }
 
-void SerializationInfoByName::writeJSONWithStats(WriteBuffer & out, const StatisticsInfos & stats) const
+void SerializationInfoByName::writeJSONWithStats(WriteBuffer & out, const Estimates & stats) const
 {
     writeJSONImpl(SERIALIZATION_INFO_VERSION_WITH_STATS, out,
         [&](const String & name, const SerializationInfo & info, Poco::JSON::Object & info_json)
@@ -227,7 +227,7 @@ SerializationInfosLoadResult loadSerializationInfosFromString(const std::string 
     }
     else if (version == SERIALIZATION_INFO_VERSION_WITH_STATS)
     {
-        result.stats = StatisticsInfos();
+        result.stats = Estimates();
     }
 
     if (!object->has(KEY_COLUMNS))

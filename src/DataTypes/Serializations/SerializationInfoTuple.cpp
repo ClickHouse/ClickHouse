@@ -103,7 +103,7 @@ void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
     object.set("subcolumns", subcolumns);
 }
 
-void SerializationInfoTuple::toJSONWithStats(Poco::JSON::Object & object, const StatisticsInfo & stats) const
+void SerializationInfoTuple::toJSONWithStats(Poco::JSON::Object & object, const Estimate & stats) const
 {
     SerializationInfo::toJSONWithStats(object, stats);
     Poco::JSON::Array subcolumns;
