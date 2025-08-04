@@ -1203,7 +1203,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     QueryPlan plan;
 
-    if (processed_stage <= storage_stage)
+    if (processed_stage <= storage_stage && (!std::dynamic_pointer_cast<StorageMerge>(storage) || processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, we must request at least one other column.
         Names real_column_names = real_column_names_read_from_the_source_table;
@@ -1231,7 +1231,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
-    else if (processed_stage > storage_stage || use_analyzer)
+    else
     {
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
