@@ -2732,6 +2732,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantized
+quantizations
 quartile
 queryID
 queryString
