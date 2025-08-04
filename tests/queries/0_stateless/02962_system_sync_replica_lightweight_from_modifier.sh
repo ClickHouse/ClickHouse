@@ -21,7 +21,7 @@ function insert_thread() {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
-        $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
+        with_lock test_table_$REPLICA $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
         sleep 0.$RANDOM
     done
 }
@@ -31,9 +31,12 @@ function sync_and_drop_replicas() {
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         for i in $(seq $REPLICAS_TO_DROP); do
             local stable_replica_id=$((i + 1))
-            $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0"
-            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i'"
-            $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
+            # Note that "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0" does not prevent INSERTs that were run before the setting change
+            # We use locks to make sure SYNC/DROP and INSERT are not running concurrently
+            with_lock test_table_$i $CLICKHOUSE_CLIENT --query "
+                SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i';
+                DROP TABLE IF EXISTS test_table_$i;
+            "
         done
 
         for i in $(seq $REPLICAS_TO_DROP); do
