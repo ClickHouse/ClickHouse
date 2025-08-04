@@ -194,7 +194,6 @@ struct ExtractParamToStringImpl
             /// Determine which index it belongs to.
             while (begin + haystack_offsets[i] <= pos)
             {
-                res_data.push_back(0);
                 res_offsets[i] = res_data.size();
                 ++i;
             }
@@ -205,14 +204,12 @@ struct ExtractParamToStringImpl
 
             pos = begin + haystack_offsets[i];
 
-            res_data.push_back(0);
             res_offsets[i] = res_data.size();
             ++i;
         }
 
         while (i < res_offsets.size())
         {
-            res_data.push_back(0);
             res_offsets[i] = res_data.size();
             ++i;
         }

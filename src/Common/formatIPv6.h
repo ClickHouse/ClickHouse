@@ -12,8 +12,8 @@
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;
-constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;     /// Does not count tail zero byte.
-constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byte.
+constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;
+constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;
 
 namespace DB
 {
@@ -453,8 +453,6 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
 
         *dst++ = '.';
     }
-
-    dst[-1] = '\0';
 }
 
 inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")

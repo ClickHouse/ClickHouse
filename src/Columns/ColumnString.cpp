@@ -10,10 +10,6 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/memcmpSmall.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -94,16 +90,11 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
             offset = offsets.back();
         }
 
-        /// Empty strings are just zero terminating bytes.
+        /// Empty strings.
 
-        res->chars.resize_fill(res->chars.size() + to_size - from_size);
         res->offsets.resize_exact(to_size);
-
         for (size_t i = from_size; i < to_size; ++i)
-        {
-            ++offset;
             res->offsets[i] = offset;
-        }
     }
 
     return res;
@@ -121,8 +112,7 @@ WeakHash32 ColumnString::getWeakHash32() const
     for (const auto & offset : offsets)
     {
         auto str_size = offset - prev_offset;
-        /// Skip last zero byte.
-        *hash_data = ::updateWeakHash32(pos, str_size - 1, *hash_data);
+        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
 
         pos += str_size;
         prev_offset = offset;
@@ -148,7 +138,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
+    size_t nested_length = src_concrete.offsets[start + length] - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
@@ -191,20 +181,13 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
-    auto & chars_data = getChars();
     if (mask.size() < offsets_data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    /// We cannot change only offsets, because each string should end with terminating zero byte.
-    /// So, we will insert one zero byte when mask value is zero.
-
     ssize_t index = mask.size() - 1;
     ssize_t from = offsets_data.size() - 1;
-    /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
-    /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
-    UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
-    offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset);
+    offsets_data.resize_exact(mask.size());
+    UInt64 last_offset = offsets_data[from];
     while (index >= 0)
     {
         offsets_data[index] = last_offset;
@@ -213,19 +196,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
             if (from < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
-            size_t len = offsets_data[from] - offsets_data[from - 1];
-
-            /// Copy only if it makes sense. It's important to copy backward, because
-            /// ranges can overlap, but destination is always is more to the right then source
-            if (last_offset - len != offsets_data[from - 1])
-                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
-            last_offset -= len;
             --from;
-        }
-        else
-        {
-            chars_data[last_offset - 1] = 0;
-            --last_offset;
+            last_offset = offsets_data[from];
         }
 
         --index;
@@ -275,7 +247,7 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
         for (size_t i = 0; i < rows; ++i)
         {
             size_t string_size = sizeAt(i);
-            sizes[i] += !!is_null[i] + !is_null[i] * (sizeof(string_size) + string_size + 1 /* null byte */);
+            sizes[i] += !!is_null[i] + !is_null[i] * (sizeof(string_size) + string_size);
         }
     }
     else
@@ -404,8 +376,8 @@ struct ColumnString::ComparatorBase
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
-            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
-            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs));
 
         return res;
     }

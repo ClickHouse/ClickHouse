@@ -261,7 +261,6 @@ void ParquetPlainByteArrayValuesReader<TColumn>::readBatch(
             }
             else
             {
-                chars.push_back(0);
                 offset_data[cursor] = chars.size();
                 null_map.setNull(cursor);
             }
@@ -483,7 +482,6 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     {
         for (auto limit = cursor + num; cursor < limit; cursor++)
         {
-            chars.push_back(0);
             offset_data[cursor] = chars.size();
             null_map.setNull(cursor);
         }

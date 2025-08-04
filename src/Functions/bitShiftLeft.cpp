@@ -51,8 +51,7 @@ struct BitShiftLeftImpl
             if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
             {
                 // insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 

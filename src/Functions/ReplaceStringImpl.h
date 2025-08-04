@@ -337,7 +337,6 @@ struct ReplaceStringImpl
     }
 
     /// Note: this function converts fixed-length strings to variable-length strings
-    ///       and each variable-length string should ends with zero byte.
     static void vectorFixedConstantConstant(
         const ColumnString::Chars & haystack_data,
         size_t n,
@@ -350,17 +349,10 @@ struct ReplaceStringImpl
         if (needle.empty())
         {
             chassert(input_rows_count == haystack_data.size() / n);
-            /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
-            /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
-            /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
-            res_data.reserve(haystack_data.size() + input_rows_count);
+            res_data.assign(haystack_data.begin(), haystack_data.end());
             res_offsets.resize(input_rows_count);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                res_data.insert(res_data.end(), haystack_data.begin() + i * n, haystack_data.begin() + (i + 1) * n);
-                res_data.push_back(0);
-                res_offsets[i] = (i + 1) * n + 1;
-            }
+            for (size_t i = 1; i <= input_rows_count; ++i)
+                res_offsets[i] = i * n;
             return;
         }
 

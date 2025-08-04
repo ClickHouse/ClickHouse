@@ -152,7 +152,6 @@ public:
                     res_chars.insert(default_result.data(), default_result.data() + default_result.size());
             }
 
-            res_chars.push_back(0);
             res_offsets[row] = res_chars.size();
         }
 

@@ -97,10 +97,7 @@ public:
                 src_pos = next_src_pos + 1;
 
                 if (next_src_pos == src_end)
-                {
-                    dst_data.emplace_back('\0');
                     break;
-                }
 
                 dst_data.emplace_back('\\');
                 dst_data.emplace_back(*next_src_pos);

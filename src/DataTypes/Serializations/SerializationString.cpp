@@ -92,13 +92,13 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
             settings.binary.max_binary_string_size);
 
     size_t old_chars_size = data.size();
-    size_t offset = old_chars_size + size + 1;
+    size_t offset = old_chars_size + size;
     offsets.push_back(offset);
 
     try
     {
         data.resize(offset);
-        istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+        istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
         data.back() = 0;
     }
     catch (...)
@@ -124,18 +124,9 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    if (offset == 0)
-    {
-        UInt64 str_size = offsets[0] - 1;
-        writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(data.data()), str_size);
-
-        ++offset;
-    }
-
     for (size_t i = offset; i < end; ++i)
     {
-        UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
+        UInt64 str_size = offsets[i] - offsets[i - 1];
         writeVarUInt(str_size, ostr);
         ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
     }
@@ -164,7 +155,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
                 size,
                 max_string_size);
 
-        offset += size + 1;
+        offset += size;
         offsets.push_back(offset);
 
         if (unlikely(offset > data.size()))
@@ -177,7 +168,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
             {
                 const char * src_pos = istr.position();
                 const char * src_end = src_pos + size;
-                auto * dst_pos = &data[offset - size - 1];
+                auto * dst_pos = &data[offset - size];
 
                 while (src_pos < src_end)
                 {
@@ -194,8 +185,6 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
                 istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
             }
         }
-
-        data[offset - 1] = 0;
     }
 
     data.resize_exact(offset);
@@ -296,7 +285,6 @@ static inline ReturnType read(IColumn & column, Reader && reader)
             return false;
         }
 
-        data.push_back(0);
         offsets.push_back(data.size());
         return ReturnType(true);
     }

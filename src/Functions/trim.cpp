@@ -106,8 +106,7 @@ public:
 
             res_data.resize(res_data.size() + length + 1);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = '\0';
+            res_offset += length;
 
             res_offsets[i] = res_offset;
             prev_offset = input_offsets[i];
@@ -137,8 +136,7 @@ public:
 
             res_data.resize(res_data.size() + length + 1);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = '\0';
+            res_offset += length;
 
             res_offsets[i] = res_offset;
             prev_offset += n;

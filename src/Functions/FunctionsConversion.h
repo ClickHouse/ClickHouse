@@ -5114,7 +5114,6 @@ private:
             encodeDataType(new_type, new_value_buf);
             new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
             new_value_buf.finalize();
-            new_values.getChars().push_back(0);
             new_values.getOffsets().push_back(new_values.getChars().size());
         }
         else

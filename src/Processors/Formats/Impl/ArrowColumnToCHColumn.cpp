@@ -143,8 +143,6 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
             {
                 const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                 column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                column_chars_t.emplace_back('\0');
-
                 column_offsets.emplace_back(column_chars_t.size());
             }
         }
@@ -157,8 +155,6 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
                     const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                     column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
                 }
-                column_chars_t.emplace_back('\0');
-
                 column_offsets.emplace_back(column_chars_t.size());
             }
         }
