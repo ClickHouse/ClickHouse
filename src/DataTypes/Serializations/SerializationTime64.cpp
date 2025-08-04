@@ -30,24 +30,10 @@ SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /
 {
 }
 
-void SerializationTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    switch (settings.date_time_output_format)
-    {
-        case FormatSettings::DateTimeOutputFormat::Simple:
-            if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-                writeTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr);
-            else
-                writeTime64Text(value, scale, ostr);
-            return;
-        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-            writeTimeUnixTimestamp(value, scale, ostr);
-            return;
-        case FormatSettings::DateTimeOutputFormat::ISO:
-            writeTimeTextISO(value, scale, ostr);
-            return;
-    }
+    writeTime64Text(value, scale, ostr);
 }
 
 void SerializationTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
@@ -82,33 +68,14 @@ void SerializationTime64::serializeTextEscaped(const IColumn & column, size_t ro
     serializeText(column, row_num, ostr, settings);
 }
 
-static inline void readText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+static inline void readText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & /*time_zone*/, const DateLUTImpl & /*utc_time_zone*/)
 {
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
     readTime64Text(x, scale, istr);
-            return;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
-            return;
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
-            return;
-    }
 }
 
-static inline bool tryReadText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+static inline bool tryReadText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & /*time_zone*/, const DateLUTImpl & /*utc_time_zone*/)
 {
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            return tryReadTime64Text(x, scale, istr, time_zone);
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            return tryParseTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            return tryParseTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
-    }
+    return tryReadTime64Text(x, scale, istr);
 }
 
 

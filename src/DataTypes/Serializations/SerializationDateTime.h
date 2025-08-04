@@ -29,11 +29,10 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 };
 
-class SerializationTime final : public SerializationNumber<Int32>, public TimezoneMixin
+class SerializationTime final : public SerializationNumber<Int32>
 {
 public:
-    explicit SerializationTime(const TimezoneMixin & time_zone_);
-    explicit SerializationTime(const DataTypeTime & time_type);
+    explicit SerializationTime(const DataTypeTime & /*time_type*/);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

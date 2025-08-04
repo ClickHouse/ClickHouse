@@ -38,6 +38,11 @@ std::string DataTypeTime64::doGetName() const
     return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
 }
 
+void DataTypeTime64::updateHashImpl(SipHash & hash) const
+{
+    hash.update(this->scale);
+}
+
 bool DataTypeTime64::equals(const IDataType & rhs) const
 {
     if (const auto * ptype = typeid_cast<const DataTypeTime64 *>(&rhs))

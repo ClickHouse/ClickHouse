@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -24,6 +25,11 @@ DataTypeTime::DataTypeTime(const String & time_zone_name)
 String DataTypeTime::doGetName() const
 {
     return "Time";
+}
+
+void DataTypeTime::updateHashImpl(SipHash & /*hash*/) const
+{
+    // Time type has no additional parameters to hash
 }
 
 bool DataTypeTime::equals(const IDataType & rhs) const
