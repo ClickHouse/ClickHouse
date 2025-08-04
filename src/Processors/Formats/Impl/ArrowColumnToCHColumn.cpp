@@ -1211,7 +1211,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 
-                auto initial_field_name = field_name;
                 if (parquet_columns_to_clickhouse)
                 {
                     chassert(clickhouse_columns_to_parquet);
@@ -1252,7 +1251,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
                 tuple_elements.emplace_back(std::move(column_with_type_and_name.column));
                 tuple_types.emplace_back(std::move(column_with_type_and_name.type));
-                tuple_names.emplace_back(std::move(initial_field_name));
+                tuple_names.emplace_back(std::move(column_with_type_and_name.name));
             }
 
             ColumnPtr tuple_column;
