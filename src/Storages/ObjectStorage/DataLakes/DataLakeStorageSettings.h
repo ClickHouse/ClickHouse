@@ -46,7 +46,7 @@ class SettingsChanges;
 // clang-format off
 
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
+    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, true, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
