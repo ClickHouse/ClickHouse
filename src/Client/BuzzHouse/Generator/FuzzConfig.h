@@ -67,6 +67,30 @@ const constexpr uint64_t allow_replacing_mergetree
 
 using JSONObjectType = JSONParserImpl::Element;
 
+class ServerEndpoint
+{
+public:
+    String hostname;
+    uint32_t port;
+
+    ServerEndpoint()
+        : hostname("localhost")
+        , port(9000)
+    {
+    }
+
+    ServerEndpoint(const String & hostname_, const uint32_t port_)
+        : hostname(hostname_)
+        , port(port_)
+    {
+    }
+
+    ServerEndpoint(const ServerEndpoint & c) = default;
+    ServerEndpoint(ServerEndpoint && c) = default;
+    ServerEndpoint & operator=(const ServerEndpoint & c) = default;
+    ServerEndpoint & operator=(ServerEndpoint && c) noexcept = default;
+};
+
 class Catalog
 {
 public:
@@ -203,6 +227,7 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
+    std::vector<ServerEndpoint> server_endpoints;
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server;
@@ -234,7 +259,8 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, const String & desc, const String & query);
+    template <typename T>
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query);
 
 public:
     void loadServerConfigurations();

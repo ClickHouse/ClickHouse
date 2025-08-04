@@ -689,11 +689,35 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
+        String address;
         RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
         const RemoteFunc_RName fname = rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
         rfunc->set_rname(fname);
-        rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
+        if (fc.server_endpoints.empty() || rg.nextSmallNumber() < 8)
+        {
+            address = fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure);
+        }
+        else
+        {
+            /// Query any possible server
+            const uint32_t nservers = (rg.nextRandomUInt32() % static_cast<uint32_t>(fc.server_endpoints.size())) + 1;
+
+            chassert(this->ids.empty());
+            for (uint32_t i = 0; i < static_cast<uint32_t>(fc.server_endpoints.size()); i++)
+            {
+                this->ids.emplace_back(i);
+            }
+            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+            for (uint32_t i = 0; i < nservers; i++)
+            {
+                const auto & nserver = fc.server_endpoints[this->ids[i]];
+
+                address += fmt::format("{}{}:{}", i == 0 ? "" : ",", nserver.hostname, nserver.port);
+            }
+            this->ids.clear();
+        }
+        rfunc->set_address(std::move(address));
         /// Here don't care about the returned result
         this->depth++;
         const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());

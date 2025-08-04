@@ -427,7 +427,8 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, const String & query)
+template <typename T>
+void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, const String & query)
 {
     String buf;
     uint64_t found = 0;
@@ -439,7 +440,15 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, cons
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            out.push_back(buf);
+            if constexpr (std::is_same_v<T, ServerEndpoint>)
+            {
+                const auto & tabchar = buf.find('\t');
+                out.push_back(ServerEndpoint(buf.substr(0, tabchar), static_cast<uint32_t>(std::stoul(buf.substr(tabchar + 1)))));
+            }
+            else
+            {
+                out.push_back(buf);
+            }
             buf.resize(0);
             found++;
         }
@@ -449,14 +458,17 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, cons
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
-    loadServerSettings(this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
-    loadServerSettings(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
-    loadServerSettings(
+    loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings<String>(
+        this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
+    loadServerSettings<String>(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
+    loadServerSettings<String>(
         this->keeper_disks, "keeper disks", R"(SELECT DISTINCT "name" FROM "system"."disks" WHERE metadata_type = 'Keeper')");
-    loadServerSettings(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
-    loadServerSettings(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
-    loadServerSettings(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
+    loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
+    loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    loadServerSettings<ServerEndpoint>(
+        this->server_endpoints, "servers", R"(SELECT DISTINCT "host_address", "port" FROM "system"."clusters")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
