@@ -128,8 +128,8 @@ public:
     bool changesColumnsType() const { return false; }
 
     bool isOptimized() const { return optimized; }
-    size_t getResultRowsEstimation() const { return result_rows_estimation; }
-    void setOptimized(size_t estimated_rows_ = 0)
+    std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    void setOptimized(std::optional<UInt64> estimated_rows_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
@@ -172,7 +172,7 @@ protected:
     SortingStep::Settings sorting_settings;
 
     bool optimized = false;
-    size_t result_rows_estimation = 0;
+    std::optional<UInt64> result_rows_estimation = {};
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

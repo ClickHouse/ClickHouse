@@ -59,6 +59,8 @@ RelationStats getDummyStats(ContextPtr context, const String & table_name);
 namespace QueryPlanOptimizations
 {
 
+const size_t MAX_ROWS = std::numeric_limits<size_t>::max();
+
 static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
 {
     if (function_name == "materialize" || function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
@@ -156,7 +158,7 @@ struct StatisticsContext
         return 0;
     }
 
-    size_t getCachedHint(const QueryPlan::Node * node)
+    std::optional<size_t> getCachedHint(const QueryPlan::Node * node)
     {
         if (auto cache_key = getCachedKey(node))
         {
@@ -164,7 +166,7 @@ struct StatisticsContext
             if (auto hint = hash_table_stats.getSizeHint(params.setKey(cache_key)))
                 return hint->source_rows;
         }
-        return std::numeric_limits<size_t>::max();
+        return {};
     }
 };
 
@@ -182,7 +184,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
-            return RelationStats{.estimated_rows = 0, .table_name = table_diplay_name};
+            return RelationStats{.estimated_rows = {}, .table_name = table_diplay_name};
 
         bool is_filtered_by_index = false;
         UInt64 total_parts = 0;
@@ -210,7 +212,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = 0, .table_name = table_diplay_name};
+            return RelationStats{.estimated_rows = {}, .table_name = table_diplay_name};
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_diplay_name};
     }
@@ -225,10 +227,11 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
     if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
     {
         RelationStats relation_stats;
-        relation_stats.estimated_rows = reading->getNumberOfRows();
+        UInt64 estimated_rows = reading->getNumberOfRows();
+        relation_stats.estimated_rows = estimated_rows;
 
         auto column_name = reading->getColumnName();
-        relation_stats.column_stats[column_name].num_distinct_values = relation_stats.estimated_rows;
+        relation_stats.column_stats[column_name].num_distinct_values = estimated_rows;
         relation_stats.table_name = reading->getStorageID().getTableName();
 
         return relation_stats;
@@ -299,7 +302,9 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     {
         auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
         auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
-        LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}", lhs_extimation, rhs_extimation);
+        LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
+            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
+            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
 
         if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
             need_swap = true;
@@ -513,7 +518,7 @@ static String dumpStatsForLogs(const RelationStats & stats)
 {
     return fmt::format("{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows,
+        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
         fmt::join(stats.column_stats | std::views::transform(
             [](const auto & p)
             {
@@ -551,8 +556,10 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
-    size_t num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    stats.estimated_rows = std::min(stats.estimated_rows, num_rows_from_cache);
+    std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
+    if (num_rows_from_cache)
+        stats.estimated_rows = std::min(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+
     if (!label.empty())
         stats.table_name = label;
 
@@ -655,11 +662,11 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
-
+    bool allow_reorder = query_graph.context->optimization_settings.optimize_join_order;
     /// Non-reorderable joins
-    if (isLeftOrFull(join_operator.kind))
+    if (isLeftOrFull(join_operator.kind) || !allow_reorder)
         query_graph.dependencies.emplace_back(right_mask, left_mask, join_operator.kind);
-    if (isRightOrFull(join_operator.kind))
+    if (isRightOrFull(join_operator.kind) || !allow_reorder)
         query_graph.dependencies.emplace_back(left_mask, right_mask, reverseJoinKind(join_operator.kind));
 
     UNUSED(residual_filter);
@@ -721,7 +728,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     {
         const auto & table_name = query_graph.relation_stats[i].table_name;
         auto estimated_count = query_graph.relation_stats[i].estimated_rows;
-        String estimation = estimated_count > 0 ? fmt::format("[{}]", estimated_count) : "";
+        String estimation = estimated_count ? fmt::format("[{}]", estimated_count.value()) : "";
         if (!table_name.empty())
             relation_names[BitSet().set(i)] = fmt::format("{}{}", table_name, estimation);
         else
@@ -788,7 +795,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && entry->left->estimated_rows < entry->right->estimated_rows;
+                : entry->join_method == JoinMethod::Hash && entry->left->estimated_rows && entry->right->estimated_rows
+                    && entry->left->estimated_rows.value() < entry->right->estimated_rows.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
@@ -902,6 +910,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             join_step->setOptimized(entry->estimated_rows);
+
             auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
@@ -951,11 +960,9 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             lookup_step->optimize(optimization_settings);
     }
 
-    if (!optimization_settings.optimize_join_order ||
-        join_step->getJoinOperator().strictness != JoinStrictness::All ||
+    if (join_step->getJoinOperator().strictness != JoinStrictness::All ||
         join_step->getJoinOperator().kind == JoinKind::Paste)
     {
-        /// TODO: we still can try swap tables if query_plan_join_swap_table is enabled
         join_step->setOptimized();
         return;
     }

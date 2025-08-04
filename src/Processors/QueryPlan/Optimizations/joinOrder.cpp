@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <Common/typeid_cast.h>
@@ -31,7 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, size_t rows)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
@@ -43,7 +44,7 @@ DPJoinEntry::DPJoinEntry(size_t id, size_t rows)
 DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
-        size_t cardinality_,
+        std::optional<UInt64> cardinality_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
     : relations(lhs->relations | rhs->relations)
@@ -105,7 +106,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     {
         /// Assume all keys are distinct
         if (auto it = dp_table.find(rels); it != dp_table.end())
-            return it->second->estimated_rows;
+            return it->second->estimated_rows.value_or(0);
         return 0;
     }
 
@@ -117,7 +118,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     const auto & column_stats = relation_stat.column_stats;
     if (auto it = column_stats.find(column_name); it != column_stats.end())
         return it->second.num_distinct_values;
-    return relation_stat.estimated_rows;
+    return relation_stat.estimated_rows.value_or(0);
 }
 
 double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
@@ -149,31 +150,32 @@ double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *>
 }
 
 
-static size_t estimateJoinCardinality(
+static std::optional<UInt64> estimateJoinCardinality(
     const std::shared_ptr<DPJoinEntry> & left,
     const std::shared_ptr<DPJoinEntry> & right,
     double selectivity,
     JoinKind join_kind = JoinKind::Inner)
 {
-    double joined_rows = std::max(left->estimated_rows * right->estimated_rows * selectivity, 1.0);
+    if (!left->estimated_rows || !right->estimated_rows)
+        return {};
 
-    switch (join_kind)
-    {
-        case JoinKind::Inner:
-            [[fallthrough]];
-        case JoinKind::Comma:
-            [[fallthrough]];
-        case JoinKind::Cross:
-            return static_cast<size_t>(joined_rows);
-        case JoinKind::Left:
-            return static_cast<size_t>(std::max<double>(joined_rows, left->estimated_rows));
-        case JoinKind::Right:
-            return static_cast<size_t>(std::max<double>(joined_rows, right->estimated_rows));
-        case JoinKind::Full:
-            return static_cast<size_t>(std::max<double>(joined_rows, left->estimated_rows + right->estimated_rows));
-        default:
-            return static_cast<size_t>(joined_rows);
-    }
+    double lhs = left->estimated_rows.value();
+    double rhs = right->estimated_rows.value();
+
+    double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
+
+    if (join_kind == JoinKind::Left)
+        joined_rows = std::max(joined_rows, lhs);
+    if (join_kind == JoinKind::Right)
+        joined_rows = std::max(joined_rows, rhs);
+    if (join_kind == JoinKind::Full)
+        joined_rows = std::max(joined_rows, lhs + rhs);
+
+    if (joined_rows > std::numeric_limits<UInt64>::max())
+        return std::numeric_limits<UInt64>::max();
+    if (joined_rows < 1)
+        return 1;
+    return static_cast<UInt64>(joined_rows);
 }
 
 static double computeJoinCost(
@@ -185,7 +187,7 @@ static double computeJoinCost(
     UNUSED(join_kind);
     UNUSED(selectivity);
     // return left->cost + right->cost + std::min(left->estimated_rows, right->estimated_rows);
-    return left->cost + right->cost + selectivity * left->estimated_rows * right->estimated_rows;
+    return left->cost + right->cost + selectivity * left->estimated_rows.value_or(1) * right->estimated_rows.value_or(1);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -239,7 +241,7 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
-    std::vector<std::shared_ptr<DPJoinEntry>> components;
+    std::deque<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -290,22 +292,23 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         if (!best_plan)
         {
             /// Find two smallest components
-            size_t first_best = std::numeric_limits<size_t>::max();
+            UInt64 first_best = std::numeric_limits<UInt64>::max();
             best_i = 0;
-            size_t second_best = std::numeric_limits<size_t>::max();
+            UInt64 second_best = std::numeric_limits<UInt64>::max();
             best_j = 0;
 
             for (size_t idx = 0; idx < components.size(); idx++)
             {
                 auto & component = components[idx];
-                if (component->estimated_rows < first_best)
+                UInt64 estimated_rows = component->estimated_rows.value_or(std::numeric_limits<UInt64>::max() - 1);
+                if (estimated_rows < first_best)
                 {
                     std::tie(second_best, best_j) = std::tie(first_best, best_i);
-                    std::tie(first_best, best_i) = std::tie(component->estimated_rows, idx);
+                    std::tie(first_best, best_i) = std::tie(estimated_rows, idx);
                 }
-                else if (component->estimated_rows < second_best)
+                else if (estimated_rows < second_best)
                 {
-                    std::tie(second_best, best_j) = std::tie(component->estimated_rows, idx);
+                    std::tie(second_best, best_j) = std::tie(estimated_rows, idx);
                 }
             }
 
@@ -327,7 +330,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         /// replace the two components with the best plan
         components.erase(components.begin() + std::max(best_i, best_j));
         components.erase(components.begin() + std::min(best_i, best_j));
-        components.push_back(best_plan);
+        components.push_front(best_plan);
         dp_table[best_plan->relations] = best_plan;
 
         for (auto * edge : applied_edge)
