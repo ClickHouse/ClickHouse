@@ -135,7 +135,7 @@ BlockIO InterpreterDescribeQuery::execute()
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
     SharedHeader sample_block;
-    auto select_query = table_expression.subquery;
+    auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
 
     if (settings[Setting::allow_experimental_analyzer])
@@ -167,9 +167,20 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         if (table)
         {
             auto virtuals = table->getVirtualsPtr();
+            NameSet column_names;
             for (const auto & column : *virtuals)
             {
                 if (!column_descriptions.has(column.name))
+                {
+                    virtual_columns.push_back(column);
+                    column_names.insert(column.name);
+                }
+            }
+
+            const auto & common_virtuals = IStorage::getCommonVirtuals();
+            for (const auto & column : common_virtuals)
+            {
+                if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                     virtual_columns.push_back(column);
             }
         }
@@ -196,9 +207,20 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     if (settings[Setting::describe_include_virtual_columns])
     {
         auto virtuals = table->getVirtualsPtr();
+        NameSet column_names;
         for (const auto & column : *virtuals)
         {
             if (!column_descriptions.has(column.name))
+            {
+                virtual_columns.push_back(column);
+                column_names.insert(column.name);
+            }
+        }
+
+        const auto & common_virtuals = IStorage::getCommonVirtuals();
+        for (const auto & column : common_virtuals)
+        {
+            if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                 virtual_columns.push_back(column);
         }
     }
