@@ -26,6 +26,6 @@ SELECT 'Timezone handling';
 SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'UTC')) != dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 SELECT 'Verify timestamp extraction works correctly';
-SELECT toDateTime('2021-08-15 18:57:56') AS d,
-       UUIDv7ToDateTime(dateTimeToUUIDv7(d)) == d,
-       UUIDv7ToDateTime(dateTimeToUUIDv7(materialize(d))) == d;
+SELECT toDateTime('2021-08-15 18:57:56', 'UTC') AS d,
+       UUIDv7ToDateTime(dateTimeToUUIDv7(d), 'UTC') == d,
+       UUIDv7ToDateTime(dateTimeToUUIDv7(materialize(d)), 'UTC') == d;
