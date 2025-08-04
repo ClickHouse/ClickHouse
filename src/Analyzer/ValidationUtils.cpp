@@ -512,7 +512,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
             {
                 auto & table_node = current_node->as<TableNode &>();
                 const auto & storage = table_node.getStorage();
-                if (storage->isRemote())
+                if (storage && storage->isRemote())
                     has_remote = true;
                 break;
             }
@@ -520,7 +520,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
             {
                 auto & table_function_node = current_node->as<TableFunctionNode &>();
                 const auto & storage = table_function_node.getStorage();
-                if (storage->isRemote())
+                if (storage && storage->isRemote())
                     has_remote = true;
                 break;
             }
