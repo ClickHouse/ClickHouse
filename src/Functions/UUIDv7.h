@@ -1,3 +1,4 @@
+#pragma once
 #include <Common/SharedMutex.h>
 #include <DataTypes/DataTypeUUID.h>
 
