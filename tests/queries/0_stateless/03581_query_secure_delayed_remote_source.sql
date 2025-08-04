@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-parallel-replicas
+-- Tags: no-parallel, no-fasttest, no-parallel-replicas, no-replicated-database
 -- Tag no-parallel: failpoint is used which can force DelayedSource on other tests
 -- Tag no-fasttest: fasttest is built without SSL so remoteSecure() fails
 -- Tag no-parallel-replicas: there is a different code path for parallel replicas which avoids the issue
