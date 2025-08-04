@@ -191,6 +191,14 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & context);
 
+/** Build subquery to read specified columns from table expression.
+  * Specified context will be copied and used as query context.
+  * Note: all nodes in `columns` must be ColumnNode.
+  */
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodes columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
 /** Build subquery to read all columns from table expression.
   * Specified context will be copied and used as query context.
   */

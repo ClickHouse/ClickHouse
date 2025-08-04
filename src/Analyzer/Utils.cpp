@@ -50,6 +50,8 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
+#include <fmt/ranges.h>
+
 namespace DB
 {
 namespace Setting
@@ -1043,34 +1045,54 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
     mutable_context->setSettings(subquery_settings);
 }
 
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(QueryTreeNodes subquery_projection_nodes,
     const QueryTreeNodePtr & table_expression,
     ContextMutablePtr & context)
 {
-    auto projection_columns = columns;
-
-    QueryTreeNodes subquery_projection_nodes;
-    subquery_projection_nodes.reserve(projection_columns.size());
-
-    for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
-
-    if (subquery_projection_nodes.empty())
-    {
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        projection_columns.push_back({"1", std::move(constant_data_type)});
-    }
-
     updateContextForSubqueryExecution(context);
 
     auto query_node = std::make_shared<QueryNode>(std::move(context));
 
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-    query_node->resolveProjectionColumns(projection_columns);
+    if (subquery_projection_nodes.empty())
+    {
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        query_node->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        query_node->resolveProjectionColumns(NamesAndTypes{{"1", std::move(constant_data_type)}});
+    }
+    else
+    {
+        if (!std::ranges::all_of(subquery_projection_nodes, [](const auto & node) { return node->getNodeType() == QueryTreeNodeType::COLUMN; }))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected all nodes in subquery projection to be column nodes, got [{}]",
+                fmt::join(subquery_projection_nodes | std::views::transform([](const auto & node) { return node->formatASTForErrorMessage(); }), ", "));
+
+        auto & projection_nodes = query_node->getProjection().getNodes();
+        projection_nodes = std::move(subquery_projection_nodes);
+        query_node->resolveProjectionColumns(std::ranges::to<NamesAndTypes>(
+            projection_nodes | std::views::transform([](const auto & node)
+            {
+                const auto & column_node = node->template as<const ColumnNode &>();
+                auto name_type = column_node.getColumn();
+                if (column_node.hasAlias())
+                    name_type.name = column_node.getAlias();
+                return name_type;
+            })));
+    }
+
     query_node->getJoinTree() = table_expression;
 
     return query_node;
+}
+
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context)
+{
+
+    QueryTreeNodes subquery_projection_nodes;
+    for (const auto & column : columns)
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+
+    return buildQueryToReadColumnsFromTableExpression(std::move(subquery_projection_nodes), table_expression, context);
 }
 
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
@@ -1078,6 +1100,15 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
     ContextMutablePtr & context)
 {
     auto result = buildQueryToReadColumnsFromTableExpression(columns, table_expression, context);
+    result->as<QueryNode &>().setIsSubquery(true);
+    return result;
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodes columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context)
+{
+    auto result = buildQueryToReadColumnsFromTableExpression(std::move(columns), table_expression, context);
     result->as<QueryNode &>().setIsSubquery(true);
     return result;
 }
@@ -1096,6 +1127,14 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 {
     auto context_copy = Context::createCopy(context);
     return buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodes columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto context_copy = Context::createCopy(context);
+    return buildSubqueryToReadColumnsFromTableExpression(std::move(columns), table_expression, context_copy);
 }
 
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context)

@@ -56,14 +56,16 @@ public:
     {
         NameSet column_names;
         NamesAndTypes columns;
+        Names aliases;
 
-        void addColumn(NameAndTypePair column)
+        void addColumn(NameAndTypePair column, const String & alias)
         {
             if (column_names.contains(column.name))
                 return;
 
             column_names.insert(column.name);
             columns.push_back(std::move(column));
+            aliases.push_back(alias);
         }
     };
 
@@ -89,7 +91,7 @@ public:
             it = insert_it;
         }
 
-        it->second.addColumn(column_node->getColumn());
+        it->second.addColumn(column_node->getColumn(), column_node->getAlias());
     }
 
 private:
@@ -341,10 +343,43 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     {
         subquery_node = join_table_expression;
     }
-    else if (join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    else if (join_table_expression_node_type == QueryTreeNodeType::TABLE
+          || join_table_expression_node_type == QueryTreeNodeType::JOIN
+          || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
-        auto columns_it = column_source_to_columns.find(join_table_expression);
-        const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
+        QueryTreeNodes columns;
+        {
+            std::deque<QueryTreeNodePtr> table_expression_nodes;
+            table_expression_nodes.push_back(join_table_expression);
+
+            while (!table_expression_nodes.empty())
+            {
+                auto table_expression_node = table_expression_nodes.back();
+                table_expression_nodes.pop_back();
+
+                auto columns_it = column_source_to_columns.find(table_expression_node);
+                if (columns_it != column_source_to_columns.end())
+                {
+                    const auto & name_types = columns_it->second.columns;
+                    const auto & aliases = columns_it->second.aliases;
+
+                    if (name_types.size() != aliases.size())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column source to columns size mismatch: {} != {}",
+                            name_types.size(), aliases.size());
+
+                    for (size_t i = 0; i < name_types.size(); ++i)
+                        columns.emplace_back(std::make_shared<ColumnNode>(name_types[i], table_expression_node))->setAlias(aliases[i]);
+                }
+
+                if (table_expression_node->getNodeType() == QueryTreeNodeType::JOIN)
+                {
+                    const auto & join_node = table_expression_node->as<const JoinNode &>();
+                    table_expression_nodes.push_back(join_node.getLeftTableExpression());
+                    table_expression_nodes.push_back(join_node.getRightTableExpression());
+                }
+            }
+        }
+
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
     }
     else
