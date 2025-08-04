@@ -165,7 +165,10 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        insertFromFullColumn(src, n);
+        return;
+    }
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -197,7 +200,10 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        insertRangeFromFullColumn(src, start, length);
+        return;
+    }
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {

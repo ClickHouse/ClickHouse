@@ -276,6 +276,17 @@ SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatis
         const auto & stats = column_stats->getStats();
         auto non_nullable_type = removeNullable(desc.data_type);
 
+        if (isStringOrFixedString(non_nullable_type) && stats.contains(StatisticsType::Uniq))
+        {
+            size_t cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+
+            if (cardinality < settings.number_of_uniq_for_low_cardinality)
+            {
+                infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::LOW_CARDINALITY, settings));
+                continue;
+            }
+        }
+
         if (desc.data_type->supportsSparseSerialization() && stats.contains(StatisticsType::Defaults))
         {
             size_t num_defaults = stats.at(StatisticsType::Defaults)->estimateDefaults();
@@ -284,17 +295,6 @@ SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatis
             if (ratio > settings.ratio_of_defaults_for_sparse)
             {
                 infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::SPARSE, settings));
-                continue;
-            }
-        }
-
-        if (isStringOrFixedString(non_nullable_type) && stats.contains(StatisticsType::Uniq))
-        {
-            size_t cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
-
-            if (cardinality < settings.number_of_uniq_for_low_cardinality)
-            {
-                infos.emplace(column_name, std::make_shared<SerializationInfo>(ISerialization::Kind::LOW_CARDINALITY, settings));
                 continue;
             }
         }

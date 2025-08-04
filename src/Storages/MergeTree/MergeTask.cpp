@@ -1101,12 +1101,12 @@ public:
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
-        bool is_result_sparse_)
+        ISerialization::Kind result_serialization_kind_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
-        , is_result_sparse(is_result_sparse_)
+        , result_serialization_kind(result_serialization_kind_)
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -1127,7 +1127,7 @@ public:
             std::move(rows_sources_read_buf),
             merge_block_size_rows,
             merge_block_size_bytes,
-            is_result_sparse);
+            result_serialization_kind);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -1157,7 +1157,7 @@ private:
     const String rows_sources_temporary_file_name;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
-    const bool is_result_sparse;
+    const ISerialization::Kind result_serialization_kind;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
@@ -1205,14 +1205,14 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add column gatherer step
     {
-        bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
         const auto merge_tree_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentHeader(),
+        merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            is_result_sparse);
+            global_ctx->new_data_part->getSerialization(column_name)->getKind());
+
         merge_step->setStepDescription("Gather column");
         merge_column_query_plan.addStep(std::move(merge_step));
     }

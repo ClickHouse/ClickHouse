@@ -1,10 +1,11 @@
+#include <cstddef>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <Core/Block.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 #include "Processors/Chunk.h"
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
@@ -37,13 +38,13 @@ ColumnGathererStream::ColumnGathererStream(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    bool is_result_sparse_,
+    ISerialization::Kind result_serialization_kind_,
     DataTypePtr data_type_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
-    , is_result_sparse(is_result_sparse_)
+    , result_serialization_kind(result_serialization_kind_)
     , data_type(std::move(data_type_))
 {
     if (num_inputs == 0)
@@ -59,14 +60,19 @@ void ColumnGathererStream::updateStats(const IColumn & column)
 
 static void convertToFullIfLowCardinality(Chunk & chunk)
 {
+    size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+
     for (auto & column : columns)
         column = recursiveRemoveLowCardinality(column);
-    chunk.setColumns(std::move(columns), chunk.getNumRows());
+
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
+    using enum ISerialization::Kind;
+
     Columns source_columns;
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
@@ -74,17 +80,16 @@ void ColumnGathererStream::initialize(Inputs inputs)
         if (!inputs[i].chunk)
             continue;
 
-        if (!is_result_sparse)
+        const auto & input_column = inputs[i].chunk.getColumns().at(0);
+
+        if (result_serialization_kind != SPARSE)
             convertToFullIfSparse(inputs[i].chunk);
 
-        const auto & input_column = inputs[i].chunk.getColumns().at(0);
+        if (!data_type->lowCardinality() && result_serialization_kind != LOW_CARDINALITY)
+            convertToFullIfLowCardinality(inputs[i].chunk);
 
         if (input_column->size() == 0)
             continue;
-
-        /// TODO: better...
-        if (input_column->lowCardinality() && !data_type->lowCardinality())
-            convertToFullIfLowCardinality(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -94,8 +99,11 @@ void ColumnGathererStream::initialize(Inputs inputs)
         return;
 
     result_column = source_columns[0]->cloneEmpty();
-    if (is_result_sparse && !result_column->isSparse())
+    if (result_serialization_kind == SPARSE && !result_column->isSparse())
         result_column = ColumnSparse::create(std::move(result_column));
+
+    if (result_serialization_kind == LOW_CARDINALITY && !result_column->lowCardinality())
+        result_column = createEmptyLowCardinalityColumn(*data_type);
 
     if (result_column->hasDynamicStructure())
         result_column->takeDynamicStructureFromSourceColumns(source_columns);
@@ -195,11 +203,16 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
 
 void ColumnGathererStream::consume(Input & input, size_t source_num)
 {
+    using enum ISerialization::Kind;
     auto & source = sources[source_num];
+
     if (input.chunk)
     {
-        if (!is_result_sparse)
+        if (result_serialization_kind != SPARSE)
             convertToFullIfSparse(input.chunk);
+
+        if (!data_type->lowCardinality() && result_serialization_kind != LOW_CARDINALITY)
+            convertToFullIfLowCardinality(input.chunk);
 
         source.update(input.chunk.getColumns().at(0));
     }
@@ -216,10 +229,10 @@ ColumnGathererTransform::ColumnGathererTransform(
     std::unique_ptr<ReadBuffer> row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    bool is_result_sparse_)
+    ISerialization::Kind result_serialization_kind_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_, header->getByPosition(0).type)
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, result_serialization_kind_, header->getByPosition(0).type)
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {
