@@ -70,10 +70,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -83,7 +79,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
 coalesce
 concat
@@ -197,7 +192,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hex
 hiveHash
 hop
 hopEnd
@@ -654,8 +648,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes
