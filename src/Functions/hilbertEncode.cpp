@@ -124,7 +124,7 @@ hilbertEncode(range_mask, args)
         {"args", "Up to two `UInt*` values or columns of the type `UInt*`.", {"(U)Int*"}},
         {"range_mask", "For the expanded mode, up to two `UInt*` values or columns of type `UInt*`.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` code.", "UInt64"};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` code.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
         {"Simple mode", "SELECT hilbertEncode(3, 4)", "31"},
         {

@@ -355,12 +355,12 @@ mortonDecode(range_mask, code)
         {"range_mask", "For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers. Each number in the mask configures the amount of range shrink.", {"Tuple(UInt*)"}},
         {"code", "UInt64 code.", {"UInt64"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", "Tuple(UInt64)"};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
         {"Simple mode", "SELECT mortonDecode(3, 53)", "[\"1\", \"2\", \"3\"]"},
         {"Single argument", "SELECT mortonDecode(1, 1)", "[\"1\"]"},
         {"Expanded mode, shrinking one argument", "SELECT mortonDecode(tuple(2), 32768)", "[\"128\"]"},
-        {"Column usage", 
+        {"Column usage",
          R"(
 -- First create the table and insert some data
 CREATE TABLE morton_numbers(

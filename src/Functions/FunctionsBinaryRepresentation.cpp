@@ -742,36 +742,47 @@ to the following logic for different types:
 The function uses uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
     )";
     FunctionDocumentation::Syntax hex_syntax = "hex(arg)";
-    FunctionDocumentation::Arguments hex_arguments = {
-        {"arg", "A value to convert to hexadecimal.", {"String", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}
-    };
-    FunctionDocumentation::ReturnedValue hex_returned_value = {"Returns a string with the hexadecimal representation of the argument.", "String"};
+    FunctionDocumentation::Arguments hex_arguments = {{"arg", "A value to convert to hexadecimal.", {"String", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}};
+    FunctionDocumentation::ReturnedValue hex_returned_value = {"Returns a string with the hexadecimal representation of the argument.", {"String"}};
     FunctionDocumentation::Examples hex_examples = {
-        {"Simple integer", "SELECT hex(1)", "01"},
-        {"Float32 numbers", "SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2)",
-         R"(
+    {
+        "Simple integer",
+	"SELECT hex(1)",
+	"01"
+    },
+    {
+	"Float32 numbers",
+	"SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2)",
+        R"(
 ┌─hex_presentation─┐
 │ 00007041         │
 │ 00008041         │
 └──────────────────┘
-         )"},
-        {"Float64 numbers", "SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2)",
-         R"(
+        )"
+    },
+    {
+	"Float64 numbers",
+	"SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2)",
+        R"(
 ┌─hex_presentation─┐
 │ 0000000000002E40 │
 │ 0000000000003040 │
 └──────────────────┘
-         )"},
-        {"UUID conversion", "SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex",
-         R"(
+        )"
+    },
+    {
+        "UUID conversion",
+	"SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex",
+        R"(
 ┌─uuid_hex─────────────────────────┐
 │ 61f0c4045cb311e7907ba6006ad3dba0 │
 └──────────────────────────────────┘
-         )"}
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn hex_introduced_in = {};
+    FunctionDocumentation::IntroducedIn hex_introduced_in = {1, 1};
     FunctionDocumentation::Category hex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_arguments, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
+    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_argument, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
 
     FunctionDocumentation::Description unhex_description = R"(
 Performs the opposite operation of [`hex`](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts
@@ -786,27 +797,31 @@ If `unhex` is invoked from within the `clickhouse-client`, binary strings displa
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
     )";
     FunctionDocumentation::Syntax unhex_syntax = "unhex(arg)";
-    FunctionDocumentation::Arguments unhex_arguments = {
-        {"arg", "A string containing any number of hexadecimal digits.", {"String", "FixedString"}}
-    };
-    FunctionDocumentation::ReturnedValue unhex_returned_value = {"A binary string (BLOB).", "String"};
+    FunctionDocumentation::Arguments unhex_argument = {{"arg", "A string containing any number of hexadecimal digits.", {"String", "FixedString"}}};
+    FunctionDocumentation::ReturnedValue unhex_returned_value = {"A binary string (BLOB).", {"String"}};
     FunctionDocumentation::Examples unhex_examples = {
-        {"Basic usage", "SELECT unhex('303132'), UNHEX('4D7953514C')", 
-         R"(
+{
+"Basic usage",
+"SELECT unhex('303132'), UNHEX('4D7953514C')",
+R"(
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
-         )"},
-        {"Convert to number", "SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num", 
-         R"(
+)"
+},
+{
+"Convert to number",
+"SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num",
+R"(
 ┌──num─┐
 │ 4095 │
 └──────┘
-         )"}
+)"
+}
     };
     FunctionDocumentation::IntroducedIn unhex_introduced_in = {1, 1};
     FunctionDocumentation::Category unhex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_arguments, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
+    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_argument, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
 
     FunctionDocumentation::Description bin_description = R"(
 Returns a string containing the argument's binary representation according
@@ -821,41 +836,51 @@ to the following logic for different types:
 | `UUID`                     | Encoded as big-endian order string.                                                                                                                                                                                                                                   |
     )";
     FunctionDocumentation::Syntax bin_syntax = "bin(arg)";
-    FunctionDocumentation::Arguments bin_arguments = {
-        {"arg", "A value to convert to binary.", {"String", "FixedString", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}
-    };
+    FunctionDocumentation::Arguments bin_argument = {{"arg", "A value to convert to binary.", {"String", "FixedString", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}};
     FunctionDocumentation::ReturnedValue bin_returned_value = {"A string with the binary representation of the argument.", {"String"}};
     FunctionDocumentation::Examples bin_examples = {
-        {"Simple integer", "SELECT bin(14)", 
-         R"(
+{
+"Simple integer",
+"SELECT bin(14)",
+R"(
 ┌─bin(14)──┐
 │ 00001110 │
 └──────────┘
-         )"},
-        {"Float32 numbers", "SELECT bin(toFloat32(number)) AS bin_presentation FROM numbers(15, 2)", 
-         R"(
+)"
+},
+{
+"Float32 numbers",
+"SELECT bin(toFloat32(number)) AS bin_presentation FROM numbers(15, 2)",
+ R"(
 ┌─bin_presentation─────────────────┐
 │ 00000000000000000111000001000001 │
 │ 00000000000000001000000001000001 │
 └──────────────────────────────────┘
-         )"},
-        {"Float64 numbers", "SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2)", 
-         R"(
+)"
+},
+{
+"Float64 numbers",
+"SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2)",
+R"(
 ┌─bin_presentation─────────────────────────────────────────────────┐
 │ 0000000000000000000000000000000000000000000000000010111001000000 │
 │ 0000000000000000000000000000000000000000000000000011000001000000 │
 └──────────────────────────────────────────────────────────────────┘
-         )"},
-        {"UUID conversion", "SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS bin_uuid", 
-         R"(
+)"
+},
+{
+"UUID conversion",
+"SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS bin_uuid",
+R"(
 ┌─bin_uuid─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-         )"}
+)"
+}
     };
     FunctionDocumentation::IntroducedIn bin_introduced_in = {21, 8};
     FunctionDocumentation::Category bin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_arguments, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
+    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_argument, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
 
     FunctionDocumentation::Description unbin_description = R"(
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to bin.
@@ -869,27 +894,31 @@ If `unbin` is invoked from within the `clickhouse-client`, binary strings are di
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn't thrown).
     )";
     FunctionDocumentation::Syntax unbin_syntax = "unbin(arg)";
-    FunctionDocumentation::Arguments unbin_arguments = {
-        {"arg", "A string containing any number of binary digits.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue unbin_returned_value = {"A binary string (BLOB).", "String"};
+    FunctionDocumentation::Arguments unbin_argument = {{"arg", "A string containing any number of binary digits.", {"String"}}};
+    FunctionDocumentation::ReturnedValue unbin_returned_value = {"Returns a binary string (BLOB).", {"String"}};
     FunctionDocumentation::Examples unbin_examples = {
-        {"Basic usage", "SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100')", 
-         R"(
+{
+"Basic usage",
+"SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100')",
+R"(
 ┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
-         )"},
-        {"Convert to number", "SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num", 
-         R"(
+)"
+},
+{
+"Convert to number",
+"SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num",
+R"(
 ┌─num─┐
 │  14 │
 └─────┘
-         )"}
+)"
+}
     };
     FunctionDocumentation::IntroducedIn unbin_introduced_in = {21, 8};
     FunctionDocumentation::Category unbin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_arguments, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
+    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_argument, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
 
     factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(hex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);

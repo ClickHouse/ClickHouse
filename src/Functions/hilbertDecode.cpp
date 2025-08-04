@@ -105,7 +105,7 @@ hilbertDecode(tuple_size, code)
         {"tuple_size", "Integer value of no more than `2`.", {"Int*"}},
         {"code", "`UInt64` code.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", "Tuple(UInt64)"};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
         {
             "Simple mode",

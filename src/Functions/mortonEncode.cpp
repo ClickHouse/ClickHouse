@@ -320,8 +320,7 @@ mortonEncode(range_mask, args)
         {"args", "Up to 8 unsigned integers or columns of the aforementioned type.", {"(U)Int*"}},
         {"range_mask", "For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers from 1 - 8. Each number in the mask configures the amount of range shrink.", {"Tuple(UInt*)"}},
     };
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"A UInt64 code.", "UInt64"};
+    FunctionDocumentation::ReturnedValue returned_value = {"A UInt64 code.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
         {
             "Simple mode",
@@ -382,5 +381,4 @@ SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
 
     factory.registerFunction<FunctionMortonEncode>(documentation);
 }
-
 }

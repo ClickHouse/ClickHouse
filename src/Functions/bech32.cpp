@@ -539,7 +539,7 @@ Unlike the encode function, `Bech32Decode` will automatically handle padded Fixe
     FunctionDocumentation::Arguments bech32Decode_arguments = {
         {"address", "A Bech32 string to decode.", {"String", "FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", "Tuple(String, String)"};
+    FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
     FunctionDocumentation::Examples bech32Decode_examples = {
         {"Decode address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)", "bc   751E76E8199196D454941C45D1B3A323F1433BD6"},
         {"Testnet address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)", "tb   751E76E8199196D454941C45D1B3A323F1433BD6"}
