@@ -649,7 +649,6 @@ public:
         writeHexByteUppercase(mac >> 8, &out[12]);
         out[14] = ':';
         writeHexByteUppercase(mac, &out[15]);
-        out[17] = '\0';
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -667,14 +666,14 @@ public:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 17); /// the value is: xx:xx:xx:xx:xx:xx
             offsets_res.resize(vec_in.size());
 
             size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
                 formatMAC(vec_in[i], &vec_res[current_offset]);
-                current_offset += 18;
+                current_offset += 17;
                 offsets_res[i] = current_offset;
             }
 

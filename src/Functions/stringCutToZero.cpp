@@ -72,8 +72,6 @@ public:
                 size_t current_size = strlen(pos_in);
                 memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
                 pos += current_size;
-                *pos = '\0';
-                ++pos;
                 out_offsets[i] = pos - begin;
                 current_in_offset = in_offsets[i];
             }
@@ -115,8 +113,7 @@ public:
                 size_t current_size = strnlen(pos_in, n);
                 memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
                 pos += current_size;
-                *pos = '\0';
-                out_offsets[i] = ++pos - begin;
+                out_offsets[i] = pos - begin;
                 pos_in += n;
             }
             out_vec.resize(pos - begin);

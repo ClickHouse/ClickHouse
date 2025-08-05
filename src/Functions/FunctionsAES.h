@@ -391,9 +391,6 @@ private:
                 }
             }
 
-            *encrypted = '\0';
-            ++encrypted;
-
             encrypted_result_column_offsets.push_back(encrypted - encrypted_result_column_data.data());
         }
 
@@ -705,9 +702,6 @@ private:
                     }
                 }
             }
-
-            *decrypted = '\0';
-            ++decrypted;
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
             if constexpr (use_null_when_decrypt_fail)

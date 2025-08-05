@@ -79,8 +79,6 @@ bool convertbits(bech32_data & out, const bech32_data & in)
 
 void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
 {
-    *pos = '\0';
-    ++pos;
     offsets[i] = pos - begin;
 }
 

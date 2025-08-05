@@ -1158,8 +1158,6 @@ public:
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
-            *pos++ = '\0';
-
             res_offsets[i] = pos - begin;
         }
 
