@@ -10,7 +10,7 @@ SET parallel_replicas_for_cluster_engines=true;
 EXPLAIN SELECT * FROM url('http://localhost:8123');
 EXPLAIN SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 EXPLAIN SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV') where c1 in (SELECT c1 FROM s3('http://localhost:11111/test/a.tsv', 'TSV'));
-EXPLAIN SELECT number FROM system.numbers n INNER JOIN (SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV')) s ON (toInt64(n.number) = s.c1) LIMIT 10
+SELECT explain FROM (EXPLAIN SELECT number FROM system.numbers n JOIN (SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV')) s ON (toInt64(n.number) = toInt64(s.c1))) ORDER BY explain DESC;
 
 SET parallel_replicas_for_cluster_engines=false;
 
