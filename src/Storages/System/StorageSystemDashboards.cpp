@@ -1520,6 +1520,7 @@ FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1531,6 +1532,7 @@ FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1542,6 +1544,7 @@ FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1553,6 +1556,7 @@ FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalIndexGranularityBytesInMemoryAllocated'
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1564,6 +1568,7 @@ FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'MemoryResident'
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1575,6 +1580,7 @@ FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.allocated'
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1586,6 +1592,7 @@ FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.resident'
 GROUP BY ALL
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1617,6 +1624,7 @@ JOIN
     GROUP BY ALL
 ) AS async_metrics USING (t, hostname)
 ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
@@ -1648,6 +1656,7 @@ JOIN
     GROUP BY ALL
 ) AS async_metrics USING (t, hostname)
 ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
     };
