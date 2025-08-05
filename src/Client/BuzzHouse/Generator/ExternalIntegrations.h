@@ -367,7 +367,7 @@ private:
 
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
-    ClickHouseIntegratedDatabase * getPeerPtr(const PeerTableDatabase pt) const;
+    ClickHouseIntegratedDatabase * getPeerPtr(PeerTableDatabase pt) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }

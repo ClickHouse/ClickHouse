@@ -101,7 +101,7 @@ public:
         : client_hostname("localhost")
         , server_hostname("localhost")
         , endpoint("test")
-        , region("")
+        , region()
         , port(0)
     {
     }
