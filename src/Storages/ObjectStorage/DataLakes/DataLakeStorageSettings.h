@@ -75,7 +75,7 @@ Metadata format version.
     DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
     DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
-    DECLARE(String, storage_storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
@@ -102,6 +102,9 @@ struct DataLakeStorageSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
+
+    void serialize(WriteBuffer & out) const;
+    static DataLakeStorageSettings deserialize(ReadBuffer & in);
 
 private:
     std::unique_ptr<DataLakeStorageSettingsImpl> impl;
