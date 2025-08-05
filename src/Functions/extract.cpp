@@ -39,7 +39,7 @@ struct ExtractImpl
             if (count > capture && matches[capture].offset != std::string::npos)
             {
                 const auto & match = matches[capture];
-                res_data.resize(res_offset + match.length + 1);
+                res_data.resize(res_offset + match.length);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
                 res_offset += match.length;
             }

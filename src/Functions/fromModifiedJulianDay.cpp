@@ -40,7 +40,7 @@ namespace DB
             auto col_to = ColumnString::create();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            data_to.resize(input_rows_count * strlen("YYYY-MM-DD") + 1);
+            data_to.resize(input_rows_count * strlen("YYYY-MM-DD"));
             offsets_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;

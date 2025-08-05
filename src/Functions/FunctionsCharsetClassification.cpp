@@ -122,7 +122,7 @@ struct CharsetClassificationImpl
             }
 
             size_t result_value_size = result_value.size();
-            res_data.resize(current_result_offset + result_value_size + 1);
+            res_data.resize(current_result_offset + result_value_size);
             memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
             current_result_offset += result_value_size;
             res_offsets[i] = current_result_offset;

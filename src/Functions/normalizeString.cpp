@@ -107,7 +107,7 @@ struct NormalizeUTF8Impl
         {
             size_t from_size = offsets[i] - current_from_offset;
 
-            from_uchars.resize(from_size + 1);
+            from_uchars.resize(from_size);
             int32_t from_code_points = 0;
             u_strFromUTF8(
                 from_uchars.data(),
@@ -119,7 +119,7 @@ struct NormalizeUTF8Impl
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
 
-            to_uchars.resize(from_code_points * NormalizeImpl::expansionFactor + 1);
+            to_uchars.resize(from_code_points * NormalizeImpl::expansionFactor);
 
             int32_t to_code_points = unorm2_normalize(
                 normalizer,

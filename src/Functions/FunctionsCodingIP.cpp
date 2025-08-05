@@ -101,7 +101,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -222,7 +222,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -371,7 +371,7 @@ private:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(input_rows_count * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
+            vec_res.resize(input_rows_count * IPV4_MAX_TEXT_LENGTH); /// the longest value is: 255.255.255.255
             offsets_res.resize(input_rows_count);
             char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
