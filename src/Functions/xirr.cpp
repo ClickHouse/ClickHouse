@@ -960,7 +960,7 @@ $$
     FunctionDocumentation::Arguments arguments = {
         {"rate", "The discount rate to apply.", {"Float*"}},
         {"cashflows", "Array of cash flows. Each value represents a payment (negative value) or income (positive value).", {"Array(Int8/16/32/64)", "Array(Float*)"}},
-        {"[, start_from_zero]", "Optional boolean parameter indicating whether to start the NPV calculation from period `0` (true) or period `1` (false, Excel-compatible). Default: true.", {"Boolean"}}
+        {"[, start_from_zero]", "Optional boolean parameter indicating whether to start the NPV calculation from period `0` (true) or period `1` (false, Excel-compatible). Default: true.", {"Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the net present value as a Float64 value.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
