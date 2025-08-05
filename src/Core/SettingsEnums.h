@@ -422,12 +422,12 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
-enum class SearchOrphanedPartsDrives : uint8_t
+enum class SearchOrphanedPartsDisks : uint8_t
 {
     NONE,
     LOCAL,
     ANY
 };
 
-DECLARE_SETTING_ENUM(SearchOrphanedPartsDrives)
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 }

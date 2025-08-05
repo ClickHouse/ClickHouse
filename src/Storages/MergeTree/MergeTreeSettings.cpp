@@ -1831,15 +1831,15 @@ namespace ErrorCodes
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
     )", 0) \
-    DECLARE(SearchOrphanedPartsDrives, search_orphaned_parts_drives, SearchOrphanedPartsDrives::ANY, R"(
+    DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
     ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
     in order to not allow to miss data parts at undefined (not included in policy) disks.
     Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
-    This setting limits scope of drives to search by traits of the drives.
+    This setting limits scope of disks to search by traits of the disks.
 
     Possible values:
     - any - scope is not limited.
-    - local - scope is limited by drives that have local metadata.
+    - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
 

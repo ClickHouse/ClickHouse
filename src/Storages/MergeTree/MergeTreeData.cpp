@@ -199,7 +199,6 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
-    extern const SettingsBool function_date_trunc_return_type_behavior;
 }
 
 namespace MergeTreeSetting
@@ -265,7 +264,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
-    extern const MergeTreeSettingsSearchOrphanedPartsDrives search_orphaned_parts_drives;
+    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 namespace ServerSetting
@@ -2084,16 +2083,13 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
-bool MergeTreeData::shouldSearchForPartsOnDisk(DiskPtr disk) const
+bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
 {
-    auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+    SearchOrphanedPartsDisks mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
+    bool is_disk_eligible = !disk->isBroken() && !disk->isCustomDisk() && (mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote()));
 
-    SearchOrphanedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_drives];
-    bool is_look_needed = mode == SearchOrphanedPartsDrives::ANY
-      || (mode == SearchOrphanedPartsDrives::LOCAL && is_local_metadata());
-
-    LOG_TRACE(log, "shouldSearchForPartsOnDisk: mode {}, is_look_needed {}", mode, is_look_needed);
-    return is_look_needed;
+    LOG_TRACE(log, "shouldSearchForPartsOnDisk: mode {}, is_disk_eligible {}", mode, is_disk_eligible);
+    return is_disk_eligible;
 }
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
@@ -2142,19 +2138,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken() || disk->isCustomDisk())
+            if (!isDiskEligibleForOrphanedPartsSearch(disk))
             {
                 skip_check_disks.insert(disk_name);
                 continue;
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
-            if (!is_disk_defined && !shouldSearchForPartsOnDisk(disk))
-            {
-                skip_check_disks.insert(disk_name);
-                continue;
-            }
-
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 /// There still a chance that underlying disk is defined in storage policy

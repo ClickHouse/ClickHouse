@@ -803,8 +803,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
-            {"search_orphaned_parts_drives", SearchOrphanedPartsDrives::ANY, SearchOrphanedPartsDrives::ANY, "New setting"},
+            {"search_orphaned_parts_disks", SearchOrphanedPartsDisks::ANY, SearchOrphanedPartsDisks::ANY, "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
