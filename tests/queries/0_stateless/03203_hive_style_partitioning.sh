@@ -28,6 +28,7 @@ SELECT count(*) FROM file('$DATA_DIR/data_hive/partitioning/number=42/date=2020-
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
+set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT identifier FROM file('$DATA_DIR/data_hive/partitioning/identifier=*/email.csv') ORDER BY identifier DESC LIMIT 2;
 SELECT a FROM file('$DATA_DIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
