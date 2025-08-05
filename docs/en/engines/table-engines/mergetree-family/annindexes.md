@@ -291,7 +291,7 @@ LIMIT 10
 Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
 By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
-As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
+As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
 As an example, we can query again but with multiplier `3.0`:
 
@@ -301,12 +301,12 @@ FROM books
 WHERE price < 2.00
 ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
 LIMIT 10
-SETTING vector_search_postfilter_multiplier = 3.0;
+SETTING vector_search_index_fetch_multiplier = 3.0;
 ```
 
 ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in each part and afterwards evaluate the additional filters.
 Only the ten closest neighbors will be returned.
-We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
+We note that setting `vector_search_index_fetch_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
 **Rescoring**
 
@@ -431,10 +431,9 @@ For production use-cases, we recommend that the cache is sized large enough so t
 |   i8              |  1 byte             |
 |   b1              |  1 bit              |
 
-Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or negligible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantization cause measurable loss in precision and thus cause a drop in the quality of similarity search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with a multiplier to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
+Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or negligible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantization cause measurable loss in precision and thus cause a drop in the quality of similarity search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with the multiplier setting [vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier) to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
 
 Binary quantization is recommended only for embedding vectors normalized to length 1 (e.g OpenAI models) and vector similarity computed using `cosine` distance. A binary quantized vector index uses `Hamming` distance metric internally to construct and update the proximity graph. The rescoring step will use the full precision vectors stored in the table and compute `cosine` distance to identify the nearest neighbours.
-
 
 **Tuning Data Transfer**
 

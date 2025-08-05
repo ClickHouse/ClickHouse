@@ -4,6 +4,7 @@
 
 SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS dbpedia_tab;
 
@@ -124,3 +125,6 @@ FROM tab
 ORDER by cosineDistance(vector, [-0.25, 0.25, 0.10, 0.10, 0.9, 0.9, 0.9, 0.9])
 LIMIT 1
 SETTINGS vector_search_with_rescoring=1, vector_search_index_fetch_multiplier = 4;
+
+DROP TABLE tab;
+DROP TABLE dbpedia_tab;
