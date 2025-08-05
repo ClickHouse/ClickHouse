@@ -135,13 +135,6 @@ ReaderHolder createReader(
 
         builder.init(Pipe(input_format));
 
-        if (configuration->hasPositionDeleteTransformer(object_info))
-        {
-            builder.addSimpleTransform(
-                [&](const SharedHeader & header)
-                { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
-        }
-
         std::optional<ActionsDAG> transformer;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
         {

@@ -41,17 +41,6 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
-ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
-    ObjectStoragePtr,
-    const Strings & requested_columns,
-    const StorageSnapshotPtr & storage_snapshot,
-    bool supports_subset_of_columns,
-    ContextPtr local_context,
-    const PrepareReadingFromFormatHiveParams & hive_parameters)
-{
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_parameters);
-}
-
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");

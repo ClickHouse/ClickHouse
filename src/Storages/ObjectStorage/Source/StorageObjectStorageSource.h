@@ -62,11 +62,6 @@ public:
         bool ignore_archive_globs = false,
         bool skip_object_metadata = false);
 
-    static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
-
     static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         ObjectInfo & object_info,
         const ObjectStoragePtr & object_storage,
