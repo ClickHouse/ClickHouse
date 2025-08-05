@@ -1693,6 +1693,8 @@ bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, con
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
+        const Catalog & cat = sc.glue_catalog.value();
+
         b.catalog = CatalogTable::REST;
         return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
     }
