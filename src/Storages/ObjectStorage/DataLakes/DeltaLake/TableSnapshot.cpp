@@ -91,6 +91,7 @@ public:
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
+        UInt64 snapshot_version_,
         bool enable_expression_visitor_logging_,
         bool throw_on_engine_predicate_error_,
         bool enable_engine_predicate_,
@@ -109,6 +110,7 @@ public:
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
+        , snapshot_version(snapshot_version_)
     {
         if (filter)
         {
@@ -232,6 +234,11 @@ public:
         /// For now do the same as StorageObjectStorageSource::GlobIterator.
         /// TODO: is it possible to do a precise estimation?
         return std::numeric_limits<size_t>::max();
+    }
+
+    std::optional<UInt64> getSnapshotVersion() const override
+    {
+        return snapshot_version;
     }
 
     DB::ObjectInfoPtr next(size_t) override
@@ -385,6 +392,7 @@ private:
     const bool enable_expression_visitor_logging;
     const bool throw_on_engine_predicate_error;
     const bool enable_engine_predicate;
+    const UInt64 snapshot_version;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -500,6 +508,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         callback,
         list_batch_size,
         enable_expression_visitor_logging,
+        snapshot_version,
         throw_on_engine_visitor_error,
         enable_engine_predicate,
         log);
