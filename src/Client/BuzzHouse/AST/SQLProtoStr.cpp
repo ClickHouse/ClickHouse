@@ -1813,8 +1813,9 @@ CONV_FN(JoinClause, jc)
 CONV_FN(KeyValuePair, kvp)
 {
     ret += kvp.key();
-    ret += " = ";
+    ret += " = '";
     ret += kvp.value();
+    ret += "'";
 }
 
 CONV_FN(SetValue, setv)

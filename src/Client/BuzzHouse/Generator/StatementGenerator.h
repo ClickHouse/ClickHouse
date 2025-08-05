@@ -539,7 +539,7 @@ private:
                     b.file_comp = next_compression;
                 }
                 next->set_key("compression");
-                next->set_value("'" + next_compression + "'");
+                next->set_value(next_compression);
                 added_compression++;
             }
             else if (add_partition_strategy && nopt < (add_format + add_compression + add_partition_strategy + 1))
@@ -554,7 +554,7 @@ private:
                     b.partition_strategy = next_strategy;
                 }
                 next->set_key("partition_strategy");
-                next->set_value("'" + next_strategy + "'");
+                next->set_value(next_strategy);
                 added_partition_strategy++;
             }
             else if (
@@ -586,7 +586,7 @@ private:
                 }
                 else
                 {
-                    next->set_value("'" + getTableStructure(rg, b, allow_chaos) + "'");
+                    next->set_value(getTableStructure(rg, b, allow_chaos));
                 }
                 added_structure++;
             }
