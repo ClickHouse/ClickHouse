@@ -378,6 +378,8 @@ void BackgroundSchedulePool::threadFunction()
         UInt64 task_type_to_run;
         TaskInfoPtr task;
 
+        current_thread->flushUntrackedMemory();
+
         {
             UniqueLock tasks_lock(tasks_mutex);
 
@@ -431,6 +433,8 @@ void BackgroundSchedulePool::threadFunction()
                 tasks_cond_var.notify_one();
             }
         }
+
+        current_thread->flushUntrackedMemory();
     }
 }
 

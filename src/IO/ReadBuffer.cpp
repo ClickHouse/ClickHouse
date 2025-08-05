@@ -82,4 +82,38 @@ void ReadBuffer::cancel()
 
     canceled = true;
 }
+
+bool ReadBuffer::next()
+{
+    chassert(!hasPendingData());
+    chassert(position() <= working_buffer.end());
+    chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
+
+    bytes += offset();
+    bool res = false;
+    try
+    {
+        res = nextImpl();
+    }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+
+    if (!res)
+    {
+        working_buffer = Buffer(pos, pos);
+    }
+    else
+    {
+        pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+        chassert(position() < working_buffer.end());
+    }
+    nextimpl_working_buffer_offset = 0;
+
+    chassert(position() <= working_buffer.end());
+
+    return res;
+}
 }

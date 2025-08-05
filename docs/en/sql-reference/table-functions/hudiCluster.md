@@ -34,6 +34,14 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 
 A table with the specified structure for reading data from cluster in the specified Hudi table in S3.
 
+## Virtual Columns {#virtual-columns}
+
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
+
 ## Related {#related}
 
 - [Hudi engine](engines/table-engines/integrations/hudi.md)

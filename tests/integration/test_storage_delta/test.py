@@ -218,9 +218,7 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
-    table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
-    run_on_cluster=False,
     use_delta_kernel=False,
     **kwargs,
 ):
@@ -236,85 +234,38 @@ def create_delta_table(
         else:
             bucket = cluster.minio_bucket
 
-        if run_on_cluster:
-            assert table_function
-            instance.query(
-                f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-                f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
-            )
-        else:
-            if table_function:
-                instance.query(
-                    f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-                    f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
-                )
-            else:
-                instance.query(
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
-                )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
+            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+            + allow_dynamic_metadata_for_datalakes_suffix
+        )
 
     elif storage_type == "azure":
-        if run_on_cluster:
-            assert table_function
-            instance.query(
-                f"""
-                deltalakeAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
-                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-            """
-            )
-        else:
-            if table_function:
-                instance.query(
-                    f"""
-                    deltalakeAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                """
-                )
-            else:
-                instance.query(
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
-                )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+            + allow_dynamic_metadata_for_datalakes_suffix
+        )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
         user_files_path = os.path.join(
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
         table_path = os.path.join(user_files_path, table_name)
-        if run_on_cluster:
-            assert table_function
-            instance.query(
-                f"""
-                deltalakeLocalCluster('cluster_simple', '{table_path}', {format})
-                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                """
-            )
-        else:
-            if table_function:
-                instance.query(
-                    f"""
-                    deltalakeLocal('{table_path}', {format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                    """
-                )
-            else:
-                instance.query(
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=DeltaLakeLocal('{table_path}', {format})
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-                    """
-                )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=DeltaLakeLocal('{table_path}', {format})
+            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+            """
+        )
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
@@ -2085,7 +2036,6 @@ deltaLakeCluster(cluster_old,
     )
 
 
-
 def test_partition_columns_3(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -2138,4 +2088,149 @@ def test_partition_columns_3(started_cluster):
         "8\tname_8\t32\tUS\t2025\n"
         "9\tname_9\t32\tUS\t2025"
         == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+    )
+
+
+def test_filtering_by_virtual_columns(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_filtering_by_virtual_columns")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = ["year"]
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 10
+    now = datetime.now()
+    data = [(i, f"name_{i}", 32, "US", f"202{i}") for i in range(num_rows)]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs=0)"
+
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert result == num_rows
+
+    assert (
+        "0\tname_0\t32\tUS\t2020\n"
+        "1\tname_1\t32\tUS\t2021\n"
+        "2\tname_2\t32\tUS\t2022\n"
+        "3\tname_3\t32\tUS\t2023\n"
+        "4\tname_4\t32\tUS\t2024\n"
+        "5\tname_5\t32\tUS\t2025\n"
+        "6\tname_6\t32\tUS\t2026\n"
+        "7\tname_7\t32\tUS\t2027\n"
+        "8\tname_8\t32\tUS\t2028\n"
+        "9\tname_9\t32\tUS\t2029"
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+    )
+
+    query_id = f"query_{TABLE_NAME}_1"
+    result = int(
+        instance.query(
+            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%'",
+            query_id=query_id,
+        )
+    )
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert result == int(
+        instance.query(
+            f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+
+
+def test_column_pruning(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_column_pruning")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = []
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 10000
+    now = datetime.now()
+    data = [
+        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
+        for i in range(num_rows)
+    ]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    query_id = f"query_{TABLE_NAME}_1"
+    sum = int(
+        instance.query(
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100",
+            query_id=query_id,
+        )
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 107220 == int(
+        instance.query(
+            f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+
+    query_id = f"query_{TABLE_NAME}_2"
+    assert sum == int(
+        instance.query(
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100",
+            query_id=query_id,
+        )
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
+    assert 105677 == int(
+        instance.query(
+            f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
     )

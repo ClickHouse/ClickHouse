@@ -1901,7 +1901,6 @@ Port for communicating with clients over PostgreSQL protocol.
 
 If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
 
-
 ## postgresql_require_secure_transport {#postgresql_require_secure_transport}
 
 If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
@@ -2358,7 +2357,6 @@ Select a parent field in the tabs below to view their children:
 
   </TabItem>
   <TabItem value="http_https" label="<http> and <https>">
-
 
 | Field   | Description          |
 |---------|----------------------|

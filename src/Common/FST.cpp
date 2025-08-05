@@ -395,6 +395,9 @@ void FiniteStateTransducer::clear()
 
 std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
 {
+    if (data.empty())
+        return {0, false};
+
     std::pair<UInt64, bool> result(0, false);
 
     /// Read index of initial state

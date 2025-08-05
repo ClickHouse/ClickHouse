@@ -34,6 +34,12 @@
 #include <future>
 #include <ranges>
 
+#include <boost/algorithm/string.hpp>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace fs = std::filesystem;
 
 
@@ -45,6 +51,7 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
 }
 
 namespace ErrorCodes
@@ -794,10 +801,51 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_database_query->if_not_exists = (restore_settings.create_database == RestoreTableCreationMode::kCreateIfNotExists);
 
+#if CLICKHOUSE_CLOUD
+        bool shared_catalog  = SharedDatabaseCatalog::initialized();
+        auto & create = create_database_query->as<ASTCreateQuery &>();
+        auto engine_name = create.storage != nullptr && create.storage->engine != nullptr ? create.storage->engine->name : "";
+
+        if (shared_catalog && engine_name == "Replicated")
+        {
+            auto engine = std::make_shared<ASTFunction>();
+
+            engine->name = "Shared";
+            engine->no_empty_args = true;
+
+            create.storage->set(create.storage->engine, engine);
+        }
+        else if (!shared_catalog && engine_name == "Shared")
+        {
+            // Change engine to Replicated
+            auto engine = makeASTFunction("Replicated",
+                    std::make_shared<ASTLiteral>("/clickhouse/databases/{uuid}"),
+                    std::make_shared<ASTLiteral>("{shard}"),
+                    std::make_shared<ASTLiteral>("{replica}")
+                );
+
+            create.storage->set(create.storage->engine, engine);
+        }
+#endif
+
         LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), create_database_query->formatForLogging());
 
         auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
+
+#if CLICKHOUSE_CLOUD
+        if (shared_catalog && SharedDatabaseCatalog::instance().shouldRestoreDatabase(create_database_query))
+        {
+            SharedDatabaseCatalog::instance().createDatabaseRestoredFromBackup(
+                database_name,
+                create_database_query,
+                create_query_context,
+                restore_coordination,
+                std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
+
+            return;
+        }
+#endif
 
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
@@ -829,8 +877,15 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
             is_predefined_database = database_info.is_predefined_database;
         }
 
+        auto is_shared = [](ASTPtr ast) -> bool
+        {
+            auto create = ast->as<ASTCreateQuery &>();
+            return create.storage && create.storage->engine && create.storage->engine->name == "Shared";
+        };
+        bool shared_migration = is_shared(database_def_from_backup) != is_shared(database->getCreateDatabaseQuery());
+
         /// Check that the database's definition is the same as expected.
-        if (!restore_settings.allow_different_database_def && !is_predefined_database)
+        if (!restore_settings.allow_different_database_def && !is_predefined_database && !shared_migration)
         {
             ASTPtr existing_database_def = database->getCreateDatabaseQuery();
             if (!BackupUtils::compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
@@ -981,6 +1036,20 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
+        if (query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
+        {
+            LOG_INFO(log, "`restore_replicated_merge_tree_to_shared_merge_tree` enabled, will try to replace Replicated engine with Shared");
+            ASTStorage * storage = create_table_query->storage;
+            if (storage != nullptr && storage->engine != nullptr)
+                boost::replace_first(storage->engine->name, "Replicated", "Shared");
+            else if (create_table_query->is_materialized_view_with_inner_table())
+            {
+                storage = create_table_query->targets->getInnerEngine(ViewTarget::To).get();
+                if (storage != nullptr && storage->engine != nullptr)
+                    boost::replace_first(storage->engine->name, "Replicated", "Shared");
+            }
+        }
+
         LOG_TRACE(log, "Creating {}: {}",
                   tableNameWithTypeToString(table_name.database, table_name.table, false), create_table_query->formatForLogging());
 
@@ -1060,8 +1129,8 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             is_predefined_table = table_info.is_predefined_table;
         }
 
-        /// Check that the table's definition is the same as expected.
-        if (!restore_settings.allow_different_table_def && !is_predefined_table)
+        if (!restore_settings.allow_different_table_def && !is_predefined_table &&
+            !query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))

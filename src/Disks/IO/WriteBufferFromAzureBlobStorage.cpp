@@ -287,7 +287,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 void WriteBufferFromAzureBlobStorage::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->throttle(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 
@@ -337,7 +337,7 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     }
 
     auto size = buffer_allocation_policy->getBufferSize();
-    memory = Memory(size);
+    memory = Memory<>(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
