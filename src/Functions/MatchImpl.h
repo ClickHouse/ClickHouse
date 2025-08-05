@@ -252,7 +252,7 @@ struct MatchImpl
                     else
                     {
                         const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
-                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1] - 1;
+                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1];
 
                         /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                           *  so that it can match when `required_substring` occurs into the string several times,

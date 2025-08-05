@@ -46,9 +46,9 @@ struct FunctionStringDistanceImpl
         {
             res[i] = Op::process(
                 haystack + haystack_offsets[i - 1],
-                haystack_offsets[i] - haystack_offsets[i - 1] - 1,
+                haystack_offsets[i] - haystack_offsets[i - 1],
                 needle + needle_offsets[i - 1],
-                needle_offsets[i] - needle_offsets[i - 1] - 1);
+                needle_offsets[i] - needle_offsets[i - 1]);
         }
     }
 
@@ -65,7 +65,7 @@ struct FunctionStringDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(haystack_data, haystack_size,
-                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
+                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1]);
         }
     }
 

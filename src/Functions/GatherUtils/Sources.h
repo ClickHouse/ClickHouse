@@ -459,7 +459,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -471,7 +471,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -488,7 +488,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
@@ -497,7 +497,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsBackward(end, offset, begin);
         const auto * res_end = skipCodePointsForward(res_begin, length, end);
 

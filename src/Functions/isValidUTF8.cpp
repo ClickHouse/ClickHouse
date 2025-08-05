@@ -226,7 +226,7 @@ SOFTWARE.
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = isValidUTF8(data.data() + prev_offset, offsets[i] - 1 - prev_offset);
+            res[i] = isValidUTF8(data.data() + prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }

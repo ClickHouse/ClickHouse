@@ -140,7 +140,7 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0]};
                 document_ok = parser.parse(json, document);
             }
 
@@ -149,7 +149,7 @@ public:
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
                     document_ok = parser.parse(json, document);
                 }
 

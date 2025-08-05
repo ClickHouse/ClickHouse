@@ -90,7 +90,7 @@ public:
         size_t param_len = pattern.size();
 
         const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
-        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset - 2]);
+        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset - 1]);
         const char * begin_pos = url_begin;
         const char * end_pos = begin_pos;
 
@@ -126,7 +126,7 @@ public:
 
         size_t cut_length = end_pos - begin_pos;
         cur_offset -= cut_length;
-        data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset+  (end_pos - url_begin));
+        data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset + (end_pos - url_begin));
     }
 
     static void vector(const ColumnString::Chars & data,

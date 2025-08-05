@@ -137,7 +137,7 @@ public:
         const size_t new_size = old_size + size_to_append;
 
         chars.resize(new_size);
-        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
+        memcpy(chars.data() + old_size, s.data(), size_to_append);
         offsets.push_back(new_size);
     }
 

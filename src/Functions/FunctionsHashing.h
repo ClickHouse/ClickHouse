@@ -1708,7 +1708,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0]);
             }
 
             return col_to;

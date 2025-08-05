@@ -366,7 +366,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
@@ -486,7 +486,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
@@ -603,11 +603,11 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)

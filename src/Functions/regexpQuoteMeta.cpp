@@ -84,7 +84,7 @@ public:
             ///  and it escapes only required characters.
             /// This is Ok. Look at comments in re2.cc
 
-            const char * src_end = src_begin + src_offsets[row_idx] - 1;
+            const char * src_end = src_begin + src_offsets[row_idx];
 
             while (true)
             {

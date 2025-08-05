@@ -52,7 +52,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
-            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
+            size_t repeated_size = (offsets[i] - offsets[i - 1]) * repeat_time;
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -77,7 +77,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
-            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
+            size_t repeated_size = (offsets[i] - offsets[i - 1]) * repeat_time;
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -147,13 +147,13 @@ private:
 
         while (repeat_time > 0)
         {
-            UInt64 cpy_size = size * (1ULL << k);
-            memcpy(dst, dst_hdr, cpy_size);
-            dst += cpy_size;
+            UInt64 copy_size = size * (1ULL << k);
+            memcpy(dst, dst_hdr, copy_size);
+            dst += copy_size;
             if (last_bit)
             {
-                memcpy(dst, dst_hdr, cpy_size);
-                dst += cpy_size;
+                memcpy(dst, dst_hdr, copy_size);
+                dst += copy_size;
             }
             k += 1;
             last_bit = repeat_time & 1;
