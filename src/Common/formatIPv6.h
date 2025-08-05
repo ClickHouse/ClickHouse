@@ -111,13 +111,6 @@ inline const char * parseIPv4(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv4whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv4(src, dst);
-    return end != nullptr && *end == '\0';
-}
-
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
@@ -287,13 +280,6 @@ inline const char * parseIPv6(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv6whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv6(src, dst);
-    return end != nullptr && *end == '\0';
-}
-
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` IPv6 or possible IPv4 into IPv6 and stores binary big-endian value into buffer pointed by `dst`,
@@ -450,7 +436,6 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
     {
         memcpy(dst, mask_string, mask_length);
         dst += mask_length;
-
         *dst++ = '.';
     }
 }

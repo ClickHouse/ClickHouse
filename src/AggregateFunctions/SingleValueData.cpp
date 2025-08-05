@@ -1099,8 +1099,6 @@ struct StringValueCompatibility
 
     static void insertDataWithTerminatingZero(ColumnString & column, const char * pos, size_t length)
     {
-        /// String already has terminating null-character.
-        /// But insertData will add another one unconditionally. Trim existing null-character to avoid duplication.
         chassert(0 < length);
         chassert(pos[length - 1] == '\0');
         column.insertData(pos, length - 1);
