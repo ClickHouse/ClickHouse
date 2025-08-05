@@ -160,7 +160,7 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
         if (should_prepare_tables_anyway)
-            return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
+            return (flushed_index >= expected_flushed_index && prepared_tables >= expected_flushed_index) || is_shutdown;
         return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
