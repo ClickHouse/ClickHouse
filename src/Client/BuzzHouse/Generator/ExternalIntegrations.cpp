@@ -1694,7 +1694,7 @@ bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, con
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
         b.catalog = CatalogTable::REST;
-        return true;
+        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
     }
     return sendRequest(fmt::format("{}/file{}", sc.database, b.tname));
 }
