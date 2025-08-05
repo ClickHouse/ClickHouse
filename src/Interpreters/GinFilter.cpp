@@ -19,10 +19,12 @@ namespace DB
 GinFilterParameters::GinFilterParameters(
     String tokenizer_,
     UInt64 segment_digestion_threshold_bytes_,
+    double bloom_filter_false_positive_rate_,
     std::optional<UInt64> ngram_size_,
     std::optional<std::vector<String>> separators_)
     : tokenizer(std::move(tokenizer_))
     , segment_digestion_threshold_bytes(segment_digestion_threshold_bytes_)
+    , bloom_filter_false_positive_rate(bloom_filter_false_positive_rate_)
     , ngram_size(ngram_size_)
     , separators(separators_)
 {
