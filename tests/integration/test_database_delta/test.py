@@ -22,7 +22,7 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"""cd /unitycatalog && nohup bin/start-uc-server &""",
+            f"""cd /unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
 
@@ -60,26 +60,43 @@ def execute_spark_query(node, query_text):
         ],
     )
 
-    result = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""
-cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
-    --master "local[1]" \\
-    --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
-    --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
-    --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
-    --conf "spark.driver.allowMultipleContexts=false" \\
-    --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
-    --conf "spark.sql.catalog.unity.token=" \\
-    --conf "spark.sql.defaultCatalog=unity" \\
-    -S -e "{query_text}"
-""",
-        ],
-    )
+    try:
+        result = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""
+    cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
+        --master "local[1]" \\
+        --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
+        --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
+        --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
+        --conf "spark.driver.allowMultipleContexts=false" \\
+        --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
+        --conf "spark.sql.catalog.unity.token=" \\
+        --conf "spark.sql.defaultCatalog=unity" \\
+        -S -e "{query_text}"
+    """,
+            ],
+        )
+    except subprocess.CalledProcessError as e:
+        print("Command failed with exit code:", e.returncode)
+        print("Command:", e.cmd)
+
+        stdout = e.stdout.decode() if e.stdout else "<no stdout>"
+        stderr = e.stderr.decode() if e.stderr else "<no stderr>"
+        print("STDOUT:\n", stdout)
+        print("STDERR:\n", stderr)
+
+        try:
+            logs = node.exec_in_container(["tail", "-n", "50", "/unitycatalog/uc.log"])
+            print("Last 50 lines of UC log:\n", logs)
+        except subprocess.CalledProcessError as log_e:
+            print(f"Cannot read log file: {str(log_e)}")
+
+        raise
 
     # We do not use "grep -v" for the above command,
     # because it will mess up the exit code.
