@@ -7,7 +7,6 @@
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
-#include <Disks/MetadataStorageWithPathWrapper.h>
 
 
 namespace DB
@@ -352,7 +351,7 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
+        return delegate->getMetadataStorage();
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;

@@ -214,9 +214,14 @@ ASTPtr ASTCreateUserQuery::clone() const
 void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
+    {
         ostr << "ATTACH USER";
+    }
     else
-        ostr << (alter ? "ALTER USER" : "CREATE USER");
+    {
+        ostr << (alter ? "ALTER USER" : "CREATE USER")
+                   ;
+    }
 
     if (if_exists)
         ostr << " IF EXISTS";
@@ -229,7 +234,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     names->format(ostr, format);
 
     if (!storage_name.empty())
-        ostr << " IN " << backQuoteIfNeed(storage_name);
+        ostr
+                    << " IN "
+                    << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, format);
 
@@ -240,19 +247,25 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     {
         // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
         if (!alter)
+        {
             ostr << " IDENTIFIED WITH no_password";
+        }
     }
     else
     {
         if (add_identified_with)
+        {
             ostr << " ADD";
+        }
 
         ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
 
     if (global_valid_until)
+    {
         formatValidUntil(*global_valid_until, ostr, format);
+    }
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);

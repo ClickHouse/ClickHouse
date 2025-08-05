@@ -153,8 +153,11 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 case static_cast<FormatAsInt>(DB::GinIndexStore::Format::v1):
                     version = DB::GinIndexStore::Format::v1;
                     break;
+                case static_cast<FormatAsInt>(DB::GinIndexStore::Format::v2):
+                    version = DB::GinIndexStore::Format::v2;
+                    break;
                 default:
-                    printAndExit("Segment id file is corrupted: unsupported version '{}'", ver);
+                    printAndExit("Segment id file is corrupted: unsupported version '{}'", DB::GinIndexStore::Format::v0);
             }
 
             readVarUInt(number_of_segments, *segment_id_read_buffer);
@@ -200,6 +203,18 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
                 dictionary_read_buffer->seek(segment_dict->dict_start_offset, SEEK_SET);
                 if (version == DB::GinIndexStore::Format::v1)
+                {
+                    /// Read uncompressed FST size
+                    size_t fst_size = 0;
+                    readVarUInt(fst_size, *dictionary_read_buffer);
+
+                    /// Read uncompressed FST blob
+                    segment_dict->offsets.getData().clear();
+                    segment_dict->offsets.getData().resize(fst_size);
+                    dictionary_read_buffer->readStrict(reinterpret_cast<char *>(segment_dict->offsets.getData().data()), fst_size);
+                    fmt::println("[Segment {}]: FST size = {}", segment_id, formatReadableSizeWithBinarySuffix(fst_size));
+                }
+                else if (version == DB::GinIndexStore::Format::v2)
                 {
                     /// Read FST size header
                     UInt64 fst_size_header = 0;

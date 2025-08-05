@@ -54,9 +54,9 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function ({}) must have arguments.", quoteString(getName()));
 
     ASTs & args = args_func.at(0)->children;
-    if (args.size() < 2)
+    if (args.size() < 2 || args.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at least 2 arguments, got: {}", getName(), args.size());
+            "Table function '{}' must have 2 or 3 arguments, got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);

@@ -593,17 +593,8 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        /*
-         * Previous implementation delegated to ToDateTimeImpl, which returns a
-         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
-         * This caused overflows when casting Date values beyond that day to
-         * DateTime64.
-         *
-         * Compute the timestamp directly in 64-bit space from the day number so we
-         * can represent the full range supported by DateTime64.
-         */
-        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
+        return execute(dt, time_zone);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
@@ -859,7 +850,7 @@ struct ConvertImplGenericToString
         auto col_to = removeNullable(result_type)->createColumn();
 
         {
-            ColumnStringHelpers::WriteHelper<StringColumnType> write_helper(
+            ColumnStringHelpers::WriteHelper write_helper(
                     assert_cast<StringColumnType &>(*col_to),
                     size);
 
@@ -5259,7 +5250,7 @@ private:
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
                 auto json_string = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();

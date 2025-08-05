@@ -28,7 +28,7 @@ MemoryTracker * getMemoryTracker()
     /// Note, we cannot use total_memory_tracker earlier (i.e. just after static variable initialized without this check),
     /// since the initialization order of static objects is not defined, and total_memory_tracker may not be initialized yet.
     /// So here we relying on MainThreadStatus initialization.
-    if (DB::MainThreadStatus::initialized())
+    if (DB::MainThreadStatus::get())
         return &total_memory_tracker;
 
     return nullptr;
@@ -145,3 +145,4 @@ void CurrentMemoryTracker::injectFault()
     if (auto * memory_tracker = getMemoryTracker())
         memory_tracker->injectFault();
 }
+

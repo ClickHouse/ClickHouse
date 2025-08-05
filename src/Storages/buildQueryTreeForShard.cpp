@@ -341,7 +341,8 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     {
         subquery_node = join_table_expression;
     }
-    else if (join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    else if (
+        join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
@@ -394,7 +395,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
             }
 
-            auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+            auto subquery_node
+                = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),

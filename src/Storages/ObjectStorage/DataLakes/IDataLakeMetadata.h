@@ -5,8 +5,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatParserGroup.h>
 
 namespace DB
 {
@@ -69,12 +68,6 @@ protected:
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_) const;
-
-    ObjectIterator createKeysIterator(
-        Strings && data_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_,
-        UInt64 snapshot_version_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

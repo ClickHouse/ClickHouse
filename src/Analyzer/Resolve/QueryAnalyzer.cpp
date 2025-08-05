@@ -211,11 +211,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -241,6 +237,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
     if (!scope.context)
         scope.context = context;
 
@@ -2560,13 +2557,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
         parent_window_node = window_node_it->second;
 
-        auto [_, inserted] = windows_in_resolve_process.emplace(parent_window_node.get());
-        if (!inserted)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Recursive window {}. In scope {}",
-                node->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
         if (identifier_node)
         {
             node = parent_window_node->clone();
@@ -2648,7 +2638,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
-    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 

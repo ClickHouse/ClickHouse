@@ -51,16 +51,18 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
+from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import Client, QueryRuntimeException
+from .client import QueryRuntimeException
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
+
+from .client import Client
 from .config_cluster import *
-from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -297,12 +299,10 @@ def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
-        output = (
-            f". Output: {e.stdout.decode(errors='replace')}"
-            if e.stdout is not None
-            else ""
+        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
+        raise RuntimeError(
+            f"rabbitmqctl {command} timed out{output}"
         )
-        raise RuntimeError(f"rabbitmqctl {command} timed out{output}")
 
 
 def check_rabbitmq_is_available(rabbitmq_id, cookie):
@@ -424,7 +424,6 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
         with_spark=False,
-        custom_keeper_configs=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -454,12 +453,6 @@ class ClickHouseCluster:
             if keeper_config_dir
             else HELPERS_DIR
         )
-
-        self.custom_keeper_configs_paths = None
-        if len(custom_keeper_configs) > 0:
-            self.custom_keeper_configs_paths = [
-                p.abspath(p.join(self.base_dir, c)) for c in custom_keeper_configs
-            ]
 
         project_name = (
             pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
@@ -2261,7 +2254,7 @@ class ClickHouseCluster:
             return True
         except Exception:
             return False
-
+        
     def get_files_list_in_container(self, container_id, path):
         result = self.exec_in_container(
             container_id,
@@ -2273,7 +2266,7 @@ class ClickHouseCluster:
         )
 
         files = result.strip().splitlines() if result else []
-        return files
+        return files            
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -2994,62 +2987,47 @@ class ClickHouseCluster:
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
                         )
-                        if self.custom_keeper_configs_paths is None:
-                            shutil.copy(
-                                os.path.join(
-                                    self.keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                                current_keeper_config_dir,
-                            )
+                        shutil.copy(
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
+                            current_keeper_config_dir,
+                        )
 
-                            extra_configs_dir = os.path.join(
-                                current_keeper_config_dir, f"keeper_config{i}.d"
-                            )
-                            os.mkdir(extra_configs_dir)
-                            feature_flags_config = os.path.join(
-                                extra_configs_dir, "feature_flags.yaml"
-                            )
+                        extra_configs_dir = os.path.join(
+                            current_keeper_config_dir, f"keeper_config{i}.d"
+                        )
+                        os.mkdir(extra_configs_dir)
+                        feature_flags_config = os.path.join(
+                            extra_configs_dir, "feature_flags.yaml"
+                        )
 
-                            indentation = 4 * " "
+                        indentation = 4 * " "
 
-                            def get_feature_flag_value(feature_flag):
-                                if not self.keeper_randomize_feature_flags:
-                                    return 1
+                        def get_feature_flag_value(feature_flag):
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
 
-                                if feature_flag in self.keeper_required_feature_flags:
-                                    return 1
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
 
-                                return random.randint(0, 1)
+                            return random.randint(0, 1)
 
-                            with open(feature_flags_config, "w") as ff_config:
-                                ff_config.write("keeper_server:\n")
-                                ff_config.write(f"{indentation}feature_flags:\n")
-                                indentation *= 2
+                        with open(feature_flags_config, "w") as ff_config:
+                            ff_config.write("keeper_server:\n")
+                            ff_config.write(f"{indentation}feature_flags:\n")
+                            indentation *= 2
 
-                                for feature_flag in [
-                                    "filtered_list",
-                                    "multi_read",
-                                    "check_not_exists",
-                                    "create_if_not_exists",
-                                    "remove_recursive",
-                                ]:
-                                    ff_config.write(
-                                        f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
-                                    )
-                        else:
-                            basename = os.path.basename(
-                                self.custom_keeper_configs_paths[i - 1]
-                            )
-                            shutil.copy(
-                                self.custom_keeper_configs_paths[i - 1],
-                                current_keeper_config_dir,
-                            )
-                            os.rename(
-                                os.path.join(current_keeper_config_dir, basename),
-                                os.path.join(
-                                    current_keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                            )
+                            for feature_flag in [
+                                "filtered_list",
+                                "multi_read",
+                                "check_not_exists",
+                                "create_if_not_exists",
+                                "remove_recursive",
+                            ]:
+                                ff_config.write(
+                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3629,7 +3607,6 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
-            - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
@@ -4529,7 +4506,7 @@ class ClickHouseInstance:
         return self.cluster.file_exists_in_container(
             self.docker_id, path
         )
-
+    
     def get_files_list_in_container(self, path):
         return self.cluster.get_files_list_in_container(
             self.docker_id, path

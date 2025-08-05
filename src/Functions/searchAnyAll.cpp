@@ -10,7 +10,7 @@
 #include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
-#include <absl/container/flat_hash_map.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -73,15 +73,12 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 constexpr size_t supported_number_of_needles = 64;
 
-/// Map needle into a position (for bitmap operations).
-using Needles = absl::flat_hash_map<String, UInt64>;
-
 template <typename StringColumnType>
 void executeSearchAny(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -92,7 +89,7 @@ void executeSearchAny(
         const auto & tokens = token_extractor->getTokens(value.data, value.size);
         for (const auto & token : tokens)
         {
-            if (needles.contains(token))
+            if (std::ranges::any_of(needles, [&token](const auto & needle) { return needle == token; }))
             {
                 col_result[i] = true;
                 break;
@@ -106,7 +103,7 @@ void executeSearchAll(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -123,8 +120,9 @@ void executeSearchAll(
         const auto & tokens = token_extractor->getTokens(value.data, value.size);
         for (const auto & token : tokens)
         {
-            if (auto it = needles.find(token); it != needles.end())
-                mask |= (1ULL << it->second);
+            for (size_t pos = 0; pos < needles.size(); ++pos)
+                if (token == needles[pos])
+                    mask |= (1 << pos);
 
             if (mask == expected_mask)
             {
@@ -140,7 +138,7 @@ void execute(
     std::unique_ptr<ITokenExtractor> token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const std::vector<String> & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     col_result.resize(input_rows_count);
@@ -196,15 +194,15 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
-    Needles needles;
+    std::vector<String> needles;
     if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
     {
-        /// TODO(ahmadov): initialize needles once for the given parameters. They are constant.
-        for (UInt64 pos = 0; const auto & needle_field : col_needles_const->getValue<Array>())
+        for (const auto & needle_field : col_needles_const->getValue<Array>())
         {
             const auto & needle = needle_field.safeGet<String>();
-            if (auto [_, inserted] = needles.emplace(needle, pos); inserted)
-                ++pos;
+            const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
+            for (const auto & token : tokens)
+                needles.emplace_back(token);
         }
     }
     else
