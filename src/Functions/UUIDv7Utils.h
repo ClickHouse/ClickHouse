@@ -2,12 +2,15 @@
 #include <Common/SharedMutex.h>
 #include <DataTypes/DataTypeUUID.h>
 
+/// Common functionality for UUIDv7-related functions.
+
 namespace DB
 {
 
-namespace UUIDv7Helpers
+namespace UUIDv7Utils
 {
-/* Bit layouts of UUIDv7
+
+/* Bit layout of UUIDv7
 
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -22,7 +25,7 @@ namespace UUIDv7Helpers
 └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
 */
 
-/// bit counts
+/// Bit counts
 constexpr auto rand_a_bits_count = 12;
 constexpr auto rand_b_bits_count = 62;
 constexpr auto rand_b_low_bits_count = 32;
@@ -31,7 +34,7 @@ constexpr auto counter_low_bits_count = 30;
 constexpr auto bits_in_counter = counter_high_bits_count + counter_low_bits_count;
 constexpr uint64_t counter_limit = (1ull << bits_in_counter);
 
-/// bit masks for UUIDv7 components
+/// Bit masks for UUIDv7 components
 constexpr uint64_t variant_2_mask  = (2ull << rand_b_bits_count);
 constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
 constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;

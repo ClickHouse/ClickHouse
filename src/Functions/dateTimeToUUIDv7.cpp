@@ -4,8 +4,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/UUIDv7Utils.h>
 #include <Common/TargetSpecific.h>
-#include <Functions/UUIDv7.h>
 
 namespace DB
 {
@@ -67,18 +67,18 @@ public:
                 const auto & src_data = col_src_non_const->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    uint64_t timestamp = UUIDv7Helpers::dateTimeToMillisecond(src_data[i]);
-                    UUIDv7Helpers::Data data;
+                    uint64_t timestamp = UUIDv7Utils::dateTimeToMillisecond(src_data[i]);
+                    UUIDv7Utils::Data data;
                     data.generate(vec_to[i], timestamp);
                 }
             }
             else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
             {
                 const auto src_data = col_src_const->getValue<UInt32>();
-                uint64_t timestamp = UUIDv7Helpers::dateTimeToMillisecond(src_data);
+                uint64_t timestamp = UUIDv7Utils::dateTimeToMillisecond(src_data);
                 for (UUID & uuid : vec_to)
                 {
-                    UUIDv7Helpers::Data data;
+                    UUIDv7Utils::Data data;
                     data.generate(uuid, timestamp);
                 }
             }

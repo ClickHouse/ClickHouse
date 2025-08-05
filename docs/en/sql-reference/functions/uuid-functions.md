@@ -683,6 +683,8 @@ SELECT generateSnowflakeID('expr', 1);
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [snowflakeIDToDateTime](#snowflakeidtodatetime) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
@@ -726,6 +728,8 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [snowflakeIDToDateTime64](#snowflakeidtodatetime64) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](../data-types/datetime64.md) format.
@@ -769,6 +773,8 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [dateTimeToSnowflakeID](#datetimetosnowflakeid) instead.
 :::
 
 Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
@@ -810,9 +816,11 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [dateTime64ToSnowflakeID](#datetime64tosnowflakeid) instead.
 :::
 
-Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 

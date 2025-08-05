@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
-#include <Functions/UUIDv7.h>
+#include <Functions/UUIDv7Utils.h>
 
 namespace DB
 {
@@ -55,10 +55,10 @@ public:
 
             /// Note: For performance reasons, clock_gettime is called once per chunk instead of once per UUID. This reduces precision but
             /// it still complies with the UUID standard.
-            uint64_t timestamp = UUIDv7Helpers::getTimestampMillisecond();
+            uint64_t timestamp = UUIDv7Utils::getTimestampMillisecond();
             for (UUID & uuid : vec_to)
             {
-                UUIDv7Helpers::Data data;
+                UUIDv7Utils::Data data;
                 data.generate(uuid, timestamp);
             }
         }
