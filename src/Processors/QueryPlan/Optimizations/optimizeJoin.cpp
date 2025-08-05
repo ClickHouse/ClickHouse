@@ -917,6 +917,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 current_input_nodes.at(input_pos).second = new_input;
             }
 
+            const ActionsDAG::Node * first_dropped_node = nullptr;
+            size_t first_dropped_node_pos = 0;
             /// Columns returned from JOIN is input with possibly corrected type
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
@@ -926,6 +928,14 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
                 if (usage_level_map[input_node] <= entry_idx)
                 {
+                    if (!first_dropped_node)
+                    {
+                        auto mapped_it = join_expression_map.find(input_node);
+                        if (mapped_it == join_expression_map.end())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                        first_dropped_node = mapped_it->second;
+                        first_dropped_node_pos = input_pos;
+                    }
                     input_node = nullptr;
                     continue;
                 }
@@ -946,6 +956,14 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
                 }
+            }
+
+            if (dag_outputs.empty())
+            {
+                if (!first_dropped_node)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned from join: {}", current_dag->dumpDAG());
+                dag_outputs.push_back(first_dropped_node);
+                current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
 
             /// FIXME:
