@@ -40,6 +40,8 @@ struct FileCacheReserveStat
         size_t evicting_count = 0;
         size_t invalidated_count = 0;
 
+        std::vector<std::pair<IFileCachePriority::EntryPtr, IFileCachePriority::IteratorPtr>> invalidated_entries;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -64,7 +66,7 @@ struct FileCacheReserveStat
         Evicting,
         Invalidated,
     };
-    void update(size_t size, FileSegmentKind kind, State state);
+    void update(size_t size, FileSegmentKind kind, State state, IFileCachePriority::IteratorPtr iterator = nullptr);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
@@ -258,6 +260,7 @@ private:
 
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
+    mutable CachePriorityGuard queue_guard;
 
     struct HitsCountStash
     {

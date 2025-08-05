@@ -101,15 +101,17 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
 }
 
 LRUFileCachePriority::LRUQueue::iterator
-LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
+LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock & lock)
 {
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
-    const auto & entry = **it;
+    auto & entry = **it;
     if (entry.size)
     {
         updateSize(-entry.size);
         updateElementsCount(-1);
     }
+
+    entry.setRemoved(lock);
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
@@ -179,8 +181,12 @@ void LRUFileCachePriority::iterate(
             /// entry.size == 0 means that queue entry was invalidated,
             /// valid (active) queue entries always have size > 0,
             /// so we can safely remove it.
+            stat.update(
+                entry.size,
+                FileSegmentKind::Unknown,
+                FileCacheReserveStat::State::Invalidated,
+                std::make_shared<LRUIterator>(this, it));
             ++it;
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -203,8 +209,12 @@ void LRUFileCachePriority::iterate(
             /// the file segment of this queue entry no longer exists.
             /// This is normal if the key was removed from metadata,
             /// while queue entries can be removed lazily (with delay).
+            stat.update(
+                entry.size,
+                FileSegmentKind::Unknown,
+                FileCacheReserveStat::State::Invalidated,
+                std::make_shared<LRUIterator>(this, it));
             ++it;
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -212,9 +222,9 @@ void LRUFileCachePriority::iterate(
         {
             /// Skip queue entries which are in evicting state.
             /// We threat them the same way as deleted entries.
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
             continue;
         }
 
@@ -224,8 +234,12 @@ void LRUFileCachePriority::iterate(
             /// Same as explained in comment above, metadata == nullptr,
             /// if file segment was removed from cache metadata,
             /// but queue entry still exists because it is lazily removed.
+            stat.update(
+                entry.size,
+                FileSegmentKind::Unknown,
+                FileCacheReserveStat::State::Invalidated,
+                std::make_shared<LRUIterator>(this, it));
             ++it;
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -444,7 +458,9 @@ IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
 
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLock & lock)
 {
-    assertValid();
+    if (iterator == LRUQueue::iterator{})
+        return;
+    //assertValid();
     cache_priority->remove(iterator, lock);
     iterator = LRUQueue::iterator{};
 }

@@ -56,6 +56,9 @@ public:
             UNUSED(prev);
         }
 
+        void setRemoved(const CachePriorityGuard::WriteLock &) { removed = true; }
+        bool isRemoved(const CachePriorityGuard::WriteLock &) const { return removed; }
+
         void resetEvictingFlag() const
         {
             auto prev = evicting.exchange(false, std::memory_order_relaxed);
@@ -65,6 +68,7 @@ public:
 
     private:
         mutable std::atomic<bool> evicting = false;
+        bool removed = false;
     };
     using EntryPtr = std::shared_ptr<Entry>;
 

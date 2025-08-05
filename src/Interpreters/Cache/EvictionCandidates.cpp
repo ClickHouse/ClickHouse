@@ -49,6 +49,7 @@ EvictionCandidates::~EvictionCandidates()
     /// for file segments which were successfully removed in evict().
     /// This set is non-empty in destructor only if there was
     /// an exception before we called finalize() or in the middle of finalize().
+    LOG_TEST(log, "Will invalidate {} queue entries", queue_entries_to_invalidate.size());
     for (const auto & iterator : queue_entries_to_invalidate)
     {
         /// In this case we need to finalize the state of queue entries
