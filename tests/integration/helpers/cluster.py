@@ -1471,17 +1471,14 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
+        self, instance, env_variables, docker_compose_yml_dir
     ):
         self.with_iceberg_catalog = True
-        file_name = "docker_compose_iceberg_rest_catalog.yml"
-        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
-            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, file_name
+                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
                 ),
             ]
         )
@@ -1489,7 +1486,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, file_name),
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1699,7 +1696,6 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
-        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1730,14 +1726,8 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            build_opts = subprocess.check_output(
-                f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                stderr=subprocess.STDOUT,
-                shell=True,
-            ).decode()
-            with_remote_database_disk = ("NDEBUG" not in build_opts) and (
-                "-fsanitize=address" in build_opts
-            )
+            # Not enabled in public
+            with_remote_database_disk = False
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -1833,7 +1823,6 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
-            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1992,7 +1981,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir, extra_parameters
+                    instance, env_variables, docker_compose_yml_dir
                 )
             )
 
@@ -2226,16 +2215,14 @@ class ClickHouseCluster:
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data)
-            encodedStr = str(encodedBytes, "utf-8")
+            encoded_payload = base64.b64encode(data)
+            encoded_payload = str(encoded_payload, "utf-8")
             self.exec_in_container(
                 container_id,
                 [
                     "bash",
                     "-c",
-                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(
-                        dest_path, encodedStr, dest_path
-                    ),
+                    f"mkdir -p $(dirname {dest_path}) && echo {encoded_payload} | base64 --decode > {dest_path}.tmp && mv {dest_path}.tmp {dest_path}",
                 ],
             )
 
@@ -2252,8 +2239,9 @@ class ClickHouseCluster:
         if result:
             decoded_data = base64.b64decode(result)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            with open(local_path, "wb") as f:
+            with open(local_path + ".tmp", "wb") as f:
                 f.write(decoded_data)
+            os.rename(local_path + ".tmp", local_path)
         else:
             raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
 
@@ -2266,7 +2254,7 @@ class ClickHouseCluster:
             return True
         except Exception:
             return False
-        
+
     def get_files_list_in_container(self, container_id, path):
         result = self.exec_in_container(
             container_id,
@@ -2278,7 +2266,7 @@ class ClickHouseCluster:
         )
 
         files = result.strip().splitlines() if result else []
-        return files            
+        return files
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -3634,6 +3622,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
@@ -3739,7 +3728,6 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
-        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4534,7 +4522,7 @@ class ClickHouseInstance:
         return self.cluster.file_exists_in_container(
             self.docker_id, path
         )
-    
+
     def get_files_list_in_container(self, path):
         return self.cluster.get_files_list_in_container(
             self.docker_id, path

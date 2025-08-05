@@ -101,6 +101,9 @@ public:
     NameSet getNameSet() const;
     DataTypes getTypes() const;
 
+    /// Creates a mapping from name to the type
+    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
+
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
 
@@ -127,6 +130,10 @@ public:
     size_t getPosByName(const std::string & name) const noexcept;
 
     String toNamesAndTypesDescription() const;
+    /// Same as NamesAndTypesList::readText, but includes `type_in_storage`.
+    void readTextWithNamesInStorage(ReadBuffer & buf);
+    /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.
+    void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

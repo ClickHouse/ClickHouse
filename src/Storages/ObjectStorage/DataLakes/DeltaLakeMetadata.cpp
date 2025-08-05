@@ -174,7 +174,7 @@ struct DeltaLakeMetadataImpl
             while (true)
             {
                 const auto filename = withPadding(++current_version) + metadata_file_suffix;
-                const auto file_path = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / filename;
+                const auto file_path = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / filename;
 
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
@@ -299,6 +299,7 @@ struct DeltaLakeMetadataImpl
             }
 
             auto configuration_ptr = configuration.lock();
+            const auto read_path_string = configuration_ptr->getPathForRead().path;
 
             if (object->has("add"))
             {
@@ -307,7 +308,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(configuration_ptr->getPath()) / path;
+                auto full_path = fs::path(read_path_string) / path;
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -352,7 +353,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(configuration_ptr->getPath()) / path);
+                result.erase(fs::path(read_path_string) / path);
             }
         }
     }
@@ -401,7 +402,7 @@ struct DeltaLakeMetadataImpl
     {
         auto configuration_ptr = configuration.lock();
         const auto last_checkpoint_file
-            = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
+            = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))
             return 0;
 
@@ -472,7 +473,7 @@ struct DeltaLakeMetadataImpl
         auto configuration_ptr = configuration.lock();
 
         const auto checkpoint_path
-            = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / checkpoint_filename;
+            = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / checkpoint_filename;
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
@@ -505,6 +506,7 @@ struct DeltaLakeMetadataImpl
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings,
+            std::nullopt,
             std::nullopt,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
@@ -560,7 +562,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(configuration_ptr->getPath()) / path;
+            auto full_path = fs::path(configuration_ptr->getPathForRead().path) / path;
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -592,7 +594,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPath()) / path);
+            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPathForRead().path) / path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
@@ -631,7 +633,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
     if (supports_delta_kernel && enable_delta_kernel)
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
     }
     else
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);

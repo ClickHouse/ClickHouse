@@ -8,6 +8,12 @@
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
+#include <aws/glue/model/CreateTableRequest.h>
+#include <aws/glue/model/CreateDatabaseRequest.h>
+#include <aws/glue/model/UpdateTableRequest.h>
+#include <aws/glue/model/TableInput.h>
+#include <aws/glue/model/StorageDescriptor.h>
+#include <aws/glue/model/Column.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -84,13 +90,13 @@ namespace DataLake
 GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
-    const DB::DatabaseDataLakeSettings & settings_,
+    const CatalogSettings & settings_,
     DB::ASTPtr table_engine_definition_)
     : ICatalog("")
     , DB::WithContext(context_)
-    , log(getLogger("GlueCatalog(" + settings_[DB::DatabaseDataLakeSetting::region].value + ")"))
-    , credentials(settings_[DB::DatabaseDataLakeSetting::aws_access_key_id].value, settings_[DB::DatabaseDataLakeSetting::aws_secret_access_key].value)
-    , region(settings_[DB::DatabaseDataLakeSetting::region].value)
+    , log(getLogger("GlueCatalog(" + settings_.region + ")"))
+    , credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key)
+    , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
     , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
@@ -284,7 +290,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (table_type != "ICEBERG")
+        if (Poco::toUpper(table_type) != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())
@@ -293,7 +299,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 message_part = "no table_type";
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
-                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have equalsIgnoreCase(table_type, '{}')",
                    database_name + "." + table_name, message_part, "ICEBERG"));
         }
 
@@ -425,7 +431,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
 
-        auto table_endpoint = settings[DB::DatabaseDataLakeSetting::storage_endpoint].value;
+        auto table_endpoint = settings.storage_endpoint;
         if (args.empty())
             args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
         else
@@ -477,6 +483,87 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     return false;
 }
 
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    Aws::Glue::Model::CreateDatabaseRequest create_request;
+    Aws::Glue::Model::DatabaseInput db_input;
+    db_input.SetName(namespace_name);
+    create_request.SetDatabaseInput(db_input);
+
+    glue_client->CreateDatabase(create_request);
+}
+
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    createNamespaceIfNotExists(namespace_name);
+
+    Aws::Glue::Model::CreateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    fs::path original_path = new_metadata_path;
+
+    fs::path parent = original_path.parent_path();
+    fs::path grandparent = parent.parent_path();
+
+    sd.SetLocation(grandparent.c_str());
+
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = new_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->CreateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+}
+
+bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    Aws::Glue::Model::UpdateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    fs::path original_path = new_metadata_path;
+
+    fs::path parent = original_path.parent_path();
+    fs::path grandparent = parent.parent_path();
+
+    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
+    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
+    sd.SetLocation(grandparent.c_str());
+
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = new_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->UpdateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+
+    return true;
+}
 
 }
 
