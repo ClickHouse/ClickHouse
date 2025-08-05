@@ -3,7 +3,12 @@
 
 namespace DB
 {
-using ObjectInfo = RelativePathWithMetadata;
+
+
+struct ObjectInfo : RelativePathsWithMetadata
+{
+    std::optional<DataLakeObjectMetadata> data_lake_metadata;
+};
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
 

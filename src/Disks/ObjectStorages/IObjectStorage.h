@@ -105,16 +105,11 @@ struct ObjectMetadata
     std::string etag;
     ObjectAttributes attributes;
 };
-
-struct DataLakeObjectMetadata;
-
 struct RelativePathWithMetadata
 {
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Delta lake related object metadata.
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
