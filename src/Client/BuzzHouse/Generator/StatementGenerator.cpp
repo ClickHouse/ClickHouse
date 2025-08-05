@@ -803,17 +803,8 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
 
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_parallel, Insert * ins)
 {
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-
-    if (!tableOrFunctionRef(rg, t, ins->mutable_tof()))
-    {
-        for (const auto & entry : this->entries)
-        {
-            columnPathRef(entry, ins->add_cols());
-        }
-    }
-
     String buf;
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
     const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(!in_parallel);
     const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
     const uint32_t generate_random = 15;
@@ -825,6 +816,13 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
+    if (!tableOrFunctionRef(rg, t, ins->mutable_tof()))
+    {
+        for (const auto & entry : this->entries)
+        {
+            columnPathRef(entry, ins->add_cols());
+        }
+    }
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
         const uint64_t nrows = rows_dist(rg.generator);
