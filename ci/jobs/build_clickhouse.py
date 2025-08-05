@@ -125,13 +125,20 @@ def main():
     results = []
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"mkdir -p {build_dir}")
-        results.append(
-            Result.from_commands_run(
-                name="Checkout Submodules",
-                command=f"git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs {min([Utils.cpu_count(), 20])}",
-                retries=3,
+
+        def do_checkout():
+            res = Shell.check(
+                f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
+            res = res and Shell.check(
+                f"git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=20 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch",
+                retries=3,
+                strict=True,
+            )
+            return res
+
+        results.append(
+            Result.from_commands_run(name="Checkout Submodules", command=do_checkout)
         )
         res = results[-1].is_ok()
 
