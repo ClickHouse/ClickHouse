@@ -1854,7 +1854,7 @@ struct ConvertImpl
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
                     data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale());
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
