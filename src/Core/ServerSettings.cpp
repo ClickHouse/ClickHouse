@@ -1132,7 +1132,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
-
+    DECLARE(UInt64, lightweight_zookeeper_logger_flush_period_ms, 10000, R"(
+    Maximum interval in milliseconds between flushes of ZooKeeper operations to system.lightweight_zookeeper_log. 
+    The logger aggregates operations in memory and flushes when either this interval expires or the entry limit is reached, whichever occurs first. 
+    Set to 0 to disable time-based flushing (flush only by entry limit).
+    )", 0) \
+    DECLARE(UInt64, lightweight_zookeeper_logger_max_entries, 100000, R"(
+    Maximum entries in memory before flushing ZooKeeper operations to system.lightweight_zookeeper_log.
+    The logger aggregates operations in memory and flushes when either this limit or the flush interval is reached, whichever occurs first. 
+    Set to 0 to disable entry-based flushing (flush only by time period).
+    )", 0) \
 
 // clang-format on
 
