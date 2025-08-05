@@ -64,6 +64,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
+    extern const char object_storage_queue_fail_startup[];
 }
 
 namespace ServerSetting
@@ -105,8 +106,8 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int FAULT_INJECTED;
 }
 
 namespace
@@ -255,22 +256,57 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
 void StorageObjectStorageQueue::startup()
 {
+    if (startup_finished)
+    {
+        LOG_TRACE(log, "Startup was already successfully called");
+        return;
+    }
+
+    /// Create metadata in keeper if it does not exits yet.
+    /// Create a persistent node for the table under /registry node.
+    bool created_new_metadata = false;
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
+        zk_path,
+        std::move(temp_metadata),
+        getStorageID(),
+        created_new_metadata);
+
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
-    try
-    {
-        ObjectStorageQueueFactory::instance().registerTable(getStorageID());
-        files_metadata->startup();
-        for (auto & task : streaming_tasks)
-            task->activateAndSchedule();
-    }
-    catch (...)
-    {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), /*remove_metadata_if_no_registered=*/true);
-        files_metadata.reset();
-        throw;
-    }
+    SCOPE_EXIT_SAFE({
+        if (!startup_finished)
+        {
+            /// Unregister table metadata from keeper and remove metadata from keeper,
+            /// if it was just created by us (created_new_metadata == true)
+            /// and if /registry is empty (no table was concurrently created).
+            ObjectStorageQueueMetadataFactory::instance().remove(
+                zk_path,
+                getStorageID(),
+                /* is_drop */created_new_metadata,
+                /* keep_data_in_keeper */false);
+
+            files_metadata.reset();
+        }
+    });
+
+    /// Register table as a Queue table on this server.
+    /// This will allow to execute shutdown of Queue tables
+    /// before shutting down all other tables on server shutdown.
+    ObjectStorageQueueFactory::instance().registerTable(getStorageID());
+    SCOPE_EXIT_SAFE({
+        if (!startup_finished)
+            ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
+    });
+
+    fiu_do_on(FailPoints::object_storage_queue_fail_startup, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to startup");
+    });
+
+    /// Start background tasks.
+    files_metadata->startup();
+    for (auto & task : streaming_tasks)
+        task->activateAndSchedule();
+
     startup_finished = true;
 }
 
@@ -279,30 +315,39 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     if (shutdown_called)
         return;
 
-    if (is_drop)
-        ObjectStorageQueueFactory::instance().unregisterTable(getStorageID());
+    /// Unregister table from local Queue storages factory.
+    /// (which allows to  to execute shutdown of Queue tables
+    /// before shutting down all other tables on server shutdown).
+    ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
 
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
-    Stopwatch watch;
-    LOG_TRACE(log, "Waiting for streaming to finish...");
-    for (auto & task : streaming_tasks)
-        task->deactivate();
-    LOG_TRACE(log, "Streaming finished (took: {} ms)", watch.elapsedMilliseconds());
+    {
+        Stopwatch watch;
+        LOG_DEBUG(log, "Waiting for streaming to finish...");
+
+        for (auto & task : streaming_tasks)
+            task->deactivate();
+
+        LOG_DEBUG(
+            log, "Finished {} streaming tasks (took: {} ms)",
+            streaming_tasks.size(), watch.elapsedMilliseconds());
+    }
 
     if (files_metadata)
     {
         try
         {
-            files_metadata->unregister(getStorageID(), /* active */true, /* remove_metadata_if_no_registered */false);
+            files_metadata->unregisterActive(getStorageID());
         }
         catch (...)
         {
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop && !keep_data_in_keeper);
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop, keep_data_in_keeper);
+
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
@@ -532,7 +577,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                files_metadata->registerIfNot(storage_id, /* active */true);
+                files_metadata->registerActive(storage_id);
 
                 if (streamToViews(streaming_tasks_index))
                 {
@@ -577,7 +622,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         {
             try
             {
-                files_metadata->unregister(storage_id, /* active */true, /* remove_metadata_if_no_registered */false);
+                files_metadata->unregisterActive(storage_id);
             }
             catch (...)
             {
@@ -753,7 +798,7 @@ void StorageObjectStorageQueue::commit(
     Coordination::Responses responses;
 
     fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to commit processed files");
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to commit processed files");
     });
 
     auto code = zk_client->tryMulti(requests, responses);
