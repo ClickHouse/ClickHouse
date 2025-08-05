@@ -213,7 +213,7 @@ void LRUFileCachePriority::iterate(
                 entry.size,
                 FileSegmentKind::Unknown,
                 FileCacheReserveStat::State::Invalidated,
-                std::make_shared<LRUIterator>(this, it));
+                nullptr);
             ++it;
             continue;
         }
@@ -237,8 +237,7 @@ void LRUFileCachePriority::iterate(
             stat.update(
                 entry.size,
                 FileSegmentKind::Unknown,
-                FileCacheReserveStat::State::Invalidated,
-                std::make_shared<LRUIterator>(this, it));
+                FileCacheReserveStat::State::Invalidated, nullptr);
             ++it;
             continue;
         }

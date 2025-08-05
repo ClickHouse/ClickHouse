@@ -121,7 +121,8 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
         {
             ++total_stat.invalidated_count;
             ++local_stat.invalidated_count;
-            total_stat.invalidated_entries.emplace_back(iterator->getEntry(), iterator);
+            if (iterator)
+                total_stat.invalidated_entries.emplace_back(iterator->getEntry(), iterator);
             break;
         }
     }
@@ -986,6 +987,7 @@ bool FileCache::tryReserve(
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
     auto queue_iterator = file_segment.getQueueIterator();
+#ifdef DEBUG_OR_SANITIZER_BUILD
     /// A file_segment_metadata acquires a priority iterator
     /// on first successful space reservation attempt,
     /// so queue_iterator == nullptr, if no space reservation took place yet.
@@ -998,8 +1000,9 @@ bool FileCache::tryReserve(
     {
         chassert(file_segment.getReservedSize() == 0);
     }
+#endif
 
-    /// If it is the first space reservatiob attempt for a file segment
+    /// If it is the first space reservation attempt for a file segment
     /// we need to make space for 1 element in cache,
     /// otherwise space is already taken and we need 0 elements to free.
     size_t required_elements_num = queue_iterator ? 0 : 1;
@@ -1052,11 +1055,11 @@ bool FileCache::tryReserve(
                     file_segment.key(),
                     file_segment.offset());
             }
-        }
 
-        /// If user has configured fs cache limit per query, we take into account query limits here.
-        if (query_priority)
-            query_eviction_info = query_priority->checkEvictionInfo(size, required_elements_num, cache_write_lock.value());
+            /// If user has configured fs cache limit per query, we take into account query limits here.
+            if (query_priority)
+                query_eviction_info = query_priority->checkEvictionInfo(size, required_elements_num, cache_write_lock.value());
+        }
 
         main_eviction_info = main_priority->checkEvictionInfo(size, required_elements_num, cache_write_lock.value());
     }
@@ -1067,27 +1070,25 @@ bool FileCache::tryReserve(
         cache_write_lock.reset();
         {
             auto cache_read_lock = cache_guard.readLock();
-
-            LOG_TEST(log, "Took read lock");
-
             auto on_cannot_evict_enough_space_message = [&](const IFileCachePriority & priority)
             {
                 const auto & stat = reserve_stat.total_stat;
                 return fmt::format(
-                    "cannot evict enough space for query limit "
+                    "cannot evict enough space "
                     "(non-releasable count: {}, non-releasable size: {}, "
                     "releasable count: {}, releasable size: {}, evicting count: {}, invalidated count: {}, "
-                    "total elements: {}, background download elements: {})",
+                    "total size: {}/{}, total elements: {}/{}, background download elements: {})",
                     stat.non_releasable_count, stat.non_releasable_size,
                     stat.releasable_count, stat.releasable_size, stat.evicting_count, stat.invalidated_count,
-                    priority.getElementsCount(cache_read_lock),
+                    priority.getSize(cache_read_lock), priority.getSizeLimitApprox(),
+                    priority.getElementsCount(cache_read_lock), priority.getElementsCountApprox(),
                     CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
             };
 
             if (query_priority && (query_eviction_info.size_to_evict || query_eviction_info.elements_to_evict))
             {
                 if (!query_priority->collectCandidatesForEviction(
-                        size,
+                        query_eviction_info.size_to_evict,
                         required_elements_num,
                         reserve_stat,
                         eviction_candidates,
@@ -1110,7 +1111,7 @@ bool FileCache::tryReserve(
             if (main_eviction_info.size_to_evict || main_eviction_info.elements_to_evict)
             {
                 if (!main_priority->collectCandidatesForEviction(
-                        size,
+                        main_eviction_info.size_to_evict,
                         required_elements_num,
                         reserve_stat,
                         eviction_candidates,
