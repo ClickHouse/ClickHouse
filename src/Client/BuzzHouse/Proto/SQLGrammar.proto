@@ -3468,7 +3468,7 @@ message CheckTable {
 
 message DescribeStatement {
     oneof desc_oneof {
-        ExprSchemaTable est = 1;
+        TableOrFunction tof = 1;
         ExplainQuery sel = 2;
         SQLTableFuncCall stf = 3;
     }

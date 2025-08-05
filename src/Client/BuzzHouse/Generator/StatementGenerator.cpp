@@ -641,6 +641,84 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     ct->set_single_result(rg.nextSmallNumber() < 4);
 }
 
+bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, TableOrFunction * tof)
+{
+    bool is_url = false;
+    const std::optional<String> & cluster = t.getCluster();
+    const uint32_t engine_func = 15 * static_cast<uint32_t>(t.isEngineReplaceable());
+    const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
+    const uint32_t remote_func = 5;
+    const uint32_t url_func = 5;
+    const uint32_t simple_est = 95;
+    const uint32_t prob_space = engine_func + cluster_func + remote_func + url_func + simple_est;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+    const bool allCols = rg.nextMediumNumber() < 2;
+
+    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
+    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
+    if ((engine_func || cluster_func || remote_func) && (nopt < engine_func + cluster_func + remote_func + 1))
+    {
+        /// Use tabler function
+        const TableFunctionUsage usage = (engine_func && nopt < engine_func + 1)
+            ? TableFunctionUsage::EngineReplace
+            : ((cluster_func && (nopt < engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
+                                                                         : TableFunctionUsage::RemoteCall);
+
+        setTableFunction(rg, usage, true, t, tof->mutable_tfunc());
+    }
+    else if ((is_url = (url_func && (nopt < engine_func + cluster_func + remote_func + url_func + 1))))
+    {
+        /// Use URL table function
+        String url;
+        String buf;
+        bool first = true;
+        URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+                                             : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
+        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+            ? outIn.at(outf)
+            : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+
+        if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
+        {
+            ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
+            ufunc->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        }
+        else
+        {
+            ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
+        }
+        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
+        for (const auto & entry : this->entries)
+        {
+            url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
+            buf += fmt::format(
+                "{}{} {}{}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                entry.path.size() > 1 ? "Array(" : "",
+                entry.getBottomType()->typeName(true),
+                entry.path.size() > 1 ? ")" : "");
+            first = false;
+        }
+        url += ")+FORMAT+" + InFormat_Name(iinf).substr(3);
+        ufunc->set_uurl(std::move(url));
+        ufunc->set_outformat(outf);
+        ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
+    else if (simple_est && (nopt < engine_func + cluster_func + remote_func + url_func + simple_est + 1))
+    {
+        /// Use simple schema.table call
+        t.setName(tof->mutable_est(), false);
+    }
+    else
+    {
+        chassert(0);
+    }
+    return is_url;
+}
+
 void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt)
 {
     const uint32_t desc_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
@@ -655,21 +733,20 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
 
     if (desc_table && nopt < (desc_table + 1))
     {
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-
-        t.setName(dt->mutable_est(), false);
+        const auto is_url = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), dt->mutable_tof());
+        UNUSED(is_url);
     }
     else if (desc_view && nopt < (desc_table + desc_view + 1))
     {
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
-        v.setName(dt->mutable_est(), false);
+        v.setName(dt->mutable_tof()->mutable_est(), false);
     }
     else if (desc_dict && nopt < (desc_table + desc_view + desc_dict + 1))
     {
         const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
 
-        d.setName(dt->mutable_est(), false);
+        d.setName(dt->mutable_tof()->mutable_est(), false);
     }
     else if (desc_query && nopt < (desc_table + desc_view + desc_dict + desc_query + 1))
     {
@@ -700,7 +777,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
     else if (desc_system_table && nopt < (desc_table + desc_view + desc_dict + desc_query + desc_function + desc_system_table + 1))
     {
-        ExprSchemaTable * est = dt->mutable_est();
+        ExprSchemaTable * est = dt->mutable_tof()->mutable_est();
 
         est->mutable_database()->set_database("system");
         est->mutable_table()->set_table(rg.pickRandomly(systemTables));
@@ -726,86 +803,9 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
 
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_parallel, Insert * ins)
 {
-    String buf;
-    bool is_url = false;
-    TableOrFunction * tof = ins->mutable_tof();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-    const std::optional<String> & cluster = t.getCluster();
-    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
-    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
-    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
-    const uint32_t engine_func = 15 * static_cast<uint32_t>(t.isEngineReplaceable());
-    const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
-    const uint32_t remote_func = 5;
-    const uint32_t url_func = 5;
-    const uint32_t insert_into_table = 95;
-    const uint32_t prob_space2 = engine_func + cluster_func + remote_func + url_func + insert_into_table;
-    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
-    const uint32_t nopt2 = next_dist2(rg.generator);
-
-    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
-    if ((engine_func || cluster_func || remote_func) && (nopt2 < engine_func + cluster_func + remote_func + 1))
-    {
-        /// Use insert into remote
-        const TableFunctionUsage usage = (engine_func && nopt2 < engine_func + 1)
-            ? TableFunctionUsage::EngineReplace
-            : ((cluster_func && (nopt2 < engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
-                                                                          : TableFunctionUsage::RemoteCall);
-
-        setTableFunction(rg, usage, true, t, tof->mutable_tfunc());
-    }
-    else if ((is_url = (url_func && (nopt2 < engine_func + cluster_func + remote_func + url_func + 1))))
-    {
-        /// Use insert into URL
-        String url;
-        String buf2;
-        bool first = true;
-        URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
-        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
-                                             : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
-            ? outIn.at(outf)
-            : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
-
-        if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
-        {
-            ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-            ufunc->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
-        }
-        else
-        {
-            ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
-        }
-        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
-        for (const auto & entry : this->entries)
-        {
-            url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
-            buf2 += fmt::format(
-                "{}{} {}{}{}",
-                first ? "" : ", ",
-                entry.getBottomName(),
-                entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(true),
-                entry.path.size() > 1 ? ")" : "");
-            first = false;
-        }
-        url += ")+FORMAT+" + InFormat_Name(iinf).substr(3);
-        ufunc->set_uurl(std::move(url));
-        ufunc->set_outformat(outf);
-        ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf2));
-    }
-    else if (insert_into_table && (nopt2 < engine_func + cluster_func + remote_func + url_func + insert_into_table + 1))
-    {
-        /// Use insert into table
-        t.setName(tof->mutable_est(), false);
-    }
-    else
-    {
-        chassert(0);
-    }
-    if (!is_url)
+    if (!tableOrFunctionRef(rg, t, ins->mutable_tof()))
     {
         for (const auto & entry : this->entries)
         {
@@ -813,6 +813,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
     }
 
+    String buf;
     const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(!in_parallel);
     const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
     const uint32_t generate_random = 15;
@@ -820,6 +821,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     const uint32_t prob_space = hardcoded_insert + random_values + generate_random + insert_select;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
+    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {

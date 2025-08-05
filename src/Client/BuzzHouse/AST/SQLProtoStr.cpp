@@ -3700,8 +3700,8 @@ CONV_FN(DescribeStatement, ds)
     using DescType = DescribeStatement::DescOneofCase;
     switch (ds.desc_oneof_case())
     {
-        case DescType::kEst:
-            ExprSchemaTableToString(ret, ds.est());
+        case DescType::kTof:
+            TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
             ret += "(";
