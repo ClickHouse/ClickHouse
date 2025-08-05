@@ -7,10 +7,17 @@
 #include <Common/DNSResolver.h>
 #include <Common/IO.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
 
 #include <Poco/Message.h>
+
+
+namespace ProfileEvents
+{
+extern const Event AsyncLoggingTextLogDroppedMessages;
+}
 
 namespace DB
 {
@@ -179,7 +186,7 @@ void OwnSplitChannel::logSplit(
 }
 
 
-void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
+void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name, const ProfileEvents::Event *)
 {
     channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
@@ -210,7 +217,13 @@ void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const 
     }
 }
 
-OwnAsyncSplitChannel::OwnAsyncSplitChannel() = default;
+OwnAsyncSplitChannel::OwnAsyncSplitChannel(size_t async_queue_size_)
+    : async_queue_size(async_queue_size_)
+    , text_log_queue(async_queue_size_, &ProfileEvents::AsyncLoggingTextLogDroppedMessages)
+{
+    if (async_queue_size_ == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Asynchronous log message queue cannot have zero size");
+}
 
 OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 {
@@ -297,11 +310,19 @@ public:
 };
 
 
+AsyncLogMessageQueue::AsyncLogMessageQueue(size_t max_size_, const ProfileEvents::Event * event_on_drop_async_log_)
+    : event_on_drop_async_log(event_on_drop_async_log_)
+    , max_size(max_size_)
+{
+    if (max_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Asynchronous log message queue cannot have zero size");
+}
+
 void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 {
     std::unique_lock lock(mutex);
     size_t current_size = message_queue.size();
-    if (unlikely(current_size > max_size || dropped_messages && current_size > max_size / 2))
+    if (unlikely(current_size >= max_size || dropped_messages && current_size > max_size / 2))
     {
         dropped_messages++;
         return;
@@ -309,6 +330,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 
     if (unlikely(dropped_messages))
     {
+        ProfileEvents::incrementNoTrace(*event_on_drop_async_log, dropped_messages);
         String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
         message_queue.push_back(std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING)));
         dropped_messages = 0;
@@ -524,7 +546,8 @@ void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, 
     }
 }
 
-void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
+void OwnAsyncSplitChannel::addChannel(
+    Poco::AutoPtr<Poco::Channel> channel, const std::string & name, const ProfileEvents::Event * event_on_drop_async_log_)
 {
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel '{}' while the split channel is open", name);
@@ -535,7 +558,7 @@ void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, cons
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
 
     channels.emplace_back(extended);
-    queues.emplace_back(std::make_unique<AsyncLogMessageQueue>());
+    queues.emplace_back(std::make_unique<AsyncLogMessageQueue>(async_queue_size, event_on_drop_async_log_));
     threads.emplace_back(nullptr);
     const size_t i = threads.size() - 1;
     runnables.emplace_back(new OwnRunnableForChannel(*this, i));

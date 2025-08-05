@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Loggers/ExtendedLogChannel.h>
+#include <base/strong_typedef.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -15,6 +16,11 @@
 #include <Poco/Channel.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
+
+namespace ProfileEvents
+{
+using Event = StrongTypedef<size_t, struct EventTag>;
+}
 
 namespace DB
 {
@@ -38,7 +44,9 @@ public:
     virtual void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) = 0;
 
     /// Adds a child channel
-    virtual void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) = 0;
+    virtual void
+    addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name, const ProfileEvents::Event * event_on_drop_async_log_)
+        = 0;
 
     virtual void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) = 0;
 
@@ -60,7 +68,7 @@ public:
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
 
     /// Adds a child channel
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) override;
+    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name, const ProfileEvents::Event *) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
 
@@ -83,10 +91,9 @@ using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
 class AsyncLogMessageQueue
 {
-    /// Maximum size of the queue, to prevent memory overflow
-    static constexpr size_t max_size = 10'000;
-
 public:
+    explicit AsyncLogMessageQueue(size_t max_size_, const ProfileEvents::Event * event_on_drop_async_log_);
+
     using Queue = std::deque<AsyncLogMessagePtr>;
 
     /// Enqueues a single message notification
@@ -105,6 +112,9 @@ public:
 private:
     Queue message_queue;
     std::condition_variable condition;
+    const ProfileEvents::Event * event_on_drop_async_log;
+    /// Maximum size of the queue, to prevent memory overflow
+    const size_t max_size = 10000;
     size_t dropped_messages = 0;
     std::mutex mutex;
 };
@@ -117,7 +127,7 @@ private:
 class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
-    OwnAsyncSplitChannel();
+    explicit OwnAsyncSplitChannel(size_t async_queue_size_);
     ~OwnAsyncSplitChannel() override;
 
     void open() override;
@@ -128,7 +138,8 @@ public:
     void runTextLog();
 
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name) override;
+    void addChannel(
+        Poco::AutoPtr<Poco::Channel> channel, const std::string & name, const ProfileEvents::Event * event_on_drop_async_log_) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
     void setLevel(const std::string & name, int level) override;
@@ -137,6 +148,7 @@ public:
 
 private:
     std::atomic<bool> is_open = false;
+    const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
