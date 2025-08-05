@@ -55,7 +55,7 @@ public:
 
                 if (tokenizer == NgramTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitTokenExtractor::getExternalName())
+                else if (tokenizer == StringTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
         }
@@ -76,14 +76,14 @@ public:
 
         std::unique_ptr<ITokenExtractor> token_extractor;
 
-        const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
+        const auto tokenizer_arg = arguments.size() < 2 ? SplitTokenExtractor::getExternalName()
                                                         : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
-        if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
+        if (tokenizer_arg == SplitTokenExtractor::getExternalName())
         {
-            token_extractor = std::make_unique<DefaultTokenExtractor>();
+            token_extractor = std::make_unique<SplitTokenExtractor>();
         }
-        else if (tokenizer_arg == SplitTokenExtractor::getExternalName())
+        else if (tokenizer_arg == StringTokenExtractor::getExternalName())
         {
             std::vector<String> separators;
             if (arguments.size() < 3)
@@ -112,7 +112,7 @@ public:
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
                 }
             }
-            token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+            token_extractor = std::make_unique<StringTokenExtractor>(separators);
         }
         else if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
         {
@@ -129,7 +129,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+                "Function '{}' supports only tokenizers 'default', 'string', 'ngram', and 'no_op'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))

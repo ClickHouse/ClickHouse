@@ -1,5 +1,6 @@
 #pragma once
 #include <Functions/IFunctionDateOrDateTime.h>
+#include "Common/Logger.h"
 
 namespace DB
 {

@@ -110,7 +110,7 @@ REGISTER_FUNCTION(ReadWKB)
     )",
             .syntax = "readWKBPoint(wkt_string)",
             .arguments{{"wkb_string", "The input WKB string representing a Point geometry."}},
-            .returned_value = {"The function returns a ClickHouse internal representation of the point geometry."},
+            .returned_value = "The function returns a ClickHouse internal representation of the point geometry.",
             .examples{
                 {"first call",
                  "SELECT "
@@ -134,7 +134,7 @@ REGISTER_FUNCTION(ReadWKB)
     )",
             .syntax = "readWKBLineString(wkt_string)",
             .arguments{{"wkb_string", "The input WKB string representing a LineString geometry."}},
-            .returned_value = {"The function returns a ClickHouse internal representation of the linestring geometry."},
+            .returned_value = "The function returns a ClickHouse internal representation of the linestring geometry.",
             .examples{
                 {"first call",
                  "SELECT "
@@ -159,7 +159,7 @@ REGISTER_FUNCTION(ReadWKB)
             )",
         .syntax = "readWKBMultiLineString(wkt_string)",
         .arguments{{"wkb_string", "The input WKB string representing a MultiLineString geometry."}},
-        .returned_value = {"The function returns a ClickHouse internal representation of the multilinestring geometry."},
+        .returned_value = "The function returns a ClickHouse internal representation of the multilinestring geometry.",
         .examples{
             {"first call",
              "SELECT "
@@ -183,7 +183,7 @@ REGISTER_FUNCTION(ReadWKB)
                 )",
             .syntax = "readWKBPolygon(wkt_string)",
             .arguments{{"wkb_string", "The input WKB string representing a Polygon geometry."}},
-            .returned_value = {"The function returns a ClickHouse internal representation of the Polygon geometry."},
+            .returned_value = "The function returns a ClickHouse internal representation of the Polygon geometry.",
             .examples{
                 {"first call",
                  "SELECT "
@@ -209,8 +209,8 @@ REGISTER_FUNCTION(ReadWKB)
         Parses a Well-Known Binary (WKB) representation of a MultiPolygon geometry and returns it in the internal ClickHouse format.
         )",
         .syntax = "readWKBMultiPolygon(wkt_string)",
-        .arguments{{"wkb_string", "The input WKB string representing a MultiPolygon geometry.", {"String"}}},
-        .returned_value = {"The function returns a ClickHouse internal representation of the MultiPolygon geometry."},
+        .arguments{{"wkb_string", "The input WKB string representing a MultiPolygon geometry."}},
+        .returned_value = "The function returns a ClickHouse internal representation of the MultiPolygon geometry.",
         .examples{
             {"first call",
              "SELECT "

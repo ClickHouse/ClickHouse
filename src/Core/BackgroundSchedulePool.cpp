@@ -2,7 +2,6 @@
 #include <Core/UUID.h>
 
 #include <IO/WriteHelpers.h>
-#include <base/defines.h>
 
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
@@ -22,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
-    extern const int ABORTED;
 }
 
 ///
@@ -228,7 +226,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
             getLogger("BackgroundSchedulePool/" + thread_name),
             "Couldn't get {} threads from global thread pool: {}",
             size_,
-            getCurrentExceptionCode() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            getCurrentExceptionCode() == DB::ErrorCodes::CANNOT_SCHEDULE_TASK
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
                 : getCurrentExceptionMessage(/* with_stacktrace */ true));
@@ -239,9 +237,6 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
 
 void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 {
-    if (shutdown)
-        throw Exception(ErrorCodes::ABORTED, "Pool already destroyed");
-
     const size_t old_threads_count = threads.size();
 
     if (new_threads_count < old_threads_count)
@@ -259,7 +254,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 }
 
 
-void BackgroundSchedulePool::join()
+BackgroundSchedulePool::~BackgroundSchedulePool()
 {
     try
     {
@@ -274,10 +269,8 @@ void BackgroundSchedulePool::join()
             Stopwatch watch;
             LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
             delayed_thread->join();
-            delayed_thread.reset();
             for (auto & thread : threads)
                 thread.join();
-            threads.clear();
             LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Threads finished in {}ms.", watch.elapsedMilliseconds());
         }
     }
@@ -285,13 +278,6 @@ void BackgroundSchedulePool::join()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-BackgroundSchedulePool::~BackgroundSchedulePool()
-{
-    chassert(shutdown == true, "BackgroundSchedulePool::join() has not been called");
-    chassert(static_cast<bool>(delayed_thread) == false, "BackgroundSchedulePool::delayed_thread has not been joined");
-    chassert(threads.empty(), "BackgroundSchedulePool::threads have not been joined");
 }
 
 
@@ -360,8 +346,6 @@ void BackgroundSchedulePool::threadFunction()
             {
                 return shutdown || !tasks.empty();
             });
-            if (shutdown)
-                break;
 
             if (!tasks.empty())
             {
@@ -392,8 +376,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
             while (!shutdown)
             {
-                Poco::Timestamp current_time;
-                Poco::Timestamp min_time = current_time;
+                Poco::Timestamp min_time;
 
                 if (!delayed_tasks.empty())
                 {
@@ -405,16 +388,14 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                 if (!task)
                 {
                     delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
-                    if (shutdown)
-                        break;
                     continue;
                 }
+
+                Poco::Timestamp current_time;
 
                 if (min_time > current_time)
                 {
                     delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
-                    if (shutdown)
-                        break;
                     continue;
                 }
 

@@ -91,8 +91,7 @@ CREATE TABLE system.columns
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
-    `serialization_hint` Nullable(String),
-    `column` String ALIAS name
+    `serialization_hint` Nullable(String)
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
@@ -288,14 +287,7 @@ CREATE TABLE system.formats
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
     `supports_parallel_formatting` UInt8,
-    `is_tty_friendly` UInt8,
-    `content_type` String,
-    `supports_random_access` UInt8,
-    `has_schema_inference` UInt8,
-    `has_external_schema` UInt8,
-    `prefers_large_blocks` UInt8,
-    `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `is_tty_friendly` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'

@@ -1,4 +1,4 @@
-#include <Interpreters/ITokenExtractor.h>
+#include "ITokenExtractor.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -36,9 +36,6 @@ std::vector<String> ITokenExtractor::getTokens(const char * data, size_t length)
 
 std::vector<String> NgramTokenExtractor::getTokens(const char * data, size_t length) const
 {
-    if (length == 0)
-        return {};
-
     if (length < n)
         return std::vector<String>{String(data, length)};
 
@@ -107,7 +104,7 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
-bool DefaultTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -132,7 +129,7 @@ bool DefaultTokenExtractor::nextInString(const char * data, size_t length, size_
     return *token_length > 0;
 }
 
-bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -223,7 +220,7 @@ bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length,
     return *token_length > 0;
 }
 
-bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool SplitTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
     bool bad_token = false; // % or _ before token
@@ -266,7 +263,7 @@ bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, s
     return !bad_token && !token.empty();
 }
 
-void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+void SplitTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -280,7 +277,7 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
             bloom_filter.add(data + token_start, token_len);
 }
 
-void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
+void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
 {
     gin_filter.setQueryString(data, length);
 
@@ -296,7 +293,7 @@ void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t lengt
             gin_filter.addTerm(data + token_start, token_len);
 }
 
-SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
+StringTokenExtractor::StringTokenExtractor(const std::vector<String> & separators_)
     : separators(separators_)
 {
 }
@@ -320,7 +317,7 @@ bool startsWithSeparator(const char * data, size_t length, size_t pos, const std
 
 }
 
-bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
+bool StringTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     size_t i = *pos;
     std::string matched_separators;
@@ -347,16 +344,13 @@ bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return true;
 }
 
-bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
+bool StringTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
 std::vector<String> NoOpTokenExtractor::getTokens(const char * data, size_t length) const
 {
-    if (length == 0)
-        return {};
-
     return {String(data, length)};
 }
 

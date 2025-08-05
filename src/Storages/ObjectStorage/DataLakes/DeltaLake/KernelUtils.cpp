@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include "KernelUtils.h"
 
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
@@ -13,7 +13,6 @@
 namespace DB::ErrorCodes
 {
     extern const int DELTA_KERNEL_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DeltaLake
@@ -137,27 +136,6 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
             "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
             error_ptr, etype, from);
     }
-}
-
-std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
-{
-    if (physical_names_map.empty())
-        return name;
-
-    auto it = physical_names_map.find(name);
-    if (it == physical_names_map.end())
-    {
-        DB::Names keys;
-        keys.reserve(physical_names_map.size());
-        for (const auto & [key, _] : physical_names_map)
-            keys.push_back(key);
-
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Not found column {} in physical names map. There are only columns: {}",
-            name, fmt::join(keys, ", "));
-    }
-    return it->second;
 }
 
 }

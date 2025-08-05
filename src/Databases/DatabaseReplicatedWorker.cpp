@@ -141,22 +141,17 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getAndSetZooKeeper();
 
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
-
-    LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
-
-    zookeeper->deleteEphemeralNodeIfContentMatches(
-        active_path,
-        [&active_id](const std::string & actual_content)
-        {
-            if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
-                return active_id == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
-            return active_id == actual_content;
-        });
+    zookeeper->deleteEphemeralNodeIfContentMatches(active_path, [&active_id] (const std::string & actual_content)
+    {
+        if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+            return active_id == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
+        return active_id == actual_content;
+    });
     bool first_initialization = active_node_holder == nullptr;
     if (active_node_holder)
         active_node_holder->setAlreadyRemoved();
@@ -244,57 +239,20 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         unsynced_after_recovery = false;
     }
 
-    LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
-
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder_zookeeper = zookeeper;
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
-void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
-{
-    if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
-    {
-        auto zookeeper = getZooKeeper();
-
-        String active_path = fs::path(database->replica_path) / "active";
-        String active_id = toString(ServerUUID::get());
-
-        LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
-
-        zookeeper->deleteEphemeralNodeIfContentMatches(
-            active_path,
-            [&active_id](const std::string & actual_content)
-            {
-                if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
-                    return active_id
-                        == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
-                return active_id == actual_content;
-            });
-        if (active_node_holder)
-            active_node_holder->setAlreadyRemoved();
-        active_node_holder.reset();
-
-        if (unsynced_after_recovery)
-            active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
-
-        LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
-
-        zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-        active_node_holder_zookeeper = zookeeper;
-        active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
-    }
-}
-
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getAndSetZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getAndSetZooKeeper();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
@@ -403,9 +361,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
-
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
@@ -610,7 +567,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 

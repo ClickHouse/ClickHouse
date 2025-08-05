@@ -1,5 +1,4 @@
-#include <memory>
-#include <Server/PostgreSQLHandler.h>
+#include "PostgreSQLHandler.h"
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -40,7 +39,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int OPENSSL_ERROR;
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -51,7 +49,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     bool ssl_enabled_,
-    bool secure_required_,
     Int32 connection_id_,
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
@@ -64,7 +61,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
-    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , read_event(read_event_)
     , write_event(write_event_)
@@ -275,7 +271,6 @@ bool PostgreSQLHandler::startup()
 
 void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & info)
 {
-    bool was_secure_connection = false;
     bool was_encryption_req = true;
     readBinaryBigEndian(payload_size, *in);
     readBinaryBigEndian(info, *in);
@@ -285,10 +280,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
             LOG_DEBUG(log, "Client requested SSL");
             if (ssl_enabled)
-            {
-                was_secure_connection = true;
                 makeSecureConnectionSSL();
-            }
             else
                 message_transport->send('N', true);
             break;
@@ -303,15 +295,6 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     {
         readBinaryBigEndian(payload_size, *in);
         readBinaryBigEndian(info, *in);
-    }
-
-    if (secure_required && !was_secure_connection)
-    {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "XX000", "SSL connection required."),
-            true);
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
     }
 }
 
@@ -363,11 +346,11 @@ void PostgreSQLHandler::cancelRequest()
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
-    auto replacement = std::make_unique<ReadBufferFromOwnString>(std::move(query));
+    ReadBufferFromString replacement(query);
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(std::move(replacement), *out, true, query_context, {});
+    executeQuery(replacement, *out, true, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -449,8 +432,8 @@ void PostgreSQLHandler::processQuery()
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            auto read_buf = std::make_unique<ReadBufferFromString>(spl_query);
-            executeQuery(std::move(read_buf), *out, false, query_context, {});
+            ReadBufferFromString read_buf(spl_query);
+            executeQuery(read_buf, *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
@@ -504,13 +487,12 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     auto result_query = prepared_statements_manager.getStatement(prepare->as<ASTExecute>());
 
+    CurrentThread::QueryScope query_scope{query_context};
+    ReadBufferFromString read_buf(result_query);
+    executeQuery(read_buf, *out, false, query_context, {});
+
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
-
-    CurrentThread::QueryScope query_scope{query_context};
-    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(result_query));
-    executeQuery(std::move(read_buf), *out, false, query_context, {});
-
     message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
 
     return true;
@@ -611,10 +593,10 @@ void PostgreSQLHandler::processExecuteQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        CurrentThread::QueryScope query_scope{query_context};
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
-        auto read_buf = std::make_unique<ReadBufferFromString>(std::move(sql_query));
-        executeQuery(std::move(read_buf), *out, false, query_context, {});
+        CurrentThread::QueryScope query_scope{query_context};
+        ReadBufferFromString read_buf(sql_query);
+        executeQuery(read_buf, *out, false, query_context, {});
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);

@@ -90,9 +90,8 @@ public:
 
 
     /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr getZooKeeper() const;
+    ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
-    /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:

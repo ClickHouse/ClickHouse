@@ -987,7 +987,7 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    SharedHeader header;
+    Block header;
 
     SelectQueryInfo modified_query_info = query_info;
 
@@ -1001,14 +1001,12 @@ void StorageDistributed::read(
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-        Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
-        for (auto & column : block)
+        for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        header = std::make_shared<const Block>(std::move(block));
-
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
@@ -1185,7 +1183,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line*/ true, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
+            /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1219,10 +1217,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
-                = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context);
+                = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, Block{}, query_context);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
         }
@@ -1231,7 +1229,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1275,7 +1273,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     }
 
     if (!source)
-        return nullptr;
+        return {};
 
     return source->detachFilterActionsDAG();
 }
@@ -1304,7 +1302,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1320,8 +1318,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
-    auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, number_of_replicas);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1339,7 +1336,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 new_query_str,
-                std::make_shared<const Block>(Block{}),
+                Block{},
                 query_context,
                 /*throttler=*/nullptr,
                 Scalars{},
@@ -1353,9 +1350,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 false,
                 settings[Setting::async_socket_for_remote],
                 settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
             QueryPipeline remote_pipeline{std::move(pipe)};
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
         }
@@ -1400,6 +1397,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
         return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
+    }
+    if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. "\
+                        "Reason: distributed reading is supported only from Distributed engine "
+                        "or *Cluster table functions, but got {} storage", src_storage->getName());
     }
 
     return {};
@@ -2154,7 +2157,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::REMOTE,
+        .source_access_type = AccessType::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }

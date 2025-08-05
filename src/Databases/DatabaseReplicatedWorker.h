@@ -46,7 +46,7 @@ private:
     void initializeReplication() override;
 
     void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
-    void markReplicasActive(bool reinitialized) override;
+    void markReplicasActive(bool) override { }
 
     void initializeLogPointer(const String & processed_entry_name);
 

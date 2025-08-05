@@ -14,9 +14,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/NaNUtils.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/FieldVisitors.h>
+#include "Columns/ColumnsDateTime.h"
+#include "Columns/ColumnsNumber.h"
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -344,29 +344,11 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
-template <typename>
-struct is_float_vector : std::false_type {};
-
-template <typename T>
-requires is_floating_point<T>
-struct is_float_vector<ColumnVector<T>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_float_vector_v = is_float_vector<T>::value;
-
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.isNull())
         return getNullValueIndex();
-
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
 
     auto single_value_column = column_holder->cloneEmpty();
     single_value_column->insert(x);
@@ -390,15 +372,6 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
     if (!single_value_column->tryInsert(x))
         return false;
 
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            index = uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-            return true;
-        }
-
     auto single_value_data = single_value_column->getDataAt(0);
     index = uniqueInsertData(single_value_data.data, single_value_data.size);
     return true;
@@ -412,14 +385,6 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
-
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(src.getFloat64(n)))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
 
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data, ref.size);

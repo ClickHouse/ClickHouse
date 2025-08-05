@@ -1,4 +1,4 @@
-#include <Interpreters/QueryThreadLog.h>
+#include "QueryThreadLog.h"
 #include <array>
 #include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnFixedString.h>

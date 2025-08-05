@@ -1,5 +1,4 @@
--- Tags: stateful, no-parallel
--- no-parallel: Heavy usage
+-- Tags: stateful
 SET check_query_single_value_result = 1;
 
 DROP TABLE IF EXISTS test.hits_log;
