@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
+
 namespace DB
 {
 
@@ -86,16 +87,6 @@ public:
     const JoinOperator & getJoinOperator() const { return join_operator; }
     JoinOperator & getJoinOperator() { return join_operator; }
 
-    JoinPtr convertToPhysical(
-        JoinActionRef & post_filter,
-        bool is_explain_logical,
-        UInt64 max_threads,
-        UInt64 max_entries_for_hash_table_stats,
-        String initial_query_id,
-        std::chrono::milliseconds lock_acquire_timeout,
-        const ExpressionActionsSettings & actions_settings,
-        std::optional<UInt64> rhs_size_estimation);
-
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
@@ -129,10 +120,12 @@ public:
 
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
-    void setOptimized(std::optional<UInt64> estimated_rows_ = {})
+    void setOptimized(std::optional<UInt64> estimated_rows_ = {}, std::optional<UInt64> left_rows_ = {}, std::optional<UInt64> right_rows_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
+        left_rows_estimation = left_rows_;
+        right_rows_estimation = right_rows_;
     }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
@@ -165,14 +158,18 @@ protected:
     /// It can be input or node with toNullable function applied to input
     std::vector<const ActionsDAG::Node *> actions_after_join = {};
 
-    String left_table_label;
-    String right_table_label;
-
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
+    /// Runtime info, do not serialize
+
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
+    std::optional<UInt64> left_rows_estimation = {};
+    std::optional<UInt64> right_rows_estimation = {};
+
+    String left_table_label;
+    String right_table_label;
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

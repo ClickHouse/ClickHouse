@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"query_plan_optimize_join_order", false, false, "New setting"},
+            {"query_plan_optimize_joins", true, true, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},

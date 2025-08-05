@@ -57,6 +57,7 @@ struct QueryPlanOptimizationSettings
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
 
+    bool optimize_joins;
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial

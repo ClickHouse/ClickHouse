@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool query_plan_optimize_joins;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsBool query_plan_optimize_join_order;
     extern const SettingsMaxThreads max_threads;
@@ -102,6 +103,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    optimize_joins = from[Setting::query_plan_optimize_joins];
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);

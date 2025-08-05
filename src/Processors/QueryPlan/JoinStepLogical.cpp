@@ -30,6 +30,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 
 #include <IO/Operators.h>
 
@@ -44,6 +45,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -1055,25 +1057,49 @@ void JoinStepLogical::buildPhysicalJoin(
     QueryPlan::Nodes & nodes)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
-    if (!join_step)
+    if (!join_step || node.children.empty())
     {
         if (node.step)
         {
             const auto & step = *node.step;
             auto type_name = demangle(typeid(step).name());
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got '{}' of type {}", node.step->getName(), type_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got '{}' of type {} with {} children", node.step->getName(), type_name, node.children.size());
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got nullptr");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
+    }
+
+    UInt64 hash_table_key_hash = 0;
+    if (optimization_settings.collect_hash_table_stats_during_joins)
+    {
+        auto cache_keys = QueryPlanOptimizations::calculateHashTableCacheKeys(node);
+        hash_table_key_hash = cache_keys[node.children.back()];
     }
 
     if (!join_step->join_algorithm_params)
+    {
         join_step->join_algorithm_params = std::make_unique<JoinAlgorithmParams>(
             join_step->join_settings,
             optimization_settings.max_threads,
-            /* hash_table_key_hash_ */ 0,
+            hash_table_key_hash,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
+
+        if (join_step->right_rows_estimation)
+            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
+
+        if (hash_table_key_hash)
+        {
+            StatsCollectingParams params{
+                /*key_=*/hash_table_key_hash,
+                /*enable=*/ optimization_settings.collect_hash_table_stats_during_joins,
+                optimization_settings.max_entries_for_hash_table_stats,
+                optimization_settings.max_size_to_preallocate_for_joins};
+            auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+            if (auto hint = hash_table_stats.getSizeHint(params))
+                join_step->join_algorithm_params->rhs_size_estimation = hint->source_rows;
+        }
+    }
 
     auto new_node = buildPhysicalJoinImpl(
         node.children,

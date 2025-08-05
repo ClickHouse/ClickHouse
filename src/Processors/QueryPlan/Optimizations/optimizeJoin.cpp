@@ -133,12 +133,12 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     }
 }
 
-struct StatisticsContext
+struct RuntimeHashStatisticsContext
 {
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
     StatsCollectingParams params;
 
-    StatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
+    RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
         : params{
             /*key_=*/0,
             /*enable=*/ optimization_settings.collect_hash_table_stats_during_joins,
@@ -441,7 +441,7 @@ struct QueryGraphBuilder
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
-        StatisticsContext statistics_context;
+        RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
 
@@ -828,10 +828,13 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             bool has_prepared_storage_at_right = bool(typeid_cast<const JoinStepLogicalLookup *>(right_child_node->step.get()));
             bool has_prepared_storage_at_left = bool(typeid_cast<const JoinStepLogicalLookup *>(left_child_node->step.get()));
 
+            auto lhs_estimation = entry->left->estimated_rows;
+            auto rhs_estimation = entry->right->estimated_rows;
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && entry->left->estimated_rows && entry->right->estimated_rows
-                    && entry->left->estimated_rows.value() < entry->right->estimated_rows.value();
+                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
+                    && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
@@ -840,6 +843,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 /// For hash joins, we want to keep the smaller side on the right
                 std::swap(left_rels, right_rels);
                 std::swap(left_child_node, right_child_node);
+                std::swap(lhs_estimation, rhs_estimation);
                 join_operator.kind = reverseJoinKind(join_operator.kind);
             }
 
@@ -987,7 +991,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 relation_names[entry->relations] = fmt::format("{} {} {}", left_label, joinTypePretty(join_operator.kind, join_operator.strictness), right_label);
 
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
-            join_step->setOptimized(entry->estimated_rows);
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
 
             auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
@@ -1038,7 +1042,8 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             lookup_step->optimize(optimization_settings);
     }
 
-    if (join_step->getJoinOperator().strictness != JoinStrictness::All ||
+    if (!optimization_settings.optimize_joins ||
+        join_step->getJoinOperator().strictness != JoinStrictness::All ||
         join_step->getJoinOperator().kind == JoinKind::Paste)
     {
         join_step->setOptimized();
