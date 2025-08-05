@@ -334,9 +334,9 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
-            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset;
             const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-            const size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+            const size_t needle_size = needle_offsets[i] - prev_needle_offset;
 
             if (needle_size <= max_string_size && haystack_size <= max_string_size)
             {
@@ -415,7 +415,7 @@ struct NgramDistanceImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
-                const size_t needle_size = needle_offsets[i] - prev_offset - 1;
+                const size_t needle_size = needle_offsets[i] - prev_offset;
 
                 if (needle_size <= max_string_size && haystack_size <= max_string_size)
                 {
@@ -476,7 +476,7 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * haystack = &data[prev_offset];
-            const size_t haystack_size = offsets[i] - prev_offset - 1;
+            const size_t haystack_size = offsets[i] - prev_offset;
             if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size = dispatchSearcher(

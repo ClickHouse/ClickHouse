@@ -208,9 +208,9 @@ struct MatchImpl
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     const bool match = regexp.getRE2()->Match(
-                            {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
+                            {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset},
                             0,
-                            haystack_offsets[i] - prev_offset - 1,
+                            haystack_offsets[i] - prev_offset,
                             re2::RE2::UNANCHORED,
                             nullptr,
                             0);
@@ -490,10 +490,10 @@ struct MatchImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             const auto * const cur_needle_data = &needle_data[prev_needle_offset];
-            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset - 1;
+            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset;
 
             const auto & needle = String(
                     reinterpret_cast<const char *>(cur_needle_data),
@@ -602,7 +602,7 @@ struct MatchImpl
             const size_t cur_haystack_length = N;
 
             const auto * const cur_needle_data = &needle_data[prev_needle_offset];
-            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset - 1;
+            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset;
 
             const auto & needle = String(
                     reinterpret_cast<const char *>(cur_needle_data),

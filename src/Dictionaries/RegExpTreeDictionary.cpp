@@ -686,7 +686,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
     assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
 
-
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
     if (use_vectorscan)
@@ -728,7 +727,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
     {
         auto key_offset = keys_offsets[key_idx];
-        UInt64 length = key_offset - offset - 1;
+        UInt64 length = key_offset - offset;
 
         const char * begin = reinterpret_cast<const char *>(keys_data.data()) + offset;
 

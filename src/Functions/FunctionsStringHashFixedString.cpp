@@ -275,7 +275,7 @@ public:
             {
                 hasher.apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset - 1,
+                    offsets[i] - current_offset,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
 
                 current_offset = offsets[i];

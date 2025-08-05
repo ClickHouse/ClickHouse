@@ -367,7 +367,7 @@ struct StringIntegerOperationImpl
         {
             if constexpr (op_case == OpCase::LeftConstant)
             {
-                Op::apply(&in_vec[0], &in_vec[in_offsets[0] - 1], b[i], out_vec, out_offsets);
+                Op::apply(&in_vec[0], &in_vec[in_offsets[0]], b[i], out_vec, out_offsets);
             }
             else
             {
@@ -375,11 +375,11 @@ struct StringIntegerOperationImpl
 
                 if constexpr (op_case == OpCase::Vector)
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[i], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
                 }
                 else
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[0], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
                 }
 
                 prev_offset = new_offset;

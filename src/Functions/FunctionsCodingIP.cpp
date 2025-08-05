@@ -787,7 +787,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t current_offset = offsets_src[i];
-                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
+                size_t string_size = current_offset - prev_offset;
 
                 if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
                     vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
@@ -1105,7 +1105,7 @@ public:
             ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = parseIPv4whole(
                 reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                reinterpret_cast<const char *>(&vec_src[new_offset]),
                 reinterpret_cast<unsigned char *>(&result));
             prev_offset = new_offset;
         }
@@ -1168,7 +1168,7 @@ public:
         {
             ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                            reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                                            reinterpret_cast<const char *>(&vec_src[new_offset]),
                                             reinterpret_cast<unsigned char *>(buffer));
             prev_offset = new_offset;
         }

@@ -382,7 +382,7 @@ public:
             {
                 size_t new_offset = in_offsets[i];
 
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset - 1], pos);
+                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
 
                 out_offsets[i] = pos - begin;
 
@@ -665,11 +665,9 @@ public:
             {
                 size_t new_offset = in_offsets[i];
 
-                /// `new_offset - 1` because in ColumnString each string is stored with trailing zero byte
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
+                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
-
                 prev_offset = new_offset;
             }
 

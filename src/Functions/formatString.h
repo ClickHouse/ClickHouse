@@ -109,7 +109,7 @@ struct FormatStringImpl
                         if (!has_column_fixed_string || offset_ptr)
                         {
                             arg_offset = (*offset_ptr)[i - 1];
-                            size = (*offset_ptr)[i] - arg_offset - 1;
+                            size = (*offset_ptr)[i] - arg_offset;
                         }
                     }
 

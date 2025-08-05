@@ -1259,7 +1259,7 @@ struct ConvertThroughParsing
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 

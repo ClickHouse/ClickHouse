@@ -38,7 +38,7 @@ struct Impl
             ColumnString::Offset curr_src_offset = offsets[i];
             res_data[i] = normalizedQueryHash(
                 reinterpret_cast<const char *>(&data[prev_src_offset]),
-                reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
+                reinterpret_cast<const char *>(&data[curr_src_offset]),
                 keep_names);
             prev_src_offset = offsets[i];
         }

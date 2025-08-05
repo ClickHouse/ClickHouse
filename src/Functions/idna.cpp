@@ -55,7 +55,7 @@ struct IdnaEncode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[row] - prev_offset - 1;
+            const size_t value_length = offsets[row] - prev_offset;
 
             std::string_view value_view(value, value_length);
             if (!value_view.empty()) /// to_ascii() expects non-empty input
@@ -110,7 +110,7 @@ struct IdnaDecode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * ascii = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t ascii_length = offsets[row] - prev_offset - 1;
+            const size_t ascii_length = offsets[row] - prev_offset;
             std::string_view ascii_view(ascii, ascii_length);
 
             unicode = ada::idna::to_unicode(ascii_view);
