@@ -123,11 +123,14 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
+    ColumnString::Offset prev_string_offset = 0;
     for (size_t i = offset; i < end; ++i)
     {
-        UInt64 str_size = offsets[i] - offsets[i - 1];
+        ColumnString::Offset next_string_offset = offsets[i];
+        UInt64 str_size = next_string_offset - prev_string_offset;
         writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
+        ostr.write(reinterpret_cast<const char *>(&data[prev_string_offset]), str_size);
+        prev_string_offset = next_string_offset;
     }
 }
 
@@ -181,7 +184,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
             }
             else
             {
-                istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+                istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
             }
         }
     }
@@ -192,6 +195,7 @@ static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnSt
 
 void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
+    /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
         UInt64 size;
@@ -203,13 +207,12 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    double avg_chars_size = 1; /// By default reserve only for empty strings.
+    double avg_chars_size = 0; /// By default, do not reserve (as for empty strings).
 
     if (avg_value_size_hint > 0.0 && avg_value_size_hint > sizeof(offsets[0]))
     {
         /// Randomly selected.
         constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
-
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
