@@ -767,7 +767,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
         while (!stack.empty())
         {
-            const auto & [node, level] = stack.top();
+            auto [node, level] = stack.top();
             stack.pop();
             for (const auto * child : node->children)
                 stack.push(std::make_pair(child, level));
@@ -876,10 +876,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
                 auto [rel_idx, input_node] = current_input_nodes[input_pos];
-                if (!joined_mask.test(rel_idx))
-                    continue;
-
-                if (!input_node)
+                if (!joined_mask.test(rel_idx) || !input_node)
                     continue;
 
                 current_inputs[input_node] = input_node;
@@ -924,7 +921,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
                 auto & [rel_idx, input_node] = current_input_nodes[input_pos];
-                if (!joined_mask.test(rel_idx))
+                if (!joined_mask.test(rel_idx) || !input_node)
                     continue;
 
                 if (usage_level_map[input_node] <= entry_idx)
