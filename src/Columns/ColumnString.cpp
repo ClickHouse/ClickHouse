@@ -541,7 +541,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     auto res = ColumnString::create();
 
-    if (0 == col_size)
+    if (col_size == 0 || replicate_offsets.back() == 0)
         return res;
 
     Offsets & res_offsets = res->offsets;
