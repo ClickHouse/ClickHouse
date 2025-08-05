@@ -268,7 +268,7 @@ public:
 
     Path getRawPath() const override { return getImpl().getRawPath(); }
     const Path & getPathForRead() const override { return getImpl().getPathForRead(); }
-    Path getPathForWrite(const std::string & partition_id = "") const override { return getImpl().getPathForWrite(partition_id); }
+    Path getPathForWrite(const std::string & partition_id) const override { return getImpl().getPathForWrite(partition_id); }
 
     void setPathForRead(const Path & path) override { getImpl().setPathForRead(path); }
 
@@ -333,7 +333,7 @@ public:
     }
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context) override
-        { return getImpl().initPartitionStrategy(partition_by, columns, context); }
+        { getImpl().initPartitionStrategy(partition_by, columns, context); }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
         { return getImpl().tryGetTableStructureFromMetadata(); }
@@ -388,7 +388,7 @@ public:
 
     PartitionStrategyFactory::StrategyType getPartitionStrategyType() const override { return getImpl().getPartitionStrategyType(); }
     bool getPartitionColumnsInDataFile() const override { return getImpl().getPartitionColumnsInDataFile(); }
-    const std::shared_ptr<IPartitionStrategy> getPartitionStrategy() const override { return getImpl().getPartitionStrategy(); }
+    std::shared_ptr<IPartitionStrategy> getPartitionStrategy() const override { return getImpl().getPartitionStrategy(); }
 
     void setFormat(const String & format_) override { getImpl().setFormat(format_); }
     void setCompressionMethod(const String & compression_method_) override { getImpl().setCompressionMethod(compression_method_); }

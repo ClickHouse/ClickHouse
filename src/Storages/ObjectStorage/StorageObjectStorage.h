@@ -225,7 +225,7 @@ public:
 
     virtual const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
-    virtual Path getPathForWrite(const std::string & partition_id = "") const;
+    virtual Path getPathForWrite(const std::string & partition_id) const;
 
     virtual void setPathForRead(const Path & path)
     {
@@ -333,7 +333,7 @@ public:
 
     virtual PartitionStrategyFactory::StrategyType getPartitionStrategyType() const { return partition_strategy_type; }
     virtual bool getPartitionColumnsInDataFile() const { return partition_columns_in_data_file; }
-    virtual const std::shared_ptr<IPartitionStrategy> getPartitionStrategy() const { return partition_strategy; }
+    virtual std::shared_ptr<IPartitionStrategy> getPartitionStrategy() const { return partition_strategy; }
 
     virtual void setFormat(const String & format_) { format = format_; }
     virtual void setCompressionMethod(const String & compression_method_) { compression_method = compression_method_; }
