@@ -147,60 +147,55 @@ Header: bx String
                   __table1.a2 String
                   __table2.bx String
                   __table4.c2 String
-            Expression
-            Header: __table4.c1 UInt64
-                    __table4.c2 String
-                    __table1.a2 String
+            Expression (Post Join Actions)
+            Header: __table1.a2 String
                     __table2.bx String
-              Expression (Post Join Actions)
+                    __table4.c1 UInt64
+                    __table4.c2 String
+              Join
               Header: __table1.a2 String
                       __table2.bx String
                       __table4.c1 UInt64
                       __table4.c2 String
-                Join
-                Header: __table1.a2 String
+                Expression (Left Pre Join Actions)
+                Header: __table2.b1 UInt64
+                        __table1.a2 String
                         __table2.bx String
-                        __table4.c1 UInt64
-                        __table4.c2 String
-                  Expression (Left Pre Join Actions)
-                  Header: __table2.b1 UInt64
-                          __table1.a2 String
+                  Expression (Post Join Actions)
+                  Header: __table1.a2 String
+                          __table2.b1 UInt64
                           __table2.bx String
-                    Expression (Post Join Actions)
+                    Join
                     Header: __table1.a2 String
                             __table2.b1 UInt64
                             __table2.bx String
-                      Join
-                      Header: __table1.a2 String
-                              __table2.b1 UInt64
-                              __table2.bx String
-                        Expression (Left Pre Join Actions)
+                      Expression (Left Pre Join Actions)
+                      Header: __table1.a1 UInt64
+                              __table1.a2 String
+                        Expression (Change column names to column identifiers)
                         Header: __table1.a1 UInt64
                                 __table1.a2 String
-                          Expression (Change column names to column identifiers)
-                          Header: __table1.a1 UInt64
-                                  __table1.a2 String
-                            ReadFromMergeTree (default.a)
-                            Header: a1 UInt64
-                                    a2 String
-                        Expression (Right Pre Join Actions)
+                          ReadFromMergeTree (default.a)
+                          Header: a1 UInt64
+                                  a2 String
+                      Expression (Right Pre Join Actions)
+                      Header: __table2.b1 UInt64
+                              __table2.bx String
+                        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
                         Header: __table2.b1 UInt64
                                 __table2.bx String
-                          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-                          Header: __table2.b1 UInt64
-                                  __table2.bx String
-                            ReadFromMergeTree (default.b)
-                            Header: b1 UInt64
-                                    b2 String
-                  Expression (Right Pre Join Actions)
+                          ReadFromMergeTree (default.b)
+                          Header: b1 UInt64
+                                  b2 String
+                Expression (Right Pre Join Actions)
+                Header: __table4.c1 UInt64
+                        __table4.c2 String
+                  Expression ((WHERE + Change column names to column identifiers))
                   Header: __table4.c1 UInt64
                           __table4.c2 String
-                    Expression ((WHERE + Change column names to column identifiers))
-                    Header: __table4.c1 UInt64
-                            __table4.c2 String
-                      ReadFromMergeTree (default.c)
-                      Header: c2 String
-                              c1 UInt64
+                    ReadFromMergeTree (default.c)
+                    Header: c2 String
+                            c1 UInt64
           Expression (Right Pre Join Actions)
           Header: __table5.d1 UInt64
             Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
