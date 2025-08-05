@@ -102,7 +102,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset - 1, custom_trim_characters, start, length);
+            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset, custom_trim_characters, start, length);
 
             res_data.resize(res_data.size() + length + 1);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);

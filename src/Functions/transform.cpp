@@ -474,7 +474,7 @@ namespace
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
+                    const StringRef ref{&data[current_offset], offsets[i] - current_offset};
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)
@@ -551,7 +551,7 @@ namespace
             {
                 const char8_t * to = nullptr;
                 size_t to_size = 0;
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
+                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -621,7 +621,7 @@ namespace
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
+                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)

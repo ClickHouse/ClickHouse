@@ -140,9 +140,8 @@ struct ToValidUTF8Impl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * haystack_data = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t haystack_size = offsets[i] - prev_offset - 1;
+            const size_t haystack_size = offsets[i] - prev_offset;
             toValidUTF8One(haystack_data, haystack_data + haystack_size, write_buffer);
-            writeChar(0, write_buffer);
             res_offsets[i] = write_buffer.count();
             prev_offset = offsets[i];
         }

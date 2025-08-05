@@ -23,7 +23,7 @@ struct ReverseImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             for (size_t j = prev_offset; j < offsets[i]; ++j)
-                res_data[j] = data[offsets[i] + prev_offset - 1 - j];
+                res_data[j] = data[offsets[i] + prev_offset - j];
             prev_offset = offsets[i];
         }
     }

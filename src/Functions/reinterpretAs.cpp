@@ -195,7 +195,7 @@ public:
                     size_t offset = 0;
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
+                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset);
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(&vec_res[i],
                                 &data_from[offset],

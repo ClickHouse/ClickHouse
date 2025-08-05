@@ -156,7 +156,7 @@ private:
         {
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -199,7 +199,7 @@ private:
 
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
