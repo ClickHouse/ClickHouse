@@ -152,7 +152,7 @@ def create_clickhouse_iceberg_table(
     settings = {
         "storage_catalog_type": "rest",
         "storage_warehouse": "demo",
-        "storage_storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
         "storage_region": "us-east-1",
         "storage_catalog_url" : BASE_URL,
     }

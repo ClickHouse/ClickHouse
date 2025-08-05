@@ -209,7 +209,7 @@ def create_clickhouse_glue_table(
     settings = {
         "storage_catalog_type": "glue",
         "storage_warehouse": "test",
-        "storage_storage_endpoint": "http://minio:9000/warehouse-glue",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "storage_region": "us-east-1",
         "storage_catalog_url" : BASE_URL
     }
