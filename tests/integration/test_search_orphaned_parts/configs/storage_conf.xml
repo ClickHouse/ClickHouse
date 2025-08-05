@@ -18,6 +18,7 @@
               <type>local_blob_storage</type>
               <path>/internal/2/</path>
             </local_disk_2>
+            <!-- plain_rewritable disk is not able to start w/o S3, since it tries to load metadata at start-->
             <!-- <s3_plain_rewritable> -->
             <!--     <type>object_storage</type> -->
             <!--     <object_storage_type>s3</object_storage_type> -->
