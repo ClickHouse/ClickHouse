@@ -276,7 +276,7 @@ std::unordered_map<String, CHSetting> restoreSettings
        {"use_same_password_for_base_backup", CHSetting(trueOrFalse, {}, false)},
        {"use_same_s3_credentials_for_base_backup", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> backupSettings
+std::unordered_map<String, CHSetting> backupSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
        {"allow_backup_broken_projections", CHSetting(trueOrFalse, {}, false)},
        {"allow_checksums_from_remote_paths", CHSetting(trueOrFalse, {}, false)},

@@ -60,7 +60,7 @@ extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSettin
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
-extern const std::unordered_map<String, CHSetting> backupSettings;
+extern std::unordered_map<String, CHSetting> backupSettings;
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 

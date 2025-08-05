@@ -1169,8 +1169,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_block_size",
           "max_compress_block_size",
           "max_insert_block_size",
-          "min_compress_block_size",
-          "output_format_orc_compression_block_size"})
+          "min_compress_block_size"/*,
+          "output_format_orc_compression_block_size" can give std::exception */})
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
         serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false)}});
