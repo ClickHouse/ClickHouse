@@ -359,7 +359,7 @@ mortonDecode(range_mask, code)
     FunctionDocumentation::Examples examples = {
         {"Simple mode", "SELECT mortonDecode(3, 53)", R"(["1", "2", "3"])"},
         {"Single argument", "SELECT mortonDecode(1, 1)", R"(["1"])"},
-        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768)", "["128"])"},
+        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768)", ["128"])"},
         {"Column usage",
          R"(
 -- First create the table and insert some data
