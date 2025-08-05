@@ -401,15 +401,13 @@ private:
                 index++;
             data.size -= index;
 #endif
-            data_to.resize(offset + data.size + 1);
+            data_to.resize(offset + data.size);
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data, data.size);
 #else
             reverseMemcpy(&data_to[offset], data.data + index, data.size);
 #endif
             offset += data.size;
-            data_to[offset] = 0;
-            ++offset;
             offsets_to[i] = offset;
         }
     }
