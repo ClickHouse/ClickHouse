@@ -189,7 +189,7 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::File;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFile>(documentation);
