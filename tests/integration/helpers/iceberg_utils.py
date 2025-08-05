@@ -187,7 +187,7 @@ def get_creation_expression(
     if_not_exists=False,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=False,
+    allow_dynamic_metadata_for_data_lakes=True,
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
