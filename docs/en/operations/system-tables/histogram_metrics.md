@@ -14,7 +14,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 This table contains histogram metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date. Replaces the deprecated `system.latency_log`.
 
-
 Columns:
 
 - `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
