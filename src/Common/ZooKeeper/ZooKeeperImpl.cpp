@@ -3,6 +3,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -430,7 +431,7 @@ ZooKeeper::ZooKeeper(
             use_xid_64 = true;
             close_xid = CLOSE_XID_64;
         }
-        connect(nodes, args.connection_timeout_ms * 1000);
+        connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
     {
@@ -439,7 +440,7 @@ ZooKeeper::ZooKeeper(
         if (use_compression)
         {
             use_compression = false;
-            connect(nodes, args.connection_timeout_ms * 1000);
+            connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
         }
         else
             throw;
@@ -553,8 +554,8 @@ void ZooKeeper::connect(
                 socket.connect(*node.address, connection_timeout);
                 socket_address = socket.peerAddress();
 
-                socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
-                socket.setSendTimeout(args.operation_timeout_ms * 1000);
+                socket.setReceiveTimeout(static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);
+                socket.setSendTimeout(static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);
                 socket.setNoDelay(true);
 
                 in.emplace(socket);
@@ -852,7 +853,7 @@ void ZooKeeper::receiveThread()
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
-            UInt64 max_wait_us = args.operation_timeout_ms * 1000;
+            UInt64 max_wait_us = static_cast<UInt64>(args.operation_timeout_ms) * 1000;
             std::optional<RequestInfo> earliest_operation;
 
             {
@@ -861,7 +862,7 @@ void ZooKeeper::receiveThread()
                 {
                     /// Operations are ordered by xid (and consequently, by time).
                     earliest_operation = operations.begin()->second;
-                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
+                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
                     if (now > earliest_operation_deadline)
                         throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
                                         args.operation_timeout_ms, earliest_operation->request->getPath());
@@ -885,7 +886,7 @@ void ZooKeeper::receiveThread()
                         args.operation_timeout_ms, earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
-                if (waited_us >= args.session_timeout_ms * 1000)
+                if (waited_us >= static_cast<Int64>(args.session_timeout_ms) * 1000)
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
 
             }
@@ -1421,11 +1422,14 @@ void ZooKeeper::create(
 
     ACLs final_acls = acls.empty() ? default_acls : acls;
 
-    // Append path-specific ACLs if configured for this path
-    auto path_acls_it = path_acls.find(path);
-    if (path_acls_it != path_acls.end())
+    if (!path_acls.empty())
     {
-        final_acls.push_back(path_acls_it->second);
+        // Append path-specific ACLs if configured for this path
+        if (auto path_acls_it = path_acls.find(path); path_acls_it != path_acls.end())
+            final_acls.push_back(path_acls_it->second.acl);
+
+        if (auto path_acls_it = path_acls.find(parentNodePath(path)); path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+            final_acls.push_back(path_acls_it->second.acl);
     }
 
     request.acls = std::move(final_acls);
@@ -1656,17 +1660,22 @@ void ZooKeeper::multi(
         {
             if (auto * create_request = dynamic_cast<CreateRequest *>(generic_request.get()))
             {
-                // Check if there's a path-specific ACL for this path
-                auto path_acls_it = path_acls.find(create_request->path);
-                if (path_acls_it != path_acls.end())
+                const auto add_acl = [&](const auto & acl)
                 {
                     // If ACLs are empty, use default_acls first
                     if (create_request->acls.empty())
                         create_request->acls = default_acls;
 
                     // Append the path-specific ACL
-                    create_request->acls.push_back(path_acls_it->second);
-                }
+                    create_request->acls.push_back(acl);
+                };
+
+                if (auto path_acls_it = path_acls.find(create_request->path); path_acls_it != path_acls.end())
+                    add_acl(path_acls_it->second.acl);
+
+                if (auto path_acls_it = path_acls.find(parentNodePath(create_request->path));
+                    path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+                    add_acl(path_acls_it->second.acl);
             }
         }
     }

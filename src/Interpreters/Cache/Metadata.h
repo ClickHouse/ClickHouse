@@ -321,6 +321,11 @@ struct LockedKey : private boost::noncopyable
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);
 
+    KeyMetadata::iterator removeFileSegmentIfExists(
+        size_t offset,
+        bool can_be_broken = false,
+        bool invalidate_queue_entry = true);
+
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;

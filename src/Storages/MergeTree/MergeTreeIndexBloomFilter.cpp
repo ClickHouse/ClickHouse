@@ -872,7 +872,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 
 static void assertIndexColumnsType(const Block & header)
 {
-    if (!header || !header.columns())
+    if (header.empty() || !header.columns())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index must have columns.");
 
     const DataTypes & columns_data_types = header.getDataTypes();
@@ -892,15 +892,15 @@ static void assertIndexColumnsType(const Block & header)
 MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
 {
-    double max_conflict_probability = 0.025;
+    double false_positive_rate = 0.025;
 
     if (!index.arguments.empty())
     {
         const auto & argument = index.arguments[0];
-        max_conflict_probability = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
+        false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
-    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
+    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
 
     return std::make_shared<MergeTreeIndexBloomFilter>(
         index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);

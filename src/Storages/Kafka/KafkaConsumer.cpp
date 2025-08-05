@@ -1,18 +1,17 @@
-#include <fmt/ranges.h>
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <IO/ReadBufferFromMemory.h>
 
-#include <Common/DateLUT.h>
-#include <Common/logger_useful.h>
-
-#include <cppkafka/cppkafka.h>
-#include <boost/algorithm/string/join.hpp>
 #include <algorithm>
-
-#include <Common/CurrentMetrics.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
-#include <Common/ProfileEvents.h>
 #include <base/defines.h>
+#include <boost/algorithm/string/join.hpp>
+#include <cppkafka/cppkafka.h>
+#include <fmt/ranges.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/DateLUT.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
 namespace CurrentMetrics
 {
@@ -76,7 +75,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
             setRDKafkaStat(stat_json);
         });
     }
-    consumer = std::make_shared<cppkafka::Consumer>(consumer_config);
+    consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // called (synchronously, during poll) when we enter the consumer group
@@ -145,7 +144,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-        setExceptionInfo(err, /* with_stacktrace = */ true);
+        IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true);
     });
 }
 
@@ -156,7 +155,10 @@ ConsumerPtr && KafkaConsumer::moveConsumer()
     assignment.reset();
 
     StorageKafkaUtils::consumerGracefulStop(
-        *consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+        *consumer,
+        DRAIN_TIMEOUT_MS,
+        log,
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
 
     return std::move(consumer);
 }
@@ -170,7 +172,10 @@ KafkaConsumer::~KafkaConsumer()
     assignment.reset();
 
     StorageKafkaUtils::consumerGracefulStop(
-        *consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+        *consumer,
+        DRAIN_TIMEOUT_MS,
+        log,
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
 }
 
 
@@ -401,7 +406,9 @@ void KafkaConsumer::doPoll()
 
         // Remove messages with errors and log any exceptions.
         auto num_errors = StorageKafkaUtils::eraseMessageErrors(
-            new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+            new_messages,
+            log,
+            [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
         num_messages_read += new_messages.size();
 
         resetIfStopped();
@@ -530,11 +537,6 @@ void KafkaConsumer::storeLastReadMessageOffset()
     }
 }
 
-void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
-{
-    setExceptionInfo(err.to_string(), with_stacktrace);
-}
-
 void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
 {
     std::string enriched_text = text;
@@ -547,7 +549,7 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
+    exceptions_buffer.push_back({std::move(enriched_text), timeInSeconds(std::chrono::system_clock::now())});
 }
 
 std::string KafkaConsumer::getMemberId() const
@@ -576,6 +578,7 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
             cpp_assignments[num].get_topic(),
             cpp_assignments[num].get_partition(),
             cpp_offsets[num].get_offset(),
+            std::nullopt,
         });
     }
 

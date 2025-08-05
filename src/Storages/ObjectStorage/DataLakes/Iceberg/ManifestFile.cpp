@@ -1,3 +1,4 @@
+#include <optional>
 #include "config.h"
 
 #if USE_AVRO
@@ -21,6 +22,7 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Iceberg
@@ -69,9 +71,9 @@ namespace
             /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
             /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
             /// but at least it doesn't lead to incorrect results.
+            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
             {
                 int64_t scaler = lower_bound ? -10 : 10;
-                int32_t scale = DB::getDecimalScale(*non_nullable_type);
                 while (--scale)
                     scaler *= 10;
 
@@ -111,27 +113,20 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
     return files;
 }
 
-Int32 ManifestFileContent::getSchemaId() const
-{
-    return schema_id;
-}
 
 using namespace DB;
 
 ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
+    const String & manifest_file_name,
     Int32 format_version_,
     const String & common_path,
-    Int32 schema_id_,
-    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
+    Int64 inherited_snapshot_id,
     const String & table_location,
     DB::ContextPtr context)
 {
-    this->schema_id = schema_id_;
-    this->schema_object = schema_object_;
-
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -158,6 +153,17 @@ ManifestFileContent::ManifestFileContent(
     partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
+    auto schema_json_string = manifest_file_deserializer.tryGetAvroMetadataValue(f_schema);
+    if (!schema_json_string.has_value())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
+            manifest_file_name,
+            f_schema);
+    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -166,14 +172,19 @@ ManifestFileContent::ManifestFileContent(
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
+        std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
+            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
+        if (!manifest_file_column_characteristics.has_value())
+        {
+            continue;
+        }
         auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>(f_transform), numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
-        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics.type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -190,6 +201,27 @@ ManifestFileContent::ManifestFileContent(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
+        const auto snapshot_id_value = manifest_file_deserializer.getValueFromRowByName(i, f_snapshot_id);
+        Int64 snapshot_id;
+
+        if (snapshot_id_value.isNull())
+        {
+            if (status == ManifestEntryStatus::EXISTING)
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
+                    manifest_file_name);
+            }
+            snapshot_id = inherited_snapshot_id;
+        }
+        else
+        {
+            snapshot_id = snapshot_id_value.safeGet<Int64>();
+        }
+
+
+        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
 
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
@@ -258,18 +290,29 @@ ManifestFileContent::ManifestFileContent(
 
         for (const auto & [column_id, bounds] : value_for_bounds)
         {
-            DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
-
+            auto field_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, column_id);
+            /// If we don't have column characteristics, bounds don't have any sense.
+            /// This happens if the subfield is inside map ot array, because we don't support
+            /// name generation for such subfields (we support names of nested subfields in structs only).
+            if (!field_characteristics)
+            {
+                continue;
+            }
+            const auto & name_and_type = *field_characteristics;
             String left_str;
             String right_str;
             /// lower_bound and upper_bound may be NULL.
             if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+            {
                 continue;
+            }
 
             auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
             auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
             if (!left || !right)
+            {
                 continue;
+            }
 
             columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
         }
@@ -300,8 +343,36 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+        this->files.emplace_back(status, added_sequence_number, snapshot_id, schema_id, file, partition_key_value, columns_infos);
     }
+    sortManifestEntriesBySchemaId();
+}
+
+// We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
+void ManifestFileContent::sortManifestEntriesBySchemaId()
+{
+    std::vector<size_t> indices(files.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::sort(
+        indices.begin(),
+        indices.end(),
+        [&](size_t i, size_t j)
+        {
+            if (files[i].schema_id != files[j].schema_id)
+            {
+                return files[i].schema_id < files[j].schema_id;
+            }
+            return i < j;
+        });
+
+    std::vector<ManifestFileEntry> sorted_files;
+    sorted_files.reserve(files.size());
+    for (const auto & index : indices)
+    {
+        sorted_files.emplace_back(std::move(files[index]));
+    }
+    files = std::move(sorted_files);
 }
 
 bool ManifestFileContent::hasPartitionKey() const

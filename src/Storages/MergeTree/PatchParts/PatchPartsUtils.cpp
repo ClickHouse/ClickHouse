@@ -38,6 +38,25 @@ static String getColumnsHash(Names column_names)
     return getSipHash128AsHexString(hash);
 }
 
+static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
+{
+    /// Apply for these columns the same codecs as for the virtual columns in the original parts.
+    columns_desc.modify(BlockNumberColumn::name, [&](auto & column_desc)
+    {
+        column_desc.codec = BlockNumberColumn::codec;
+    });
+
+    columns_desc.modify(BlockOffsetColumn::name, [&](auto & column_desc)
+    {
+        column_desc.codec = BlockOffsetColumn::codec;
+    });
+
+    columns_desc.modify("_part_offset", [&](auto & column_desc)
+    {
+        column_desc.codec = BlockOffsetColumn::codec;
+    });
+}
+
 StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
@@ -61,6 +80,8 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
 
     for (const auto & [key_column_name, _] : key_columns)
         order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));
+
+    addCodecsForPatchSystemColumns(patch_part_desc);
 
     part_metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_expression, patch_part_desc, local_context, {});
     part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, local_context);

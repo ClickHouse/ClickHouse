@@ -6,9 +6,9 @@ slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
 ---
 
-# Visual Interfaces from Third-party Developers
+# Visual interfaces from third-party developers
 
-## Open-Source {#open-source}
+## Open-source {#open-source}
 
 ### agx {#agx}
 
@@ -42,6 +42,20 @@ Features:
 - No Signup or Credentials Needed: All functionality is accessible directly in the browser, keeping it frictionless and secure.
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
+
+### DataPup {#datapup}
+
+[DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.
+
+Features:
+
+- AI-powered SQL query assistance with intelligent suggestions
+- Native ClickHouse connection support with secure credential handling
+- Beautiful, accessible interface with multiple themes (Light, Dark, and colorful variants)
+- Advanced query result filtering and exploration
+- Cross-platform support (macOS, Windows, Linux)
+- Fast and responsive performance
+- Open-source and MIT licensed
 
 ### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
 

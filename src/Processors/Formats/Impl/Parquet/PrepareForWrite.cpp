@@ -326,12 +326,22 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Int64:  types(T::INT64); break;
         case TypeIndex::Float32: types(T::FLOAT); break;
         case TypeIndex::Float64: types(T::DOUBLE); break;
-
-        /// These don't have suitable parquet logical types, so we write them as plain numbers.
-        /// (Parquet has "enums" but they're just strings, with nowhere to declare all possible enum
-        /// values in advance as part of the data type.)
-        case TypeIndex::Enum8:    types(T::INT32, C::INT_8,   int_type(8,  true)); break; //  Int8
-        case TypeIndex::Enum16:   types(T::INT32, C::INT_16,  int_type(16, true)); break; //  Int16
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        {
+            if (options.output_enum_as_byte_array)
+            {
+                parq::LogicalType t;
+                t.__set_ENUM({});
+                types(T::BYTE_ARRAY, C::ENUM, t);
+            }
+            else if (type->getTypeId() == TypeIndex::Enum8)
+                types(T::INT32, C::INT_8, int_type(8, true));
+            else
+                types(T::INT32, C::INT_16, int_type(16, true));
+            break;
+        }
+        /// IPv4 does not have suitable parquet logical types, so we write them as plain numbers.
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
 
         /// Parquet doesn't have 16-bit date type, so we cast Date to 32 bits.

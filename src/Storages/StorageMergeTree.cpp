@@ -51,6 +51,13 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockMicroseconds;
+}
+
 namespace DB
 {
 
@@ -579,9 +586,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     }
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-    PlainCommittingBlockHolder block_holder(allocateBlockNumber(CommittingBlock::Op::Mutation), *this);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
-    Int64 version = block_holder.block.number;
+    Int64 version = block_holder->block.number;
     entry.commit(version);
     String mutation_id = entry.file_name;
     if (txn)
@@ -739,6 +746,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
     if (parallel_mode == UpdateParallelMode::SYNC)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
@@ -749,6 +759,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
     }
     else if (parallel_mode == UpdateParallelMode::AUTO)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
         lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
 
@@ -768,7 +781,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     PlainLightweightUpdateHolder update_holder;
     update_holder.update_lock = getLockForLightweightUpdate(commands, context_copy);
-    update_holder.block_holder = std::make_unique<PlainCommittingBlockHolder>(allocateBlockNumber(CommittingBlock::Op::Update), *this);
+    update_holder.block_holder = allocateBlockNumber(CommittingBlock::Op::Update);
 
     auto all_partitions = getAllPartitionIds();
     auto partition_id_to_max_block = std::make_shared<PartitionIdToMaxBlock>();
@@ -1098,8 +1111,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        chassert(choices.size() == 1);
+        MergeSelectorChoice choice = std::move(choices[0]);
+
         auto future_part = [&]()
         {
             if (txn != nullptr)
@@ -1144,7 +1160,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
-            MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
+            MergeSelectorApplier(
+                /*max_merge_sizes=*/{max_source_parts_size},
+                /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*aggressive=*/aggressive,
+                /*range_filter_=*/nullptr
+            ),
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);
@@ -1733,8 +1754,8 @@ bool StorageMergeTree::optimize(
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "Please drop all projections manually before running the query, "
+                    "or set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                     getStorageID().getTableName());
 
     if (deduplicate)
@@ -2301,8 +2322,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted parts.
-    local_context->clearCaches();
     return results;
 }
 
@@ -2402,11 +2421,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         return;
 
     MergeTreePartInfo drop_range;
+    std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+
     if (replace)
     {
+        block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
         drop_range.setPartitionId(partition_id);
         drop_range.min_block = 0;
-        drop_range.max_block = allocateBlockNumber(CommittingBlock::Op::NewPart).number; // there will be a "hole" in block numbers
+        drop_range.max_block = block_holder->block.number; // there will be a "hole" in block numbers
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
     }
 
@@ -2839,28 +2861,28 @@ void StorageMergeTree::assertNotReadonly() const
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
 
-    part->info.min_block = block.number;
-    part->info.max_block = block.number;
+    part->info.min_block = block_holder->block.number;
+    part->info.max_block = block_holder->block.number;
     part->setName(part->getNewName(part->info));
 
-    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    return block_holder;
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
 
-    part->info.min_block = block.number;
-    part->info.max_block = block.number;
+    part->info.min_block = block_holder->block.number;
+    part->info.max_block = block_holder->block.number;
     part->info.mutation = 0;
 
     bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->setName(part->getNewName(part->info));
 
-    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    return block_holder;
 }
 
 void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
@@ -2870,15 +2892,16 @@ void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
     committing_blocks_cv.notify_one();
 }
 
-CommittingBlock StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
 {
     std::lock_guard lock(committing_blocks_mutex);
 
-    auto block = CommittingBlock(op, increment.get());
-    committing_blocks.insert(block);
+    CommittingBlock block(op, increment.get());
+    auto block_holder = std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    committing_blocks.insert(block_holder->block);
 
-    LOG_DEBUG(log, "Allocated block number {}", block.number);
-    return block;
+    LOG_DEBUG(log, "Allocated block number {}", block_holder->block.number);
+    return block_holder;
 }
 
 void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const

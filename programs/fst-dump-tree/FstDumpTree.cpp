@@ -1,3 +1,4 @@
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -5,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Common/Exception.h>
+#include <Common/FST.h>
 #include <Common/formatReadable.h>
 
 #include <iostream>
@@ -20,14 +22,6 @@
         fmt::println(__VA_ARGS__); \
         return 1; \
     } while (false)
-
-namespace
-{
-    constexpr const std::string_view GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    constexpr const std::string_view GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-    constexpr const std::string_view GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-    constexpr const std::string_view GIN_POSTINGS_FILE_TYPE = ".gin_post";
-}
 
 namespace
 {
@@ -102,32 +96,39 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         std::unique_ptr<DB::ReadBufferFromFile> segment_metadata_read_buffer;
         std::unique_ptr<DB::ReadBufferFromFile> dictionary_read_buffer;
         std::unique_ptr<DB::ReadBufferFromFile> postings_read_buffer;
+        std::unique_ptr<DB::ReadBufferFromFile> bloom_filter_read_buffer;
         for (const auto & dir_entry : std::filesystem::directory_iterator(input_path))
         {
             const auto& path_as_string = dir_entry.path().string();
-            if (path_as_string.ends_with(GIN_SEGMENT_ID_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE))
             {
                 if (segment_id_read_buffer != nullptr)
                     printAndExit("Segment id file are already initialized at '{}', trying to initialized again at '{}'", segment_id_read_buffer->getFileName(), path_as_string);
                 segment_id_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_SEGMENT_METADATA_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE))
             {
                 if (segment_metadata_read_buffer != nullptr)
                     printAndExit("Segment metadata file are already initialized at '{}', trying to initialized again at '{}'", segment_metadata_read_buffer->getFileName(), path_as_string);
                 segment_metadata_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_DICTIONARY_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_DICTIONARY_FILE_TYPE))
             {
                 if (dictionary_read_buffer != nullptr)
                     printAndExit("Segment dictionary file are already initialized at '{}', trying to initialized again at '{}'", dictionary_read_buffer->getFileName(), path_as_string);
                 dictionary_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_POSTINGS_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_POSTINGS_FILE_TYPE))
             {
                 if (postings_read_buffer != nullptr)
                     printAndExit("Segment postings file are already initialized at '{}', trying to initialized again at '{}'", postings_read_buffer->getFileName(), path_as_string);
                 postings_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
+            }
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE))
+            {
+                if (bloom_filter_read_buffer != nullptr)
+                    printAndExit("Segment bloom filter file are already initialized at '{}', trying to initialized again at '{}'", bloom_filter_read_buffer->getFileName(), path_as_string);
+                bloom_filter_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
         }
         if (segment_id_read_buffer == nullptr)
@@ -138,12 +139,25 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
             printAndExit("Cannot find segment dictionary file.");
         if (postings_read_buffer == nullptr)
             printAndExit("Cannot find segment postings file.");
+        if (bloom_filter_read_buffer == nullptr)
+            printAndExit("Cannot find segment bloom filter file.");
 
-        uint8_t version = 0;
+        DB::GinIndexStore::Format version;
         uint64_t number_of_segments = 0;
         /// Read segment ids
         {
-            readBinary(version, *segment_id_read_buffer);
+            uint8_t ver;
+            readBinary(ver, *segment_id_read_buffer);
+            using FormatAsInt = std::underlying_type_t<DB::GinIndexStore::Format>;
+            switch (ver)
+            {
+                case static_cast<FormatAsInt>(DB::GinIndexStore::Format::v1):
+                    version = DB::GinIndexStore::Format::v1;
+                    break;
+                default:
+                    printAndExit("Segment id file is corrupted: unsupported version '{}'", ver);
+            }
+
             readVarUInt(number_of_segments, *segment_id_read_buffer);
             /// It contains the next segment id.
             number_of_segments -= 1;
@@ -152,19 +166,19 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         }
 
         /// Read segment metadata
-        using GinIndexSegments = std::vector<DB::GinIndexSegment>;
         using GinSegmentDictionaries = std::unordered_map<UInt32, DB::GinSegmentDictionaryPtr>;
         GinSegmentDictionaries segment_dictionaries(number_of_segments);
+        if (version == DB::GinIndexStore::Format::v1)
         {
-            GinIndexSegments segments(number_of_segments);
+            std::vector<DB::GinIndexSegment> segments(number_of_segments);
             segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segments.data()), number_of_segments * sizeof(DB::GinIndexSegment));
             for (UInt32 i = 0; i < number_of_segments; ++i)
             {
-                auto seg_id = segments[i].segment_id;
                 auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
                 seg_dict->postings_start_offset = segments[i].postings_start_offset;
                 seg_dict->dict_start_offset = segments[i].dict_start_offset;
-                segment_dictionaries[seg_id] = seg_dict;
+                seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
+                segment_dictionaries[segments[i].segment_id] = seg_dict;
             }
         }
 
@@ -179,26 +193,74 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     continue;
                 }
 
-                const auto& segment_dict = it->second;
+                const auto & segment_dict = it->second;
                 dictionary_read_buffer->seek(segment_dict->dict_start_offset, SEEK_SET);
+                if (version == DB::GinIndexStore::Format::v1)
+                {
+                    fmt::println(
+                        "[Segment {}]: term dictionary (FST) offset = {}, bloom filter offset = {}, postings offset = {}",
+                        segment_id,
+                        segment_dict->dict_start_offset,
+                        segment_dict->bloom_filter_start_offset,
+                        segment_dict->postings_start_offset);
 
-                /// Read FST size
-                size_t fst_size = 0;
-                readVarUInt(fst_size, *dictionary_read_buffer);
+                    /// Read bloom filter
+                    bloom_filter_read_buffer->seek(segment_dict->bloom_filter_start_offset, SEEK_SET);
+                    segment_dict->bloom_filter = DB::GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_read_buffer);
 
-                /// Read FST blob
-                segment_dict->offsets.getData().clear();
-                segment_dict->offsets.getData().resize(fst_size);
-                dictionary_read_buffer->readStrict(reinterpret_cast<char *>(segment_dict->offsets.getData().data()), fst_size);
+                    fmt::println(
+                        "[Segment {}]: bloom filter size = {}",
+                        segment_id,
+                        formatReadableSizeWithBinarySuffix(bloom_filter_read_buffer->getPosition() - segment_dict->bloom_filter_start_offset));
 
-                fmt::println("[Segment {}]: FST size = {}", segment_id, formatReadableSizeWithBinarySuffix(fst_size));
-                fmt::println("[Segment {}]: dictionary offset = {}, postings offset = {}", segment_id, segment_dict->dict_start_offset, segment_dict->postings_start_offset);
+
+                    /// Read FST size header
+                    UInt64 fst_size_header = 0;
+                    readVarUInt(fst_size_header, *dictionary_read_buffer);
+
+                    /// Get uncompressed FST size
+                    size_t uncompressed_fst_size = fst_size_header >> 1;
+
+                    segment_dict->fst = std::make_unique<DB::FST::FiniteStateTransducer>();
+                    segment_dict->fst->getData().clear();
+                    segment_dict->fst->getData().resize(uncompressed_fst_size);
+                    if (fst_size_header & 0x1) /// FST is compressed
+                    {
+                        /// Read compressed FST size
+                        size_t compressed_fst_size = 0;
+                        readVarUInt(compressed_fst_size, *dictionary_read_buffer);
+
+                        /// Read compressed FST blob
+                        auto buf = std::make_unique<char[]>(compressed_fst_size);
+                        dictionary_read_buffer->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
+
+                        const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
+                        codec->decompress(
+                            buf.get(),
+                            static_cast<UInt32>(compressed_fst_size),
+                            reinterpret_cast<char *>(segment_dict->fst->getData().data()));
+                        fmt::println(
+                            "[Segment {}]: FST uncompressed size = {} | compressed size = {}",
+                            segment_id,
+                            formatReadableSizeWithBinarySuffix(uncompressed_fst_size),
+                            formatReadableSizeWithBinarySuffix(compressed_fst_size));
+                    }
+                    else
+                    {
+                        dictionary_read_buffer->readStrict(
+                            reinterpret_cast<char *>(segment_dict->fst->getData().data()), uncompressed_fst_size);
+                        fmt::println(
+                            "[Segment {}]: FST uncompressed size = {}",
+                            segment_id,
+                            formatReadableSizeWithBinarySuffix(uncompressed_fst_size));
+                    }
+                }
             }
         }
 
         /// Dump FST states and dotgraph representation for each segment
         {
-            using VisitedStatesSet =  std::set<std::tuple<UInt64, UInt64, char>>;
+            using VisitedStatesSet = std::set<std::tuple<UInt64, UInt64, char>>;
             std::function<void(DB::ReadBufferFromMemory &, DB::WriteBuffer &, VisitedStatesSet &, UInt64, UInt64)> dump_state_info
                 = [&dump_state_info](
                       DB::ReadBufferFromMemory & read_buffer,
@@ -257,9 +319,9 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 }
             };
 
-            for (const auto& [segment_id, segment_dict] : segment_dictionaries)
+            for (const auto & [segment_id, segment_dict] : segment_dictionaries)
             {
-                const auto data = segment_dict->offsets.getData();
+                const auto data = segment_dict->fst->getData();
 
                 DB::ReadBufferFromMemory read_buffer(data.data(), data.size());
                 read_buffer.seek(data.size() - 1, SEEK_SET);
@@ -309,7 +371,13 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                                 {
                                     auto arc_index = bmp.getIndex(ch) - 1;
                                     if (arc_index != static_cast<UInt64>(number_of_labels))
-                                        fmt::println("[Segment {}][State off {}]: Unexpected arc index for '{}'. expected {}, but got {}", segment_id, state_id, std::to_string(ch), std::to_string(number_of_labels), arc_index);
+                                        fmt::println(
+                                            "[Segment {}][State off {}]: Unexpected arc index for '{}'. expected {}, but got {}",
+                                            segment_id,
+                                            state_id,
+                                            std::to_string(ch),
+                                            std::to_string(number_of_labels),
+                                            arc_index);
                                     labels.emplace_back(ch);
                                     number_of_labels++;
                                 }

@@ -1,15 +1,17 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 
-#include <Databases/DatabaseReplicated.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/Context.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <filesystem>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <base/sleep.h>
-#include <filesystem>
+#include <Common/FailPoint.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/thread_local_rng.h>
 
 namespace fs = std::filesystem;
 
@@ -36,6 +38,12 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TABLE_IS_DROPPED;
     extern const int UNFINISHED;
+}
+
+namespace FailPoints
+{
+    extern const char database_replicated_delay_recovery[];
+    extern const char database_replicated_delay_entry_execution[];
 }
 
 static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
@@ -133,12 +141,23 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
-    zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+
+    LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
+
+    zookeeper->deleteEphemeralNodeIfContentMatches(
+        active_path,
+        [&active_id](const std::string & actual_content)
+        {
+            if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+                return active_id == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
+            return active_id == actual_content;
+        });
+    bool first_initialization = active_node_holder == nullptr;
     if (active_node_holder)
         active_node_holder->setAlreadyRemoved();
     active_node_holder.reset();
@@ -179,7 +198,15 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
+
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+
+        fiu_do_on(FailPoints::database_replicated_delay_recovery,
+        {
+            std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
+            std::this_thread::sleep_for(sleep_time);
+        });
+
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
@@ -196,20 +223,78 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
+    if (is_new_replica || first_initialization)
+    {
+        /// The current max_log_ptr might increase significantly while we were executing recoverLostReplica.
+        /// If it exceeds max_replication_lag_to_enqueue - this replica will refuse to accept other queries.
+        /// Also, if we just mark this replica active - other replicas will wait for it when executing queries with
+        /// distributed_ddl_output_mode = '*_only_active', although it may be still busy with previous queries.
+        /// Provide a way to identify such replicas to avoid waiting for them until they catch up.
+        UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
+        LOG_INFO(log, "Finishing replica initialization, our_log_ptr={}, max_log_ptr={}, unsynced_after_recovery={}", max_log_ptr, new_max_log_ptr, unsynced_after_recovery.load());
+        if (unsynced_after_recovery)
+            active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
+    }
+    else
+    {
+        /// For lost_according_to_digest and ordinary connection loss we don't mark replica as "unsynced"
+        /// because there's much lower chance of huge replication lag, and also we want to avoid metadata consistency issues for existing replicas
+        /// when we don't wait for such replicas due to distributed_ddl_output_mode = '*_only_active'.
+        unsynced_after_recovery = false;
+    }
+
+    LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder_zookeeper = zookeeper;
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
+void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
+{
+    if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
+    {
+        auto zookeeper = getZooKeeper();
+
+        String active_path = fs::path(database->replica_path) / "active";
+        String active_id = toString(ServerUUID::get());
+
+        LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
+
+        zookeeper->deleteEphemeralNodeIfContentMatches(
+            active_path,
+            [&active_id](const std::string & actual_content)
+            {
+                if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+                    return active_id
+                        == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
+                return active_id == actual_content;
+            });
+        if (active_node_holder)
+            active_node_holder->setAlreadyRemoved();
+        active_node_holder.reset();
+
+        if (unsynced_after_recovery)
+            active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
+
+        LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+
+        zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+        active_node_holder_zookeeper = zookeeper;
+        active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+    }
+}
+
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = context->getZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = context->getZooKeeper();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
@@ -318,8 +403,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = context->getZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
+
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
@@ -406,6 +492,28 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         out_reason = fmt::format("Task {} already executed according to log pointer {}", entry_name, our_log_ptr);
         return {};
+    }
+
+    fiu_do_on(FailPoints::database_replicated_delay_entry_execution,
+    {
+        std::chrono::milliseconds sleep_time{thread_local_rng() % 2000};
+        std::this_thread::sleep_for(sleep_time);
+    });
+
+    if (unsynced_after_recovery)
+    {
+        UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+        LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
+        chassert(our_log_ptr < max_log_ptr);
+        bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
+        if (became_synced)
+        {
+            /// Remove the REPLICA_UNSYNCED_MARKER
+            String active_id = toString(ServerUUID::get());
+            active_node_holder_zookeeper->set(active_node_holder->getPath(), active_id);
+            unsynced_after_recovery = false;
+            LOG_INFO(log, "Replica became synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
+        }
     }
 
     String entry_path = fs::path(queue_dir) / entry_name;
@@ -502,7 +610,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 

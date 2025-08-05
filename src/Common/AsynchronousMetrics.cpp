@@ -8,6 +8,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -48,24 +51,62 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
-
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        out.emplace(filename, small_buffer_size);
+    {
+        try
+        {
+            out.emplace(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
 }
 
-static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
+std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+    {
+        try
+        {
+            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
     return {};
 }
 
-static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -180,10 +221,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
-
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
+        std::filesystem::directory_options::skip_permission_denied))
     {
         String device_name = device_dir.path().filename();
 
@@ -604,6 +645,19 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 
 
 #if defined(OS_LINUX)
+
+void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
+{
+    new_values["CGroupUserTime"]
+        = {delta_values.user * multiplier,
+           "The ratio of time the CPU core was running userspace code."
+           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
+           "stalls, branch mispredictions, running another SMT core)."};
+    new_values["CGroupSystemTime"]
+        = {delta_values.system * multiplier, "The ratio of time the CPU core was running OS kernel (system) code."};
+}
+
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
@@ -680,6 +734,25 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
+void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
+{
+    chassert(num_cpus_to_normalize);
+
+    new_values["CGroupUserTimeNormalized"]
+        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
+           "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["CGroupSystemTimeNormalized"]
+        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
+           "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+}
+
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
 {
@@ -746,6 +819,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+
 void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
@@ -945,6 +1019,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 #endif
 
+    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
+
 #if defined(OS_LINUX)
     if (loadavg)
     {
@@ -1077,8 +1153,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
-    if (cgroup_cpu_metrics_present)
+    if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
         try
         {
@@ -1122,13 +1197,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
-                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
-                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+                const ProcStatValuesCPU delta_values = current_values - cgroup_values_all_cpus;
+                applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
-                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
+                    applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
-            proc_stat_values_all_cpus = current_values;
+            cgroup_values_all_cpus = current_values;
         }
         catch (...)
         {
@@ -1162,14 +1237,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
-                    if (cgroup_cpu_metrics_present)
-                    {
-                        /// Skip the CPU metrics if we already have them from cgroup
-                        ProcStatValuesCPU current_values{};
-                        current_values.read(*proc_stat);
-                        continue;
-                    }
-
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1256,7 +1323,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
+                if (num_cpus_to_normalize > 0)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 

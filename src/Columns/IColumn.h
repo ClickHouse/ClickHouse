@@ -272,11 +272,15 @@ public:
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
 
+    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const;
+
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual StringRef
     serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
+
+    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const;
 
     /// Calculate all the sizes of serialized data in column, then added to `sizes`.
     /// If `is_null` is not nullptr, also take null bit into account.
@@ -605,7 +609,7 @@ public:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
     /// `blocks` and `row_nums` must have same size
@@ -855,7 +859,7 @@ private:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
     /// `columns` and `row_nums` must have same size
@@ -863,8 +867,12 @@ private:
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const override;
+
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
+
+    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 };
 
