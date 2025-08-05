@@ -1,3 +1,6 @@
+# Tags: no-fasttest
+# no-fasttest: requires azureBlobStorage function
+
 #!/usr/bin/env bash
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
