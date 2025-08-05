@@ -1,17 +1,14 @@
 #include "config.h"
 #include <memory>
-#include <optional>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Formats/FormatParserGroup.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO
 
-#include <Databases/DataLake/Common.h>
-
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
-#include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -25,7 +22,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/CompressedReadBufferWrapper.h>
 
-#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
@@ -52,7 +48,6 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
 }
 
 namespace ErrorCodes
@@ -60,7 +55,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -69,7 +63,6 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
 
@@ -258,7 +251,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`",
-            configuration_ptr->getPathForRead().path,
+            configuration_ptr->getPath(),
             relevant_snapshot_id);
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
@@ -282,7 +275,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "No manifest list found for snapshot id `{}` for iceberg table `{}`",
                     relevant_snapshot_id,
-                    configuration_ptr->getPathForRead().path);
+                    configuration_ptr->getPath());
             std::optional<size_t> total_rows;
             std::optional<size_t> total_bytes;
 
@@ -323,7 +316,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(local_context, getProperFilePathFromMetadataInfo(
-                    snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, table_location)),
+                    snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPath(), table_location)),
                 relevant_snapshot_id, total_rows, total_bytes};
 
             if (!snapshot->has(f_schema_id))
@@ -331,7 +324,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "No schema id found for snapshot id `{}` for iceberg table `{}`",
                     relevant_snapshot_id,
-                    configuration_ptr->getPathForRead().path);
+                    configuration_ptr->getPath());
             relevant_snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
             addTableSchemaById(relevant_snapshot_schema_id, metadata_object);
         }
@@ -341,7 +334,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             ErrorCodes::BAD_ARGUMENTS,
             "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
             relevant_snapshot_id,
-            configuration_ptr->getPathForRead().path);
+            configuration_ptr->getPath());
 }
 
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed)
@@ -356,14 +349,14 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
-            configuration_ptr->getPathForRead().path);
+            configuration_ptr->getPath());
     }
     if (timestamp_changed)
     {
         Int64 closest_timestamp = 0;
         Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
         if (!metadata_object->has(f_snapshot_log))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp", configuration_ptr->getPathForRead().path);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp", configuration_ptr->getPath());
         auto snapshots = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
         relevant_snapshot_id = -1;
         for (size_t i = 0; i < snapshots->size(); ++i)
@@ -377,7 +370,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
             }
         }
         if (relevant_snapshot_id < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot found in snapshot log before requested timestamp for iceberg table {}", configuration_ptr->getPathForRead().path);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot found in snapshot log before requested timestamp for iceberg table {}", configuration_ptr->getPath());
         updateSnapshot(local_context, metadata_object);
     }
     else if (snapshot_id_changed)
@@ -442,53 +435,6 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
-void IcebergMetadata::createInitial(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context,
-    const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by,
-    bool if_not_exists,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id_)
-{
-    auto configuration_ptr = configuration.lock();
-
-    std::vector<String> metadata_files;
-    try
-    {
-        metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
-    }
-    catch (const Exception & ex)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
-    }
-    if (!metadata_files.empty())
-    {
-        if (if_not_exists)
-            return;
-        else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
-    }
-
-    String location_path = configuration_ptr->getRawPath().path;
-    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
-    auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    {
-        auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-        buffer_metadata->write(metadata_content.data(), metadata_content.size());
-        buffer_metadata->finalize();
-    }
-    if (catalog)
-    {
-        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
-    }
-}
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
@@ -557,7 +503,7 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
             const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
+            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -698,7 +644,7 @@ ManifestFilePtr IcebergMetadata::getManifestFile(
             manifest_file_deserializer,
             filename,
             format_version,
-            configuration_ptr->getPathForRead().path,
+            configuration_ptr->getPath(),
             schema_processor,
             inherited_sequence_number,
             inherited_snapshot_id,
@@ -866,7 +812,7 @@ ObjectIterator IcebergMetadata::iterate(
     ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
-    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback, static_cast<UInt64>(relevant_snapshot_id));
+    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

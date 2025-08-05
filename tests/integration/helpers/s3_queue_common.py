@@ -108,7 +108,6 @@ def create_table(
     bucket=None,
     expect_error=False,
     database_name="default",
-    replace=False,
     no_settings=False,
 ):
     auth_params = ",".join(auth)
@@ -132,17 +131,15 @@ def create_table(
     else:
         engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
-    create = "REPLACE" if replace else "CREATE"
-    if not replace:
-        node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
+    node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            CREATE TABLE {database_name}.{table_name} ({format})
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            CREATE TABLE {database_name}.{table_name} ({format})
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """

@@ -14,7 +14,7 @@ SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
-WITH 0.0015 AS threshold
+WITH 0.001 AS threshold
 SELECT
     'runtime messages',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
@@ -32,9 +32,7 @@ SELECT
 FROM logs
 WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
-    AND source_file not like '%/AWSLogger.cpp%'
-    AND source_file not like '%/BaseDaemon.cpp%'
-    AND logger_name not in ('RaftInstance');
+  AND source_file not like '%/AWSLogger.cpp%';
 
 -- Check the same for exceptions. The value was 0.03
 WITH 0.05 AS threshold
@@ -55,7 +53,7 @@ WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
   AND (message like '%DB::Exception%' or message like '%Coordination::Exception%');
 
-WITH 0.02 AS threshold
+WITH 0.01 AS threshold
 SELECT
     'unknown runtime exceptions',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
@@ -65,7 +63,7 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%(AVRO_EXCEPTION)%' and message not like '%Fault injection%' and message not like '%throwIf%' and message not like '%Out of memory%03147_parquet_memory_tracking%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
@@ -263,9 +261,9 @@ select 'number of noisy messages',
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
-    select replaceRegexpAll(message_format_string, '\.$', '') AS message_format_string, any(toValidUTF8(replaceRegexpAll(message, '\.$', '') AS message)) as any_message from logs
+    select message_format_string, any(toValidUTF8(message)) as any_message from logs
     where ((rand() % 8) = 0)
-    and message not like (replaceRegexpAll(message_format_string, '\{[:.0-9dfx]*\}', '%') as s)
+    and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')
     and message not like ('%Exception: '||s||'%')
     and message not like ('%(skipped % similar messages)%')

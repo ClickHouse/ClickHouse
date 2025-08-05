@@ -571,7 +571,6 @@
     -->
 
     <!-- Path to temporary data for processing heavy queries. -->
-    <!-- NOTE: all files with `tmp` prefix will be removed at server startup -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
@@ -621,8 +620,6 @@
          - keep_free_space_bytes    is ignored
          - max_data_part_size_bytes is ignored
          - you must have exactly one volume in that policy
-
-         NOTE: all files with `tmp` prefix will be removed at server startup
     -->
     <!-- <tmp_policy>tmp</tmp_policy> -->
 
@@ -1551,24 +1548,13 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Workload scheduling: used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
          Specified value is used as `workload` setting value for background merge or mutation.
     -->
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
-    -->
-
-    <!-- Workload scheduling: throw or provide unlimited access to resource given unknown `workload` query setting -->
-    <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
-
-    <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution.
-    -->
-    <!--
-    <cpu_slot_preemption>true</cpu_slot_preemption>
-    <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
-    <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

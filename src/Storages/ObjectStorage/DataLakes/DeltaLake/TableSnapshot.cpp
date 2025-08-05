@@ -8,7 +8,6 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
@@ -34,11 +33,6 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsBool delta_lake_enable_expression_visitor_logging;
 }
 
 namespace ProfileEvents
@@ -88,9 +82,7 @@ public:
         const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
-        bool enable_expression_visitor_logging_,
-        LoggerPtr log_,
-        UInt64 snapshot_version_)
+        LoggerPtr log_)
         : engine(engine_)
         , snapshot(snapshot_)
         , scan(scan_)
@@ -101,8 +93,6 @@ public:
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
-        , enable_expression_visitor_logging(enable_expression_visitor_logging_)
-        , snapshot_version(snapshot_version_)
         , thread([&, thread_group = DB::CurrentThread::getGroup()] {
             /// Attach to current query thread group, to be able to
             /// have query id in logs and metrics from scanDataFunc.
@@ -191,11 +181,6 @@ public:
         /// For now do the same as StorageObjectStorageSource::GlobIterator.
         /// TODO: is it possible to do a precise estimation?
         return std::numeric_limits<size_t>::max();
-    }
-
-    std::optional<UInt64> getSnapshotVersion() const override
-    {
-        return snapshot_version;
     }
 
     DB::ObjectInfoPtr next(size_t) override
@@ -294,7 +279,7 @@ public:
 
         if (transform && !context->partition_columns.empty())
         {
-            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema, context->enable_expression_visitor_logging);
+            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema);
             object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
 
             LOG_TEST(
@@ -333,8 +318,6 @@ private:
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
-    const bool enable_expression_visitor_logging;
-    const UInt64 snapshot_version;
 
     std::exception_ptr scan_exception;
 
@@ -362,12 +345,10 @@ private:
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
-    DB::ContextPtr context_,
     LoggerPtr log_)
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
-    , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
 {
 }
 
@@ -439,9 +420,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         filter_dag,
         callback,
         list_batch_size,
-        enable_expression_visitor_logging,
-        log,
-        snapshot_version);
+        log);
 }
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const

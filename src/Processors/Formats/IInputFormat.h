@@ -32,8 +32,6 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override;
-
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
@@ -46,7 +44,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
+    virtual void resetReadBuffer() { in = nullptr; }
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
@@ -83,8 +81,6 @@ protected:
     bool need_only_count = false;
 
 private:
-    void resetOwnedBuffers();
-
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 

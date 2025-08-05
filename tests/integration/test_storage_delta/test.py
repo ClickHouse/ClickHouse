@@ -218,7 +218,9 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
+    table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
+    run_on_cluster=False,
     use_delta_kernel=False,
     **kwargs,
 ):
@@ -234,38 +236,85 @@ def create_delta_table(
         else:
             bucket = cluster.minio_bucket
 
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
-            + allow_dynamic_metadata_for_datalakes_suffix
-        )
+        if run_on_cluster:
+            assert table_function
+            instance.query(
+                f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+            )
+        else:
+            if table_function:
+                instance.query(
+                    f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                    f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+                )
+            else:
+                instance.query(
+                    f"""
+                    DROP TABLE IF EXISTS {table_name};
+                    CREATE TABLE {table_name}
+                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+                    + allow_dynamic_metadata_for_datalakes_suffix
+                )
 
     elif storage_type == "azure":
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
-            + allow_dynamic_metadata_for_datalakes_suffix
-        )
+        if run_on_cluster:
+            assert table_function
+            instance.query(
+                f"""
+                deltalakeAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+            """
+            )
+        else:
+            if table_function:
+                instance.query(
+                    f"""
+                    deltalakeAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+                """
+                )
+            else:
+                instance.query(
+                    f"""
+                    DROP TABLE IF EXISTS {table_name};
+                    CREATE TABLE {table_name}
+                    ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+                    + allow_dynamic_metadata_for_datalakes_suffix
+                )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
         user_files_path = os.path.join(
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
         table_path = os.path.join(user_files_path, table_name)
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLakeLocal('{table_path}', {format})
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
-            """
-        )
+        if run_on_cluster:
+            assert table_function
+            instance.query(
+                f"""
+                deltalakeLocalCluster('cluster_simple', '{table_path}', {format})
+                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+                """
+            )
+        else:
+            if table_function:
+                instance.query(
+                    f"""
+                    deltalakeLocal('{table_path}', {format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+                    """
+                )
+            else:
+                instance.query(
+                    f"""
+                    DROP TABLE IF EXISTS {table_name};
+                    CREATE TABLE {table_name}
+                    ENGINE=DeltaLakeLocal('{table_path}', {format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
+                    """
+                )
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 

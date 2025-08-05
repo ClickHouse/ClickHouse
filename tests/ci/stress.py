@@ -15,7 +15,7 @@ class ServerDied(Exception):
     pass
 
 
-def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
+def get_options(i: int, upgrade_check: bool) -> str:
     options = []
     client_options = []
     if i > 0:
@@ -79,7 +79,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("group_by_use_nulls=1")
 
     # 12 % 3 == 0, so it's Atomic database
-    if i == 12 and not upgrade_check and not encrypted_storage:
+    if i == 12 and not upgrade_check:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
@@ -113,10 +113,8 @@ def run_func_test(
     skip_tests_option: str,
     global_time_limit: int,
     upgrade_check: bool,
-    encrypted_storage: bool,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
-    encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
@@ -128,8 +126,8 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         with open(path, "w", encoding="utf-8") as op:
             full_command = (
-                f"{cmd} {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
-                f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option}"
+                f"{cmd} {get_options(i, upgrade_check)} {global_time_limit_option} "
+                f"{skip_tests_option} {upgrade_check_option}"
             )
             logging.info("Run func tests '%s'", full_command)
             # pylint:disable-next=consider-using-with
@@ -316,9 +314,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
     parser.add_argument("--drop-databases", action="store_true", default=False)
-    parser.add_argument(
-        "--encrypted-storage", type=lambda x: bool(int(x)), default=False
-    )
     return parser.parse_args()
 
 
@@ -339,7 +334,6 @@ def main():
         args.skip_func_tests,
         args.global_time_limit,
         args.upgrade_check,
-        args.encrypted_storage,
     )
 
     logging.info("Will wait functests to finish")

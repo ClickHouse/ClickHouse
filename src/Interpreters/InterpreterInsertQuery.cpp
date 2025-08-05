@@ -8,7 +8,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -157,8 +156,6 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
-
-        table_function_ptr->setPartitionBy(query.partition_by);
 
         return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
                                            /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
@@ -346,6 +343,11 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
+}
+
+void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
+{
+    owned_buffers.push_back(std::move(buffer));
 }
 
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
@@ -730,6 +732,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     if (query.hasInlinedData() && !async_insert)
     {
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
+
+        for (auto & buffer : owned_buffers)
+            format->addBuffer(std::move(buffer));
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
