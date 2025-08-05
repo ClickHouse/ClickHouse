@@ -1595,6 +1595,13 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     de->add_params()->set_svalue(sc.password);
     sv3->set_property("storage_endpoint");
     sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
+    if (rg.nextSmallNumber() < 4)
+    {
+        SetValue * sv5 = svs->add_other_values();
+
+        sv5->set_property("vended_credentials");
+        sv5->set_value(rg.nextBool() ? "1" : "0");
+    }
 }
 
 void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
@@ -1629,7 +1636,7 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
 
         sv1->set_property("storage_catalog_type");
         sv2->set_property("storage_warehouse");
-        sv3->set_property("storage_storage_endpoint");
+        sv3->set_property("storage_endpoint");
         sv4->set_property("storage_catalog_url");
         sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
         switch (b.catalog)
@@ -1679,24 +1686,18 @@ bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, con
 
     if (glue_cat && (nopt < glue_cat + 1))
     {
-        const Catalog & cat = sc.glue_catalog.value();
-
         b.catalog = CatalogTable::Glue;
-        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
+        return true;
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
-        const Catalog & cat = sc.hive_catalog.value();
-
         b.catalog = CatalogTable::Hive;
-        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
+        return true;
     }
     else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
     {
-        const Catalog & cat = sc.glue_catalog.value();
-
         b.catalog = CatalogTable::REST;
-        return sendRequest(fmt::format("/{}/cat{}", cat.endpoint, b.tname));
+        return true;
     }
     return sendRequest(fmt::format("{}/file{}", sc.database, b.tname));
 }

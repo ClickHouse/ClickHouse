@@ -1286,15 +1286,13 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine() || b.isAnyS3Engine();
-        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine() || b.isAnyAzureEngine();
-
-        if (isS3 || isAzure)
+        if (b.isOnS3() || b.isOnAzure())
         {
-            connections.createExternalDatabaseTable(rg, isS3 ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+            connections.createExternalDatabaseTable(rg, b.isOnS3() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
         }
         else
         {
+            chassert(b.isOnLocal());
             te->add_params()->set_svalue(b.getTablePath(fc, false));
         }
         setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);

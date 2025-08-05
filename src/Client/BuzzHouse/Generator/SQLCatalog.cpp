@@ -68,7 +68,7 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
             default:
                 break;
         }
-        return cat ? fmt::format("http://{}:{}/{}/cat{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname)
+        return cat ? fmt::format("http://{}:{}/{}/t{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname)
                    : fmt::format(
                          "http://{}:{}{}/file{}{}",
                          client ? sc.client_hostname : sc.server_hostname,

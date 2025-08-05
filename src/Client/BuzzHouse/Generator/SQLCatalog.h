@@ -246,6 +246,12 @@ public:
 
     bool isAnyIcebergEngine() const { return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal; }
 
+    bool isOnS3() const { return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine(); }
+
+    bool isOnAzure() const { return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine(); }
+
+    bool isOnLocal() const { return isIcebergLocalEngine() || isDeltaLakeLocalEngine(); }
+
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
     bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
