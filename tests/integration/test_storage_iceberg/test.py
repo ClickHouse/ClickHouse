@@ -2365,41 +2365,43 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_schema_evolution_with_where_condition(started_cluster, storage_type):
+def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_schema_evolution_with_where_condition_" + get_uuid_str()
-
-    def execute_spark_query(query: str):
-        return execute_spark_query_general(
-            spark,
-            started_cluster,
-            storage_type,
-            TABLE_NAME,
-            query,
-        )
-
-    execute_spark_query(
+    TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
+    
+    spark.sql(
         f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            a INT NOT NULL
+        ) using iceberg
+        TBLPROPERTIES ('format-version' = '2',
+            'commit.manifest.min-count-to-merge' = '1',
+            'commit.manifest-merge.enabled' = 'true');
         """
     )
 
-    execute_spark_query(
+    values_list = ", ".join(["(1)" for _ in range(5)])
+    spark.sql(
         f"""
-            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int
-            )
-            USING iceberg
-            OPTIONS('format-version'='2')
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
         """
     )
 
-    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1)")
+    spark.sql(
+    f"""
+        ALTER TABLE {TABLE_NAME} ADD COLUMN b INT;
+    """
+    )
 
-    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (b INT)")
+    values_list = ", ".join(["(1, 2)" for _ in range(5)])
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
+        """
+    )
 
-    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2)")
+    spark.sql(f"CALL system.rewrite_manifests('{TABLE_NAME}')")
 
     default_upload_directory(
         started_cluster,
@@ -2408,19 +2410,16 @@ def test_schema_evolution_with_where_condition(started_cluster, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+
     table_creation_expression = get_creation_expression(
         storage_type,
         TABLE_NAME,
         started_cluster,
         table_function=True,
-        allow_dynamic_metadata_for_data_lakes=False,
     )
 
-    table_select_expression = table_creation_expression
+    instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
-    print(f"Table select expression: {table_select_expression}")
-
-    instance.query(f"SELECT * FROM {table_select_expression} WHERE b >= 2 ORDER BY ALL")
 
 def test_time_travel_bug_fix_validation(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -2442,5 +2441,6 @@ def test_time_travel_bug_fix_validation(started_cluster):
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
 
     instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
+
 
     assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
