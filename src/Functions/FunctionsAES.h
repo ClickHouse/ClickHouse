@@ -287,7 +287,7 @@ private:
             const auto pad_to_next_block = block_size == 1 ? 0 : 1;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size + 1;
+                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     resulting_size += tag_size;
             }

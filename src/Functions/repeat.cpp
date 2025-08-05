@@ -119,7 +119,7 @@ struct RepeatImpl
             process(
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
                 res_data.data() + res_offsets[i - 1],
-                str_size + 1,
+                str_size,
                 repeat_time);
         }
     }

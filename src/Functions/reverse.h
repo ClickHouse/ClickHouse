@@ -22,9 +22,10 @@ struct ReverseImpl
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            for (size_t j = prev_offset; j < offsets[i]; ++j)
-                res_data[j] = data[offsets[i] + prev_offset - j];
-            prev_offset = offsets[i];
+            ColumnString::Offset next_offset = offsets[i];
+            for (size_t j = prev_offset; j < next_offset; ++j)
+                res_data[j] = data[next_offset + prev_offset - j - 1];
+            prev_offset = next_offset;
         }
     }
 
