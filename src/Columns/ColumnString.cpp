@@ -138,7 +138,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsets[start + length] - nested_offset;
+    size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
