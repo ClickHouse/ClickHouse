@@ -58,14 +58,12 @@ namespace DB
                 {
                     GregorianDate gd;
                     (*vec_null_map_to)[i] = !(gd.tryInit(vec_from[i]) && gd.tryWrite(write_buffer));
-                    writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
                     GregorianDate gd(vec_from[i]);
                     gd.write(write_buffer);
-                    writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
             }

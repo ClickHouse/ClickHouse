@@ -230,7 +230,6 @@ public:
                 }
             }
 
-            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 

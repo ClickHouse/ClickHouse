@@ -81,7 +81,6 @@ public:
         }
         else
         {
-            writeChar(0, buffer);
             col.getOffsets().push_back(buffer.count());
         }
 

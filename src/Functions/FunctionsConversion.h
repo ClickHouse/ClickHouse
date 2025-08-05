@@ -1903,7 +1903,6 @@ struct ConvertImpl
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1936,7 +1935,6 @@ struct ConvertImpl
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2017,7 +2015,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3);
+                data_to.resize(size * 3); /// A guess (arbitrary).
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -2029,7 +2027,6 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2038,7 +2035,6 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
