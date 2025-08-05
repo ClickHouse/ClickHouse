@@ -211,7 +211,11 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
+            {
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -232,12 +236,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                             node->getNodeTypeName());
         }
     }
+
+    validateCorrelatedSubqueries(node);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
-
     if (!scope.context)
         scope.context = context;
 
@@ -260,6 +265,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    validateCorrelatedSubqueries(node);
 }
 
 bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
