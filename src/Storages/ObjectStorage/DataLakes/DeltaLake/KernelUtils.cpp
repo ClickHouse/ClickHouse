@@ -49,7 +49,7 @@ void recordKernelErrorAllocation(uintptr_t error, std::string error_message)
 {
     std::lock_guard guard(mutex);
 
-    const auto [it, inserted] = allocated_errors.emplace(error, std::move(error_message));
+    const auto [it, inserted] = allocated_errors.emplace(error, error_message);
 
     if (!inserted)
     {
