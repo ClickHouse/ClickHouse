@@ -362,14 +362,14 @@ public:
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return getImpl().getDataLakeSettings(); }
 
-    //void initialize(
-    //    ASTs & engine_args,
-    //    ContextPtr local_context,
-    //    bool with_table_structure) override
-    //{
-    //    createDynamicConfiguration(engine_args, local_context);
-    //    getImpl().initialize(engine_args, local_context, with_table_structure);
-    //}
+    void initialize(
+        ASTs & engine_args,
+        ContextPtr local_context,
+        bool with_table_structure) override
+    {
+        createDynamicConfiguration(engine_args, local_context);
+        getImpl().initialize(engine_args, local_context, with_table_structure);
+    }
 
     ASTPtr createArgsWithAccessData() const override
     {
