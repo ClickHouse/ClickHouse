@@ -25,7 +25,7 @@
 namespace DB
 {
 
-std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
+std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
@@ -99,7 +99,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     { return coordinator->handleRequest(std::move(req)); };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);

@@ -71,9 +71,9 @@ namespace
             /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
             /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
             /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
             {
                 int64_t scaler = lower_bound ? -10 : 10;
+                int32_t scale = DB::getDecimalScale(*non_nullable_type);
                 while (--scale)
                     scaler *= 10;
 

@@ -158,7 +158,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id) VALUES (1);
+INSERT INTO test (id) Values (1);
 
 SELECT * FROM test;
 ┌─id─┬──────────updated_at─┬─updated_at_date─┐
@@ -186,7 +186,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1);
+INSERT INTO test Values (1);
 
 SELECT * FROM test;
 ┌─id─┐
@@ -224,7 +224,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+INSERT INTO test (id, unhexed) Values (1, '5a90b714');
 
 SELECT
     id,
@@ -486,9 +486,11 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 
 Encryption codecs:
 
+
 #### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
+
 
 #### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
@@ -523,7 +525,7 @@ If compression needs to be applied, it must be explicitly specified. Otherwise, 
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+    x String Codec(Delta, LZ4, AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```
@@ -756,6 +758,7 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
+
 
 ## Related content {#related-content}
 

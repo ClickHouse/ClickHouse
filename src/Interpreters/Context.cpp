@@ -39,7 +39,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -142,30 +141,6 @@ namespace ProfileEvents
 {
     extern const Event ContextLock;
     extern const Event ContextLockWaitMicroseconds;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
-    extern const Event LocalWriteThrottlerBytes;
-    extern const Event LocalWriteThrottlerSleepMicroseconds;
-    extern const Event RemoteReadThrottlerBytes;
-    extern const Event RemoteReadThrottlerSleepMicroseconds;
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-    extern const Event BackupThrottlerBytes;
-    extern const Event BackupThrottlerSleepMicroseconds;
-    extern const Event MergesThrottlerBytes;
-    extern const Event MergesThrottlerSleepMicroseconds;
-    extern const Event MutationsThrottlerBytes;
-    extern const Event MutationsThrottlerSleepMicroseconds;
-    extern const Event QueryLocalReadThrottlerBytes;
-    extern const Event QueryLocalReadThrottlerSleepMicroseconds;
-    extern const Event QueryLocalWriteThrottlerBytes;
-    extern const Event QueryLocalWriteThrottlerSleepMicroseconds;
-    extern const Event QueryRemoteReadThrottlerBytes;
-    extern const Event QueryRemoteReadThrottlerSleepMicroseconds;
-    extern const Event QueryRemoteWriteThrottlerBytes;
-    extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
-    extern const Event QueryBackupThrottlerBytes;
-    extern const Event QueryBackupThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -213,14 +188,6 @@ namespace CurrentMetrics
     extern const Metric IcebergCatalogThreads;
     extern const Metric IcebergCatalogThreadsActive;
     extern const Metric IcebergCatalogThreadsScheduled;
-    extern const Metric IndexMarkCacheBytes;
-    extern const Metric IndexMarkCacheFiles;
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
-    extern const Metric UncompressedCacheBytes;
-    extern const Metric UncompressedCacheCells;
-    extern const Metric IndexUncompressedCacheBytes;
-    extern const Metric IndexUncompressedCacheCells;
 }
 
 
@@ -325,14 +292,13 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
-    extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
-    extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
@@ -464,9 +430,6 @@ struct ContextSharedPart : boost::noncopyable
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
-    bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
-    UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
-    UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -812,14 +775,13 @@ struct ContextSharedPart : boost::noncopyable
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
-        LOG_TRACE(log, "Shutting down object storage queue streaming");
-        ObjectStorageQueueFactory::instance().shutdown();
+        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
+          *  Note that part changes at shutdown won't be logged to part log.
+          */
+        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown([this]()
-        {
-            SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
-        });
+        DatabaseCatalog::shutdown();
 
         NamedCollectionFactory::instance().shutdown();
 
@@ -838,17 +800,12 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
-
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
-
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
-
-        scope_guard delete_dictionaries_xmls;
-        scope_guard delete_user_defined_executable_functions_xmls;
 
         /// Delete DDLWorker before zookeeper.
         /// Cause it can call Context::getZooKeeper and resurrect it.
@@ -921,8 +878,17 @@ struct ContextSharedPart : boost::noncopyable
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
-            delete_dictionaries_xmls = std::move(dictionaries_xmls);
-            delete_user_defined_executable_functions_xmls = std::move(user_defined_executable_functions_xmls);
+            /// Dictionaries may be required:
+            /// - for storage shutdown (during final flush of the Buffer engine)
+            /// - before storage startup (because of some streaming of, i.e. Kafka, to
+            ///   the table with materialized column that has dictGet)
+            ///
+            /// So they should be created before any storages and preserved until storages will be terminated.
+            ///
+            /// But they cannot be created before storages since they may required table as a source,
+            /// but at least they can be preserved for storage termination.
+            dictionaries_xmls.reset();
+            user_defined_executable_functions_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
@@ -930,12 +896,10 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
-
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -943,18 +907,6 @@ struct ContextSharedPart : boost::noncopyable
             /// Stop zookeeper connection
             zookeeper.reset();
         }
-
-        /// Dictionaries may be required:
-        /// - for storage shutdown (during final flush of the Buffer engine)
-        /// - before storage startup (because of some streaming of, i.e. Kafka, to
-        ///   the table with materialized column that has dictGet)
-        ///
-        /// So they should be created before any storages and preserved until storages will be terminated.
-        ///
-        /// But they cannot be created before storages since they may required table as a source,
-        /// but at least they can be preserved for storage termination.
-        delete_dictionaries_xmls.reset();
-        delete_user_defined_executable_functions_xmls.reset();
 
         /// Can be removed without context lock
         delete_system_logs.reset();
@@ -964,19 +916,10 @@ struct ContextSharedPart : boost::noncopyable
         delete_user_defined_sql_objects_storage.reset();
         delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
-
-        auto join_background_pool = [&](BackgroundSchedulePoolPtr && pool_ptr)
-        {
-            if (!pool_ptr)
-                return;
-            pool_ptr->join();
-            pool_ptr.reset();
-        };
-        join_background_pool(std::move(delete_buffer_flush_schedule_pool));
-        join_background_pool(std::move(delete_schedule_pool));
-        join_background_pool(std::move(delete_distributed_schedule_pool));
-        join_background_pool(std::move(delete_message_broker_schedule_pool));
-
+        delete_buffer_flush_schedule_pool.reset();
+        delete_schedule_pool.reset();
+        delete_distributed_schedule_pool.reset();
+        delete_message_broker_schedule_pool.reset();
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
@@ -1011,11 +954,6 @@ struct ContextSharedPart : boost::noncopyable
         warnings[warning] = message;
     }
 
-    void removeAllWarnings() TSA_REQUIRES(mutex)
-    {
-        warnings.clear();
-    }
-
     void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
     {
         if (warnings.contains(warning))
@@ -1035,25 +973,25 @@ struct ContextSharedPart : boost::noncopyable
             replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
-            remote_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            remote_read_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
-            remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            remote_write_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            local_read_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
-            local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+            local_write_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
-            backups_server_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
+            backups_server_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
-            mutations_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
+            mutations_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
-            merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+            merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
 
@@ -1167,7 +1105,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
-    res->async_read_counters = std::make_shared<AsyncReadCounters>();
     return res;
 }
 
@@ -1407,38 +1344,40 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
+static void setupTmpPath(LoggerPtr log, const std::string & path)
 try
 {
-    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
+    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    if (disk->existsDirectory(""))
+    if (fs::exists(path))
     {
-        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
+        /// Clearing old temporary files.
+        fs::directory_iterator dir_end;
+        for (fs::directory_iterator it(path); it != dir_end; ++it)
         {
-            /// existsFile() checks for is_regular_file() for local disk
-            if (it->path().starts_with("tmp") && disk->existsFile(it->path()))
+            if (it->is_regular_file())
             {
-                LOG_DEBUG(log, "Removing old temporary file {}", it->path());
-                disk->removeFile(it->path());
+                if (startsWith(it->path().filename(), "tmp"))
+                {
+                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                    fs::remove(it->path());
+                }
+                else
+                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
             }
-            else
-            {
-                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path());
-            }
+            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
     }
     else
     {
-        disk->createDirectory("");
+        fs::create_directories(path);
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary disk {}:{}. "
-        "It is ok to skip this exception as cleaning old temporary files is not necessary",
-        disk->getName(), disk->getPath()));
+        "Caught exception while setting up temporary path: {}. "
+        "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
@@ -1462,7 +1401,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
-        setupTmpPath(shared->log, disk);
+        setupTmpPath(shared->log, disk->getPath());
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1496,7 +1435,16 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         /// Check that underlying disk is local (can be wrapped in decorator)
         DiskPtr disk_ptr = disk;
-        setupTmpPath(shared->log, disk);
+
+        if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
+        {
+            const auto * disk_raw_ptr = disk_ptr.get();
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                "Disk '{}' ({}) is not local and can't be used for temporary files",
+                disk_ptr->getName(), typeid(*disk_raw_ptr).name());
+        }
+
+        setupTmpPath(shared->log, disk->getPath());
     }
 
     std::lock_guard lock(shared->mutex);
@@ -1598,12 +1546,6 @@ void Context::removeWarningMessage(WarningType warning) const
 {
     std::lock_guard lock(shared->mutex);
     shared->removeWarningMessage(warning);
-}
-
-void Context::removeAllWarnings() const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->removeAllWarnings();
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -2023,32 +1965,6 @@ void Context::setThrowOnUnknownWorkload(bool value)
     shared->throw_on_unknown_workload = value;
 }
 
-bool Context::getCPUSlotPreemption() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_preemption;
-}
-
-UInt64 Context::getCPUSlotQuantum() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_quantum_ns;
-}
-
-UInt64 Context::getCPUSlotPreemptionTimeout() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_preemption_timeout_ms;
-}
-
-void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_preemption = cpu_slot_preemption;
-    shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
-    shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
-}
-
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
 {
     std::lock_guard lock(shared->mutex);
@@ -2428,7 +2344,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
-                                                     ColumnsDescription(sample_block->getNamesAndTypesList()),
+                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
                                                      /* comment */ "",
                                                      /* is_parameterized_view */ true);
             res->startup();
@@ -2652,7 +2568,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
+                                                ColumnsDescription(sample_block.getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
@@ -3083,7 +2999,6 @@ void Context::makeQueryContext()
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
-    async_read_counters = std::make_shared<AsyncReadCounters>();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -3430,7 +3345,7 @@ void Context::setUncompressedCache(const String & cache_policy, size_t max_size_
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::UncompressedCacheBytes, CurrentMetrics::UncompressedCacheCells, max_size_in_bytes, size_ratio);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3497,7 +3412,7 @@ void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, max_cache_size_in_bytes, size_ratio);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3598,7 +3513,7 @@ void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_
     if (shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3634,7 +3549,7 @@ void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_si
     if (shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::IndexMarkCacheBytes, CurrentMetrics::IndexMarkCacheFiles, max_cache_size_in_bytes, size_ratio);
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -4043,7 +3958,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = remote_read_query_throttler;
     }
     return throttler;
@@ -4061,7 +3976,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = remote_write_query_throttler;
     }
     return throttler;
@@ -4079,7 +3994,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -4097,7 +4012,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -4110,7 +4025,7 @@ ThrottlerPtr Context::getBackupsThrottler() const
     {
         std::lock_guard lock(mutex);
          if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
+            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = backups_query_throttler;
     }
     return throttler;
@@ -4132,21 +4047,21 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_read_throttler)
-            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth);
     }
 
     if (shared->remote_read_throttler)
-        std::static_pointer_cast<Throttler>(shared->remote_read_throttler)->setMaxSpeed(read_bandwidth);
+        shared->remote_read_throttler->setMaxSpeed(read_bandwidth);
 
     if (write_bandwidth)
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_write_throttler)
-            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth);
     }
 
     if (shared->remote_write_throttler)
-        std::static_pointer_cast<Throttler>(shared->remote_write_throttler)->setMaxSpeed(write_bandwidth);
+        shared->remote_write_throttler->setMaxSpeed(write_bandwidth);
 }
 
 void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
@@ -4159,7 +4074,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     }
 
     if (shared->local_read_throttler)
-        std::static_pointer_cast<Throttler>(shared->local_read_throttler)->setMaxSpeed(read_bandwidth);
+        shared->local_read_throttler->setMaxSpeed(read_bandwidth);
 
     if (write_bandwidth)
     {
@@ -4169,7 +4084,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     }
 
     if (shared->local_write_throttler)
-        std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
+        shared->local_write_throttler->setMaxSpeed(write_bandwidth);
 }
 
 bool Context::hasDistributedDDL() const
@@ -4719,18 +4634,6 @@ void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop
     shared->max_os_cpu_wait_time_ratio_to_drop_connection = max_os_cpu_wait_time_ratio_to_drop_connection;
 }
 
-bool Context::getS3QueueDisableStreaming() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::s3queue_disable_streaming];
-}
-
-void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
-}
-
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -4958,6 +4861,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     return shared->system_logs->part_log;
 }
 
+
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5146,15 +5050,6 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     if (!shared->system_logs)
         return {};
     return shared->system_logs->blob_storage_log;
-}
-
-std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->dead_letter_queue;
 }
 
 SystemLogs Context::getSystemLogs() const
@@ -5574,9 +5469,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -6227,7 +6122,7 @@ PartUUIDsPtr Context::getPartUUIDs() const
 }
 
 
-ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const
+ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
@@ -6235,7 +6130,7 @@ ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() co
 }
 
 
-void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback)
+void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
 }
@@ -6558,6 +6453,9 @@ WriteSettings Context::getWriteSettings() const
 
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
+    std::lock_guard lock(mutex);
+    if (!async_read_counters)
+        async_read_counters = std::make_shared<AsyncReadCounters>();
     return async_read_counters;
 }
 

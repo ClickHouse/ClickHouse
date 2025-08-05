@@ -24,9 +24,9 @@ the columns from the input data will be mapped to the columns of the table by th
 Otherwise, the first row will be skipped.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using the following tsv file, named as `football.tsv`:
 
@@ -57,7 +57,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedWithNames;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `TabSeparatedWithNames` format:
 
@@ -90,4 +90,4 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/FunctionsStringSearch.h>
+#include "FunctionsStringSearch.h"
 
 #include <algorithm>
 #include <string>

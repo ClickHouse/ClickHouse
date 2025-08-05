@@ -4,7 +4,6 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/StringRef.h>
-#include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -218,11 +217,9 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-    /// IO scheduling and throttling
+    /// IO scheduling
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
-    ThrottlerPtr read_throttler;
-    ThrottlerPtr write_throttler;
 
 protected:
     /// Group of threads, to which this thread attached
@@ -355,7 +352,6 @@ class MainThreadStatus : public ThreadStatus
 public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
-    static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
     static bool isMainThread() { return main_thread == current_thread; }
 
     ~MainThreadStatus();
@@ -364,7 +360,6 @@ private:
     MainThreadStatus();
 
     static ThreadStatus * main_thread;
-    static std::atomic_flag is_initialized;
 };
 
 }
