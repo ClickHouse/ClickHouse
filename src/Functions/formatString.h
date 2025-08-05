@@ -74,16 +74,12 @@ struct FormatStringImpl
         /// The substring number is repeated input_rows_times.
         final_size *= input_rows_count;
 
-        /// Strings without null termination.
         for (size_t i = 1; i < substrings.size(); ++i)
         {
             final_size += data[index_positions[i - 1]]->size();
             if (offsets[index_positions[i - 1]])
                 final_size -= input_rows_count;
         }
-
-        /// Null termination characters.
-        final_size += input_rows_count;
 
         res_data.resize(final_size);
         res_offsets.resize(input_rows_count);
@@ -127,17 +123,10 @@ struct FormatStringImpl
                     offset += substrings[j].size();
                 }
             }
-            res_data[offset] = '\0';
-            ++offset;
             res_offsets[i] = offset;
         }
 
-        /*
-         * Invariant of `offset == final_size` must be held.
-         *
-         * if (offset != final_size)
-         *    abort();
-         */
+        chassert(offset == final_size);
     }
 };
 
