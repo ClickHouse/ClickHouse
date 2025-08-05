@@ -30,7 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -101,7 +101,7 @@ namespace
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
                     else if (check_type == AuthenticationType::JWT)
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 

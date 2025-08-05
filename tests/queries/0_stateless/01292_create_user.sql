@@ -263,5 +263,5 @@ SHOW CREATE USER u2_01292@'192.168.%.%';
 DROP USER u1_01292, u1_01292@'192.168.%.%', u2_01292@'192.168.%.%';
 
 SELECT '-- creating user identified with JWT';
-CREATE USER user1 IDENTIFIED WITH jwt BY '1'; -- { clientError SUPPORT_IS_DISABLED }
-CREATE USER user1 IDENTIFIED WITH jwt; -- { clientError SUPPORT_IS_DISABLED }
+CREATE USER user1 IDENTIFIED WITH jwt BY '1'; -- { clientError BAD_ARGUMENTS }
+CREATE USER user1 IDENTIFIED WITH jwt; -- { clientError BAD_ARGUMENTS }
