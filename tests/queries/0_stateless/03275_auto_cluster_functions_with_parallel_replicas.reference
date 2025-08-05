@@ -20,6 +20,15 @@ Expression ((Project names + Projection))
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
       Expression
+        Expression (Change column names to column identifiers)
+          ReadFromObjectStorage
+Expression ((Project names + Projection))
+  Expression
+    Join
+      Expression
+        Expression (Change column names to column identifiers)
+          ReadFromSystemNumbers
+      Expression
         Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
           ReadFromObjectStorage
 Expression ((Project names + (Projection + Change column names to column identifiers)))
