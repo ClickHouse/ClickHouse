@@ -64,6 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
 
+            {"kill_throw_if_noop", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
