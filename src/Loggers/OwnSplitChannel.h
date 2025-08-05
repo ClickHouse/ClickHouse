@@ -40,6 +40,7 @@ public:
 
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override = 0;
+    void log(Poco::Message && msg) override = 0;
 
     virtual void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) = 0;
 
@@ -61,6 +62,7 @@ class OwnSplitChannel final : public OwnSplitChannelBase
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
+    void log(Poco::Message && msg) override;
 
     void open() override;
     void close() override;
@@ -134,6 +136,7 @@ public:
     void close() override;
 
     void log(const Poco::Message & msg) override;
+    void log(Poco::Message && msg) override;
     void runChannel(size_t i);
     void runTextLog();
 

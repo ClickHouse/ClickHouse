@@ -40,6 +40,11 @@ void OwnSplitChannel::close()
 
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+    log(Poco::Message(msg));
+}
+
+void OwnSplitChannel::log(Poco::Message && msg)
+{
     if (stop_logging)
         return;
 
@@ -53,8 +58,8 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
-            const Message masked_message{msg, message_text};
-            logSplit(ExtendedLogMessage::getFrom(masked_message), logs_queue, getThreadName());
+            msg.setText(message_text);
+            logSplit(ExtendedLogMessage::getFrom(msg), logs_queue, getThreadName());
             return;
         }
     }
@@ -294,20 +299,17 @@ void OwnAsyncSplitChannel::close()
 class AsyncLogMessage
 {
 public:
-    explicit AsyncLogMessage(const Message & msg_)
-        : msg(msg_)
+    ALWAYS_INLINE explicit AsyncLogMessage(Message && msg_)
+        : msg(std::move(msg_))
         , msg_ext(ExtendedLogMessage::getFrom(msg))
         , msg_thread_name(getThreadName())
     {
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
-            auto message_text = msg_.getText();
+            auto message_text = msg.getText();
             auto matches = masker->wipeSensitiveData(message_text);
             if (matches > 0)
-            {
-                msg = Poco::Message(msg_, message_text);
-                msg_ext.base = &msg;
-            }
+                msg.setText(message_text);
         }
     }
 
@@ -339,7 +341,9 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     {
         ProfileEvents::incrementNoTrace(*event_on_drop_async_log, dropped_messages);
         String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
-        message_queue.push_back(std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING)));
+        auto async_message = std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING));
+        async_message->msg_ext.query_id.clear();
+        message_queue.push_back(async_message);
         dropped_messages = 0;
     }
 
@@ -382,15 +386,22 @@ void AsyncLogMessageQueue::wakeUp()
 
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
+    log(Poco::Message(msg));
+}
+
+void OwnAsyncSplitChannel::log(Poco::Message && msg)
+{
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
-        AsyncLogMessagePtr notification;
+        // Based on logger_useful.h this won't be called if the message is not needed
+        // so we can create the AsyncLogMessage as it won't penalize performance by being unused
+        auto msg_priority = msg.getPriority();
+        auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-            logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
+            logs_queue && logs_queue->isNeeded(msg_priority, msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
-            notification = std::make_shared<AsyncLogMessage>(msg);
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
         }
 
@@ -398,28 +409,22 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        if (!notification)
-            notification = std::make_shared<AsyncLogMessage>(msg);
-
-        if (msg.getPriority() <= text_log_max_priority_loaded)
+        if (text_log_max_priority_loaded >= msg_priority)
             text_log_queue.enqueueMessage(notification);
 
-        for (size_t i = 0; i < queues.size(); ++i)
+        for (size_t i = 0; i < queues.size(); i++)
         {
             auto & [simple_channel, extended_channel, priority] = *channels[i];
-            if (priority >= msg.getPriority())
+            if (priority >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
     }
     catch (...)
     {
         const std::string & exception_message = getCurrentExceptionMessage(true);
-        const std::string & message = msg.getText();
 
         /// NOTE: errors are ignored, since nothing can be done.
-        writeRetry(STDERR_FILENO, "Cannot add message to the log queue: ");
-        writeRetry(STDERR_FILENO, message.data(), message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeRetry(STDERR_FILENO, "Failed to add message to the log queue: ");
         writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
         writeRetry(STDERR_FILENO, "\n");
     }
