@@ -64,6 +64,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
 
+            {"vector_search_with_rescoring", true, true, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
