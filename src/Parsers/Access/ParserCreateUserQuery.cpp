@@ -17,13 +17,21 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+
 #include "config.h"
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace
 {
@@ -92,6 +100,8 @@ namespace
                         expect_public_ssh_key = true;
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
+                    else if (check_type == AuthenticationType::JWT)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 

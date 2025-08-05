@@ -4,6 +4,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
 
+#include "config.h"
+
 
 namespace DB
 {
@@ -11,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -116,9 +119,13 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
+#if CLICKHOUSE_CLOUD
                 prefix = "CLAIMS";
                 parameter = true;
                 break;
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+#endif
             }
             case AuthenticationType::LDAP:
             {
