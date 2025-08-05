@@ -44,10 +44,10 @@ Similar to the `decrypt` function, but returns `NULL` if decryption fails when u
 -- Assume that users know their id and the key to decrypt the encrypted field:
 CREATE TABLE decrypt_null
 (
-  dt DateTime,
-  user_id UInt32,
-  encrypted String,
-  iv String
+    dt DateTime,
+    user_id UInt32,
+    encrypted String,
+    iv String
 )
 ENGINE = MergeTree;
 
