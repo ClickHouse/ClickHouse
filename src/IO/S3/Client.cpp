@@ -61,12 +61,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool s3_use_adaptive_timeouts;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace S3
@@ -96,6 +98,18 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (useGCSRewrite(error))
         return false;
 
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        /// Check if query is timeout.
+        auto query_start_time = query_context->getClientInfo().initial_query_start_time;
+        auto max_execution_time = query_context->getSettingsRef()[Setting::max_execution_time].totalSeconds();
+        auto now = time(nullptr);
+        if (query_start_time > 0 && query_start_time < now
+            && max_execution_time > 0 && now > query_start_time + max_execution_time)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Query timeout during S3 request retrying. Elapsed: {} seconds, maximum: {}", now - query_start_time, max_execution_time);
+    }
+
     return error.ShouldRetry();
 }
 
@@ -116,7 +130,23 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     }
 
     uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
-    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
+    auto delay_ms = std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
+
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        /// Sleep should not exceed max_execution_time
+        auto query_start_time = query_context->getClientInfo().initial_query_start_time;
+        uint64_t max_execution_time = query_context->getSettingsRef()[Setting::max_execution_time].totalSeconds();
+        auto now = time(nullptr);
+        if (query_start_time > 0 && query_start_time < now && max_execution_time > 0)
+        {
+            uint64_t elapsed = now - query_start_time;
+            uint64_t remain_secs = max_execution_time - std::min(elapsed, max_execution_time);
+            delay_ms = std::min(delay_ms, remain_secs * 1000);
+        }
+    }
+
+    return delay_ms;
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
