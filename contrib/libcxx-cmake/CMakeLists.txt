@@ -1,6 +1,7 @@
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
 set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
 set(LIBCXX_GENERATED_INCLUDE_DIR "${LIBCXX_BINARY_DIR}/include/c++/v1")
+set(LIBC_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libc")
 
 set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/algorithm.cpp"
@@ -31,7 +32,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/ios.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.instantiations.cpp"
 "${LIBCXX_SOURCE_DIR}/src/iostream.cpp"
-"${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
 "${LIBCXX_SOURCE_DIR}/src/locale.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory_resource.cpp"
@@ -71,14 +72,16 @@ add_custom_target(generate-cxx-headers ALL DEPENDS ${_all_includes})
 
 add_library(cxx-headers INTERFACE)
 add_dependencies(cxx-headers generate-cxx-headers)
-target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR})
+target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR} ${LIBC_DIR})
 
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
+set(LIBC_NAMESPACE "__llvm_libc")
+
 target_include_directories(cxx SYSTEM BEFORE PRIVATE $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/src>)
 target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<$<COMPILE_LANGUAGE:CXX>:$<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>>)
-target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
+target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI -DLIBC_NAMESPACE=${LIBC_NAMESPACE})
 
 # Enable capturing stack traces for all exceptions.
 target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)

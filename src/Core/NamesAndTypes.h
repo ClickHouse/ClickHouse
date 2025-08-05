@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <base/types.h>
+#include <DataTypes/IDataType.h>
 
 #include <initializer_list>
 #include <list>

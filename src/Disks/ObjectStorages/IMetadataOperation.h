@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <memory>
 #include <Common/SharedMutex.h>
 
 namespace DB
