@@ -8,6 +8,9 @@
     <!-- For tests which check compatibility with older versions. -->
     <users_config>users.xml</users_config>
 
+    <mlock_executable>false</mlock_executable>
+    <skip_binary_checksum_checks>true</skip_binary_checksum_checks>
+
   <logger>
         <level>test</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
