@@ -94,6 +94,18 @@ ActionsDAG splitAndFillPrewhereInfo(
     for (const auto * condition : prewhere_nodes_list)
         conditions.push_back(split_result.split_nodes_mapping.at(condition));
 
+    /// There is a chance prewhere_info was already populated (row policies are an example, see PlannerJoinTree)
+    /// We need to preserve it, hence the below merge
+    bool has_existing_prewhere = !prewhere_info->prewhere_column_name.empty();
+    
+    if (has_existing_prewhere)
+    {
+        split_result.first.mergeInplace(std::move(prewhere_info->prewhere_actions));
+
+        const auto * existing_prewhere_node = &split_result.first.findInOutputs(prewhere_info->prewhere_column_name);
+        conditions.insert(conditions.begin(), existing_prewhere_node);
+    }
+
     prewhere_info->prewhere_actions = std::move(split_result.first);
 
     if (conditions.size() == 1)
@@ -138,10 +150,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
-        return;
-
-    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
-    if (storage_prewhere_info)
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -196,6 +204,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (optimize_result.prewhere_nodes.empty())
         return;
 
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     PrewhereInfoPtr prewhere_info;
     if (storage_prewhere_info)
         prewhere_info = storage_prewhere_info->clone();

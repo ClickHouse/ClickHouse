@@ -1,0 +1,28 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.a Int32 : 0
+         INPUT : 1 -> __table1.b Int32 : 1
+         ALIAS __table1.a :: 0 -> a Int32 : 2
+         ALIAS __table1.b :: 1 -> b Int32 : 0
+Positions: 2 0
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> a Int32 : 0
+           INPUT : 1 -> b Int32 : 1
+           ALIAS a :: 0 -> __table1.a Int32 : 2
+           ALIAS b :: 1 -> __table1.b Int32 : 0
+  Positions: 2 0
+    ReadFromMergeTree (default.03591_test)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: and(equals(a, 1_UInt8), equals(__table1.b, 2_UInt8)) (removed)
+      Actions: INPUT : 0 -> b Int32 : 0
+               COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+               INPUT : 1 -> a Int32 : 2
+               COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 3
+               FUNCTION equals(b : 0, 2_UInt8 :: 1) -> equals(__table1.b, 2_UInt8) UInt8 : 4
+               FUNCTION equals(a : 2, 1_UInt8 :: 3) -> equals(a, 1_UInt8) UInt8 : 1
+               FUNCTION and(equals(a, 1_UInt8) : 1, equals(__table1.b, 2_UInt8) :: 4) -> and(equals(a, 1_UInt8), equals(__table1.b, 2_UInt8)) UInt8 : 3
+      Positions: 1 2 0 3
