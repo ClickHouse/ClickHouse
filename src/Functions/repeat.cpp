@@ -131,10 +131,7 @@ private:
     static void process(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
     {
         if (unlikely(repeat_time <= 0))
-        {
-            *dst = 0;
             return;
-        }
 
         size -= 1;
         UInt64 k = 0;
@@ -159,7 +156,6 @@ private:
             last_bit = repeat_time & 1;
             repeat_time >>= 1;
         }
-        *dst = 0;
     }
 };
 

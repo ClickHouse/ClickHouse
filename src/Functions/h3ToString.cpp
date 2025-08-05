@@ -11,7 +11,7 @@
 
 #include <h3api.h>
 
-#define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
+#define H3_INDEX_STRING_LENGTH 16
 
 namespace DB
 {
@@ -79,7 +79,7 @@ public:
         auto & vec_offsets = col_res->getOffsets();
 
         vec_offsets.resize(input_rows_count);
-        vec_res.resize_fill(input_rows_count * H3_INDEX_STRING_LENGTH, '\0');
+        vec_res.resize_fill(input_rows_count * H3_INDEX_STRING_LENGTH, 0);
 
         char * begin = reinterpret_cast<char *>(vec_res.data());
         char * pos = begin;

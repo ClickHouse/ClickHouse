@@ -86,7 +86,7 @@ public:
     static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset)
     {
         pattern += '=';
-        const char * param_str = pattern.c_str();
+        const char * param_str = pattern.data();
         size_t param_len = pattern.size();
 
         const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);

@@ -17,7 +17,7 @@ struct ExtractURLParameterImpl
         res_offsets.resize(input_rows_count);
 
         pattern += '=';
-        const char * param_str = pattern.c_str();
+        const char * param_str = pattern.data();
         size_t param_len = pattern.size();
 
         ColumnString::Offset prev_offset = 0;
