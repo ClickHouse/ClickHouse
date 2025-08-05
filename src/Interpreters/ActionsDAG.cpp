@@ -3582,22 +3582,48 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
 
+    /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
+    std::vector<const Node *> reordered_nodes;
+    {
+        std::unordered_set<const Node *> already_added_nodes;
+
+        auto add_node = [&reordered_nodes, &already_added_nodes](const Node * node)
+        {
+            if (already_added_nodes.contains(node))
+                return;
+            reordered_nodes.push_back(node);
+            already_added_nodes.insert(node);
+        };
+
+        for (const auto & node : nodes)
+        {
+            for (const auto * child : node.children)
+                add_node(child);
+            add_node(&node);
+        }
+    }
+
     std::unordered_map<const Node *, size_t> node_to_id;
-    for (const auto & node : nodes)
-        node_to_id.emplace(&node, node_to_id.size());
+    for (const auto * node : reordered_nodes)
+        node_to_id.emplace(node, node_to_id.size());
 
     if (nodes_size != node_to_id.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
 
-    for (const auto & node : nodes)
+    for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
     {
+        const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
         writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
-            writeVarUInt(node_to_id.at(child), out);
+        {
+            auto child_id = node_to_id.at(child);
+            chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
+            writeVarUInt(child_id, out);
+        }
 
         /// Serialize column if it is present
         const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);
