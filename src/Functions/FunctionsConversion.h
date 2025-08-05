@@ -2264,7 +2264,6 @@ struct ConvertImpl
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime64> && std::is_same_v<ToDataType, DataTypeTime64>)
                 {
-                    LOG_TRACE(getLogger("FunctionsConversion"), "Converting Time64 to Time64 with different scales, from scale: {}, to scale: {}", col_from->getScale(), col_to->getScale());
                     // Handle Time64 to Time64 conversions with different scales
                     if (col_from->getScale() != col_to->getScale())
                     {
