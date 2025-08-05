@@ -17,7 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_EXCEPTION;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
@@ -164,7 +164,7 @@ void EvictionCandidates::evict()
                 }
 
                 fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
-                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to evict file segment");
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
                 });
 
                 locked_key->removeFileSegment(

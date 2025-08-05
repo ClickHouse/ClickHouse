@@ -50,6 +50,8 @@ struct FileCacheReserveStat
             invalidated_count += other.invalidated_count;
             return *this;
         }
+
+        std::string toString() const;
     };
 
     Stat total_stat;

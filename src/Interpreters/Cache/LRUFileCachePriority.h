@@ -30,6 +30,7 @@ public:
         StatePtr state_ = nullptr);
 
     size_t getSize(const CachePriorityGuard::WriteLock &) const override { return state->current_size; }
+    size_t getSize(const CachePriorityGuard::ReadLock &) const override { return state->current_size; }
 
     size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override { return state->current_elements_num; }
     size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override { return state->current_elements_num; }

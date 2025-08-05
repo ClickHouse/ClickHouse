@@ -138,6 +138,7 @@ public:
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
 
     virtual size_t getSize(const CachePriorityGuard::WriteLock &) const = 0;
+    virtual size_t getSize(const CachePriorityGuard::ReadLock &) const = 0;
 
     virtual size_t getSizeApprox() const = 0;
 

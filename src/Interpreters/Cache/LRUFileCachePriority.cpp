@@ -324,14 +324,10 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    bool success = false;
     iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
-        {
-            success = true;
             return IterationResult::BREAK;
-        }
 
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
@@ -339,16 +335,33 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key);
-            stat.update(segment_metadata->size(), file_segment->getKind(), FileCacheReserveStat::State::Releasable);
+            stat.update(
+                segment_metadata->size(),
+                file_segment->getKind(),
+                FileCacheReserveStat::State::Releasable);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(segment_metadata->size(), file_segment->getKind(), FileCacheReserveStat::State::NonReleasable);
+            stat.update(
+                segment_metadata->size(),
+                file_segment->getKind(),
+                FileCacheReserveStat::State::NonReleasable);
         }
 
         return IterationResult::CONTINUE;
     }, stat, lock);
+
+    const bool success = (!size || stat.total_stat.releasable_size >= size)
+        && (!elements || stat.total_stat.releasable_count >= elements);
+
+    if (!success)
+    {
+        LOG_TEST(
+            log, "Failed to collect eviction candidates "
+            "(for size: {}, elements: {}, current size: {}, current elements: {}): {}",
+            size, elements, getSize(lock), getElementsCount(lock), stat.total_stat.toString());
+    }
     return success;
 }
 

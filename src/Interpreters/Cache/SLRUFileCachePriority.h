@@ -25,6 +25,7 @@ public:
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
     size_t getSize(const CachePriorityGuard::WriteLock & lock) const override;
+    size_t getSize(const CachePriorityGuard::ReadLock & lock) const override;
 
     size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override;
     size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override;

@@ -126,6 +126,18 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
     }
 }
 
+std::string FileCacheReserveStat::Stat::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "releasable size: " << releasable_size << ", ";
+    wb << "releasable count: " << releasable_count << ", ";
+    wb << "non-releasable size: " << non_releasable_size << ", ";
+    wb << "non-releasable count: " << non_releasable_count << ", ";
+    wb << "evicting count: " << evicting_count << ", ";
+    wb << "invalidated count: " << invalidated_count;
+    return wb.str();
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -1227,15 +1239,19 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     const size_t current_size = main_priority->getSize(cache_write_lock);
     const size_t current_elements_num = main_priority->getElementsCount(cache_write_lock);
 
-    if ((size_limit == 0 || current_size <= desired_size)
-        && (elements_limit == 0 || current_elements_num <= desired_elements_num))
+    const size_t size_to_evict = current_size && (current_size > desired_size)
+        ? current_size - desired_size
+        : 0;
+    const size_t elements_to_evict = current_elements_num && (current_elements_num > desired_elements_num)
+        ? current_elements_num - desired_elements_num
+        : 0;
+
+    if (!size_to_evict && !elements_to_evict)
     {
         /// Nothing to free - all limits are satisfied.
         keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
         return;
     }
-    size_t size_to_evict = current_size - desired_size;
-    size_t elements_to_evict = current_elements_num - desired_elements_num;
 
     cache_write_lock.unlock();
 
@@ -1244,60 +1260,44 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
-    IFileCachePriority::CollectStatus desired_size_status;
-    try
+    LOG_TEST(log, "Size to evict: {}, elements to evict: {}", size_to_evict, elements_to_evict);
+
+    IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
+    /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
+    /// (we use batches to make sure we do not block cache for too long,
+    /// by default the batch size is quite small).
+
+    /// TODO: support batch size
+    if (main_priority->collectCandidatesForEviction(
+            size_to_evict,
+            elements_to_evict,
+            stat,
+            eviction_candidates,
+            nullptr,
+            {},
+            cache_guard.readLock()))
     {
-        /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
-        /// (we use batches to make sure we do not block cache for too long,
-        /// by default the batch size is quite small).
 
-        /// TODO: support batch size
-        if (!main_priority->collectCandidatesForEviction(
-                size_to_evict,
-                elements_to_evict,
-                stat,
-                eviction_candidates,
-                nullptr,
-                {},
-                cache_guard.readLock()))
-        {
-            desired_size_status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
-        }
-        else
-        {
-            chassert(eviction_candidates.size() > 0);
+        //LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
+        //        "(trying to keep size ratio at {} and elements ratio at {}). "
+        //        "Collected {} eviction candidates, "
+        //        "skipped {} candidates while iterating",
+        //        main_priority->getSize(lock), size_limit,
+        //        main_priority->getElementsCount(lock), elements_limit,
+        //        desired_size, desired_elements_num,
+        //        eviction_candidates.size(), stat.total_stat.non_releasable_count);
 
-            //LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
-            //        "(trying to keep size ratio at {} and elements ratio at {}). "
-            //        "Collected {} eviction candidates, "
-            //        "skipped {} candidates while iterating",
-            //        main_priority->getSize(lock), size_limit,
-            //        main_priority->getElementsCount(lock), elements_limit,
-            //        desired_size, desired_elements_num,
-            //        eviction_candidates.size(), stat.total_stat.non_releasable_count);
+        desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
 
-            desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
-
-            /// Remove files from filesystem.
-            eviction_candidates.evict();
-
-            /// Take lock again to finalize eviction,
-            /// e.g. to update the in-memory state.
-            cache_write_lock.lock();
-            eviction_candidates.finalize(nullptr, cache_write_lock);
-        }
+        /// Remove files from filesystem.
+        chassert(eviction_candidates.size() > 0);
+        eviction_candidates.evict();
     }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        if (eviction_candidates.size() > 0)
-            eviction_candidates.finalize(nullptr, lockCache());
-
-        /// Let's catch such cases in ci,
-        /// in general there should not be exceptions.
-        chassert(false);
-    }
+    /// Take lock again to finalize eviction,
+    /// e.g. to update the in-memory state.
+    cache_write_lock.lock();
+    eviction_candidates.finalize(nullptr, cache_write_lock);
 
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
@@ -1918,6 +1918,9 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
         LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                  current_limits.max_size, result_limits.max_size,
                  current_limits.max_elements, result_limits.max_elements);
+
+        chassert(result_limits.max_size == desired_limits.max_size);
+        chassert(result_limits.max_elements == desired_limits.max_elements);
     }
     else
     {
@@ -1961,23 +1964,24 @@ bool FileCache::doDynamicResizeImpl(
     /// b. Release a cache lock.
     ///     1. Do actual eviction from filesystem.
 
-    if (desired_limits.max_size <= current_limits.max_size
-        && desired_limits.max_elements <= current_limits.max_elements)
-    {
-        result_limits = current_limits;
-        return true;
-    }
-
-    size_t size_to_evict = current_limits.max_size - desired_limits.max_size;
-    size_t elements_to_evict = current_limits.max_elements - desired_limits.max_elements;
-
-    cache_write_lock.unlock();
-    IFileCachePriority::CollectStatus status;
     EvictionCandidates eviction_candidates;
-    {
-        FileCacheReserveStat stat;
 
-        if (main_priority->collectCandidatesForEviction(
+    size_t current_size = main_priority->getSize(cache_write_lock);
+    size_t current_elements_count = main_priority->getElementsCount(cache_write_lock);
+
+    size_t size_to_evict = current_size > desired_limits.max_size
+        ? current_size - desired_limits.max_size
+        : 0;
+    size_t elements_to_evict = current_elements_count > desired_limits.max_elements
+        ? current_elements_count - desired_limits.max_elements
+        : 0;
+
+    if (size_to_evict || elements_to_evict)
+    {
+        cache_write_lock.unlock();
+
+        FileCacheReserveStat stat;
+        if (!main_priority->collectCandidatesForEviction(
                 size_to_evict,
                 elements_to_evict,
                 stat,
@@ -1986,20 +1990,14 @@ bool FileCache::doDynamicResizeImpl(
                 {},
                 cache_guard.readLock()))
         {
-            status = IFileCachePriority::CollectStatus::SUCCESS;
+            result_limits = current_limits;
+            LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
+            return false;
         }
-        else
-            status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+
+        cache_write_lock.lock();
     }
 
-    if (status != IFileCachePriority::CollectStatus::SUCCESS)
-    {
-        result_limits = current_limits;
-        LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
-        return false;
-    }
-
-    cache_write_lock.lock();
     if (eviction_candidates.size() == 0)
     {
         /// Nothing needs to be evicted,
@@ -2129,7 +2127,7 @@ bool FileCache::doDynamicResizeImpl(
         }
     }
 
-    return true;
+    return failed_candidates.size() == 0;
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
