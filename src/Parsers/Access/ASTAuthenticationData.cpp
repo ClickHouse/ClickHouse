@@ -119,13 +119,9 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
-#if CLICKHOUSE_CLOUD
                 prefix = "CLAIMS";
                 parameter = true;
                 break;
-#else
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
-#endif
             }
             case AuthenticationType::LDAP:
             {
