@@ -161,9 +161,6 @@ struct BaseXXDecode
             }
 
             current_dst_offset += *decoded_size;
-            dst[current_dst_offset] = '\0';
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 

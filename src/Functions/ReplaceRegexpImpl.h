@@ -183,8 +183,6 @@ struct ReplaceRegexpImpl
                 match_pos = copy_pos;
             }
         }
-
-        ++res_offset;
     }
 
     static void vectorConstantConstant(
