@@ -182,7 +182,7 @@ void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatenc
 {
     if (type == AzureLatencyType::Connect)
     {
-        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};Expand commentComment on line R301ResolvedCode has comments. Press enter to view.
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
         static Histogram::MetricFamily & azure_blob_connect = Histogram::Factory::instance().registerMetric(
             "azure_connect_microseconds",
             "Time to establish connection with Azure Blob Storage, in microseconds.",
