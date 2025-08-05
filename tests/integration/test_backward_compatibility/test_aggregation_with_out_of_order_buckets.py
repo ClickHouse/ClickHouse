@@ -34,8 +34,6 @@ def _create_tables(table_name):
         settings={"database_atomic_wait_for_drop_and_detach_synchronously": True},
     )
 
-    # big number of granules + low total size in bytes = super tiny granules = big min_marks_per_task
-    # => big mark_segment_size will be chosen. it is not required to be big, just not equal to the default
     nodes[0].query(
         f"""
         CREATE TABLE {table_name} ON CLUSTER 'parallel_replicas' (a Int64, b Int64)
