@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
 DistinctTransform::DistinctTransform(
-    const Block & header_,
+    SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
     const Names & columns_)
@@ -17,12 +17,12 @@ DistinctTransform::DistinctTransform(
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
-    const size_t num_columns = columns_.empty() ? header_.columns() : columns_.size();
+    const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto pos = columns_.empty() ? i : header_.getPositionByName(columns_[i]);
-        const auto & col = header_.getByPosition(pos).column;
+        const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
+        const auto & col = header_->getByPosition(pos).column;
         if (col && !isColumnConst(*col))
             key_columns_pos.emplace_back(pos);
     }

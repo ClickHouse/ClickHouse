@@ -5,7 +5,7 @@ slug: /interfaces/natives-clients-and-interfaces
 title: 'Native Clients and Interfaces'
 ---
 
-# Native Clients & Interfaces
+# Native clients & interfaces
 
 ClickHouse provides a number of different native clients and interfaces that allow you to connect to ClickHouse.
 

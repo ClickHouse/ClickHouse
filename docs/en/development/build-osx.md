@@ -17,7 +17,7 @@ ClickHouse can be compiled on macOS x86_64 (Intel) and arm64 (Apple Silicon) usi
 
 As compiler, only Clang from homebrew is supported.
 
-## Install Prerequisites {#install-prerequisites}
+## Install prerequisites {#install-prerequisites}
 
 First, see the generic [prerequisites documentation](developer-instruction.md).
 

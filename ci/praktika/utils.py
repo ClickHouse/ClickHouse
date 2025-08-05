@@ -470,6 +470,18 @@ class Utils:
         os.environ[key] = val
 
     @staticmethod
+    def physical_memory() -> int:
+        """
+        Returns the total physical memory in bytes.
+        """
+        try:
+            # for linux
+            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except ValueError:
+            # for MacOS
+            return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+
+    @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):
         stdout_lines = stdout.splitlines() if stdout else []
         stderr_lines = stderr.splitlines() if stderr else []

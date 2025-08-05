@@ -194,6 +194,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             const auto * lhs = conjunct->children[0];
             const auto * rhs = conjunct->children[1];
 
+            /// We can't push equality condition into JOIN if types are not equal.
+            if (!lhs->result_type->equals(*rhs->result_type))
+                continue;
+
             /// We need to check if arguments are coming from different sides of JOIN
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
             auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
@@ -293,11 +297,11 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
         for (const auto & input_column : input_header.getColumnsWithTypeAndName())
         {
-            if (!join_header.has(input_column.name))
+            if (!join_header->has(input_column.name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_column.type->equals(*join_header.getByName(input_column.name).type))
+            if (!input_column.type->equals(*join_header->getByName(input_column.name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(input_column.name);
@@ -306,8 +310,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         return available_input_columns_for_filter;
     };
 
-    auto left_stream_available_columns = get_available_columns(left_stream_header);
-    auto right_stream_available_columns = get_available_columns(right_stream_header);
+    auto left_stream_available_columns = get_available_columns(*left_stream_header);
+    auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
@@ -324,8 +328,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         auto lhs_node_name = predicate.left.getOutputs()[0]->result_name;
         auto rhs_node_name = predicate.right.getOutputs()[0]->result_name;
 
-        join_expressions.left_pre_join_actions->mergeNodes(std::move(predicate.left));
-        join_expressions.right_pre_join_actions->mergeNodes(std::move(predicate.right));
+        join_expressions.left_pre_join_actions->mergeInplace(std::move(predicate.left));
+        join_expressions.right_pre_join_actions->mergeInplace(std::move(predicate.right));
 
         join_info.expression.condition.predicates.emplace_back(JoinPredicate{
             .left_node = JoinActionRef(&join_expressions.left_pre_join_actions->findInOutputs(lhs_node_name), join_expressions.left_pre_join_actions.get()),

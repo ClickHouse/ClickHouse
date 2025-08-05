@@ -3,24 +3,13 @@
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <Parsers/ParserSampleRatio.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ParserWithElement.h>
 
 #include <fmt/format.h>
 

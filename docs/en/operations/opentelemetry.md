@@ -9,13 +9,13 @@ title: 'Tracing ClickHouse with OpenTelemetry'
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
-## Supplying Trace Context to ClickHouse {#supplying-trace-context-to-clickhouse}
+## Supplying trace context to ClickHouse {#supplying-trace-context-to-clickhouse}
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
 If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/operations/settings/settings#opentelemetry_start_trace_probability) setting.
 
-## Propagating the Trace Context {#propagating-the-trace-context}
+## Propagating the trace context {#propagating-the-trace-context}
 
 The trace context is propagated to downstream services in the following cases:
 
@@ -64,6 +64,6 @@ FROM system.opentelemetry_span_log
 
 In case of any errors, the part of the log data for which the error has occurred will be silently lost. Check the server log for error messages if the data does not arrive.
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

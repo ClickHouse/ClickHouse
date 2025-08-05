@@ -58,7 +58,7 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
-    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
+    SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -132,7 +132,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))

@@ -121,7 +121,8 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t0 (c0 Int64) ENGINE = MergeTree() OR
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE t0 (c0) VALUES (2147483648);"
 ${CLICKHOUSE_CLIENT} --query="select 'clickhouse'"
 ${CLICKHOUSE_CLIENT} --query="SELECT t0.c0 FROM t0;"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 't0') SELECT c0 FROM t0;"
+# parallel_distributed_insert_select=0 to avoid failure with parallel replicas run, since it'll try to open the same sqlite db in parallel
+${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 't0') SELECT c0 FROM t0;"
 ${CLICKHOUSE_CLIENT} --query="select 'sqlite from clickhouse'"
 ${CLICKHOUSE_CLIENT} --query="SELECT tx.c0 FROM sqlite('${DB_PATH}', 't0') tx;"
 ${CLICKHOUSE_CLIENT} --query="select 'sqlite'"

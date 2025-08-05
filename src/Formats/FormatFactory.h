@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
@@ -47,6 +49,8 @@ using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
 template <typename Allocator>
 struct Memory;
+
+struct FormatParserSharedResources;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
@@ -97,8 +101,8 @@ private:
         const FormatSettings & settings,
         const ReadSettings & read_settings,
         bool is_remote_fs,
-        size_t max_download_threads,
-        size_t max_parsing_threads)>;
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -161,6 +165,7 @@ public:
     ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
     ///  * Parallel parsing.
     /// `buf` must outlive the returned IInputFormat.
+    /// The caller should make sure getFormatParsingThreadPool() is initialized.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -168,8 +173,8 @@ public:
         const ContextPtr & context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt,
-        std::optional<size_t> max_download_threads = std::nullopt,
+        FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
+        FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(),
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
@@ -287,7 +292,7 @@ private:
         const FormatSettings & format_settings,
         const Settings & settings,
         bool is_remote_fs,
-        size_t max_download_threads) const;
+        const FormatParserSharedResourcesPtr & parser_shared_resources) const;
 };
 
 }

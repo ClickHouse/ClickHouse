@@ -125,32 +125,47 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    if (args.size() == 1)
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
     {
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
+        if (Poco::toLower(getName()) == "jdbc")
         {
-            if (getName() == "JDBC")
-            {
-                validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
-                connection_string = named_collection->get<String>("datasource");
-                schema_name = named_collection->getOrDefault<String>("schema", "");
-                remote_table_name = named_collection->getOrDefault<String>("table", "");
-            }
-            else
-            {
-                validateNamedCollection<>(*named_collection, {"connection_settings"}, {"external_database", "external_table"});
+            validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "external_database",
+                                                                          "external_table", "table"});
 
-                connection_string = named_collection->get<String>("connection_settings");
-                schema_name = named_collection->getOrDefault<String>("external_database", "");
-                remote_table_name = named_collection->getOrDefault<String>("external_table", "");
+            connection_string = named_collection->get<String>("datasource");
 
-            }
+            /// These are aliases for better compatibility and similarity between JDBC and ODBC
+            /// Both aliases cannot be specified simultaneously.
+            if (named_collection->has("external_database") && named_collection->has("schema"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_database` and `schema` arguments simultaneously", getName());
+            schema_name = named_collection->getAnyOrDefault<String>({"external_database", "schema"}, "");
+
+            if (named_collection->has("external_table") && named_collection->has("table"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_table` and `table` arguments simultaneously", getName());
+            remote_table_name = named_collection->getAnyOrDefault<String>({"external_table", "table"}, "");
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
+            validateNamedCollection<>(*named_collection, {}, {"datasource", "connection_settings",   // Aliases
+                                                              "external_database",
+                                                              "external_table"});
+
+            if (named_collection->has("datasource") == named_collection->has("connection_settings"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' must have exactly one `datasource` / `connection_settings` argument", getName());
+            connection_string = named_collection->getAny<String>({"datasource", "connection_settings"});
+
+
+            schema_name = named_collection->getOrDefault<String>("external_database", "");
+            remote_table_name = named_collection->getOrDefault<String>("external_table", "");
         }
+    }
+    else if (args.size() == 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
     }
     else
     {

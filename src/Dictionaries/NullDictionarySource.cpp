@@ -10,7 +10,7 @@
 
 namespace DB
 {
-NullDictionarySource::NullDictionarySource(Block & sample_block_) : sample_block(sample_block_)
+NullDictionarySource::NullDictionarySource(SharedHeader sample_block_) : sample_block(sample_block_)
 {
 }
 
@@ -41,7 +41,7 @@ void registerDictionarySourceNull(DictionarySourceFactory & factory)
               Block & sample_block,
               ContextPtr /* global_context */,
               const std::string & /* default_database */,
-              bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(sample_block); };
+              bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(std::make_shared<const Block>(sample_block)); };
 
     factory.registerSource("null", create_table_source);
 }

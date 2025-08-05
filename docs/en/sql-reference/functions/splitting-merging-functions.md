@@ -1,14 +1,13 @@
 ---
 description: 'Documentation for Functions for Splitting Strings'
-sidebar_label: 'Splitting Strings'
-sidebar_position: 165
+sidebar_label: 'String splitting'
 slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Functions for Splitting Strings
+# Functions for splitting strings
 
 ## splitByChar {#splitbychar}
 

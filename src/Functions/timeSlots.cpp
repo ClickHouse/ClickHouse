@@ -408,7 +408,45 @@ public:
 
 REGISTER_FUNCTION(TimeSlots)
 {
-    factory.registerFunction<FunctionTimeSlots>();
+    FunctionDocumentation::Description description = R"(
+For a time interval starting at `StartTime` and continuing for `Duration` seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the `Size` in seconds. `Size` is an optional parameter set to 1800 (30 minutes) by default.
+
+This is necessary, for example, when searching for pageviews in the corresponding session.
+
+For `DateTime64`, the return value's scale can differ from the scale of `StartTime`. The highest scale among all given arguments is taken.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+timeSlots(StartTime, Duration[, Size])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"StartTime", "Starting time for the interval.", {"DateTime", "DateTime64"}},
+        {"Duration", "Duration of the interval in seconds.", {"UInt32", "DateTime64"}},
+        {"Size", "Optional. Size of time slots in seconds. Default is 1800 (30 minutes).", {"UInt32", "DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of DateTime/DateTime64 (return type matches the type of `StartTime`). For DateTime64, the return value's scale can differ from the scale of `StartTime` - the highest scale among all given arguments is taken.", {"Array(DateTime)", "Array(DateTime64)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Generate time slots for an interval", R"(
+SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
+SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
+SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0))
+        )",
+        R"(
+┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
+│ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
+└─────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299)─┐
+│ ['1980-12-12 20:56:13','1980-12-12 21:01:12','1980-12-12 21:06:11']     │
+└─────────────────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0))─┐
+│ ['1980-12-12 20:56:13.0000','1980-12-12 21:01:12.0000','1980-12-12 21:06:11.0000']                        │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTimeSlots>(documentation);
 }
 
 }

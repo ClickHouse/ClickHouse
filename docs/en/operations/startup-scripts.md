@@ -1,12 +1,12 @@
 ---
 description: 'Guide to configuring and using SQL startup scripts in ClickHouse for
   automatic schema creation and migrations'
-sidebar_label: 'Startup Scripts'
+sidebar_label: 'Startup scripts'
 slug: /operations/startup-scripts
-title: 'Startup Scripts'
+title: 'Startup scripts'
 ---
 
-# Startup Scripts
+# Startup scripts
 
 ClickHouse can run arbitrary SQL queries from the server configuration during startup. This can be useful for migrations or automatic schema creation.
 

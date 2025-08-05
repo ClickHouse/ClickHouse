@@ -110,13 +110,8 @@ struct ReplaceRegexpImpl
             return false;
 
         checkSubstitutions(replacement, num_captures);
-
-        String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix;
-        std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(needle, required_substring, is_trivial, required_substring_is_prefix, alternatives);
-        return is_trivial && required_substring_is_prefix && required_substring == needle;
+        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(needle);
+        return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
     static void processString(
@@ -227,7 +222,7 @@ struct ReplaceRegexpImpl
         /// pattern analysis incurs some cost too.
         if (canFallbackToStringReplacement(needle, replacement, searcher, num_captures))
         {
-            auto convertTrait = [](ReplaceRegexpTraits::Replace first_or_all)
+            auto convert_trait = [](ReplaceRegexpTraits::Replace first_or_all)
             {
                 switch (first_or_all)
                 {
@@ -235,7 +230,8 @@ struct ReplaceRegexpImpl
                     case ReplaceRegexpTraits::Replace::All:   return ReplaceStringTraits::Replace::All;
                 }
             };
-            ReplaceStringImpl<Name, convertTrait(replace)>::vectorConstantConstant(haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets, input_rows_count);
+            ReplaceStringImpl<Name, convert_trait(replace)>::vectorConstantConstant(
+                haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets, input_rows_count);
             return;
         }
 

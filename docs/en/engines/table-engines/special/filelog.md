@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/filelog
 title: 'FileLog Engine'
 ---
 
-# FileLog Engine {#filelog-engine}
+# `FileLog` engine {#filelog-engine}
 
 This engine allows processing of application log files as a stream of records.
 
@@ -16,7 +16,7 @@ This engine allows processing of application log files as a stream of records.
 - Subscribe to log files.
 - Process new records as they are appended to subscribed log files.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -95,7 +95,7 @@ To stop receiving streams data or to change the conversion logic, detach the mat
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
 - `_offset` - Offset in the log file. Data type: `UInt64`.

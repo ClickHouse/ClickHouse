@@ -13,11 +13,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedTransform::CheckSortedTransform(const Block & header, const SortDescription & sort_description)
+CheckSortedTransform::CheckSortedTransform(SharedHeader header, const SortDescription & sort_description)
     : ISimpleTransform(header, header, false)
 {
     for (const auto & column_description : sort_description)
-        sort_description_map.emplace_back(column_description, header.getPositionByName(column_description.column_name));
+        sort_description_map.emplace_back(column_description, header->getPositionByName(column_description.column_name));
 }
 
 void CheckSortedTransform::transform(Chunk & chunk)

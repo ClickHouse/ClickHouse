@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
 #include <Parsers/IAST.h>
@@ -32,6 +34,11 @@
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
+    M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
+
+#define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
+    M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
+    M(DistributedCacheServerLog, distributed_cache_server_log, "Contains the history of all interactions with distributed cache client.") \
 
 
 namespace DB
@@ -67,6 +74,9 @@ namespace DB
     class log_type; \
 
 LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
+#if CLICKHOUSE_CLOUD
+    LIST_OF_CLOUD_SYSTEM_LOGS(FORWARD_DECLARATION)
+#endif
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
@@ -88,6 +98,9 @@ public:
     std::shared_ptr<log_type> member; \
 
     LIST_OF_ALL_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
+    #endif
 #undef DECLARE_PUBLIC_MEMBERS
 
 private:

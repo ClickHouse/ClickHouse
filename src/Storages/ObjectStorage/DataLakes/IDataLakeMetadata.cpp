@@ -13,16 +13,23 @@ public:
     KeysIterator(
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_)
+        IDataLakeMetadata::FileProgressCallback callback_,
+        std::optional<UInt64> snapshot_version_ = std::nullopt)
         : data_files(data_files_)
         , object_storage(object_storage_)
         , callback(callback_)
+        , snapshot_version(snapshot_version_)
     {
     }
 
     size_t estimatedKeysCount() override
     {
         return data_files.size();
+    }
+
+    std::optional<UInt64> getSnapshotVersion() const override
+    {
+        return snapshot_version;
     }
 
     ObjectInfoPtr next(size_t) override
@@ -48,6 +55,7 @@ private:
     ObjectStoragePtr object_storage;
     std::atomic<size_t> index = 0;
     IDataLakeMetadata::FileProgressCallback callback;
+    std::optional<UInt64> snapshot_version;
 };
 
 }
@@ -60,9 +68,18 @@ ObjectIterator IDataLakeMetadata::createKeysIterator(
     return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_);
 }
 
-DB::ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
+ObjectIterator IDataLakeMetadata::createKeysIterator(
+    Strings && data_files_,
+    ObjectStoragePtr object_storage_,
+    IDataLakeMetadata::FileProgressCallback callback_,
+    UInt64 snapshot_version_) const
+{
+    return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_, snapshot_version_);
+}
+
+ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const DB::StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {

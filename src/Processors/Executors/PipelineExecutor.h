@@ -84,7 +84,6 @@ private:
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
-    std::atomic_size_t threads = 0;
     std::mutex spawn_mutex;
 
     /// Flag that checks that initializeExecution was called.
@@ -93,6 +92,7 @@ private:
     bool profile_processors = false;
     /// system.opentelemetry_span_log
     bool trace_processors = false;
+    bool trace_cpu_scheduling = false;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
@@ -111,13 +111,12 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads();
-    void spawnThreadsImpl(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
-    void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num);
+    void executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag = nullptr);
+    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
 

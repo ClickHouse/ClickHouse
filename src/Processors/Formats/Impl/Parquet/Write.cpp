@@ -22,6 +22,7 @@
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -337,6 +338,34 @@ struct ConverterString
         for (size_t i = 0; i < count; ++i)
         {
             StringRef s = column.getDataAt(offset + i);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
+        }
+        return buf.data();
+    }
+};
+
+template <typename T>
+struct ConverterEnumAsString
+{
+    using Statistics = StatisticsStringRef;
+
+    explicit ConverterEnumAsString(const ColumnPtr & c, const DataTypePtr & enum_type_)
+    : column(assert_cast<const ColumnVector<T> &>(*c)), enum_type(assert_cast<const DataTypeEnum<T> *>(enum_type_.get())) {}
+
+    const ColumnVector<T> & column;
+    const DataTypeEnum<T> * enum_type;
+    PODArray<parquet::ByteArray> buf;
+
+    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+
+        const auto & data = column.getData();
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            const T value = data[offset + i];
+            const StringRef s = enum_type->getNameForValue(value);
             buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
@@ -997,8 +1026,24 @@ void writeColumnChunkBody(
             break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
-        case TypeIndex::Int8   : N(Int8,   Int32Type); break;
-        case TypeIndex::Int16  : N(Int16,  Int32Type); break;
+        case TypeIndex::Int8:
+        {
+            if (options.output_enum_as_byte_array && isEnum8(s.type))
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.type));
+            else
+                N(Int8, Int32Type);
+         break;
+        }
+        case TypeIndex::Int16:
+        {
+            if (options.output_enum_as_byte_array && isEnum16(s.type))
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.type));
+            else
+                N(Int16, Int32Type);
+            break;
+        }
         case TypeIndex::Int32  : N(Int32,  Int32Type); break;
         case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 

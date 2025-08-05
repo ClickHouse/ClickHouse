@@ -67,10 +67,10 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     paths = {path};
 }
 
-StorageObjectStorage::QuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::engine_file_truncate_on_insert],
         .create_new_file_on_insert = false,
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_file],

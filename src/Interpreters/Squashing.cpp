@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , header(header_)
@@ -95,9 +95,9 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
     // It is imortant that chunk is not empty, it has to have columns even if they are empty
     // Sometimes there are could be no columns in header but not empty rows in chunks
     // That happens when we intend to add defaults for the missing columns after
-    auto aggr_chunk = Chunk(header.getColumns(), 0);
-    if (header.columns() == 0)
-        aggr_chunk = Chunk(header.getColumns(), data.getRows());
+    auto aggr_chunk = Chunk(header->getColumns(), 0);
+    if (header->columns() == 0)
+        aggr_chunk = Chunk(header->getColumns(), data.getRows());
 
     aggr_chunk.getChunkInfos().add(std::move(info));
     chassert(aggr_chunk);

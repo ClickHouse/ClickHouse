@@ -7,7 +7,7 @@
 namespace DB
 {
 
-DelayedSource::DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port)
+DelayedSource::DelayedSource(SharedHeader header, Creator processors_creator, bool add_totals_port, bool add_extremes_port)
     : IProcessor({}, OutputPorts(1 + (add_totals_port ? 1 : 0) + (add_extremes_port ? 1 : 0), header))
     , creator(std::move(processors_creator))
 {
@@ -86,7 +86,7 @@ IProcessor::Status DelayedSource::prepare()
 }
 
 /// Fix port from returned pipe. Create source_port if created or drop if source_port is null.
-void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const Block & header, Processors & processors)
+void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, SharedHeader header, Processors & processors)
 {
     if (source_port)
     {
@@ -115,7 +115,7 @@ void DelayedSource::work()
     auto builder = creator();
     auto pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
 
-    const auto & header = main->getHeader();
+    const auto & header = main->getSharedHeader();
 
     if (pipe.empty())
     {
@@ -169,7 +169,7 @@ Processors DelayedSource::expandPipeline()
     return std::move(processors);
 }
 
-Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port)
+Pipe createDelayedPipe(SharedHeader header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port)
 {
     auto source = std::make_shared<DelayedSource>(header, std::move(processors_creator), add_totals_port, add_extremes_port);
 

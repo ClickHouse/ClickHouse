@@ -37,19 +37,19 @@ struct NamePair
 using NamePairs = std::vector<NamePair>;
 
 InConversion buildInConversion(
-    const Header & header,
+    const SharedHeader & header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
 {
-    ActionsDAG lhs_dag(header.getColumnsWithTypeAndName());
+    ActionsDAG lhs_dag(header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
 
-    ActionsDAG rhs_dag(in_source->getCurrentHeader().getColumnsWithTypeAndName());
+    ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
@@ -177,9 +177,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check output columns come from one side.
     {
-        auto hasAnyInSet = [](const Header & header, NameSet & set)
+        auto hasAnyInSet = [](const SharedHeader & header, NameSet & set)
         {
-            for (const auto & column : header)
+            for (const auto & column : *header)
                 if (set.contains(column.name))
                     return true;
             return false;
@@ -201,9 +201,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Check input and output type.
     {
         const auto & output_header = join->getOutputHeader();
-        for (const auto & column_type_and_name : output_header)
+        for (const auto & column_type_and_name : *output_header)
         {
-            if (!left_input_header.getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
+            if (!left_input_header->getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
                 return 0;
         }
     }

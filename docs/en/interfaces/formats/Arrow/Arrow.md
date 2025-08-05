@@ -17,7 +17,7 @@ title: 'Arrow'
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 `Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
 
-## Data Types Matching {#data-types-matching}
+## Data types matching {#data-types-matching}
 
 The table below shows the supported data types and how they correspond to ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -60,9 +60,9 @@ Unsupported Arrow data types:
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 You can insert Arrow data from a file into ClickHouse table using the following command:
 
@@ -70,7 +70,7 @@ You can insert Arrow data from a file into ClickHouse table using the following 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-### Selecting Data {#selecting-data}
+### Selecting data {#selecting-data}
 
 You can select data from a ClickHouse table and save it into some file in the Arrow format using the following command:
 
@@ -78,7 +78,7 @@ You can select data from a ClickHouse table and save it into some file in the Ar
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 | Setting                                                                                                                  | Description                                                                                        | Default      |
 |--------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|--------------|

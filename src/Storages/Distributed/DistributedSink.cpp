@@ -143,7 +143,7 @@ DistributedSink::DistributedSink(
     bool insert_sync_,
     UInt64 insert_timeout_,
     const Names & columns_to_send_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -844,7 +844,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
 
             /// Prepare the header.
             /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
@@ -874,7 +874,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
                 header_stream.write(block.cloneEmpty());
             }
 

@@ -959,7 +959,7 @@ static size_t readAllTemporaryData(NativeReader & stream)
     {
         block = stream.read();
         read_rows += block.rows();
-    } while (block);
+    } while (!block.empty());
     return read_rows;
 }
 
@@ -1004,13 +1004,13 @@ try
 
 
     {
-        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
         ASSERT_TRUE(stream);
         /// Do nothing with stream, just create it and destroy.
     }
 
     {
-        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
@@ -1047,7 +1047,7 @@ try
     }
 
     {
-        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
@@ -1182,7 +1182,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
 
         stream->write(block);
         auto stat = stream.finishWriting();
@@ -1208,7 +1208,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
         stream->write(block);
         auto stat = stream.finishWriting();
 

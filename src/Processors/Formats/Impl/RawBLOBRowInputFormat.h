@@ -16,7 +16,7 @@ class ReadBuffer;
 class RawBLOBRowInputFormat final : public IRowInputFormat
 {
 public:
-    RawBLOBRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    RawBLOBRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_);
 
     String getName() const override { return "RawBLOBRowInputFormat"; }
 

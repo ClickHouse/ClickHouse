@@ -93,33 +93,54 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
 ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
-    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const
+    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
     if (checksums.empty())
         return size;
 
-    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    auto add_stream_size = [&](const String & stream_name)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
-
-        if (!stream_name)
-            return;
-
-        if (processed_substreams && !processed_substreams->insert(*stream_name).second)
-            return;
-
-        auto bin_checksum = checksums.files.find(*stream_name + ".bin");
+        auto bin_checksum = checksums.files.find(stream_name + ".bin");
         if (bin_checksum != checksums.files.end())
         {
             size.data_compressed += bin_checksum->second.file_size;
             size.data_uncompressed += bin_checksum->second.uncompressed_size;
         }
 
-        auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
+        auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    }, column.type, columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column));
+    };
+
+    if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
+    {
+        auto column_position = getColumnPosition(column.name);
+        if (!column_position)
+            return size;
+
+        const auto & substreams = columns_substreams.getColumnSubstreams(*column_position);
+        for (const auto & substream : substreams)
+        {
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, checksums))
+                add_stream_size(*stream_name);
+        }
+    }
+    else
+    {
+        getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
+
+            if (!stream_name)
+                return;
+
+            if (processed_substreams && !processed_substreams->insert(*stream_name).second)
+                return;
+
+            add_stream_size(*stream_name);
+        }, column.type, getColumnSample(column));
+    }
 
     return size;
 }
@@ -424,12 +445,12 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     return filename;
 }
 
-void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const
+void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
     for (const auto & column : columns)
     {
-        ColumnSize size = getColumnSizeImpl(column, &processed_substreams, columns_sample);
+        ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;
         total_size.add(size);
 

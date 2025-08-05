@@ -67,6 +67,8 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
+    CI_BUILD = "ci-build"
+
     CI_PERFORMANCE = "ci-performance"
 
     CI_INTEGRATION_FLAKY = "ci-integration-test-flaky"

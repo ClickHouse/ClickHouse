@@ -19,7 +19,6 @@ Columns:
 
 - `is_permanently` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag indicates that the table was detached PERMANENTLY.
 
-
 **Example**
 
 ```sql

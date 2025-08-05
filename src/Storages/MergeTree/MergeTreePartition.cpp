@@ -422,7 +422,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
-    if (!partition_key_sample)
+    if (partition_key_sample.empty())
         return nullptr;
 
     auto out = data_part_storage.writeFile("partition.dat", 4096, settings);

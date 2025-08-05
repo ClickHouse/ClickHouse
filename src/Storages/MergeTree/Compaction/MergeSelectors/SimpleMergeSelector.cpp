@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
 
 #include <base/interpolate.h>
+
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cassert>
 #include <random>
@@ -30,13 +33,17 @@ void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory)
 namespace
 {
 
-using Iterator = PartsRange::const_iterator;
-
 /** Estimates best set of parts to merge within passed alternatives.
   */
-struct Estimator
+class Estimator
 {
-    void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+public:
+    explicit Estimator(const PartsRanges & parts_ranges)
+        : disjoint_set(parts_ranges)
+    {
+    }
+
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
 
@@ -53,17 +60,7 @@ struct Estimator
             while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
                 --end;
 
-        if (min_score == 0.0 || current_score < min_score)
-        {
-            min_score = current_score;
-            best_begin = begin;
-            best_end = end;
-        }
-    }
-
-    PartsRange getBest() const
-    {
-        return PartsRange(best_begin, best_end);
+        ranges.emplace_back(range_it, begin, end, sum_size, current_score);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -86,9 +83,47 @@ struct Estimator
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    double min_score = 0.0;
-    Iterator best_begin {};
-    Iterator best_end {};
+    std::optional<PartsRange> buildMergeRange(size_t max_total_size_to_merge)
+    {
+        constexpr static auto range_compare = [](const ScoredRange & lhs, const ScoredRange & rhs)
+        {
+            /// If the ranges have the same score, use the range that is most likely to have the lower merge level -
+            /// the right one, according to the block number sorting.
+            return lhs.score > rhs.score || (lhs.score == rhs.score && lhs.range_begin < rhs.range_begin);
+        };
+
+        if (!is_heap_constructed)
+        {
+            std::make_heap(ranges.begin(), ranges.end(), range_compare);
+            is_heap_constructed = true;
+        }
+
+        while (!ranges.empty())
+        {
+            std::pop_heap(ranges.begin(), ranges.end(), range_compare);
+            const auto [range_it, range_begin, range_end, size, _] = std::move(ranges.back());
+            ranges.pop_back();
+
+            if (size <= max_total_size_to_merge && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
+                return PartsRange(range_begin, range_end);
+        }
+
+        return std::nullopt;
+    }
+
+private:
+    struct ScoredRange
+    {
+        RangesIterator range_it;
+        PartsIterator range_begin;
+        PartsIterator range_end;
+        size_t size = 0;
+        double score;
+    };
+
+    DisjointPartsRangesSet disjoint_set;
+    std::vector<ScoredRange> ranges;
+    bool is_heap_constructed = false;
 };
 
 
@@ -116,8 +151,8 @@ bool allow(
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
-    Iterator begin,
-    Iterator end,
+    PartsIterator begin,
+    PartsIterator end,
     const IMergeSelector::RangeFilter & range_filter,
     const SimpleMergeSelector::Settings & settings)
 {
@@ -181,7 +216,7 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 }
 
 void selectWithinPartsRange(
-    const PartsRange & parts,
+    RangesIterator range_it,
     const size_t max_total_size_to_merge,
     const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
@@ -189,6 +224,7 @@ void selectWithinPartsRange(
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log)
 {
+    const PartsRange & parts = *range_it;
     size_t parts_count = parts.size();
     if (parts_count <= 1)
         return;
@@ -238,6 +274,7 @@ void selectWithinPartsRange(
 
             if (allow(sum_size, max_size, min_age, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, range_begin, range_end, range_filter, settings))
                 estimator.consider(
+                    range_it,
                     range_begin,
                     range_end,
                     sum_size,
@@ -249,21 +286,31 @@ void selectWithinPartsRange(
 
 }
 
-PartsRange SimpleMergeSelector::select(
+PartsRanges SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge,
-    RangeFilter range_filter) const
+    const MergeSizes & max_merge_sizes,
+    const RangeFilter & range_filter) const
 {
-    Estimator estimator;
+    Estimator estimator(parts_ranges);
 
     /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
     const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
 
-    for (const auto & part_range : parts_ranges)
-        selectWithinPartsRange(part_range, max_total_size_to_merge, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+    /// Using max size constraint to create more merge candidates
+    for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
+        selectWithinPartsRange(range_it, max_merge_sizes[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
-    return estimator.getBest();
+    PartsRanges result;
+    for (size_t max_merge_size : max_merge_sizes)
+    {
+        if (auto range = estimator.buildMergeRange(max_merge_size))
+            result.push_back(std::move(range.value()));
+        else
+            break;
+    }
+
+    return result;
 }
 
 }

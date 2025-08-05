@@ -14,7 +14,7 @@ public:
     using Base = ISourceStep;
     using Base::Base;
 
-    explicit SourceStepWithFilterBase(Header output_header_)
+    explicit SourceStepWithFilterBase(SharedHeader output_header_)
         : ISourceStep(std::move(output_header_))
     {
     }
@@ -36,7 +36,7 @@ public:
         }
 
         if (other.filter_actions_dag)
-            filter_actions_dag = other.filter_actions_dag->clone();
+            filter_actions_dag = std::make_shared<const ActionsDAG>(other.filter_actions_dag->clone());
     }
     SourceStepWithFilterBase(SourceStepWithFilterBase &&) = default;
 
@@ -64,8 +64,8 @@ public:
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
-    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
-    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
+    const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
     bool hasCorrelatedExpressions() const override
     {
@@ -81,7 +81,7 @@ private:
 
 protected:
     std::optional<size_t> limit;
-    std::optional<ActionsDAG> filter_actions_dag;
+    std::shared_ptr<const ActionsDAG> filter_actions_dag;
 };
 
 /** Source step that can use filters and limit for more efficient pipeline initialization.
@@ -95,7 +95,7 @@ public:
     using Base::Base;
 
     SourceStepWithFilter(
-        Header output_header_,
+        SharedHeader output_header_,
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,

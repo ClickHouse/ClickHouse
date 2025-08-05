@@ -116,15 +116,15 @@ void DirectKeyValueJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
-void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
+JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
 {
     const String & key_name = table_join->getOnlyClause().key_names_left[0];
     const ColumnWithTypeAndName & key_col = block.getByName(key_name);
     if (!key_col.column)
-        return;
+        return {};
 
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
-    Block right_block_to_use = right_sample_block_with_storage_column_names ? right_sample_block_with_storage_column_names : original_right_block;
+    Block right_block_to_use = !right_sample_block_with_storage_column_names.empty() ? right_sample_block_with_storage_column_names : original_right_block;
     const Names & attribute_names = right_block_to_use.getNames();
 
     NullMap null_map;
@@ -161,6 +161,8 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         }
         block.setColumns(std::move(dst_columns));
     }
+
+    return IJoinResult::createFromBlock(std::move(block));
 }
 
 }

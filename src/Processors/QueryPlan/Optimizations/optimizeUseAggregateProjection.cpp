@@ -80,7 +80,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -400,7 +400,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             // minmax_count_projection cannot be used when there is no data to process, because
             // it will produce incorrect result during constant aggregation.
             // See https://github.com/ClickHouse/ClickHouse/issues/36728
-            if (block)
+            if (!block.empty())
             {
                 MinMaxProjectionCandidate minmax;
                 minmax.candidate = std::move(candidate);
@@ -723,7 +723,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
     }
@@ -749,7 +749,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(block_with_count)));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;
@@ -781,8 +781,8 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         if (!projection_reading)
         {
-            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames());
-            Pipe pipe(std::make_shared<NullSource>(std::move(header)));
+            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(
+                proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames()))));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 

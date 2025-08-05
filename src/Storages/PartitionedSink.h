@@ -8,6 +8,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IPartitionStrategy.h>
 
 
 namespace DB
@@ -18,7 +19,10 @@ class PartitionedSink : public SinkToStorage
 public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
-    PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
+    PartitionedSink(
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
+        ContextPtr context_,
+        SharedHeader source_header_);
 
     ~PartitionedSink() override;
 
@@ -36,12 +40,12 @@ public:
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
+protected:
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
+
 private:
     ContextPtr context;
-    Block sample_block;
-
-    ExpressionActionsPtr partition_by_expr;
-    String partition_by_column_name;
+    SharedHeader source_header;
 
     absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;

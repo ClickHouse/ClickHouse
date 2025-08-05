@@ -6,7 +6,7 @@ slug: /engines/table-engines/log-family/
 title: 'Log Engine Family'
 ---
 
-# Log Engine Family
+# Log engine family
 
 These engines were developed for scenarios when you need to quickly write many small tables (up to about 1 million rows) and read them later as a whole.
 
@@ -24,7 +24,7 @@ Engines of the family:
 Despite the name, *Log table engines are not meant for the storage of log data.  They should only be used for small volumes which need to be written quickly.
 :::
 
-## Common Properties {#common-properties}
+## Common properties {#common-properties}
 
 Engines:
 

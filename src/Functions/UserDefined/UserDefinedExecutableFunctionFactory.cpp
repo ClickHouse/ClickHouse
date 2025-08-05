@@ -186,7 +186,7 @@ public:
         Block result_block({result});
 
         Block arguments_block(arguments_copy);
-        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
+        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(arguments_block)));
         auto shell_input_pipe = Pipe(std::move(source));
 
         ShellCommandSourceConfiguration shell_command_source_configuration;

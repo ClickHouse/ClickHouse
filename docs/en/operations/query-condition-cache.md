@@ -1,12 +1,12 @@
 ---
 description: 'Guide to using and configuring the query condition cache feature in ClickHouse'
-sidebar_label: 'Query Condition Cache'
+sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
-title: 'Query Condition Cache'
+title: 'Query condition cache'
 ---
 
-# Query Condition Cache
+# Query condition cache
 
 Many real-world workloads involve repeated queries against the same or almost the same data (for instance, previously existing data plus new data).
 ClickHouse provides various optimization techniques to optimize for such query patterns.
@@ -26,7 +26,7 @@ The query condition cache is effective if three prerequisites are fulfilled:
 - Second, the majority of the data is immutable, i.e., does not change between queries. This is generally the case in ClickHouse as parts are immutable and created only by INSERTs.
 - Third, filters are selective, i.e. only relatively few rows satisfy the filter condition. The fewer rows match the filter condition, the more granules will be recorded with bit 0 (no matching rows), and the more data can be "pruned" from subsequent filter evaluations.
 
-## Memory Consumption {#memory-consumption}
+## Memory consumption {#memory-consumption}
 
 Since the query condition cache stores only a single bit per filter condition and granule, it consumes only little memory.
 The maximum size of the query condition cache can be configured using server settings [`query_condition_cache_size`](server-configuration-parameters/settings.md#query_condition_cache_size) (default: 100 MB).
@@ -34,7 +34,7 @@ A cache size of 100 MB corresponds to 100 * 1024 * 1024 * 8 = 838,860,800 entrie
 Since each entry represents a mark (8192 rows by default), the cache can cover up to 6,871,947,673,600 (6.8 trillion) rows of a single column.
 In practice, filter are evaluated on more than one column, so that number needs to be divided by the number of filtered columns.
 
-## Configuration Settings and Usage {#configuration-settings-and-usage}
+## Configuration settings and usage {#configuration-settings-and-usage}
 
 Setting [use_query_condition_cache](settings/settings#use_query_condition_cache) controls whether a specific query or all queries of the current session should utilize the query condition cache.
 
@@ -68,7 +68,7 @@ Note that the field is only populated if the query runs with enabled setting [qu
 The number of query condition cache hits and misses since database start are shown as events "QueryConditionCacheHits" and "QueryConditionCacheMisses" in system table [system.events](system-tables/events.md).
 Both counters are only updated for `SELECT` queries which run with setting `use_query_condition_cache = true`, other queries do not affect "QueryCacheMisses".
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Introducing the Query Condition Cache](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
 - [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)

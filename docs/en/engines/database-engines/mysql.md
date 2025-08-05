@@ -9,7 +9,7 @@ title: 'MySQL'
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MySQL Database Engine
+# MySQL database engine
 
 <CloudNotSupportedBadge />
 
@@ -23,7 +23,7 @@ You cannot perform the following queries:
 - `CREATE TABLE`
 - `ALTER`
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -37,7 +37,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `user` — MySQL user.
 - `password` — User password.
 
-## Data Types Support {#data_types-support}
+## Data types support {#data_types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
@@ -59,7 +59,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
-## Global Variables Support {#global-variables-support}
+## Global variables support {#global-variables-support}
 
 For better compatibility you may address global variables in MySQL style, as `@@identifier`.
 
@@ -77,7 +77,7 @@ Example:
 SELECT @@version;
 ```
 
-## Examples of Use {#examples-of-use}
+## Examples of use {#examples-of-use}
 
 Table in MySQL:
 

@@ -8,7 +8,7 @@ namespace DB
 {
 
 WatermarkTransform::WatermarkTransform(
-    const Block & header_,
+    SharedHeader header_,
     StorageWindowView & storage_,
     const String & window_column_name_,
     UInt32 lateness_upper_bound_)
@@ -33,7 +33,7 @@ void WatermarkTransform::transform(Chunk & chunk)
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    auto column_window_idx = block_header.getPositionByName(window_column_name);
+    auto column_window_idx = block_header->getPositionByName(window_column_name);
     const auto & window_column = columns[column_window_idx];
     const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column).getData();
     for (const auto & ts : window_end_data)

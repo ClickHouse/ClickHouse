@@ -21,7 +21,7 @@ class ArrowColumnToCHColumn;
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 

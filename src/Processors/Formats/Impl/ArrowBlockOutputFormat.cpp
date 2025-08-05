@@ -38,7 +38,7 @@ arrow::Compression::type getArrowCompression(FormatSettings::ArrowCompression me
 
 }
 
-ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , stream{stream_}
     , format_settings{format_settings_}
@@ -131,7 +131,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
            const Block & sample,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
     factory.markOutputFormatNotTTYFriendly("Arrow");
@@ -143,7 +143,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
            const Block & sample,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");

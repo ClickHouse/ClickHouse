@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-encrypted-storage
 # Tag no-fasttest: requires S3
 # Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
 # Tag no-shared-merge-tree: use database ordinary
@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="${BASH_SOURCE[0]/.sh/.yml}"
+config="$CUR_DIR/02980_s3_plain_DROP_TABLE_ReplicatedMergeTree.yml"
 
 # only in Atomic ATTACH from s3_plain works
 new_database="ordinary_$CLICKHOUSE_DATABASE"

@@ -26,16 +26,16 @@ FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortD
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     const SortDescription & description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_)
-    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
+    : num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
 {
     for (const auto & column_description : description_)
-        description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
+        description.emplace_back(column_description, header_->getPositionByName(column_description.column_name));
 }
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)

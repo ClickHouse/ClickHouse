@@ -124,6 +124,20 @@ public:
         }
     }
 
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (filter_is_only_null)
+            return;
+
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        if (!column->isNullAt(0) && singleFilter(columns, 0))
+        {
+            this->setFlag(place);
+            this->nested_function->addManyDefaults(this->nestedPlace(place), &nested_column, length, arena);
+        }
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,

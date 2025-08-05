@@ -517,6 +517,9 @@ void ThreadStatus::finalizePerformanceCounters()
     if (performance_counters_finalized)
         return;
 
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized
+
     performance_counters_finalized = true;
     updatePerformanceCounters();
 

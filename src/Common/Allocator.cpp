@@ -1,7 +1,6 @@
 #include <Common/Allocator.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/GWPAsan.h>
 #include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -13,12 +12,6 @@
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
-namespace ProfileEvents
-{
-    extern const Event GWPAsanAllocateSuccess;
-    extern const Event GWPAsanAllocateFailed;
-    extern const Event GWPAsanFree;
-}
 
 namespace DB
 {
@@ -84,25 +77,6 @@ template <bool clear_memory, bool populate>
 void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
-#if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
-    {
-        if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignment))
-        {
-            if constexpr (clear_memory)
-                memset(ptr, 0, size);
-
-            if constexpr (populate)
-                prefaultPages(ptr, size);
-
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
-
-            return ptr;
-        }
-
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-    }
-#endif
     if (alignment <= MALLOC_MIN_ALIGNMENT)
     {
         if constexpr (clear_memory)
@@ -134,15 +108,6 @@ void * allocNoTrack(size_t size, size_t alignment)
 
 void freeNoTrack(void * buf)
 {
-#if USE_GWP_ASAN
-    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
-    {
-        ProfileEvents::increment(ProfileEvents::GWPAsanFree);
-        GWPAsan::GuardedAlloc.deallocate(buf);
-        return;
-    }
-#endif
-
     ::free(buf);
 }
 
@@ -198,46 +163,6 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         /// BTW, it's not possible to change alignment while doing realloc.
         return buf;
     }
-
-#if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
-    {
-        auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-        if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
-        {
-            memcpy(ptr, buf, std::min(old_size, new_size));
-            free(buf, old_size);
-            trace_alloc.onAlloc(buf, new_size);
-
-            if constexpr (clear_memory)
-                if (new_size > old_size)
-                    memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
-
-            if constexpr (populate)
-                prefaultPages(ptr, new_size);
-
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
-            return ptr;
-        }
-
-        [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-    }
-
-    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
-    {
-        /// Big allocs that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
-        void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, std::min(old_size, new_size));
-        free(buf, old_size);
-        buf = new_buf;
-
-        if constexpr (populate)
-            prefaultPages(buf, new_size);
-
-        return buf;
-    }
-#endif
 
     if (alignment <= MALLOC_MIN_ALIGNMENT)
     {

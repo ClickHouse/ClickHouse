@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-flaky-check
+-- Tags: no-parallel, no-fasttest, no-flaky-check, no-encrypted-storage
 -- Because we are creating a backup with fixed path.
 
 DROP DATABASE IF EXISTS 03279_test_database;

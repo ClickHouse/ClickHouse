@@ -39,8 +39,8 @@ The table contains information about [mutations](/sql-reference/statements/alter
 :::
 
 - `is_done` ([UInt8](/sql-reference/data-types/int-uint.md)) — The flag whether the mutation is done or not. Possible values:
-    - `1` if the mutation is completed,
-    - `0` if the mutation is still in process.
+  - `1` if the mutation is completed,
+  - `0` if the mutation is still in process.
 
 :::note
 Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.

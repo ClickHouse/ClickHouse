@@ -19,7 +19,7 @@ PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pi
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingPipelineExecutor must be pulling");
 
-    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getHeader(), has_data_flag);
+    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getSharedHeader(), has_data_flag);
     pipeline.complete(pulling_format);
 }
 
@@ -38,6 +38,11 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
 const Block & PullingPipelineExecutor::getHeader() const
 {
     return pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader();
+}
+
+const SharedHeader & PullingPipelineExecutor::getSharedHeader() const
+{
+    return pulling_format->getPort(IOutputFormat::PortKind::Main).getSharedHeader();
 }
 
 bool PullingPipelineExecutor::pull(Chunk & chunk)

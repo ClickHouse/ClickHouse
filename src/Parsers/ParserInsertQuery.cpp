@@ -1,19 +1,18 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -187,11 +186,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
             for (const auto & child : children)
             {
-                if (child->as<ASTSelectQuery>()->getExpression(ASTSelectQuery::Expression::WITH, false))
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "Only one WITH should be presented, either before INSERT or SELECT.");
-                child->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WITH,
-                    std::move(with_expression_list));
+                auto * child_select = child->as<ASTSelectQuery>();
+                if (child_select)
+                {
+                    if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "Only one WITH should be presented, either before INSERT or SELECT.");
+                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
+                        std::move(with_expression_list));
+                }
             }
         }
 

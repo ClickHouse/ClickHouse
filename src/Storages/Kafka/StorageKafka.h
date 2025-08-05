@@ -22,7 +22,6 @@ namespace DB
 
 struct KafkaSettings;
 class ReadFromStorageKafka;
-class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -13,9 +12,6 @@
 
 namespace DB
 {
-
-class Block;
-using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -84,7 +80,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
+    const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);

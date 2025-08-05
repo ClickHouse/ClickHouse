@@ -18,7 +18,7 @@ namespace DB
             RedisConnectionPtr connection_,
             const RedisArray & keys_,
             const RedisStorageType & storage_type_,
-            const DB::Block & sample_block,
+            SharedHeader sample_block,
             size_t max_block_size);
 
         ~RedisSource() override;

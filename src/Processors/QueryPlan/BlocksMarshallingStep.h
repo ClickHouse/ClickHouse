@@ -9,7 +9,7 @@ namespace DB
 class BlocksMarshallingStep : public ITransformingStep
 {
 public:
-    explicit BlocksMarshallingStep(const Header & input_header_);
+    explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
     String getName() const override { return "BlocksMarshalling"; }
 

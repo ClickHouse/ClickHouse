@@ -14,6 +14,8 @@
 #include <TableFunctions/TableFunctionFileCluster.h>
 
 #include <memory>
+#include <Storages/HivePartitioningUtils.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -22,6 +24,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -59,8 +66,24 @@ StorageFileCluster::StorageFileCluster(
         storage_metadata.setColumns(columns_);
     }
 
+    auto & storage_columns = storage_metadata.columns;
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const std::string sample_path = paths.empty() ? "" : paths.front();
+
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            storage_columns,
+            hive_partition_columns_to_read_from_file_path,
+            sample_path,
+            columns_.empty(),
+            std::nullopt,
+            context
+        );
+    }
+
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, paths.empty() ? "" : paths[0]));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -84,7 +107,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ContextPtr & context,
     const size_t) const
 {
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();

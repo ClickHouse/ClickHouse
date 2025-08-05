@@ -9,6 +9,7 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorageConnectionInfo.h>
 
 namespace Poco
 {
@@ -29,8 +30,10 @@ public:
         AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
-        const String & description_);
+        const String & description_,
+        const String & common_key_prefix_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -44,7 +47,7 @@ public:
     std::string getRootPrefix() const override { return object_namespace; }
 
     /// Object keys are unique within the object namespace (container + prefix).
-    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
 
     std::string getDescription() const override { return description; }
 
@@ -71,6 +74,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -119,6 +124,10 @@ private:
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
+
+    const String common_key_prefix;
+
+    const AzureBlobStorage::ConnectionParams connection_params;
 
     LoggerPtr log;
 };

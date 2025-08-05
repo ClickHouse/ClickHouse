@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Common/HashTable/HashSet.h>
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -10,9 +12,7 @@ namespace DB
 
 struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleGin(
-        const String & index_name_,
-        const GinFilterParameters & gin_filter_params_);
+    explicit MergeTreeIndexGranuleGin(const String & index_name_);
 
     ~MergeTreeIndexGranuleGin() override = default;
 
@@ -23,7 +23,6 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override;
 
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     GinFilter gin_filter;
     bool has_elems;
 };
@@ -36,7 +35,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
-        const GinFilterParameters & gin_filter_params_,
         TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
@@ -49,7 +47,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     GinIndexStorePtr store;
     Names index_columns;
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
 };
@@ -151,7 +148,7 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     GinFilterParameters gin_filter_params;

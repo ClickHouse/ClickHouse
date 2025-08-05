@@ -55,7 +55,7 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
-IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
     : IInputFormat(std::move(header), &in_)
     , serializations(getPort().getHeader().getSerializations())
     , params(params_)

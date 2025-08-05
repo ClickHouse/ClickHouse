@@ -239,6 +239,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
             res.pipeline = table->updateLightweight(mutation_commands, getContext());
+            res.pipeline.addStorageHolder(table);
             return res;
         }
     }

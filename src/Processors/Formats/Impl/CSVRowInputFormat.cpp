@@ -45,7 +45,7 @@ namespace
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -57,7 +57,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -81,7 +81,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -504,7 +504,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CSVRowInputFormat>(sample, buf, std::move(params), with_names, with_types, settings);
+            return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
         });
     };
 

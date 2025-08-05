@@ -40,7 +40,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const Header & input_header_,
+    SharedHeader input_header_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     std::optional<ActionsDAG> actions_dag_,
@@ -51,13 +51,13 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
         input_header_,
-        TotalsHavingTransform::transformHeader(
-            input_header_,
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_header_,
             actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_header_, aggregates_)),
+            getAggregatesMask(*input_header_, aggregates_))),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
@@ -86,6 +86,9 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
+
+    /// Pipeline is resized to single stream before TotalsHavingTransform. So, we need to resize it back to "default" number of streams after transform.
+    pipeline.resize(settings.max_threads);
 }
 
 static String totalsModeToString(TotalsMode totals_mode, double auto_include_threshold)
@@ -146,13 +149,13 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 void TotalsHavingStep::updateOutputHeader()
 {
     output_header =
-        TotalsHavingTransform::transformHeader(
-            input_headers.front(),
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_headers.front(),
             getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_headers.front(), aggregates));
+            getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
 void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const

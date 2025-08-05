@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/dictionary
 title: 'Dictionary Table Engine'
 ---
 
-# Dictionary Table Engine
+# Dictionary table engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 

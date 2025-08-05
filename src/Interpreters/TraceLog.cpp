@@ -83,7 +83,7 @@ namespace
     class AddressToLineCache
     {
     private:
-       Arena arena;
+        Arena arena;
         using Map = HashMap<uintptr_t, StringRef>;
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
@@ -105,7 +105,7 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-            if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
+            if (const auto * object = symbol_index.thisObject())
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
                 if (!std::filesystem::exists(object->name))
@@ -114,7 +114,7 @@ namespace
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
                 StringRef result;
-                if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
+                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;

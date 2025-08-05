@@ -111,7 +111,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     builder.init(Pipe(input_format));
     if (columns.hasDefaults())
     {
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
         });

@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Time Series Functions'
-sidebar_label: 'Time Series'
-sidebar_position: 172
+sidebar_label: 'Time-series'
 slug: /sql-reference/functions/time-series-functions
 title: 'Time Series Functions'
 ---
 
-# Time Series Functions
+# Time series functions
 
 Below functions are used for series data analysis.
 
