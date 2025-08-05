@@ -91,7 +91,8 @@ CREATE TABLE system.columns
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
-    `serialization_hint` Nullable(String)
+    `serialization_hint` Nullable(String),
+    `column` String ALIAS name
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
