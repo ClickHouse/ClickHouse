@@ -98,7 +98,7 @@ public:
         if (col_input_const)
         {
             StringRef input = col_input_const->getDataAt(0);
-            res_data.reserve((input.size + 1) * input_rows_count);
+            res_data.reserve(input.size * input_rows_count);
         }
         else
         {

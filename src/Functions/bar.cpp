@@ -106,7 +106,7 @@ public:
         ColumnString::Offsets & dst_offsets = res_column->getOffsets();
 
         dst_offsets.resize(input_rows_count);
-        dst_chars.reserve(input_rows_count * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// strings are 0-terminated.
+        dst_chars.reserve(input_rows_count * UnicodeBar::getWidthInBytes(max_width));
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
