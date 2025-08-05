@@ -42,12 +42,14 @@ Similar to the `decrypt` function, but returns `NULL` if decryption fails when u
             R"(
 -- Let's create a table where user_id is the unique user id, encrypted is an encrypted string field, iv is an initial vector for decrypt/encrypt.
 -- Assume that users know their id and the key to decrypt the encrypted field:
-CREATE TABLE decrypt_null (
+CREATE TABLE decrypt_null
+(
   dt DateTime,
   user_id UInt32,
   encrypted String,
   iv String
-) ENGINE = MergeTree;
+)
+ENGINE = MergeTree;
 
 -- Insert some data:
 INSERT INTO decrypt_null VALUES
@@ -68,11 +70,11 @@ ORDER BY user_id ASC
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │
 │ 2022-09-02 00:00:01 │       3 │ ᴺᵁᴸᴸ   │
-└─────────────────────┴─────────┴────────┘            
+└─────────────────────┴─────────┴────────┘
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn = {22, 10}
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encryption;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
