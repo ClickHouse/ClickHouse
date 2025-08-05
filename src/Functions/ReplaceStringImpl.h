@@ -386,8 +386,7 @@ struct ReplaceStringImpl
         ++i; \
     } while (false)
 
-            /// Copy skipped strings without any changes but
-            /// add zero byte to the end of each string.
+            /// Copy skipped strings without any changes.
             while (i < input_rows_count && begin + n * (i + 1) <= match)
             {
                 COPY_REST_OF_CURRENT_STRING();

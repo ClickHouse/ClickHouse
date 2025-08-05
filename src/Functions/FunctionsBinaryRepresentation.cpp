@@ -44,7 +44,7 @@ struct HexImpl
     static constexpr size_t word_size = 2;
 
     template <typename T>
-    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -58,11 +58,6 @@ struct HexImpl
             was_nonzero = true;
             writeHexByteUppercase(byte, out);
             out += word_size;
-        }
-        if (auto_close)
-        {
-            *out = '\0';
-            ++out;
         }
     }
 
@@ -88,14 +83,12 @@ struct HexImpl
                 out += word_size;
             }
         }
-        *out = '\0';
-        ++out;
     }
 
     template <typename T>
     static void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
-        const size_t hex_length = type_size_in_bytes * word_size + 1; /// Including trailing zero byte.
+        const size_t hex_length = type_size_in_bytes * word_size;
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -137,7 +130,7 @@ struct BinImpl
     static constexpr size_t word_size = 8;
 
     template <typename T>
-    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -152,17 +145,12 @@ struct BinImpl
             writeBinByte(byte, out);
             out += word_size;
         }
-        if (auto_close)
-        {
-            *out = '\0';
-            ++out;
-        }
     }
 
     template <typename T>
     static void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
-        const size_t hex_length = type_size_in_bytes * word_size + 1; /// Including trailing zero byte.
+        const size_t hex_length = type_size_in_bytes * word_size;
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -209,8 +197,6 @@ struct BinImpl
                 out += word_size;
             }
         }
-        *out = '\0';
-        ++out;
     }
 };
 
@@ -318,7 +304,7 @@ public:
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(T) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(T) * word_size;
 
         if (col_vec)
         {
@@ -330,7 +316,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+            out_vec.resize(size * word_size + MAX_LENGTH);
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -371,8 +357,8 @@ public:
             size_t size = in_offsets.size();
 
             out_offsets.resize(size);
-            /// reserve `word_size` bytes for each non trailing zero byte from input + `size` bytes for trailing zeros
-            out_vec.resize((in_vec.size() - size) * word_size + size);
+            /// reserve `word_size` bytes for each input
+            out_vec.resize((in_vec.size() - size) * word_size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -474,7 +460,7 @@ public:
     {
         const ColumnUUID * col_vec = checkAndGetColumn<ColumnUUID>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(UUID) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(UUID) * word_size;
 
         if (col_vec)
         {
@@ -487,7 +473,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+            out_vec.resize(size * word_size + MAX_LENGTH);
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -501,8 +487,8 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
-                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false, false);
-                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false, true);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
@@ -520,7 +506,7 @@ public:
     {
         const ColumnIPv6 * col_vec = checkAndGetColumn<ColumnIPv6>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(IPv6) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(IPv6) * word_size;
 
         if (!col_vec)
             return false;
@@ -534,7 +520,7 @@ public:
 
         size_t size = in_vec.size();
         out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+        out_vec.resize(size * word_size + MAX_LENGTH);
 
         size_t pos = 0;
         for (size_t i = 0; i < size; ++i)
@@ -561,7 +547,7 @@ public:
     {
         const ColumnIPv4 * col_vec = checkAndGetColumn<ColumnIPv4>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(IPv4) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(IPv4) * word_size;
 
         if (!col_vec)
             return false;
@@ -575,7 +561,7 @@ public:
 
         size_t size = in_vec.size();
         out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+        out_vec.resize(size * word_size + MAX_LENGTH);
 
         size_t pos = 0;
         for (size_t i = 0; i < size; ++i)
@@ -700,12 +686,10 @@ public:
             {
                 size_t new_offset = prev_offset + n;
 
-                /// here we don't subtract 1 from `new_offset` because in ColumnFixedString strings are stored without trailing zero byte
                 Impl::decode(
                     reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
-
                 prev_offset = new_offset;
             }
 

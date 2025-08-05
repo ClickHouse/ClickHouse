@@ -175,7 +175,7 @@ namespace detail
             bool parse_result = false;
             UInt32 dummy_result = 0;
 
-            /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
+            /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zeros.
 
             /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
             /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.

@@ -109,7 +109,7 @@ size_t estimateValueSize(
     {
         case TypeIndex::String:
         {
-            return max_string_length + sizeof(size_t) + 1;
+            return max_string_length + sizeof(UInt64);
         }
 
         /// The logic in this function should reflect the logic of fillColumnWithRandomData.

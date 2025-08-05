@@ -72,8 +72,8 @@ struct FunctionDetectLanguageImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        /// Constant 3 is based on the fact that in general we need 2 characters for ISO code + 1 zero byte
-        res_data.reserve(input_rows_count * 3);
+        /// In general we need 2 characters for ISO code
+        res_data.reserve(input_rows_count * 2);
         res_offsets.resize(input_rows_count);
 
         bool is_reliable;

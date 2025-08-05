@@ -83,10 +83,10 @@ struct CharsetClassificationImpl
         const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         if constexpr (detect_language)
-            /// 2 chars for ISO code + 1 zero byte
-            res_data.reserve(input_rows_count * 3);
+            /// 2 chars for ISO code
+            res_data.reserve(input_rows_count * 2);
         else
-            /// Mean charset length is 8
+            /// The average charset name length is 8
             res_data.reserve(input_rows_count * 8);
 
         res_offsets.resize(input_rows_count);

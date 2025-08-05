@@ -82,19 +82,13 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            offset += length + 1;
+            offset += length;
             offsets_to[row_num] = offset;
         }
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
-
-        /// Put zero bytes in between.
-        auto * pos = data_to.data();
-        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            pos[offsets_to[row_num] - 1] = 0;
-
         return col_to;
     }
 };

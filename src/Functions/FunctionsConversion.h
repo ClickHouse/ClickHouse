@@ -1132,7 +1132,7 @@ struct ConvertThroughParsing
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero bytes at end.
+        /// In case of FixedString, skip zero padding at the end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -1967,7 +1967,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
+                data_to.resize(size * n);
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1983,8 +1983,6 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
-                    data_to[offset_to] = 0;
-                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
