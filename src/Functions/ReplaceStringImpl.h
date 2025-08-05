@@ -139,10 +139,10 @@ struct ReplaceStringImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             const auto * const cur_needle_data = &needle_data[prev_needle_offset];
-            const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset - 1;
+            const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset;
 
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
@@ -175,8 +175,8 @@ struct ReplaceStringImpl
             }
 
             /// Copy suffix after last match
-            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data + 1)
-                                                   : (cur_haystack_end - last_match - cur_needle_length + 1);
+            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
+                                                   : (cur_haystack_end - last_match - cur_needle_length);
             copyToOutput(start_pos, bytes, res_data, res_offset);
 
             res_offsets[i] = res_offset;
@@ -216,10 +216,10 @@ struct ReplaceStringImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             const auto * const cur_replacement_data = &replacement_data[prev_replacement_offset];
-            const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset - 1;
+            const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset;
 
             /// Using "slow" "stdlib searcher instead of Volnitsky just to keep things simple
             StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(needle.data(), needle.size());
@@ -249,8 +249,8 @@ struct ReplaceStringImpl
             }
 
             /// Copy suffix after last match
-            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data + 1)
-                                                   : (cur_haystack_end - last_match - needle.size() + 1);
+            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
+                                                   : (cur_haystack_end - last_match - needle.size());
             copyToOutput(start_pos, bytes, res_data, res_offset);
 
             res_offsets[i] = res_offset;
@@ -286,13 +286,13 @@ struct ReplaceStringImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             const auto * const cur_needle_data = &needle_data[prev_needle_offset];
-            const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset - 1;
+            const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset;
 
             const auto * const cur_replacement_data = &replacement_data[prev_replacement_offset];
-            const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset - 1;
+            const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset;
 
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
@@ -324,8 +324,8 @@ struct ReplaceStringImpl
                 }
             }
             /// Copy suffix after last match
-            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data + 1)
-                                                   : (cur_haystack_end - last_match - cur_needle_length + 1);
+            size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
+                                                   : (cur_haystack_end - last_match - cur_needle_length);
             copyToOutput(start_pos, bytes, res_data, res_offset);
 
             res_offsets[i] = res_offset;

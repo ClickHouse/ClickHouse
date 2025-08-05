@@ -99,7 +99,6 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     {
         data.resize(offset);
         istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
-        data.back() = 0;
     }
     catch (...)
     {

@@ -1384,10 +1384,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
             memcpy(&column_chars_t[curr_offset], buf, buf_size);
             curr_offset += buf_size;
-
-            column_chars_t[curr_offset] = 0;
-            ++curr_offset;
-
             column_offsets[i] = curr_offset;
         }
     }
@@ -1452,15 +1448,14 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
     PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
-    size_t reserver_size = 0;
+    size_t reserve_size = 0;
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
         if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            reserver_size += orc_str_column->length[i];
-        reserver_size += 1;
+            reserve_size += orc_str_column->length[i];
     }
 
-    column_chars_t.resize_exact(reserver_size);
+    column_chars_t.resize_exact(reserve_size);
     column_offsets.resize_exact(orc_str_column->numElements);
 
     size_t curr_offset = 0;
@@ -1472,10 +1467,6 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
             size_t buf_size = orc_str_column->length[i];
             memcpy(&column_chars_t[curr_offset], buf, buf_size);
             curr_offset += buf_size;
-
-            column_chars_t[curr_offset] = 0;
-            ++curr_offset;
-
             column_offsets[i] = curr_offset;
         }
     }
@@ -1490,9 +1481,6 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
                 memcpy(&column_chars_t[curr_offset], buf, buf_size);
                 curr_offset += buf_size;
             }
-
-            column_chars_t[curr_offset] = 0;
-            ++curr_offset;
 
             column_offsets[i] = curr_offset;
         }

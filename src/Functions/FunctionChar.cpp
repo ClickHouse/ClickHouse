@@ -5,8 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -65,20 +64,17 @@ public:
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-        const auto size_per_row = arguments.size() + 1;
+        const auto size_per_row = arguments.size();
         out_vec.resize(size_per_row * input_rows_count);
         out_offsets.resize(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
-        {
             out_offsets[row] = size_per_row + out_offsets[row - 1];
-            out_vec[row * size_per_row + size_per_row - 1] = '\0';
-        }
 
         Columns columns_holder(arguments.size());
         for (size_t idx = 0; idx < arguments.size(); ++idx)
         {
-            //partial const column
+            // Partial const column
             columns_holder[idx] = arguments[idx].column->convertToFullColumnIfConst();
             const IColumn * column = columns_holder[idx].get();
 

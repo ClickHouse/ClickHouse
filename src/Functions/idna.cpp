@@ -76,7 +76,7 @@ struct IdnaEncode
                 }
             }
 
-            res_data.insert(ascii.c_str(), ascii.c_str() + ascii.size() + 1);
+            res_data.insert(ascii.data(), ascii.data() + ascii.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
@@ -115,7 +115,7 @@ struct IdnaDecode
 
             unicode = ada::idna::to_unicode(ascii_view);
 
-            res_data.insert(unicode.c_str(), unicode.c_str() + unicode.size() + 1);
+            res_data.insert(unicode.data(), unicode.data() + unicode.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
