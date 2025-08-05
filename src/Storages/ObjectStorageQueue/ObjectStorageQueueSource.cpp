@@ -169,7 +169,7 @@ ObjectStorageQueueSource::FileIterator::next()
     {
         file_metadatas.clear();
         Stopwatch get_object_watch;
-        Source::ObjectInfos new_batch;
+        ObjectInfos new_batch;
 
         while (new_batch.empty())
         {
@@ -341,7 +341,7 @@ ObjectStorageQueueSource::FileIterator::next()
     return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());

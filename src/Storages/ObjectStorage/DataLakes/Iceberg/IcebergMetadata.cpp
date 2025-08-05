@@ -539,7 +539,7 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
 
     auto create_fn = [&]()
     {
-        StorageObjectStorage::ObjectInfo object_info(filename);
+        ObjectInfo object_info(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled

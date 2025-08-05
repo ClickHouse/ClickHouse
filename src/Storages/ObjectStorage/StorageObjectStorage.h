@@ -1,20 +1,21 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
-#include <Databases/DataLake/ICatalog.h>
 
 #include <memory>
 
@@ -35,10 +36,6 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
-    using ObjectInfo = RelativePathWithMetadata;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
-
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,

@@ -1,15 +1,10 @@
-#pragma once
+    #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 
 namespace DB
 {
 
-
-struct ObjectInfo : RelativePathsWithMetadata
-{
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
-};
-using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
 
 struct IObjectIterator

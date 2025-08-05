@@ -14,6 +14,8 @@
 namespace DB
 {
 
+namespace fs = std::filesystem;
+
 class NamedCollection;
 
 namespace ErrorCodes
@@ -186,6 +188,17 @@ public:
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+
+    std::string getUniqueStoragePathIdentifier(const ObjectInfo & object_info, bool include_connection_info) const
+    {
+        auto path = object_info.getPath();
+        if (path.starts_with("/"))
+            path = path.substr(1);
+
+        if (include_connection_info)
+            return fs::path(getDataSourceDescription()) / path;
+        return fs::path(getNamespace()) / path;
+    }
 
     String format = "auto";
     String compression_method = "auto";
