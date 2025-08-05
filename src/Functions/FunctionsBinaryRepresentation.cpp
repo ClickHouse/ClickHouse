@@ -792,16 +792,16 @@ it to the byte represented by the number. The returned value is a binary string 
 If you want to convert the result to a number, you can use the `reverse` and `reinterpretAs<Type>` functions.
 
 :::note
-`clickhouse-client` interprets strings as UTF-8. 
+`clickhouse-client` interprets strings as UTF-8.
 This may cause that values returned by `hex` to be displayed surprisingly.
 :::
 
-Supports both uppercase and lowercase letters `A-F`. 
-The number of hexadecimal digits does not have to be even. 
+Supports both uppercase and lowercase letters `A-F`.
+The number of hexadecimal digits does not have to be even.
 If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte.
 If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
- For a numeric argument the inverse of hex(N) is not performed by unhex().
-    )";
+For a numeric argument the inverse of hex(N) is not performed by unhex().
+)";
     FunctionDocumentation::Syntax unhex_syntax = "unhex(arg)";
     FunctionDocumentation::Arguments unhex_arguments = {{"arg", "A string containing any number of hexadecimal digits.", {"String", "FixedString"}}};
     FunctionDocumentation::ReturnedValue unhex_returned_value = {"Returns a binary string (BLOB).", {"String"}};
