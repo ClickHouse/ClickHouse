@@ -384,6 +384,12 @@ void AsyncLogMessageQueue::wakeUp()
     condition.notify_one();
 }
 
+size_t AsyncLogMessageQueue::getCurrentMessageSize()
+{
+    std::unique_lock lock(mutex);
+    return message_queue.size();
+}
+
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
     log(Poco::Message(msg));
@@ -448,6 +454,27 @@ void OwnAsyncSplitChannel::flushTextLogs()
 
     /// Now we simply wait for the async thread to notify it has finished flushing
     flush_text_logs.wait(true, std::memory_order_seq_cst);
+}
+
+AsyncLogMetrics OwnAsyncSplitChannel::getAsynchronousMetrics()
+{
+    AsyncLogMetrics metrics;
+    for (const auto & element : name_to_channels)
+    {
+        for (size_t i = 0; i < channels.size(); i++)
+        {
+            if (channels[i] == &element.second)
+            {
+                metrics.push_back({element.first, static_cast<double>(queues[i]->getCurrentMessageSize())});
+                break;
+            }
+        }
+    }
+
+    if (text_log.lock())
+        metrics.push_back({"TextLog", static_cast<double>(text_log_queue.getCurrentMessageSize())});
+
+    return metrics;
 }
 
 void OwnAsyncSplitChannel::runChannel(size_t i)

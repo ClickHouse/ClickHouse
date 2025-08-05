@@ -1,3 +1,4 @@
+#include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -13,7 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
@@ -2151,6 +2152,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+
+    for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
+    {
+        new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
+            = {metric.second, "Number of async messages queued pending for logging in this channel"};
+    }
 
     /// Add more metrics as you wish.
 

@@ -31,6 +31,9 @@ class SystemLogQueue;
 struct TextLogElement;
 using TextLogQueue = SystemLogQueue<TextLogElement>;
 
+using AsyncLogMetric = std::pair<std::string, double>;
+using AsyncLogMetrics = std::vector<AsyncLogMetric>;
+
 class OwnSplitChannelBase : public Poco::Channel
 {
 public:
@@ -111,6 +114,9 @@ public:
     /// Wakes up any threads waiting for a message notification.
     void wakeUp();
 
+    /// Gets the current size of the queue.
+    size_t getCurrentMessageSize();
+
 private:
     Queue message_queue;
     std::condition_variable condition;
@@ -151,6 +157,8 @@ public:
     void setLevel(const std::string & name, int level) override;
 
     void flushTextLogs();
+
+    AsyncLogMetrics getAsynchronousMetrics();
 
 private:
     std::atomic<bool> is_open = false;

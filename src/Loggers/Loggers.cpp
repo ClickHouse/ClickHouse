@@ -124,7 +124,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
-        split->addChannel(log, "log", log_level, &ProfileEvents::AsyncLoggingFileLogDroppedMessages);
+        split->addChannel(log, "FileLog", log_level, &ProfileEvents::AsyncLoggingFileLogDroppedMessages);
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
@@ -163,7 +163,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->open();
-        split->addChannel(errorlog, "errorlog", errorlog_level, &ProfileEvents::AsyncLoggingFileErrorLogDroppedMessages);
+        split->addChannel(errorlog, "ErrorFileLog", errorlog_level, &ProfileEvents::AsyncLoggingFileErrorLogDroppedMessages);
     }
 
     if (config.getBool("logger.use_syslog", false))
@@ -201,7 +201,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
-        split->addChannel(log, "syslog", syslog_level, &ProfileEvents::AsyncLoggingSyslogDroppedMessages);
+        split->addChannel(log, "Syslog", syslog_level, &ProfileEvents::AsyncLoggingSyslogDroppedMessages);
     }
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
@@ -222,7 +222,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
             pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-        split->addChannel(log, "console", console_log_level, &ProfileEvents::AsyncLoggingConsoleDroppedMessages);
+        split->addChannel(log, "Console", console_log_level, &ProfileEvents::AsyncLoggingConsoleDroppedMessages);
     }
 
     if (allowTextLog() && config.has("text_log"))
@@ -408,6 +408,13 @@ void Loggers::flushTextLogs()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         async->flushTextLogs();
+}
+
+DB::AsyncLogMetrics Loggers::getAsynchronousMetricsFromAsyncLogs()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        return async->getAsynchronousMetrics();
+    return {};
 }
 
 void Loggers::stopLogging()
