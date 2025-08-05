@@ -13,6 +13,7 @@
 namespace DB::ErrorCodes
 {
     extern const int DELTA_KERNEL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DeltaLake
