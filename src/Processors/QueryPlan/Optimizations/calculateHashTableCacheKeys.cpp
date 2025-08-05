@@ -99,7 +99,7 @@ void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_ma
     while (!stack.empty())
     {
         auto & frame = stack.back();
-        auto & node = *frame.node;
+        const auto & node = *frame.node;
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {

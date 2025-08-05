@@ -367,7 +367,8 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & lhs,
 
         auto check = [&](const auto & a, const auto & b)
         {
-            return ((a & first) == BitSet()
+            /// false positive clang-tidy warning
+            return ((a & first) == BitSet() /// NOLINT
                 || (a == first && (b & second))
                 || (a & second)
                 || isSubsetOf(b, first));

@@ -76,7 +76,9 @@ int BitSet::findFirstSet() const
 size_t BitSet::hashImpl() const
 {
     if (likely(bitset.size() <= std::numeric_limits<unsigned long>::digits))
-        return std::hash<uint64_t>()(bitset.to_ulong());
+        /// false positive clang-tidy warning for code in boost::dynamic_bitset
+        return std::hash<uint64_t>()(bitset.to_ulong()); /// NOLINT
+
 
     UInt64 hash = 0;
     auto pos = bitset.find_first();

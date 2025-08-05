@@ -126,10 +126,11 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
+    mapped = {};
     for (const auto & [name, value] : original)
     {
         for (const auto & remapped : backTrackColumnsInDag(name, actions))
-            mapped[remapped] = std::move(value);
+            mapped[remapped] = value;
     }
 }
 
@@ -672,17 +673,17 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     UNUSED(residual_filter);
 }
 
-static std::vector<const DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
+static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
 {
-    std::vector<const DPJoinEntry *> result;
+    std::vector<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
 
-    std::vector<const DPJoinEntry *> stack;
+    std::vector<DPJoinEntry *> stack;
     stack.push_back(root.get());
 
     while (!stack.empty())
     {
-        const auto * node = stack.back();
+        auto * node = stack.back();
         stack.pop_back();
 
         if (!node->isLeaf())
@@ -867,7 +868,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 {
                     for (const auto * new_input : new_inputs)
                     {
-                        auto input_node = trackInputColumn(new_input);
+                        const auto * input_node = trackInputColumn(new_input);
                         auto it = input_node_map.find(input_node);
                         if (it == input_node_map.end())
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", input_node->result_name, global_actions_dag->dumpDAG());
@@ -908,7 +909,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto join_expression_map = std::ranges::to<ActionsDAG::NodeMapping>(std::views::zip(required_output_nodes, dag_outputs));
             for (auto & action : join_operator.expression)
             {
-                auto mapped_node = join_expression_map[action.getNode()];
+                const auto * mapped_node = join_expression_map[action.getNode()];
                 if (!mapped_node)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} not found in current dag {}", action.getNode()->result_name, current_dag->dumpDAG());
                 action = JoinActionRef(mapped_node, current_expression_actions);
@@ -988,7 +989,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             if (!right_label.empty() && right_rels.count() > 1)
                 right_label = fmt::format("({})", right_label);
             if (!left_label.empty() && !right_label.empty())
-                relation_names[entry->relations] = fmt::format("{} {} {}", left_label, joinTypePretty(join_operator.kind, join_operator.strictness), right_label);
+                relation_names[entry->relations] = join_step->getReadableRelationName();
 
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
