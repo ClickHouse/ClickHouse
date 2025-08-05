@@ -1208,7 +1208,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
         /// Number of characters in strings of the array.
-        size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
+        size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
