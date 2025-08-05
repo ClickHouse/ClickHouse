@@ -1468,23 +1468,18 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     /// Check if we are interested in a particular disk
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search =
-        [this](DiskPtr disk, std::shared_ptr<MergeTreeData> tbl)
+    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
         bool is_disk_eligible = !disk->isReadOnly();
-        SearchOrphanedPartsDisks mode = (*tbl->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
 
-        if (is_disk_eligible && tbl)
+        /// Disk is not actually used by MergeTree table
+        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
         {
-            /// Disk not actually used
-            if (!tbl->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-            {
-                is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY
-                    || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
-            }
+            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
+            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
         }
 
-        LOG_TRACE(log, "is_disk_eligible_for_search: mode {}, is_disk_eligible {}", mode, is_disk_eligible);
+        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
         return is_disk_eligible;
     };
 

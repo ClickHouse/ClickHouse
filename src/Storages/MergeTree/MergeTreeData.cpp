@@ -2088,7 +2088,7 @@ bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
     SearchOrphanedPartsDisks mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
     bool is_disk_eligible = !disk->isBroken() && !disk->isCustomDisk() && (mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote()));
 
-    LOG_TRACE(log, "shouldSearchForPartsOnDisk: mode {}, is_disk_eligible {}", mode, is_disk_eligible);
+    LOG_TRACE(log, "is disk {} eligible for search: {} (mode {})", disk->getName(), is_disk_eligible, mode);
     return is_disk_eligible;
 }
 
