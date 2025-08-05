@@ -74,9 +74,6 @@ struct BaseXXEncode
         {
             size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
             current_dst_offset += encoded_size;
-            dst[current_dst_offset] = 0;
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 

@@ -200,7 +200,7 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vec_res.resize(input_rows_count * (uuid_text_length + 1));
+            vec_res.resize(input_rows_count * uuid_text_length);
             offsets_res.resize(input_rows_count);
 
             size_t src_offset = 0;
@@ -212,8 +212,6 @@ public:
                 uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_bytes_length;
                 dst_offset += uuid_text_length;
-                vec_res[dst_offset] = 0;
-                ++dst_offset;
                 offsets_res[i] = dst_offset;
             }
 
