@@ -44,7 +44,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM SYNC REPLICA t_lwu_cleanup_2;
 
     ALTER TABLE t_lwu_cleanup_2 UPDATE v = v || '_updated' WHERE 1 SETTINGS mutations_sync = 1;
-    SYSTEM SYNC REPLICA t_lwu_cleanup_1 LIGHTWEIGHT;
+    SYSTEM SYNC REPLICA t_lwu_cleanup_1 PULL;
 "
 
 for _ in {0..50}; do
