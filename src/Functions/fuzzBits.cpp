@@ -119,7 +119,6 @@ public:
         if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
-            const auto col_in_rows = col_in_fixed->size();
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
@@ -131,9 +130,7 @@ public:
 
             const auto * ptr_in = col_in_fixed->getChars().data();
             auto * ptr_to = chars_to.data();
-
             fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
-
             return col_to;
         }
 
