@@ -705,8 +705,8 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow)
-    dbms_target_link_libraries(PUBLIC ch_contrib::arrow)
+if (TARGET ch_contrib::arrow_flight)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
 endif()
 
 if (ENABLE_BUZZHOUSE)

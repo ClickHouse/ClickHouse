@@ -1,7 +1,7 @@
 if (TARGET ch_contrib::rocksdb)
     set(USE_ROCKSDB 1)
 endif()
-if (TARGET ch_contrib::arrow)
+if (TARGET ch_contrib::arrow_flight)
     set(USE_ARROWFLIGHT 1)
 endif()
 if (TARGET ch_contrib::bzip2)
