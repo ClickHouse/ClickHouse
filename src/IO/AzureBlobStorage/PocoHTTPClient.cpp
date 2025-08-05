@@ -426,8 +426,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         Stopwatch watch;
         std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
 
-        addLatency(method, AzureLatencyType::Connect, connect_time);
-        addLatency(method, first_byte_latency_type, first_byte_time);
+        observeLatency(method, AzureLatencyType::Connect, connect_time);
+        observeLatency(method, first_byte_latency_type, first_byte_time);
         latency_recorded = true;
 
         if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
@@ -511,8 +511,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            addLatency(method, AzureLatencyType::Connect, connect_time);
-            addLatency(method, first_byte_latency_type, first_byte_time);
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
@@ -529,8 +529,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            addLatency(method, AzureLatencyType::Connect, connect_time);
-            addLatency(method, first_byte_latency_type, first_byte_time);
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
