@@ -305,7 +305,7 @@ namespace
                     if (is_const_new_length)
                     {
                         size_t rows_count = res_sink.offsets.size();
-                        res_sink.reserve((new_length + 1 /* zero terminator */) * rows_count);
+                        res_sink.reserve(new_length * rows_count);
                     }
                 }
 

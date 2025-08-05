@@ -78,7 +78,6 @@ struct FormatStringImpl
         for (size_t i = 1; i < substrings.size(); ++i)
         {
             final_size += data[index_positions[i - 1]]->size();
-            /// Fixed strings do not have zero terminating character.
             if (offsets[index_positions[i - 1]])
                 final_size -= input_rows_count;
         }

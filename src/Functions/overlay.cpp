@@ -277,7 +277,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -390,7 +390,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -418,7 +418,7 @@ private:
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -436,10 +436,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -510,7 +506,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -635,7 +631,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -662,7 +658,7 @@ private:
                 size_t prefix_bytes = prefix_end > input_end ? input_bytes : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
-                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -680,10 +676,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }

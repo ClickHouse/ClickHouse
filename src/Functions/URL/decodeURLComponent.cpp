@@ -149,9 +149,7 @@ struct CodeURLComponentImpl
 
             if constexpr (code_strategy == encode)
             {
-                /// Skip encoding of zero terminated character
-                size_t src_encode_size = src_size - 1;
-                dst_size = encodeURL(src_data, src_encode_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
+                dst_size = encodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
             }
             else
             {
