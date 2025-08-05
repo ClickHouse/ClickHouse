@@ -416,6 +416,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
+    ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,
     MergeTreeAllRangesCallback all_ranges_callback_,
     MergeTreeReadTaskCallback read_task_callback_,
@@ -429,7 +430,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         data,
         getQueryInfo(),
         getStorageSnapshot(),
-        getContext(),
+        context_,
         block_size.max_block_size_rows,
         requested_num_streams,
         max_block_numbers_to_read,
@@ -643,9 +644,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
     /// Otherwise rows will counted multiple times
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
-    const bool parallel_replicas_local_plan_for_initiator = is_parallel_reading_from_replicas
-        && context->getSettingsRef()[Setting::parallel_replicas_local_plan] && context->canUseParallelReplicasOnInitiator();
-    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || parallel_replicas_local_plan_for_initiator;
+    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -999,7 +998,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info &&
         !lazily_read_info &&
-        !reader_settings.use_query_condition_cache) /// the query condition cache produces incorrect results with intersecting ranges
+        !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
+        !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -1706,12 +1706,10 @@ static void buildIndexes(
     const ActionsDAG * filter_actions_dag,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
-    const StorageMetadataPtr & metadata_snapshot,
-    const LoggerPtr & log)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
 
@@ -1782,8 +1780,6 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
-    auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
-
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
@@ -1794,24 +1790,6 @@ static void buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (!all_updated_columns.empty())
-        {
-            auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-            auto required_columns_names = index_helper->getColumnsRequiredForIndexCalc();
-            auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
-
-            auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
-            {
-                return all_updated_columns.contains(column.getNameInStorage());
-            });
-
-            if (it != required_columns_list.end())
-            {
-                LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
-                continue;
-            }
-        }
 
         if (index_helper->isMergeable())
         {
@@ -1897,12 +1875,10 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info.filter_actions_dag.get(),
             data,
             getParts(),
-            mutations_snapshot,
             vector_search_parameters,
             context,
             query_info,
-            storage_snapshot->metadata,
-            log);
+            storage_snapshot->metadata);
     }
 }
 
@@ -1945,12 +1921,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.filter_actions_dag.get(),
             data,
             parts,
-            mutations_snapshot,
             vector_search_parameters,
             context_,
             query_info_,
-            metadata_snapshot,
-            log);
+            metadata_snapshot);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -2017,6 +1991,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,
+            mutations_snapshot,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,
@@ -2102,6 +2077,12 @@ void ReadFromMergeTree::updateSortDescription()
         query_info.input_order_info,
         prewhere_info,
         enable_vertical_final);
+}
+
+bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
+{
+    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->canUseParallelReplicasOnInitiator();
 }
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
@@ -2441,6 +2422,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
         reader_settings.use_query_condition_cache = false;
+
+    /// Initializing parallel replicas coordinator with empty ranges to read in case of
+    /// local plan for initiator to prevent coordinator initialization by other replicas
+    /// (which may skip index analysis).
+    if (result.parts_with_ranges.empty() && isParallelReplicasLocalPlanForInitiator())
+    {
+        const auto & client_info = context->getClientInfo();
+
+        auto extension = ParallelReadingExtension{
+            all_ranges_callback.value(),
+            read_task_callback.value(),
+            number_of_current_replica.value_or(client_info.number_of_current_replica),
+            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+
+        extension.sendInitialRequest(CoordinationMode::Default, result.parts_with_ranges, /*mark_segment_size=*/1);
+    }
 
     if (result.parts_with_ranges.empty())
     {

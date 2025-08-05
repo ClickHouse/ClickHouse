@@ -122,11 +122,6 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
-    {
-        /// Noop
-    }
-
     void setLastModified(const String &, const Poco::Timestamp &) override
     {
         /// Noop

@@ -571,6 +571,7 @@
     -->
 
     <!-- Path to temporary data for processing heavy queries. -->
+    <!-- NOTE: all files with `tmp` prefix will be removed at server startup -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
@@ -620,6 +621,8 @@
          - keep_free_space_bytes    is ignored
          - max_data_part_size_bytes is ignored
          - you must have exactly one volume in that policy
+
+         NOTE: all files with `tmp` prefix will be removed at server startup
     -->
     <!-- <tmp_policy>tmp</tmp_policy> -->
 
