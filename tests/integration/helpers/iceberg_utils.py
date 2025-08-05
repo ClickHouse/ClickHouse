@@ -194,8 +194,7 @@ def get_creation_expression(
     **kwargs,
 ):
     settings_array = []
-    if allow_dynamic_metadata_for_data_lakes:
-        settings_array.append("allow_dynamic_metadata_for_data_lakes = 1")
+    settings_array.append(f"allow_dynamic_metadata_for_data_lakes = {1 if allow_dynamic_metadata_for_data_lakes else 0}")
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
