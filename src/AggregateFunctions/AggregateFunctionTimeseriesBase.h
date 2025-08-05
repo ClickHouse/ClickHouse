@@ -62,7 +62,7 @@ public:
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
-        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_ = 0)
+        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
             {
@@ -79,7 +79,6 @@ public:
         , step(step_)
         , window(window_)
         , timestamp_scale_multiplier(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_))
-        , predict_offset(predict_offset_)
     {
         if (window < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window should be non-negative");
@@ -498,7 +497,6 @@ protected:
     const TimestampType timestamp_scale_multiplier{};   /// When timestamps are in DateTime64 (which is Decimal with some scale)
                                                         /// this multiplier is used for calculation rate per second (i.e. it is 1000 for
                                                         /// milliseconds or 1e6 for microseconds)
-    const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value
 };
 
 }

@@ -81,6 +81,13 @@ public:
 
     using Bucket = typename Base::Bucket;
 
+    explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_, 
+        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_ = 0)
+        : Base(argument_types_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
+        , predict_offset(predict_offset_)
+    {
+    }
+
     static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
     {
         writeBinaryLittleEndian(bucket.samples.size(), buf);
@@ -180,7 +187,7 @@ private:
         if (is_predict)
         {
             Float64 intercept = sum_y / n - slope * sum_x / n;
-            Float64 predicted_value = slope * Base::predict_offset + intercept;
+            Float64 predicted_value = slope * predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }
         else
@@ -254,7 +261,10 @@ public:
         }
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 1;
+
+protected:
+    const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value
 };
 
 }

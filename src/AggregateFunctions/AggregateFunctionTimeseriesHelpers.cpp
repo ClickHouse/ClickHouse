@@ -171,9 +171,9 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
         DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
 
-        if (is_predict)
+        if constexpr (is_predict)
         {
-            DateTime64 predict_offset = normalizeParameter(name, "predict_offset", parameters[4], target_scale);
+            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * DecimalUtils::scaleMultiplier<Int64>(target_scale);
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
@@ -190,7 +190,7 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         Int64 step = extractIntParameter(name, "step", step_param);
         Int64 window = extractIntParameter(name, "window", window_param);
 
-        if (is_predict)
+        if constexpr (is_predict)
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
