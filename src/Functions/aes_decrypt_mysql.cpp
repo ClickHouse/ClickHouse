@@ -51,7 +51,7 @@ Supports the following decryption modes:
 -- Let's decrypt data we've previously encrypted with MySQL:
 mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
- 
+
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
 +------------------------+
 | ciphertext             |
