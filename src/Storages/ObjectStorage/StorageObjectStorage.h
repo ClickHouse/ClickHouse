@@ -97,6 +97,16 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
+    bool optimize(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        ContextPtr context) override;
+
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationPtr & configuration,

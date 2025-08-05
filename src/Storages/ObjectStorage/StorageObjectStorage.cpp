@@ -33,6 +33,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 
 #include <Poco/Logger.h>
 
@@ -498,6 +499,25 @@ SinkToStoragePtr StorageObjectStorage::write(
         format_settings,
         sample_block,
         local_context);
+}
+
+bool StorageObjectStorage::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /* deduplicate_by_columns */,
+    bool /*cleanup*/,
+    ContextPtr context)
+{
+    if (configuration->isDataLakeConfiguration())
+    {
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        Iceberg::compactIcebergTable(object_storage, configuration, format_settings, sample_block, context);
+        return true;
+    }
+    return false;
 }
 
 void StorageObjectStorage::truncate(

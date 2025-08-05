@@ -36,7 +36,8 @@ struct ParsedDataFileInfo
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
     String data_object_file_path_key;
     String data_object_file_path; // Full path to the data object file
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
+    std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
+    Int64 sequence_number;
 
     bool operator<(const ParsedDataFileInfo & other) const
     {
@@ -154,14 +155,18 @@ private:
         const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
     std::vector<Iceberg::ManifestFileEntry> getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
-    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
+
+    Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const TSA_REQUIRES_SHARED(mutex);
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
-    Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const TSA_REQUIRES_SHARED(mutex);
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 
+public:
+    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
+    Iceberg::ManifestFilePtr tryGetManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const;
+
+private:
     template <typename T>
     std::vector<T> getFilesImpl(
         const ActionsDAG * filter_dag,
