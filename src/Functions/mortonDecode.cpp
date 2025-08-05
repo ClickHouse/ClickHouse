@@ -357,9 +357,9 @@ mortonDecode(range_mask, code)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Simple mode", "SELECT mortonDecode(3, 53)", "[\"1\", \"2\", \"3\"]"},
-        {"Single argument", "SELECT mortonDecode(1, 1)", "[\"1\"]"},
-        {"Expanded mode, shrinking one argument", "SELECT mortonDecode(tuple(2), 32768)", "[\"128\"]"},
+        {"Simple mode", "SELECT mortonDecode(3, 53)", R"(["1", "2", "3"])"},
+        {"Single argument", "SELECT mortonDecode(1, 1)", R"(["1"])"},
+        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768)", "["128"])"},
         {"Column usage",
          R"(
 -- First create the table and insert some data
