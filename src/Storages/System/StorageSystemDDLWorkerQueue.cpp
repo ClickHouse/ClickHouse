@@ -238,7 +238,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 {
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 

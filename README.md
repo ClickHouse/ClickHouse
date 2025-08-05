@@ -102,7 +102,7 @@ Recent meetups
  ## Interested in joining ClickHouse and making it your full-time job?
 
 We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics.
-Here, you will have an opportunity to solve some of the most cutting-edge technical challenges and have direct ownership of your work and vision.
+Here, you will have an opportunity to solve some of the technical challenges and have direct ownership of your work and vision.
 If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
 
 Check out our **current openings** here: https://clickhouse.com/company/careers

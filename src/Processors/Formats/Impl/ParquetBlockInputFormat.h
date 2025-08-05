@@ -339,6 +339,7 @@ private:
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
+    std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
 };
 
 class ParquetSchemaReader : public ISchemaReader
