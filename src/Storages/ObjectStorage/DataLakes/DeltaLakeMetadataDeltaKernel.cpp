@@ -29,9 +29,9 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
-bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
+bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
-    return table_snapshot->update();
+    return table_snapshot->update(context);
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
