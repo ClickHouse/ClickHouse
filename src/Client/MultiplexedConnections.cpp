@@ -186,6 +186,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)
@@ -200,19 +201,15 @@ void MultiplexedConnections::sendQuery(
             replica_states[i].connection->sendQuery(
                 timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
         }
-        sent_query = true;
     }
-    else if (num_replicas == 1)
+    else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
-        sent_query = true;
     }
-    else
-    {
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
-    }
+
+    sent_query = true;
 }
 
 
