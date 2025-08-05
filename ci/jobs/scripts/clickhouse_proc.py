@@ -700,25 +700,25 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="Killed by signal (in clickhouse-server.log)",
+                name="Killed by signal (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log)",
+                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
+                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="No lost s3 keys",
+                name="Lost s3 keys",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
@@ -736,7 +736,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
+                name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
