@@ -112,8 +112,8 @@ private:
                 ucnv_reset(converter_from->impl);
                 ucnv_reset(converter_to->impl);
 
-                /// maximum number of code points is number of bytes in input string plus one for terminating zero
-                uchars.resize(from_string_size + 1);
+                /// maximum number of code points is the number of bytes in input string
+                uchars.resize(from_string_size);
 
                 UErrorCode status = U_ZERO_ERROR;
                 int32_t res = ucnv_toUChars(

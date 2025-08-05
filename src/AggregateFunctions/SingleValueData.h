@@ -282,7 +282,7 @@ struct SingleValueDataString final : public SingleValueDataBase
     static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
 
 private:
-    char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
+    char small_data[MAX_SMALL_STRING_SIZE];
 
     char * getDataMutable();
     const char * getData() const;

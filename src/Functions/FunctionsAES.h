@@ -563,7 +563,7 @@ private:
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
                 size_t string_size = input_column->getDataAt(row_idx).size;
-                resulting_size += string_size + 1;  /// With terminating zero.
+                resulting_size += string_size;
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {

@@ -519,8 +519,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     pos += sizeof(string_size);
     new_pos = pos + string_size;
 
-    /// -1 because of terminating zero
-    return uniqueInsertData(pos, string_size - 1);
+    return uniqueInsertData(pos, string_size);
 }
 
 template <typename ColumnType>
