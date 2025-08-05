@@ -30,6 +30,7 @@ using PatchesToApply = std::vector<PatchToApplyPtr>;
 struct PatchReadResult
 {
     virtual ~PatchReadResult() = default;
+    virtual bool empty() const = 0;
 };
 
 using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
@@ -39,11 +40,15 @@ struct PatchMergeReadResult : public PatchReadResult
     Block block;
     UInt64 min_part_offset = 0;
     UInt64 max_part_offset = 0;
+
+    bool empty() const override { return block.rows() == 0; }
 };
 
 struct PatchJoinReadResult : public PatchReadResult
 {
     PatchJoinCache::Entries entries;
+
+    bool empty() const override { return entries.empty(); }
 };
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.

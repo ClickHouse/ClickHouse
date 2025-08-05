@@ -242,11 +242,6 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
-    if (patches_results.empty())
-        return;
-
-    auto result_block = result_header.cloneWithColumns(read_result.columns);
-
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
@@ -257,10 +252,9 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
             patch_results.pop_front();
         }
 
-        while (!patch_ranges[i].empty() && (patch_results.empty() || patch_readers[i]->needNewPatch(read_result, *patch_results.back())))
-        {
-            patch_results.emplace_back(patch_readers[i]->readPatch(patch_ranges[i], result_block));
-        }
+        const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
+        patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
 

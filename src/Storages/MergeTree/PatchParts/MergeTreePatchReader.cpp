@@ -64,17 +64,11 @@ MergeTreePatchReaderMerge::MergeTreePatchReaderMerge(PatchPartInfoForReader patc
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Merge, got {}", patch_part.mode);
 }
 
-PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(MarkRanges & ranges, const Block & /*result_block*/)
+PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 {
-    auto patch_read_result = std::make_shared<PatchMergeReadResult>();
-
-    if (ranges.empty())
-        return patch_read_result;
-
-    MarkRanges ranges_to_read = {ranges.front()};
-    ranges.pop_front();
-
+    MarkRanges ranges_to_read = {range};
     auto read_result = readPatchRanges(ranges_to_read);
+    auto patch_read_result = std::make_shared<PatchMergeReadResult>();
 
     const auto & sample_block = range_reader.getReadSampleBlock();
     patch_read_result->block = sample_block.cloneWithColumns(read_result.columns);
@@ -100,6 +94,25 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(MarkRanges & ranges, con
     }
 
     return patch_read_result;
+}
+
+std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
+    MarkRanges & ranges,
+    const ReadResult & main_result,
+    const Block & /*result_header*/,
+    const PatchReadResult * last_read_patch)
+{
+    std::vector<PatchReadResultPtr> results;
+
+    while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch)))
+    {
+        auto result = readPatch(ranges.front());
+        ranges.pop_front();
+        last_read_patch = result.get();
+        results.push_back(std::move(result));
+    }
+
+    return results;
 }
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
@@ -169,40 +182,54 @@ void MergeTreePatchReaderJoin::filterRangesByMinMaxIndex(MarkRanges & ranges, co
     }
 }
 
-PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, const Block & result_block)
+std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
+    MarkRanges & ranges,
+    const ReadResult & main_result,
+    const Block & result_header,
+    const PatchReadResult * /*last_read_patch*/)
 {
-    auto patch_read_result = std::make_shared<PatchJoinReadResult>();
+    std::vector<PatchReadResultPtr> results;
     const auto & sample_block = range_reader.getSampleBlock();
 
-    MarkRanges all_ranges = ranges;
-    ranges.clear();
+    if (ranges.empty())
+        return results;
 
-    if (all_ranges.empty())
-        return patch_read_result;
+    MarkRanges ranges_to_read = ranges;
+    auto result_block = result_header.cloneWithColumns(main_result.columns);
 
-    filterRangesByMinMaxIndex(all_ranges, result_block, BlockNumberColumn::name);
-    if (!all_ranges.empty())
-        filterRangesByMinMaxIndex(all_ranges, result_block, BlockOffsetColumn::name);
+    filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockNumberColumn::name);
+    if (!ranges_to_read.empty())
+        filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockOffsetColumn::name);
 
-    if (all_ranges.empty())
-        return patch_read_result;
+    if (ranges_to_read.empty())
+        return results;
+
+    std::set<MarkRange> ranges_set(ranges.begin(), ranges.end());
+    for (const auto & range : ranges_to_read)
+        ranges_set.erase(range);
+
+    ranges = MarkRanges(ranges_set.begin(), ranges_set.end());
+    auto patch_read_result = std::make_shared<PatchJoinReadResult>();
 
     if (!patch_join_cache)
     {
-        auto read_result = readPatchRanges(all_ranges);
+        auto read_result = readPatchRanges(ranges_to_read);
         auto & entry = patch_read_result->entries.emplace_back(std::make_shared<PatchJoinCache::Entry>());
+
         entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
-        return patch_read_result;
+        results.push_back(std::move(patch_read_result));
+        return results;
     }
 
-    auto reader = [this, &sample_block](const MarkRanges & ranges_to_read)
+    auto reader = [this, &sample_block](const MarkRanges & task_ranges)
     {
-        auto read_result = readPatchRanges(ranges_to_read);
+        auto read_result = readPatchRanges(task_ranges);
         return sample_block.cloneWithColumns(read_result.columns);
     };
 
-    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), all_ranges, std::move(reader));
-    return patch_read_result;
+    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(reader));
+    results.push_back(std::move(patch_read_result));
+    return results;
 }
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
