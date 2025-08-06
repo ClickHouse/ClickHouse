@@ -254,6 +254,7 @@ static SortDescription getSortDescriptionForOutputHeader(
     Block original_header = output_header->cloneEmpty();
     if (prewhere_info)
     {
+        if (!prewhere_info->prewhere_actions.getOutputs().empty())
         {
             FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
             for (auto & column : original_header)
@@ -2605,6 +2606,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         prefix.push_back(format_settings.indent_char);
         prefix.push_back(format_settings.indent_char);
 
+        if (!prewhere_info->prewhere_actions.getOutputs().empty())
         {
             format_settings.out << prefix << "Prewhere filter" << '\n';
             format_settings.out << prefix << "Prewhere filter column: " << prewhere_info->prewhere_column_name;
@@ -2648,6 +2650,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
         prewhere_info_map->add("Need filter", prewhere_info->need_filter);
 
+        if (!prewhere_info->prewhere_actions.getOutputs().empty())
         {
             std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);

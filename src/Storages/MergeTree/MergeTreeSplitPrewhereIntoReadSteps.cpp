@@ -212,7 +212,7 @@ bool tryBuildPrewhereSteps(
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution)
 {
-    if (!prewhere_info)
+    if (!prewhere_info || prewhere_info->prewhere_actions.getOutputs().empty())
         return true;
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition

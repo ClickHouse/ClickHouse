@@ -1074,6 +1074,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
     if (query_info_copy.prewhere_info)
     {
+        if (!query_info_copy.prewhere_info->prewhere_actions.getOutputs().empty())
         {
             const auto & node
                 = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
@@ -2481,7 +2482,9 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
-        filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
+
+        if (!prewhere_info->prewhere_actions.getOutputs().empty())
+            filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
 
         if (prewhere_info->row_level_filter)
             filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));

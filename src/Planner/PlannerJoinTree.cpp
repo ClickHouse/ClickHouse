@@ -896,7 +896,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description)
+                const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description, bool is_row_policy = false)
                 {
                     bool is_final = table_expression_query_info.table_expression_modifiers
                         && table_expression_query_info.table_expression_modifiers->hasFinal();
@@ -913,15 +913,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (!prewhere_info)
                         {
                             prewhere_info = std::make_shared<PrewhereInfo>();
-                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
-                            prewhere_info->prewhere_column_name = filter_info.column_name;
-                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
-                            prewhere_info->need_filter = true;
                         }
-                        else if (!prewhere_info->row_level_filter)
+
+                        if (is_row_policy)
                         {
                             prewhere_info->row_level_filter = std::move(filter_info.actions);
                             prewhere_info->row_level_column_name = filter_info.column_name;
+                            prewhere_info->need_filter = true;
+                        }
+                        else if (prewhere_info->prewhere_actions.getOutputs().empty())
+                        {
+                            prewhere_info = std::make_shared<PrewhereInfo>();
+                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
+                            prewhere_info->prewhere_column_name = filter_info.column_name;
+                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
                             prewhere_info->need_filter = true;
                         }
                         else
@@ -941,7 +946,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    add_filter(*row_policy_filter_info, "Row-level security filter");
+                    add_filter(*row_policy_filter_info, "Row-level security filter", true);
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
