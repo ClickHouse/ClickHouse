@@ -86,8 +86,8 @@ struct RelativePathWithMetadata
     class CommandInTaskResponse
     {
     public:
-        CommandInTaskResponse() {}
-        CommandInTaskResponse(const std::string & task);
+        CommandInTaskResponse() = default;
+        explicit CommandInTaskResponse(const std::string & task);
 
         bool is_parsed() const { return successfully_parsed; }
         void set_retry_after_us(Poco::Timestamp::TimeDiff time_us) { retry_after_us = time_us; }
