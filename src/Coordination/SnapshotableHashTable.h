@@ -28,7 +28,7 @@ struct ListNode
 
     ListNode copyFromSnapshotNode()
     {
-        return {key, value.copyFromSnapshotNode()};
+        return {key, value.copyFromSnapshotNode(), node_metadata};
     }
 
     void setInactiveInMap()
