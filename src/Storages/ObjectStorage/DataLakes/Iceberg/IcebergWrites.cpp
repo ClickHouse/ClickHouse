@@ -881,11 +881,11 @@ bool IcebergStorageSink::initializeMetadata()
             return false;
         }
 
-        writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
         if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = filename_generator.generateVersionHint();
-            writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
+            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
         }
         if (catalog)
         {
