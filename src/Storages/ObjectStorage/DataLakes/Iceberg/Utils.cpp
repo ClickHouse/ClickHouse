@@ -92,12 +92,12 @@ std::string getProperFilePathFromMetadataInfo(
         pos = data_path.find("://");
         if (pos == std::string::npos)
             throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected data path: '{}'", data_path);
-        pos = data_path.find("/", pos + 3);
+        pos = data_path.find('/', pos + 3);
         if (pos == std::string::npos)
             throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected data path: '{}'", data_path);
         if (data_path.substr(pos + 1).starts_with(common_namespace))
         {
-            auto new_pos = data_path.find("/", pos + 1);
+            auto new_pos = data_path.find('/', pos + 1);
             if (new_pos - pos == common_namespace.length() + 1) /// bucket in the path
                 pos = new_pos;
         }
