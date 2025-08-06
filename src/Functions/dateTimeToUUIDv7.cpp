@@ -18,6 +18,12 @@ namespace
 {
 
 
+uint64_t dateTimeToMillisecond(UInt32 date_time)
+{
+    return static_cast<uint64_t>(date_time) * 1000;
+}
+
+
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
 DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
@@ -39,12 +45,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args {
+        FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
-        FunctionArgumentDescriptors optional_args;
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeUUID>();
     }
@@ -67,7 +72,7 @@ public:
                 const auto & src_data = col_src_non_const->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    uint64_t timestamp = UUIDv7Utils::dateTimeToMillisecond(src_data[i]);
+                    uint64_t timestamp = dateTimeToMillisecond(src_data[i]);
                     UUIDv7Utils::Data data;
                     data.generate(vec_to[i], timestamp);
                 }
@@ -75,7 +80,7 @@ public:
             else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
             {
                 const auto src_data = col_src_const->getValue<UInt32>();
-                uint64_t timestamp = UUIDv7Utils::dateTimeToMillisecond(src_data);
+                uint64_t timestamp = dateTimeToMillisecond(src_data);
                 for (UUID & uuid : vec_to)
                 {
                     UUIDv7Utils::Data data;

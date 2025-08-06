@@ -1,23 +1,10 @@
 #include <Functions/UUIDv7Utils.h>
-#include <ctime>
 
 namespace DB
 {
 namespace UUIDv7Utils
 {
 
-uint64_t getTimestampMillisecond()
-{
-    timespec tp;
-    clock_gettime(CLOCK_REALTIME, &tp);/// NOLINT(cert-err33-c)
-    const uint64_t sec = tp.tv_sec;
-    return sec * 1000 + tp.tv_nsec / 1000000;
-}
-
-uint64_t dateTimeToMillisecond(UInt32 date_time)
-{
-    return static_cast<uint64_t>(date_time) * 1000;
-}
 
 void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
 {

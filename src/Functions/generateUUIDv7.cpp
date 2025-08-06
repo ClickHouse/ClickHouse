@@ -10,6 +10,14 @@ namespace DB
 namespace
 {
 
+uint64_t getTimestampMillisecond()
+{
+    timespec tp;
+    clock_gettime(CLOCK_REALTIME, &tp);/// NOLINT(cert-err33-c)
+    const uint64_t sec = tp.tv_sec;
+    return sec * 1000 + tp.tv_nsec / 1000000;
+}
+
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
@@ -55,7 +63,7 @@ public:
 
             /// Note: For performance reasons, clock_gettime is called once per chunk instead of once per UUID. This reduces precision but
             /// it still complies with the UUID standard.
-            uint64_t timestamp = UUIDv7Utils::getTimestampMillisecond();
+            uint64_t timestamp = getTimestampMillisecond();
             for (UUID & uuid : vec_to)
             {
                 UUIDv7Utils::Data data;

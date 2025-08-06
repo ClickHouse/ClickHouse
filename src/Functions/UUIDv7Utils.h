@@ -42,8 +42,6 @@ constexpr uint64_t rand_b_with_counter_bits_mask = (1ull << rand_b_low_bits_coun
 constexpr uint64_t counter_low_bits_mask = (1ull << counter_low_bits_count) - 1;
 constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
 
-uint64_t getTimestampMillisecond();
-uint64_t dateTimeToMillisecond(UInt32 date_time);
 void setTimestampAndVersion(UUID & uuid, uint64_t timestamp);
 void setVariant(UUID & uuid);
 
