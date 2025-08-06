@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -358,6 +359,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
+
+    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
+
+        return RelationStats{};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
