@@ -637,9 +637,8 @@ public:
             size_t max_out_len = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const size_t len = in_offsets[i] - (i == 0 ? 0 : in_offsets[i - 1])
-                    - /* trailing zero symbol that is always added in ColumnString and that is ignored while decoding */ 1;
-                max_out_len += (len + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1;
+                const size_t len = in_offsets[i] - in_offsets[i - 1];
+                max_out_len += (len + word_size - 1) / word_size;
             }
             out_vec.resize(max_out_len);
 
@@ -675,8 +674,7 @@ public:
             const size_t n = col_fix_string->getN();
 
             out_offsets.resize(input_rows_count);
-            out_vec.resize(
-                ((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * input_rows_count);
+            out_vec.resize((n + word_size - 1) / word_size * input_rows_count);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
