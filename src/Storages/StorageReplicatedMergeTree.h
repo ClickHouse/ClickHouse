@@ -252,7 +252,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, ContextPtr context = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
