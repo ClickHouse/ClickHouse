@@ -546,6 +546,7 @@ INATSConsumerPtr StorageNATS::createConsumer()
 
     return std::make_shared<NATSJetStreamConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
 }
+
 INATSProducerPtr StorageNATS::createProducer(String subject)
 {
     auto connection_future = event_handler.createConnection(configuration);

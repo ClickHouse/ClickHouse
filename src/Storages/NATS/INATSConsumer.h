@@ -55,15 +55,15 @@ public:
     ReadBufferPtr consume();
 
 protected:
-    const NATSConnectionPtr & getConnection(){return connection;}
-    natsConnection * getNativeConnection(){return connection->getConnection();}
+    const NATSConnectionPtr & getConnection() { return connection; }
+    natsConnection * getNativeConnection() { return connection->getConnection(); }
 
-    const std::vector<String> & getSubjects() const {return subjects;}
-    const LoggerPtr & getLogger() const {return log;}
+    const std::vector<String> & getSubjects() const { return subjects; }
+    const LoggerPtr & getLogger() const { return log; }
 
-    const String & getQueueName() const{return queue_name;}
+    const String & getQueueName() const { return queue_name; }
 
-    void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_){subscriptions = std::move(subscriptions_);}
+    void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_) { subscriptions = std::move(subscriptions_); }
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
