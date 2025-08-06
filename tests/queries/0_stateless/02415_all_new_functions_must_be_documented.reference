@@ -62,7 +62,6 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 asinh
-assumeNotNull
 atan
 atan2
 atanh
@@ -85,7 +84,6 @@ cbrt
 ceil
 char
 cityHash64
-coalesce
 concat
 concatAssumeInjective
 connectionId
@@ -198,7 +196,6 @@ hopStart
 hostName
 hypot
 identity
-ifNull
 ignore
 ilike
 in
@@ -217,12 +214,8 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isNotNull
-isNull
-isNullable
 isValidJSON
 isValidUTF8
-isZeroOrNull
 javaHash
 javaHashUTF16LE
 joinGet
@@ -317,7 +310,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-nullIf
 nullIn
 nullInIgnoreSet
 or
@@ -570,7 +562,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toNullable
 toString
 toStringCutToZero
 toTime

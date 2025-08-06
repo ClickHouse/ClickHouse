@@ -73,7 +73,6 @@ appendTrailingCharIfAbsent
 ascii
 asin
 asinh
-assumeNotNull
 atan
 atan2
 atanh
@@ -97,7 +96,6 @@ cbrt
 ceil
 char
 cityHash64
-coalesce
 compareSubstrings
 concat
 concatAssumeInjective
@@ -300,7 +298,6 @@ hopStart
 hostName
 hypot
 identity
-ifNull
 ignore
 ilike
 in
@@ -321,13 +318,8 @@ isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isNotDistinctFrom
-isNotNull
-isNull
-isNullable
 isValidJSON
 isValidUTF8
-isZeroOrNull
 jaroSimilarity
 jaroWinklerSimilarity
 javaHash
@@ -428,7 +420,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-nullIf
 nullIn
 nullInIgnoreSet
 or
@@ -731,7 +722,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toNullable
 toString
 toStringCutToZero
 toTime
