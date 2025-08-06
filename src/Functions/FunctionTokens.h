@@ -126,7 +126,7 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
