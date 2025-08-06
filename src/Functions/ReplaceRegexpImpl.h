@@ -136,7 +136,7 @@ struct ReplaceRegexpImpl
 
             if (searcher.Match(haystack, match_pos, haystack_length, re2::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
-                const auto & match = matches[0]; /// Complete match (\0)
+                const auto & match = matches[0]; /// Complete match
                 size_t bytes_to_copy = (match.data() - haystack.data()) - copy_pos;
 
                 /// Copy prefix before current match without modification
@@ -238,7 +238,7 @@ struct ReplaceRegexpImpl
             size_t from = haystack_offsets[i - 1];
 
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - from - 1);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - from);
 
             processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -268,11 +268,11 @@ struct ReplaceRegexpImpl
         {
             size_t hs_from = haystack_offsets[i - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
-            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from);
 
             size_t ndl_from = needle_offsets[i - 1];
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
-            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
+            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from);
             std::string_view needle(ndl_data, ndl_length);
 
             if (needle.empty())
@@ -331,11 +331,11 @@ struct ReplaceRegexpImpl
         {
             size_t hs_from = haystack_offsets[i - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
-            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from);
 
             size_t repl_from = replacement_offsets[i - 1];
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
-            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from);
             std::string_view replacement(repl_data, repl_length);
 
             Instructions instructions = createInstructions(replacement, num_captures);
@@ -370,11 +370,11 @@ struct ReplaceRegexpImpl
         {
             size_t hs_from = haystack_offsets[i - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
-            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
+            const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from);
 
             size_t ndl_from = needle_offsets[i - 1];
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
-            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
+            const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from);
             std::string_view needle(ndl_data, ndl_length);
 
             if (needle.empty())
@@ -387,7 +387,7 @@ struct ReplaceRegexpImpl
 
             size_t repl_from = replacement_offsets[i - 1];
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
-            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+            const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from);
             std::string_view replacement(repl_data, repl_length);
 
             re2::RE2 searcher(needle, regexp_options);
