@@ -923,7 +923,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
                         else if (prewhere_info->prewhere_actions.getOutputs().empty())
                         {
-                            prewhere_info = std::make_shared<PrewhereInfo>();
                             prewhere_info->prewhere_actions = std::move(filter_info.actions);
                             prewhere_info->prewhere_column_name = filter_info.column_name;
                             prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
