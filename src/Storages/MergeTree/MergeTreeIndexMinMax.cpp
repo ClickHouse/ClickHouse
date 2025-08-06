@@ -56,6 +56,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
     Field min_val;
     Field max_val;
 
+    FormatSettings format_settings;
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
@@ -66,8 +67,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
             case 1:
                 if (!type->isNullable())
                 {
-                    serialization->deserializeBinary(min_val, istr, {});
-                    serialization->deserializeBinary(max_val, istr, {});
+                    serialization->deserializeBinary(min_val, istr, format_settings);
+                    serialization->deserializeBinary(max_val, istr, format_settings);
                 }
                 else
                 {
@@ -81,8 +82,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serialization->deserializeBinary(min_val, istr, {});
-                        serialization->deserializeBinary(max_val, istr, {});
+                        serialization->deserializeBinary(min_val, istr, format_settings);
+                        serialization->deserializeBinary(max_val, istr, format_settings);
                     }
                     else
                     {
@@ -94,8 +95,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
             /// New format with proper Nullable support for values that includes Null values
             case 2:
-                serialization->deserializeBinary(min_val, istr, {});
-                serialization->deserializeBinary(max_val, istr, {});
+                serialization->deserializeBinary(min_val, istr, format_settings);
+                serialization->deserializeBinary(max_val, istr, format_settings);
 
                 // NULL_LAST
                 if (min_val.isNull())
