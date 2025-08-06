@@ -185,7 +185,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
-    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/) const { return nullptr; }
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
     String format = "auto";
     String compression_method = "auto";

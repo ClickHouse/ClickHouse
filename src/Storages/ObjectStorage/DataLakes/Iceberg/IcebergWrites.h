@@ -46,7 +46,7 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_);
+    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_);
 
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
@@ -68,6 +68,7 @@ private:
     String metadata_dir;
     String storage_data_dir;
     String storage_metadata_dir;
+    bool use_uuid_in_metadata;
 
     Int32 initial_version = 0;
 };

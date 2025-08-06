@@ -421,6 +421,9 @@ Poco::JSON::Object::Ptr getPartitionField(
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_name, field.value());
+
+    if (!column_name_to_source_id.contains(*field))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", *field);
     result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
     result->set(Iceberg::f_field_id, ++partition_iter);
 
@@ -503,7 +506,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-String createEmptyMetadataFile(
+std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
@@ -580,7 +583,7 @@ String createEmptyMetadataFile(
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return removeEscapedSlashes(oss.str());
+    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
 /**
