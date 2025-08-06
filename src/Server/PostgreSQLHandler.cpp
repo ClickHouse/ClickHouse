@@ -1,3 +1,4 @@
+#include <memory>
 #include <Server/PostgreSQLHandler.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -362,11 +363,11 @@ void PostgreSQLHandler::cancelRequest()
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
-    ReadBufferFromString replacement(query);
+    auto replacement = std::make_unique<ReadBufferFromOwnString>(std::move(query));
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(replacement, *out, true, query_context, {});
+    executeQuery(std::move(replacement), *out, true, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -448,8 +449,8 @@ void PostgreSQLHandler::processQuery()
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, false, query_context, {});
+            auto read_buf = std::make_unique<ReadBufferFromString>(spl_query);
+            executeQuery(std::move(read_buf), *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
@@ -503,12 +504,13 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     auto result_query = prepared_statements_manager.getStatement(prepare->as<ASTExecute>());
 
-    CurrentThread::QueryScope query_scope{query_context};
-    ReadBufferFromString read_buf(result_query);
-    executeQuery(read_buf, *out, false, query_context, {});
-
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
+
+    CurrentThread::QueryScope query_scope{query_context};
+    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(result_query));
+    executeQuery(std::move(read_buf), *out, false, query_context, {});
+
     message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
 
     return true;
@@ -609,10 +611,10 @@ void PostgreSQLHandler::processExecuteQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        auto sql_query = prepared_statements_manager.getStatmentFromBind();
         CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(sql_query);
-        executeQuery(read_buf, *out, false, query_context, {});
+        auto sql_query = prepared_statements_manager.getStatmentFromBind();
+        auto read_buf = std::make_unique<ReadBufferFromString>(std::move(sql_query));
+        executeQuery(std::move(read_buf), *out, false, query_context, {});
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);

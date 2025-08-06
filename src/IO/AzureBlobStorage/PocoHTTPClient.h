@@ -69,6 +69,9 @@ public:
     /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
+    ThrottlerPtr getThrottler() const { return get_request_throttler; }
+    ThrottlerPtr putThrottler() const { return put_request_throttler; }
+
 private:
     enum class AzureMetricType : uint8_t
     {

@@ -287,7 +287,7 @@ public:
     MultiExistsResponse exists(TIter start, TIter end)
     {
         return multiRead<Coordination::ExistsResponse, true>(
-            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
+            start, end, [&](const auto & path) { return zkutil::makeExistsRequest(path); }, [&](const auto & path) { return asyncExists(path); });
     }
 
     MultiExistsResponse exists(const std::vector<std::string> & paths)
@@ -308,7 +308,7 @@ public:
     MultiGetResponse get(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, false>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncGet(path); });
     }
 
     MultiGetResponse get(const std::vector<std::string> & paths)
@@ -343,7 +343,7 @@ public:
     MultiTryGetResponse tryGet(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, true>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncTryGet(path); });
     }
 
     MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
@@ -828,20 +828,7 @@ bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
-template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
-{
-    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
-    {
-        auto request = std::make_shared<Coordination::CheckRequest>();
-        request->path = path;
-        request->not_exists = true;
-        requests.push_back(std::move(request));
-        return;
-    }
-
-    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-    requests.push_back(makeRemoveRequest(path, -1));
-}
+template <class Client>
+void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path);
 
 }
