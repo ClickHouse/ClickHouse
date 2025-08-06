@@ -174,7 +174,7 @@ static String killConnectionIdReplacementQuery(const String & query)
 /// Replace "SHOW COLLATIONS" into creating temporary system mysql table.
 static String showCollationsReplacementQuery(const String & /*query*/)
 {
-    return "SELECT * FROM emulated_collations";
+    return "SELECT 1 LIMIT 0";
 }
 
 
@@ -232,47 +232,6 @@ MySQLHandler::MySQLHandler(
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
-}
-
-void MySQLHandler::setupSystemTables()
-{
-    auto execute_clickhouse_query = [&] (const String & query)
-    {
-        auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
-        CurrentThread::QueryScope query_scope{query_context};
-
-        auto buf = ReadBufferFromString(query);
-
-        String output;
-        auto out_buf = WriteBufferFromString(output);
-        executeQuery(buf, out_buf, false, query_context, {}, QueryFlags{}, {});
-    };
-
-    {
-        String create_query = R"(
-    CREATE TEMPORARY TABLE emulated_collations
-    (
-        Collation String,
-        Charset String,
-        Id UInt64,
-        Default String,
-        Compiled String,
-        Sortlen UInt32,
-        Pad_attribute Enum('PAD SPACE' = 1, 'NO PAD' = 2)
-    ) ENGINE = Memory;
-    )";
-
-        execute_clickhouse_query(create_query);
-    }
-
-    {
-        String insert_query = R"(
-INSERT INTO emulated_collations VALUES
-('binary','binary',63,'Yes','Yes',1,'NO PAD');
-    )";
-        execute_clickhouse_query(insert_query);
-    }
 }
 
 MySQLHandler::~MySQLHandler() = default;
@@ -340,8 +299,6 @@ void MySQLHandler::run()
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_endpoint->sendPacket(ok_packet);
-
-        setupSystemTables();
 
         while (tcp_server.isOpen())
         {
