@@ -76,18 +76,6 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 
 using namespace Iceberg;
 
-void writeMessageToFile(
-    const String & data,
-    const String & filename,
-    ObjectStoragePtr object_storage,
-    ContextPtr context)
-{
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-    buffer_metadata->write(data.data(), data.size());
-    buffer_metadata->finalize();
-}
-
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
