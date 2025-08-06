@@ -33,6 +33,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include "Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h"
 #include <Columns/IColumn.h>
 
 #include <memory>
@@ -66,6 +67,7 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 namespace DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -150,6 +152,14 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
         };
 
     }
+}
+
+FileNamesGenerator::Result FileNamesGenerator::generateVersionHint()
+{
+    return Result{
+        .path_in_metadata = fmt::format("{}version-hint.text", metadata_dir),
+        .path_in_storage = fmt::format("{}version-hint.text", storage_metadata_dir),
+    };
 }
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
@@ -876,6 +886,14 @@ bool IcebergStorageSink::initializeMetadata()
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
 
+        if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = filename_generator.generateVersionHint();
+            auto buffer_version_hint = object_storage->writeObject(
+                StoredObject(filename_version_hint.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+            buffer_version_hint->write(storage_metadata_name.data(), storage_metadata_name.size());
+            buffer_version_hint->finalize();
+        }
         if (catalog)
         {
             String catalog_filename = metadata_name;
