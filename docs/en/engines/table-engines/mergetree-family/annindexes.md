@@ -358,7 +358,7 @@ A query run without rescoring (`vector_search_with_rescoring = 0`) and with para
 
 ### Performance tuning {#performance-tuning}
 
-**Tuning Compression**
+**Tuning compression**
 
 In virtually all use cases, the vectors in the underlying column are dense and do not compress well.
 As a result, [compression](/sql-reference/statements/create/table.md#column_compression_codec) slows down inserts and reads into/from the vector column.
@@ -369,7 +369,7 @@ To do that, specify `CODEC(NONE)` for the vector column like this:
 CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 ```
 
-**Tuning Index Creation**
+**Tuning index creation**
 
 The life cycle of vector similarity indexes is tied to the life cycle of parts.
 In other words, whenever a new part with defined vector similarity index is created, the index is create as well.
@@ -391,7 +391,7 @@ Third, to speed up merges, users may disable the creation of skipping indexes on
 This, in conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of vector similarity indexes.
 For example, index creation can be deferred until all data was ingested or until a period of low system load such as the weekend.
 
-**Tuning Index Usage**
+**Tuning index usage**
 
 SELECT queries need to load vector similarity indexes into main memory to use them.
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
@@ -420,22 +420,29 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
-**Quantization**
+**Tuning quantization**
 
-[Embedding Quantization](https://sbert.net/examples/sentence_transformer/applications/embedding-quantization/README.html) is a technique to reduce memory consumption of vectors and speed up vector index builds. ClickHouse supports the following quantization options -
+[Quantization](https://huggingface.co/blog/embedding-quantization) is a technique to reduce the memory footprint of vectors and the computational costs of building and traversing vector indexes.
+ClickHouse vector indexes supports the following quantization options:
 
-|Quantization Option|Storage Per Dimension|
-|-------------------|---------------------|
-|   f16             |  2 bytes            |
-|   bf16            |  2 bytes            |
-|   i8              |  1 byte             |
-|   b1              |  1 bit              |
+| Quantization   | Name                         | Storage per dimension |
+|----------------|------------------------------|---------------------- |
+| f32            | Single precision             | 4 bytes               |
+| f16            | Half precision               | 2 bytes               |
+| bf16 (default) | Half precision (brain float) | 2 bytes               |
+| i8             | Quarter precision            | 1 byte                |
+| b1             | Binary                       | 1 bit                 |
 
-Quantization could result in loss of precision compared to the original full precision floating point values (`f32`) in the embedding vector. In our experiments, `bf16` results in nil or negligible loss of precision when compared to the original vector in 4-byte `f32` representation. The `i8` and `b1` quantization cause measurable loss in precision and thus cause a drop in the quality of similarity search results. These 2 quantizations are recommended to be used when cost of full precision, in-memory vector index is very high for large datasets. ClickHouse recommends users to enable the _rescoring_ feature with the multiplier setting [vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier) to retrieve high quality results from similarity search queries on `i8` and `b1` quantized vector indexes.
+Quantization reduces the precision of vector searches compared to searching the original full-precision floating-point values (`f32`).
+However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
+Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
+We recommend both quantizations only if the the size of the vector similarity index is significantly larger than the available DRAM size.
+In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring)) to improve accuracy.
+Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalied), and 2) if the cosine distance is used as distance function.
+Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
+The rescoring step uses the original full-precision vectors stored in the table to identify the nearest neighbours via cosine distance.
 
-Binary quantization is recommended only for embedding vectors normalized to length 1 (e.g OpenAI models) and vector similarity computed using `cosine` distance. A binary quantized vector index uses `Hamming` distance metric internally to construct and update the proximity graph. The rescoring step will use the full precision vectors stored in the table and compute `cosine` distance to identify the nearest neighbours.
-
-**Tuning Data Transfer**
+**Tuning data transfer**
 
 The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
 Typical Python code which runs a vector search in ClickHouse might look like this
