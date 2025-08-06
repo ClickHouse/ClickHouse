@@ -1204,7 +1204,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     QueryPlan plan;
 
     bool must_return_interpreter_select_query_plan
-        = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
+        = use_analyzer && processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
     if (processed_stage <= storage_stage && !must_return_interpreter_select_query_plan)
     {
         /// If there are only virtual columns in query, we must request at least one other column.
