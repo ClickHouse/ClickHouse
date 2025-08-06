@@ -1586,6 +1586,18 @@
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
     </replicated_merge_tree>
     -->
+    
+    <!-- Settings to fine-tune DatabaseReplicatedSettings. See documentation in source code, in DatabaseReplicatedSettings.h -->
+    <!--
+    <database_replicated>
+        <max_broken_tables_ratio>1</max_broken_tables_ratio>
+        <max_replication_lag_to_enqueue>50</max_replication_lag_to_enqueue>
+        <wait_entry_commited_timeout_sec>3600</wait_entry_commited_timeout_sec>
+        <collection_name>default_collection</collection_name>
+        <check_consistency>true</check_consistency>
+        <max_retries_before_automatic_recovery>10</max_retries_before_automatic_recovery>
+    </database_replicated>
+    -->
 
     <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
     <!--

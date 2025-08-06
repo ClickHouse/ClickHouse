@@ -151,6 +151,8 @@ DatabaseReplicated::DatabaseReplicated(
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
 {
+    LOG_INFO(log, "DatabaseReplicatedSettings {}", db_settings.toString());
+
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
     if (shard_name.contains('/') || replica_name.contains('/'))
@@ -2302,7 +2304,8 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         info.level = 0;
         replica_name = args.context->getMacros()->expand(replica_name, info);
 
-        DatabaseReplicatedSettings database_replicated_settings{};
+        const auto & initial_storage_settings = args.context->getDatabaseReplicatedSettings();
+        DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
             database_replicated_settings.loadFromQuery(*engine_define);
 

@@ -3,6 +3,14 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 
+
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
 namespace DB
 {
 class ASTStorage;
@@ -27,6 +35,9 @@ struct DatabaseReplicatedSettings
     DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+    String toString() const;
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
