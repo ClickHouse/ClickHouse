@@ -25,14 +25,18 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
 #endif
 
 namespace DB
@@ -170,10 +174,13 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, max_joined_block_size_bytes, 4 * 1024 * 1024, R"(
+Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
-    DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
+    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
@@ -393,7 +400,7 @@ The maximum number of a concurrent loaded parts in multipart upload request. 0 m
     DECLARE(UInt64, s3_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to S3.
 )", 0) \
-    DECLARE(UInt64, azure_max_single_part_upload_size, 100*1024*1024, R"(
+    DECLARE(UInt64, azure_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to Azure blob storage.
 )", 0)                                                                             \
     DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
@@ -413,6 +420,21 @@ The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of S3 redirects hops allowed.
+)", 0) \
+    DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
+Max number of azure redirects hops allowed.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_rps, 0, R"(
+Limit on Azure GET request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_get_rps`
+)", 0) \
+    DECLARE(UInt64, azure_max_put_rps, 0, R"(
+Limit on Azure PUT request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_put_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
 )", 0) \
     DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
 The maximum number of connections per server.
@@ -436,10 +458,14 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
+When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+)", 0) \
     DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
-When set to `true` than all threads executing s3 requests to the same endpoint get slow down for a while
-after one s3 request fails with a retryable network error.
-When set to `false` than each thread executing s3 request uses an independent set of backoffs on network errors.
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single s3 request encounters a retryable network error, such as socket timeout.
+When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
@@ -536,9 +562,17 @@ Minimal backoff between retries in azure sdk
     DECLARE(UInt64, azure_sdk_retry_max_backoff_ms, 1000, R"(
 Maximal backoff between retries in azure sdk
 )", 0) \
+    DECLARE(UInt64, azure_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
+Idleness timeout for sending and receiving data to/from azure. Fail if a single TCP read or write call blocks for this long.
+)", 0) \
+    DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
+Connection timeout for host from azure disks.
+)", 0) \
+    DECLARE(Bool, azure_sdk_use_native_client, true, R"(
+Use clickhouse native HTTP client for Azure SDK.
+)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
-
 Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
@@ -2344,6 +2378,9 @@ Possible values:
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
 )", 0) \
+    DECLARE(Bool, opentelemetry_trace_cpu_scheduling, false, R"(
+Collect OpenTelemetry spans for workload preemptive CPU scheduling.
+)", 0) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
 Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/sql-reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
@@ -3288,6 +3325,11 @@ Approximate probability of failure for a keeper request during backup or restore
 )", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
+)", 0) \
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
@@ -5004,6 +5046,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
+Rewrite regular expression related functions into simpler and more efficient forms
+)", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
 If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
 
@@ -5979,6 +6024,12 @@ Only has an effect in ClickHouse Cloud. Set buffer size for write-through distri
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
 )", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
+Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
+Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6388,6 +6439,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
+    DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
+Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6591,6 +6645,31 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
+Enable vector similarity index.
+)", BETA, enable_vector_similarity_index) \
+    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
+)", BETA) \
+    DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
+)", BETA) \
+    DECLARE(Bool, vector_search_with_rescoring, false, R"(
+If ClickHouse performs rescoring for queries that use the vector similarity index.
+Without rescoring, the vector similarity index returns the rows containing the best matches directly.
+With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
+In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
+Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
+)", BETA) \
+    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
+If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
+- 'auto' - Postfiltering (the exact semantics may change in future).
+- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
+- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
+)", BETA) \
+    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
+Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
+)", BETA) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
@@ -6741,24 +6820,6 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
-Enable vector similarity index.
-)", BETA, enable_vector_similarity_index) \
-    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
-)", BETA) \
-    DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
-The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
-)", BETA) \
-    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
-If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
-- 'auto' - Postfiltering (the exact semantics may change in future).
-- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
-- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
-)", BETA) \
-    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
-Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
-)", BETA) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
@@ -6792,7 +6853,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental text index.
+If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
@@ -6862,6 +6923,12 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
+    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
+Write full paths (including s3://) into iceberg metadata files.
+)", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \

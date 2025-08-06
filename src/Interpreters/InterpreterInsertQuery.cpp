@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBuffer.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -44,6 +45,10 @@
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Storages/IStorageCluster.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <memory>
 
@@ -71,6 +76,9 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 max_distributed_depth;
 }
 
 namespace MergeTreeSetting
@@ -90,11 +98,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
     : WithContext(context_)
+    , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
@@ -147,6 +157,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
+
+        table_function_ptr->setPartitionBy(query.partition_by);
 
         return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
                                            /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
@@ -334,11 +346,6 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
-}
-
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
 }
 
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
@@ -592,6 +599,48 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
 }
 
 
+static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQuery & query)
+{
+    const auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    const auto & selects = select.list_of_selects->children;
+    if (selects.size() != 1)
+        return {};
+
+    if (auto * select_query = selects.front()->as<ASTSelectQuery>())
+    {
+        const auto & tables = select_query->tables();
+
+        if (!tables)
+            return false;
+
+        const auto & tables_in_select_query = tables->as<ASTTablesInSelectQuery &>();
+
+        if (tables_in_select_query.children.size() != 1)
+            return false;
+
+        const auto & child = tables_in_select_query.children.front();
+        const auto & table_element = child->as<ASTTablesInSelectQueryElement &>();
+        const auto & table_expr = table_element.table_expression->as<ASTTableExpression &>();
+
+        if (table_expr.subquery)
+            return false;
+
+        /// TODO: replace with QueryTree analysis after switching to analyzer completely
+        return (!select_query->distinct
+            && !select_query->limit_with_ties
+            && !select_query->prewhere()
+            && !select_query->where()
+            && !select_query->groupBy()
+            && !select_query->having()
+            && !select_query->orderBy()
+            && !select_query->limitBy()
+            && !select_query->limitLength()
+            && !hasAggregateFunctions(select_query));
+    }
+    return false;
+}
+
+
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     auto context_ptr = getContext();
@@ -609,21 +658,14 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
         return {};
 
-    const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
-    const auto & selects = select_query.list_of_selects->children;
-    if (selects.size() > 1)
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    if (!isTrivialSelect(selects.front()))
+    auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
+    if (!ClusterProxy::isSuitableForParallelReplicas(select, context_ptr))
         return {};
 
-    if (!ClusterProxy::isSuitableForParallelReplicas(selects.front(), context_ptr))
-        return {};
-
-    LOG_TRACE(
-        getLogger("InterpreterInsertQuery"),
-        "Building distributed insert select pipeline with parallel replicas: table={}",
-        query.getTable());
+    LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
     {
@@ -689,14 +731,108 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     {
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
 
-        for (auto & buffer : owned_buffers)
-            format->addBuffer(std::move(buffer));
-
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
         pipeline.complete(std::move(pipe));
+    }
+
+    return pipeline;
+}
+
+
+std::optional<QueryPipeline>
+InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
+{
+    if (query.table_id.empty())
+        return {};
+
+    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
+        return {};
+
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    StoragePtr src_storage;
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
+            if (joined_tables.tablesCount() == 1)
+                src_storage = joined_tables.getLeftTableStorage();
+        }
+    }
+    if (!src_storage)
+        return {};
+
+    auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
+    if (!src_storage_cluster)
+        return {};
+
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
+        return {};
+
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings[Setting::max_distributed_depth]
+        && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    /// query will be executed on all nodes of the cluster
+    auto src_cluster = src_storage_cluster->getCluster(local_context);
+
+    /// Actually the query doesn't change, we just serialize it to string
+    String query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query.IAST::format(buf, ast_format_settings);
+        query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    ContextMutablePtr query_context = Context::createCopy(local_context);
+    query_context->increaseDistributedDepth();
+    query_context->setSetting("skip_unavailable_shards", true);
+
+    auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
+
+    /// -Cluster storage treats each replicas as a shard in cluster definition
+    /// so, it's enough to consider only shards here
+    size_t replica_index = 0;
+    for (const auto & shard : src_cluster->getShardsInfo())
+    {
+        auto pools = shard.pool->getShuffledPools(settings);
+        chassert(pools.size() == 1);
+
+        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            pools.at(0).pool,
+            query_str,
+            std::make_shared<const Block>(Block{}),
+            query_context,
+            /*throttler=*/nullptr,
+            Scalars{},
+            Tables{},
+            QueryProcessingStage::Complete,
+            RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+        remote_query_executor->setLogger(logger);
+        /// check if destination table exists on nodes
+        remote_query_executor->setMainTable(dst_storage->getStorageID());
+
+        Pipe pipe{std::make_shared<RemoteSource>(
+            remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote])};
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+        QueryPipeline remote_pipeline{std::move(pipe)};
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
+
+        pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
 
     return pipeline;
@@ -749,6 +885,11 @@ BlockIO InterpreterInsertQuery::execute()
             if (distributed)
             {
                 res.pipeline = std::move(*distributed);
+            }
+            if (!res.pipeline.initialized())
+            {
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
+                    res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {

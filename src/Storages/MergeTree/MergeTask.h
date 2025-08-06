@@ -5,7 +5,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Names.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -201,7 +200,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsWithTypeAndName gathered_columns_samples{};
+        ColumnsSubstreams gathered_columns_substreams{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -371,7 +370,6 @@ private:
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
-        NameSet removed_files;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;

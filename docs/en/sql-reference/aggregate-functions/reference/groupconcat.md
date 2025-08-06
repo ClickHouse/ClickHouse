@@ -22,7 +22,6 @@ Alias: `group_concat`
 - `expression` — The expression or column name that outputs strings to be concatenated.
 - `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.
 
-
 **Parameters**
 
 - `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string if not specified.
@@ -66,7 +65,6 @@ JohnJaneBob
 
 This concatenates all names into one continuous string without any separator.
 
-
 2. Using comma as a delimiter:
 
 Query:
@@ -88,7 +86,6 @@ John, Jane, Bob
 ```
 
 This output shows the names separated by a comma followed by a space.
-
 
 3. Limiting the number of concatenated elements
 

@@ -346,7 +346,10 @@ void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
         for (auto it = bucket.begin(); it != bucket.end();)
         {
             if (!it->second->checkAccess(user_id))
+            {
+                ++it;
                 continue;
+            }
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
@@ -407,7 +410,7 @@ CacheMetadata::removeEmptyKey(
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
-    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+    LOG_TEST(log, "Key {} is removed from metadata", key);
 
     const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
     const fs::path key_prefix_directory = key_directory.parent_path();

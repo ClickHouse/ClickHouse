@@ -14,7 +14,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) columns.
+Text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types) which provide fast text search capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) columns.
 The main idea of a text index is to store a mapping from "terms" to the rows which contain these terms.
 "Terms" are tokenized cells of the string column.
 For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will", "be", "a", "little" and "late". Another kind of tokenizer is n-grams.
@@ -41,7 +41,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) [GRANULARITY 64]
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, segment_digestion_threshold_bytes = B] [, bloom_filter_false_positive_rate = R]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -74,12 +74,29 @@ To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 :::
 
-The maximum rows per postings list can be specified via the optional `max_rows_per_postings_list` parameter.
-The parameter can be used to control postings list sizes to avoid generating huge postings list files.
+<details markdown="1">
 
-- `max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
-- `max_rows_per_postings_list = M`: with `M` should be at least 8192.
-- If not specified: Use a default maximum rows which is 64K.
+<summary>Advanced parameters</summary>
+
+Optional parameter `segment_digestion_threshold_bytes` determines the byte size of index segments.
+
+- `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created for each index granule.
+- `segment_digestion_threshold_bytes = B`: A new segment is created every `B` bytes of text input.
+
+Default value: `0`.
+
+We do not recommend changing `segment_digestion_threshold_bytes`.
+The default value will work well in virtually all situations.
+The presence of more than one segment causes redundant data storage and slower full-text search queries.
+The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
+
+Optional parameter `bloom_filter_false_positive_rate` determines the false-positive rate of the bloom filter.
+
+- `bloom_filter_false_positive_rate = R`: A double between 0.0 and 1.0.
+
+Default value: `0.001` (0.1%).
+
+</details>
 
 Being a type of skipping index, text indexes can be dropped or added to a column after table creation:
 
@@ -104,34 +121,29 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
 Like for other secondary indices, each column part has its own text index.
-Furthermore, each text index is internally divided into "segments".
-The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
-Configuration parameter `max_digestion_size_per_segment` (default: 256 MB) controls the amount of data read from the underlying column before a new segment is created.
-The default value of the parameter provides a good balance between memory usage and performance for most use cases.
-Incrementing it raises the intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on average to evaluate a query.
 
-### Functions support {#functions-support}
+### Supported functions {#functions-support}
 
 The conditions in the `WHERE` clause contains calls of the functions that operate with columns.
 If the column is a part of an index, ClickHouse tries to use this index when performing the functions.
 ClickHouse supports different subsets of functions for the `text` index.
 
-#### `equals` and `notEquals` functions {#functions-example-equals-notequals}
+#### `=` and `!=` {#functions-example-equals-notequals}
 
-Functions `=` (equals) and `!=` (notEquals) check if the column contains rows which match the entire search term.
+Functions `=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals) ) check if the column contains rows which match the entire search term.
 
-#### `in` and `notIn` functions {#functions-example-in-notin}
+#### `IN` and `NOT IN` {#functions-example-in-notin}
 
-Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
+Functions `IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` respectively.
 Instead of matching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
-#### `like`, `notLike` and `match` functions {#functions-example-like-notlike-match}
+#### `LIKE`, `NOT LIKE` and `match` {#functions-example-like-notlike-match}
 
 :::note
 Currently, these functions use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
 :::
 
-In order to use functions `like`, `notLike`, and `match` with the `text` index, the search term should be in a way that complete tokens can be extracted from it.
+In order to use functions `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and [match](/sql-reference/functions/string-search-functions.md/#match) with the `text` index, the search term should be in a way that complete tokens can be extracted from it.
 
 Example:
 
@@ -143,9 +155,9 @@ In the example, only `clickhouse` is a complete token.
 As `support` is followed by a `%`, it could match `support`, `supports`, `supporting` etc.
 As a result, the lookup in the text index will only consider token `clickhouse`.
 
-#### startsWith and endsWith {#functions-example-startswith-endswith}
+#### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
-Similar to `like`, the search term should be in a way that complete tokens can be extracted from it.
+Similar to `like`, the search term for functions [startsWith](/sql-reference/functions/string-functions.md/#startswith) and [endsWith](/sql-reference/functions/string-functions.md/#endswith) should be in a way that complete tokens can be extracted from it.
 
 Example:
 
@@ -166,9 +178,9 @@ Similarly, if you like to search a column value ending with `olap engine`, use s
 Index lookups for functions `startsWith` and `endWidth` are generally less efficient than for functions `like`/`notLike`/`match`.
 :::
 
-#### multiSearchAny {#functions-example-multisearchany}
+#### `multiSearchAny` {#functions-example-multisearchany}
 
-Function `multiSearchAny` searches the provided search term as a substring in the column value.
+Function [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany) searches the provided search term as a substring in the column value.
 As a result, search term should be a complete token to use with the `text` index.
 This can be achieved by putting a space before and after the input needle.
 
@@ -178,9 +190,9 @@ Example:
 SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
 ```
 
-#### hasToken and hasTokenOrNull {#functions-example-hastoken-hastokenornull}
+#### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
-Functions `hasToken` and `hasTokenOrNull` check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`).
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull) check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`).
 
 Compared to other functions, `hasToken` and `hasTokenOrNull` do not tokenize the search term, i.e. they assume the input is a single token.
 
@@ -192,18 +204,18 @@ SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
 
 These functions are the most performant options to use with the `text` index.
 
-#### searchAny and searchAll {#functions-example-searchany-searchall}
+#### `searchAny` and `searchAll` {#functions-example-searchany-searchall}
 
-Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
+Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) check if the column contains rows which match any or all of search terms.
 
 Compared to `hasToken`, these functions accept multiple search terms.
 
 Example:
 
 ```sql
-SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
+SELECT count() FROM hackernews WHERE searchAny(lower(comment), ['clickhouse', 'chdb']);
 
-SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
+SELECT count() FROM hackernews WHERE searchAll(lower(comment), ['clickhouse', 'chdb']);
 ```
 
 ## Full text search of the hacker news dataset {#full-text-search-of-the-hacker-news-dataset}

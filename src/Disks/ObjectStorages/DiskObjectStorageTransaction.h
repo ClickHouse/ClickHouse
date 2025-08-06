@@ -54,7 +54,6 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
-    DiskObjectStorage & disk;
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
 
@@ -63,18 +62,18 @@ protected:
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         MetadataTransactionPtr metadata_transaction_);
 
+    bool is_committed = false;
+
 public:
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_);
 
-    void commit() override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
     void undo() override;
 
     void createDirectory(const std::string & path) override;
@@ -124,14 +123,7 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-    bool isTransactional() const override;
-    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
@@ -140,7 +132,6 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
     IMetadataStorage & destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         IObjectStorage & destination_object_storage,

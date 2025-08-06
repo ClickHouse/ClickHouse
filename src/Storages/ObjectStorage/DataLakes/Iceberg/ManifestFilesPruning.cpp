@@ -1,3 +1,4 @@
+#include <optional>
 #include "config.h"
 
 #if USE_AVRO
@@ -18,6 +19,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
 
@@ -27,76 +29,31 @@ namespace ProfileEvents
     extern const Event IcebergMinMaxIndexPrunedFiles;
 }
 
-
 namespace Iceberg
 {
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
 {
+    auto transform_and_argument = parseTransformAndArgument(transform_name_src);
+    if (!transform_and_argument)
+    {
+        LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name_src);
+        return nullptr;
+    }
+
     std::string transform_name = Poco::toLower(transform_name_src);
-
-    if (transform_name == "year" || transform_name == "years")
-        return makeASTFunction("toYearNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "month" || transform_name == "months")
-        return makeASTFunction("toMonthNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return makeASTFunction("toRelativeDayNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "hour" || transform_name == "hours")
-        return makeASTFunction("toRelativeHourNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
     if (transform_name == "identity")
         return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
         return makeASTFunction("tuple");
 
-    if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
+    if (transform_and_argument->argument.has_value())
     {
-        /// should look like transform[N] or bucket[N]
-
-        auto log_warning = [&transform_name]()
-        { LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name); };
-
-        if (transform_name.back() != ']')
-        {
-            log_warning();
-            return nullptr;
-        }
-
-        auto argument_start = transform_name.find('[');
-
-        if (argument_start == std::string::npos)
-        {
-            log_warning();
-            return nullptr;
-        }
-
-        auto argument_width = transform_name.length() - 2 - argument_start;
-        std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
-        bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
-
-        if (!parsed)
-        {
-            log_warning();
-            return nullptr;
-        }
-
-        if (transform_name.starts_with("truncate"))
-        {
-            return makeASTFunction(
-                "icebergTruncate", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
-        }
-        else if (transform_name.starts_with("bucket"))
-        {
-            return makeASTFunction(
-                "icebergBucket", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
-        }
+        return makeASTFunction(
+                transform_and_argument->transform_name, std::make_shared<DB::ASTLiteral>(*transform_and_argument->argument), std::make_shared<DB::ASTIdentifier>(column_name));
     }
-    return nullptr;
+    return makeASTFunction(transform_and_argument->transform_name, std::make_shared<DB::ASTIdentifier>(column_name));
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
@@ -128,7 +85,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -147,12 +104,13 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 ManifestFilesPruner::ManifestFilesPruner(
     const DB::IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
+    Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const ManifestFileContent & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
-    , manifest_schema_id(manifest_file.getSchemaId())
+    , initial_schema_id(initial_schema_id_)
 {
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
@@ -178,14 +136,17 @@ ManifestFilesPruner::ManifestFilesPruner(
                 if (!bounded_colums.contains(used_column_id))
                     continue;
 
-                NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(manifest_schema_id, used_column_id);
-                name_and_type.name = DB::backQuote(DB::toString(used_column_id));
+                auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+                if (!name_and_type.has_value())
+                    continue;
 
-                ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
-                    ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
+                name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+
+                ExpressionActionsPtr expression
+                    = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
                 ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
             }
         }
     }
@@ -216,13 +177,22 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
+        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
 
         /// There is no such column in this manifest file
         if (!name_and_type.has_value())
+        {
             continue;
+        }
 
-        auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
+        auto it = entry.columns_infos.find(column_id);
+        if (it == entry.columns_infos.end())
+        {
+            continue;
+        }
+
+
+        auto hyperrectangle = it->second.hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);

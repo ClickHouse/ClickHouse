@@ -80,6 +80,4 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":"2021","home_team":"Walsall","away_team":"Swindon Town","home_team_goals":"0","away_team_goals":"3"}   
 ```
 
-
 ## Format settings {#format-settings}
-

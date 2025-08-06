@@ -150,6 +150,12 @@ namespace ProfileEvents
     extern const Event RemoteReadThrottlerSleepMicroseconds;
     extern const Event RemoteWriteThrottlerBytes;
     extern const Event RemoteWriteThrottlerSleepMicroseconds;
+    extern const Event BackupThrottlerBytes;
+    extern const Event BackupThrottlerSleepMicroseconds;
+    extern const Event MergesThrottlerBytes;
+    extern const Event MergesThrottlerSleepMicroseconds;
+    extern const Event MutationsThrottlerBytes;
+    extern const Event MutationsThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -158,6 +164,8 @@ namespace ProfileEvents
     extern const Event QueryRemoteReadThrottlerSleepMicroseconds;
     extern const Event QueryRemoteWriteThrottlerBytes;
     extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
+    extern const Event QueryBackupThrottlerBytes;
+    extern const Event QueryBackupThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -456,6 +464,9 @@ struct ContextSharedPart : boost::noncopyable
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
+    bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
+    UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
+    UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -836,6 +847,9 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
+        scope_guard delete_dictionaries_xmls;
+        scope_guard delete_user_defined_executable_functions_xmls;
+
         /// Delete DDLWorker before zookeeper.
         /// Cause it can call Context::getZooKeeper and resurrect it.
 
@@ -907,17 +921,8 @@ struct ContextSharedPart : boost::noncopyable
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
-            /// Dictionaries may be required:
-            /// - for storage shutdown (during final flush of the Buffer engine)
-            /// - before storage startup (because of some streaming of, i.e. Kafka, to
-            ///   the table with materialized column that has dictGet)
-            ///
-            /// So they should be created before any storages and preserved until storages will be terminated.
-            ///
-            /// But they cannot be created before storages since they may required table as a source,
-            /// but at least they can be preserved for storage termination.
-            dictionaries_xmls.reset();
-            user_defined_executable_functions_xmls.reset();
+            delete_dictionaries_xmls = std::move(dictionaries_xmls);
+            delete_user_defined_executable_functions_xmls = std::move(user_defined_executable_functions_xmls);
 
             delete_system_logs = std::move(system_logs);
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
@@ -938,6 +943,18 @@ struct ContextSharedPart : boost::noncopyable
             /// Stop zookeeper connection
             zookeeper.reset();
         }
+
+        /// Dictionaries may be required:
+        /// - for storage shutdown (during final flush of the Buffer engine)
+        /// - before storage startup (because of some streaming of, i.e. Kafka, to
+        ///   the table with materialized column that has dictGet)
+        ///
+        /// So they should be created before any storages and preserved until storages will be terminated.
+        ///
+        /// But they cannot be created before storages since they may required table as a source,
+        /// but at least they can be preserved for storage termination.
+        delete_dictionaries_xmls.reset();
+        delete_user_defined_executable_functions_xmls.reset();
 
         /// Can be removed without context lock
         delete_system_logs.reset();
@@ -1030,13 +1047,13 @@ struct ContextSharedPart : boost::noncopyable
             local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
-            backups_server_throttler = std::make_shared<Throttler>(bandwidth);
+            backups_server_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
-            mutations_throttler = std::make_shared<Throttler>(bandwidth);
+            mutations_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
-            merges_throttler = std::make_shared<Throttler>(bandwidth);
+            merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
     }
 };
 
@@ -1390,40 +1407,38 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(LoggerPtr log, const std::string & path)
+static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
+    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
 
-    if (fs::exists(path))
+    if (disk->existsDirectory(""))
     {
-        /// Clearing old temporary files.
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator it(path); it != dir_end; ++it)
+        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
-            if (it->is_regular_file())
+            /// existsFile() checks for is_regular_file() for local disk
+            if (it->path().starts_with("tmp") && disk->existsFile(it->path()))
             {
-                if (startsWith(it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                    fs::remove(it->path());
-                }
-                else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path());
+                disk->removeFile(it->path());
             }
-            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
+            else
+            {
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path());
+            }
         }
     }
     else
     {
-        fs::create_directories(path);
+        disk->createDirectory("");
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary path: {}. "
-        "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
+        "Caught exception while setting up temporary disk {}:{}. "
+        "It is ok to skip this exception as cleaning old temporary files is not necessary",
+        disk->getName(), disk->getPath()));
 }
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
@@ -1447,7 +1462,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
-        setupTmpPath(shared->log, disk->getPath());
+        setupTmpPath(shared->log, disk);
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1481,16 +1496,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         /// Check that underlying disk is local (can be wrapped in decorator)
         DiskPtr disk_ptr = disk;
-
-        if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
-        {
-            const auto * disk_raw_ptr = disk_ptr.get();
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Disk '{}' ({}) is not local and can't be used for temporary files",
-                disk_ptr->getName(), typeid(*disk_raw_ptr).name());
-        }
-
-        setupTmpPath(shared->log, disk->getPath());
+        setupTmpPath(shared->log, disk);
     }
 
     std::lock_guard lock(shared->mutex);
@@ -2015,6 +2021,32 @@ void Context::setThrowOnUnknownWorkload(bool value)
 {
     std::lock_guard lock(shared->mutex);
     shared->throw_on_unknown_workload = value;
+}
+
+bool Context::getCPUSlotPreemption() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_preemption;
+}
+
+UInt64 Context::getCPUSlotQuantum() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_quantum_ns;
+}
+
+UInt64 Context::getCPUSlotPreemptionTimeout() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->cpu_slot_preemption_timeout_ms;
+}
+
+void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->cpu_slot_preemption = cpu_slot_preemption;
+    shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
+    shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -4078,7 +4110,7 @@ ThrottlerPtr Context::getBackupsThrottler() const
     {
         std::lock_guard lock(mutex);
          if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
+            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
         throttler = backups_query_throttler;
     }
     return throttler;
@@ -4926,7 +4958,6 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     return shared->system_logs->part_log;
 }
 
-
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5115,6 +5146,15 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     if (!shared->system_logs)
         return {};
     return shared->system_logs->blob_storage_log;
+}
+
+std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->dead_letter_queue;
 }
 
 SystemLogs Context::getSystemLogs() const
