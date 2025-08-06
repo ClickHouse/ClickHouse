@@ -3122,10 +3122,12 @@ timeDiff
 timeSeries
 timeSeriesData
 timeSeriesDeltaToGrid
+timeSeriesDerivToGrid
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
+timeSeriesPredictLinearToGrid
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
