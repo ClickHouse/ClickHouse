@@ -6,7 +6,7 @@ import { floatLayerMerges } from './floatLayerMerges.js';
 import { delayMs } from './util.js';
 
 // Global pages configuration including scenarios and other functions
-export const PAGES = {
+const PAGES = {
     // Tutorial scenarios
     'explainVisualizations': { description: 'Small demo with 20 initial parts and a few merges', type: 'tutorial', color: 'info' },
     'oneBigMerge': { description: 'Creates 16 equal-sized parts and merges them all into one large part', type: 'tutorial', color: 'info' },
@@ -22,16 +22,23 @@ export const PAGES = {
     'maxEntropyMergesDemo': { description: 'Inserts 1000 parts and applies max-entropy merge strategy with adaptive scoring', type: 'entropy', color: 'warning' },
     'maxEntropyMergesWithInserts': { description: 'Periodic scenario with 1000 iterations of 10 inserts and max-entropy merges', type: 'entropy', color: 'warning' },
 
-    // Add other functions (parallel merging)
-    'periodicArrivals': { description: 'Simulation with periodic part arrivals and float layer merges (parallel merging)', type: 'function', color: 'primary' }
+    // Layer based merging
+    'periodicInsertsWith2BaseMerges': { description: 'It merge 2 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith3BaseMerges': { description: 'It merge 3 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith4BaseMerges': { description: 'It merge 4 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith5BaseMerges': { description: 'It merge 5 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith10BaseMerges': { description: 'It merge 10 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWithEBaseMerges': { description: 'It merge e (2.718) parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith10BaseMerges': { description: 'It merge 10 parts on every layer', type: 'function', color: 'primary' },
+    'periodicInsertsWith10AndEBaseMerges': { description: 'It merge 10 parts on lowest layer and e (2.718) parts on every other layer', type: 'function', color: 'primary' }
 };
 
 // Tools that open separate HTML pages
-export const TOOLS = {
-    'solution_chart.html': { description: 'Interactive chart tool for comparing merge optimization solutions across different parameters', type: 'tool' },
-    'layers_model.html': { description: 'Modeling tool for analyzing layered merge strategies with configurable bases and parameters', type: 'tool' },
-    'train_solver.html': { description: 'Machine learning tool for training merge optimization solvers using gradient descent methods', type: 'tool' },
-    'float_layer_merges.html': { description: 'Specialized simulation for float layer merge strategies with sequence insertion patterns', type: 'tool' }
+const TOOLS = {
+    'layers_model.html': { description: 'Modeling tool for fixed-base merge selector. It simulates merges of equal-sized initial parts without inserts. All parts are merged either into one final part or into a few max-sized parts. Tool enables optimization of the Integral through gradient descent or pre-trained bilinear interpolation (BLI). Optimization is done independently for different values of WA with a decision variabels represented by a vector of "Bases" that fixed-base merge selector takes as input. Note that any bases may be entered for simulation w/o optimization.', type: 'tool' },
+    'solution_chart.html': { description: 'Interactive chart tool for comparing different solutions of the Layers Model. It visualizes a set of solutions as a series with selectable parameters, axis, solver or an optimization method.', type: 'tool' },
+    'train_solver.html': { description: 'Trains layer-model BLI solvers using subgradient methods.', type: 'tool' },
+    'float_layer_merges.html': { description: '[In-development] Modeling tool that is intended for simulating merges with inserts.', type: 'tool' }
 };
 
 function createNavigationPage() {
@@ -91,13 +98,25 @@ function createNavigationPage() {
         <div class="row mt-5">
             <div class="col-12">
                 <h2 class="text-warning pb-2 mb-4">Max Entropy Selector (Sequential)</h2>
-                <p>Simple selector uses heuristic to score the merge (based on max parts size to total size ratio), which sometimes leads to suboptimal choices. Max-entropy merge selector uses entropy as a score instead and always selects the merge with the highest possible entropy. It enables one to limit the total write-amplification factor by limiting lowest possible entropy of merges that selector is allowed to consider, but this requires knowledge of total data size. This demo is also sequential and only one merge is selected and executed at any time. Note that this selector and simple merge selector struggle with a fragmentation issue: when there are a lot of merge to select from it does selection optimally, but becuase it never looks forward it creates gaps with too few parts that has no way to be merged efficiently.</p>
+                <p>Simple selector uses heuristic to score the merge (based on max parts size to total size ratio), which sometimes leads to suboptimal choices.
+                Max-entropy merge selector uses entropy as a score instead and always selects the merge with the highest possible entropy.
+                It enables one to limit the total write-amplification factor by limiting lowest possible entropy of merges that selector is allowed to consider,
+                but this requires knowledge of total data size. This demo is also sequential and only one merge is selected and executed at any time.
+                Note that this selector and simple merge selector struggle with a fragmentation issue:
+                when there are a lot of merge to select from it does selection optimally,
+                but because it never looks forward it creates gaps with too few parts that has no way to be merged efficiently.</p>
                 <div class="row" id="entropy-grid"></div>
             </div>
         </div>
         <div class="row mt-5">
             <div class="col-12">
-                <h2 class="text-primary pb-2 mb-4">Parallel Merging Simulations</h2>
+                <h2 class="text-primary pb-2 mb-4">Parallel merging with fixed base and periodic inserts</h2>
+                <p>Simulation with strictly periodic part inserts and parallel merging with fixed base.
+                It uses special kind of merge selector that organize parts in layers depending on size.
+                Every layer has associated base (number of parts to merge).
+                In all simulations here parallel merges are allowed and the number of workers is unlimited.
+                Simulation stops immediately after 10000 parts are inserted (no wait for all parts to be merged).
+                Insertion rate is 20 parts per second of 10MB size. One worker merge speed is 100MB/s.  </p>
                 <div class="row" id="functions-grid"></div>
             </div>
         </div>
@@ -210,25 +229,36 @@ function runPage(pageKey) {
     // Run the appropriate function
     if (page.type === 'tutorial' || page.type === 'simple' || page.type === 'entropy') {
         demo(pageKey);
-    } else if (pageKey === 'periodicArrivals') {
-        periodicArrivals();
+    } else if (pageKey === 'periodicInsertsWith2BaseMerges') {
+        periodicInsertsWithBases([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+    } else if (pageKey === 'periodicInsertsWith3BaseMerges') {
+        periodicInsertsWithBases([3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
+    } else if (pageKey === 'periodicInsertsWith4BaseMerges') {
+        periodicInsertsWithBases([4, 4, 4, 4, 4, 4, 4, 4, 4, 4]);
+    } else if (pageKey === 'periodicInsertsWith5BaseMerges') {
+        periodicInsertsWithBases([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+    } else if (pageKey === 'periodicInsertsWith10BaseMerges') {
+        periodicInsertsWithBases([10, 10, 10, 10, 10, 10, 10, 10, 10, 10]);
+    } else if (pageKey === 'periodicInsertsWithEBaseMerges') {
+        periodicInsertsWithBases([Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E]);
+    } else if (pageKey === 'periodicInsertsWith10AndEBaseMerges') {
+        periodicInsertsWithBases([10, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E]);
     }
-}export async function demo(scenarioName = null)
+}
+
+async function demo(scenarioName)
 {
     const simContainer = new SimulationContainer();
-    const mt = scenarioName ? runScenario(scenarioName) : runScenario();
+    const mt = runScenario(scenarioName);
     simContainer.update({mt}, true);
     if (mt.time > 30 * 86400)
         simContainer.rewinder.setMinTime(30 * 86400);
 }
 
-async function periodicArrivals()
+async function periodicInsertsWithBases(layerBases)
 {
     const simContainer = new SimulationContainer();
-
     const insertPartSize = 10 << 20;
-    const layerBases = [Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, Math.E, 3];
-
     const scenario = {
         inserts: [
             sequenceInserter({
@@ -239,7 +269,7 @@ async function periodicArrivals()
             }),
         ],
         selector: floatLayerMerges({insertPartSize, layerBases}),
-        pool_size: 100,
+        pool_size: 10000, // We want unlimited pool size here
     }
 
     async function updateMergeTree({mt}) {

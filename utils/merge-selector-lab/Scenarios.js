@@ -171,7 +171,7 @@ function runSelector(mt, count, selector)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function runScenario(scenarioName = 'simpleMergesDemo')
+export function runScenario(scenarioName)
 {
     switch (scenarioName) {
         case 'explainVisualizations':
