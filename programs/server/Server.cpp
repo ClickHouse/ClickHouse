@@ -12,7 +12,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include "Common/LightweightZooKeeperLog.h"
+#include <Common/LightweightZooKeeperLogger.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -337,6 +337,7 @@ namespace ServerSetting
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsUInt64 lightweight_zookeeper_logger_flush_period_ms;
     extern const ServerSettingsUInt64 lightweight_zookeeper_logger_max_entries;
+    extern const ServerSettingsInt8 lightweight_zookeeper_logger_path_prefix_depth;
 }
 
 namespace ErrorCodes
@@ -1187,16 +1188,6 @@ try
         server_settings[ServerSetting::thread_pool_queue_size],
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns] : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns] : 0);
-
-    LightweightZooKeeperLoggerThread lightweight_zookeeper_logger_thread(
-        server_settings[ServerSetting::lightweight_zookeeper_logger_flush_period_ms],
-        server_settings[ServerSetting::lightweight_zookeeper_logger_max_entries],
-        global_context->getSchedulePool(),
-    );
-    lightweight_zookeeper_logger_thread.start();
-    SCOPE_EXIT({
-        lightweight_zookeeper_logger_thread.shutdown();
-    });
 
     if (has_trace_collector)
     {
@@ -2553,6 +2544,19 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+
+        LightweightZooKeeperLoggerThread lightweight_zookeeper_logger_thread(
+            server_settings[ServerSetting::lightweight_zookeeper_logger_flush_period_ms],
+            server_settings[ServerSetting::lightweight_zookeeper_logger_max_entries],
+            server_settings[ServerSetting::lightweight_zookeeper_logger_path_prefix_depth],
+            global_context->getSchedulePool(),
+            global_context->getLightweightZooKeeperLog()
+        );
+        lightweight_zookeeper_logger_thread.start();
+        SCOPE_EXIT({
+            lightweight_zookeeper_logger_thread.shutdown();
+        });
+
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log

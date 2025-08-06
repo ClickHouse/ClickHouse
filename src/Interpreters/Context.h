@@ -26,6 +26,7 @@
 
 #include <Poco/AutoPtr.h>
 
+#include "Interpreters/LightweightZooKeeperLog.h"
 #include "config.h"
 
 #include <functional>
@@ -1352,6 +1353,7 @@ public:
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
     std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
+    std::shared_ptr<LightweightZooKeeperLog> getLightweightZooKeeperLog() const;
 
     SystemLogs getSystemLogs() const;
 

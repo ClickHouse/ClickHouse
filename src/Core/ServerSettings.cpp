@@ -1142,6 +1142,19 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     The logger aggregates operations in memory and flushes when either this limit or the flush interval is reached, whichever occurs first. 
     Set to 0 to disable entry-based flushing (flush only by time period).
     )", 0) \
+    DECLARE(Int8, lightweight_zookeeper_logger_path_prefix_depth, -1, R"(
+    Depth of path prefix to keep for aggregation in system.lightweight_zookeeper_log.
+
+    Behaves like Python slice operator path_components[:depth] where path is split by '/'.
+
+    Examples for '/a/b/c' (components: ['', 'a', 'b', 'c']):
+    depth=2:  '/a'      (['', 'a'])
+    depth=3:  '/a/b'    (['', 'a', 'b'])
+    depth=-1: '/a/b'    (['', 'a', 'b'])
+    depth=-2: '/a'      (['', 'a'])
+    depth=1:  '/'       ([''])
+    depth=0:  ''        ([])
+    )", 0)
 
 // clang-format on
 

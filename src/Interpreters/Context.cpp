@@ -5157,6 +5157,15 @@ std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
     return shared->system_logs->dead_letter_queue;
 }
 
+std::shared_ptr<LightweightZooKeeperLog> Context::getLightweightZooKeeperLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->lightweight_zookeeper_log;
+}
+
 SystemLogs Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
