@@ -1311,4 +1311,9 @@ void KeeperServer::recalculateStorageStats()
     state_machine->recalculateStorageStats();
 }
 
+void KeeperServer::optimizeStorage()
+{
+    state_machine->optimizeStorage();
+}
+
 }

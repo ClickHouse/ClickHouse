@@ -267,6 +267,8 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
+    M(KeeperStorageRehashMicroseconds) \
+    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \

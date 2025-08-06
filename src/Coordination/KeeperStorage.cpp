@@ -578,8 +578,7 @@ KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
     : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
 {
-    if constexpr (use_rocksdb)
-        container.initialize(keeper_context);
+    container.initialize(keeper_context);
     Node root_node;
     container.insert("/", root_node);
     if constexpr (!use_rocksdb)
@@ -636,9 +635,9 @@ void KeeperStorage<Container>::initializeSystemNodes()
             container.insert(std::string{path}, child_system_node);
         else
         {
-            auto [map_key, _] = container.insert(std::string{path}, child_system_node);
+            auto [map_it, _] = container.insert(std::string{path}, child_system_node);
             /// Take child path from key owned by map.
-            auto child_path = Coordination::getBaseNodeName(map_key->getKey());
+            auto child_path = Coordination::getBaseNodeName(map_it->first);
             container.updateValue(
                 Coordination::parentNodePath(StringRef(path)),
                 [child_path](auto & parent)
@@ -1334,9 +1333,9 @@ bool KeeperStorage<Container>::createNode(
     }
     else
     {
-        auto [map_key, _] = container.insert(path, created_node);
+        auto [map_it, _] = container.insert(path, created_node);
         /// Take child path from key owned by map.
-        auto child_path = Coordination::getBaseNodeName(map_key->getKey());
+        auto child_path = Coordination::getBaseNodeName(map_it->first);
         container.updateValue(
                 parent_path,
                 [child_path](KeeperMemNode & parent)
@@ -1347,7 +1346,7 @@ bool KeeperStorage<Container>::createNode(
         );
 
         if (update_digest)
-            addDigest(map_key->getMapped()->value, map_key->getKey().toView());
+            addDigest(map_it->second->value, map_it->first.toView());
     }
 
     if (stat.ephemeralOwner != 0)
@@ -3699,6 +3698,13 @@ void KeeperStorageBase::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
         write_str_set(ephemeral_paths);
     }
+}
+
+template<typename Container>
+void KeeperStorage<Container>::optimize()
+{
+    if constexpr (!use_rocksdb)
+        container.optimize();
 }
 
 template<typename Container>
