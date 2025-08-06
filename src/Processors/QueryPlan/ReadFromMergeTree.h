@@ -158,6 +158,7 @@ public:
     ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
+        ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,
         MergeTreeAllRangesCallback all_ranges_callback_,
         MergeTreeReadTaskCallback read_task_callback_,
@@ -330,6 +331,8 @@ private:
 
     int getSortDirection() const;
     void updateSortDescription();
+
+    bool isParallelReplicasLocalPlanForInitiator() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

@@ -463,9 +463,9 @@ When set to `true` than for all azure requests first two attempts are made with 
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
     DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
-When set to `true` than all threads executing s3 requests to the same endpoint get slow down for a while
-after one s3 request fails with a retryable network error.
-When set to `false` than each thread executing s3 request uses an independent set of backoffs on network errors.
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single s3 request encounters a retryable network error, such as socket timeout.
+When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
@@ -3325,6 +3325,11 @@ Approximate probability of failure for a keeper request during backup or restore
 )", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
+)", 0) \
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
@@ -6851,7 +6856,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental text index.
+If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
