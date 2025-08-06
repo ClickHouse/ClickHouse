@@ -68,6 +68,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/SQLInterceptor.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
@@ -1230,6 +1231,7 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            SQLInterceptor::intercept(out_ast, context);
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
