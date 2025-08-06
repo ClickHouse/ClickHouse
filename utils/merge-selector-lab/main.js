@@ -24,6 +24,14 @@ export const PAGES = {
     'periodicArrivals': { description: 'Simulation with periodic part arrivals and float layer merges (parallel merging)', type: 'function' }
 };
 
+// Tools that open separate HTML pages
+export const TOOLS = {
+    'solution_chart.html': { description: 'Interactive chart tool for comparing merge optimization solutions across different parameters', type: 'tool' },
+    'layers_model.html': { description: 'Modeling tool for analyzing layered merge strategies with configurable bases and parameters', type: 'tool' },
+    'train_solver.html': { description: 'Machine learning tool for training merge optimization solvers using gradient descent methods', type: 'tool' },
+    'float_layer_merges.html': { description: 'Specialized simulation for float layer merge strategies with sequence insertion patterns', type: 'tool' }
+};
+
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
 {
     let min_y = Infinity;
@@ -158,14 +166,20 @@ function createNavigationPage() {
         </div>
         <div class="row">
             <div class="col-12">
-                <h2 class="text-success border-bottom border-success pb-2 mb-4">Single-Threaded Merging Scenarios</h2>
+                <h2 class="text-success pb-2 mb-4">Single-Threaded Merging Scenarios</h2>
                 <div class="row" id="scenarios-grid"></div>
             </div>
         </div>
         <div class="row mt-5">
             <div class="col-12">
-                <h2 class="text-primary border-bottom border-primary pb-2 mb-4">Parallel Merging Simulations</h2>
+                <h2 class="text-primary pb-2 mb-4">Parallel Merging Simulations</h2>
                 <div class="row" id="functions-grid"></div>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-12">
+                <h2 class="text-warning pb-2 mb-4">Analysis Tools</h2>
+                <div class="row" id="tools-grid"></div>
             </div>
         </div>
     `;
@@ -173,6 +187,19 @@ function createNavigationPage() {
     // Populate scenarios
     const scenariosGrid = document.getElementById('scenarios-grid');
     const functionsGrid = document.getElementById('functions-grid');
+    const toolsGrid = document.getElementById('tools-grid');
+
+    // Function to convert camelCase to Title Case
+    function toTitleCase(str) {
+        return str
+            .replace(/_/g, ' ')  // Convert underscores to spaces (snake_case)
+            .replace(/([A-Z])/g, ' $1')  // Add space before capital letters
+            .replace(/([a-z])([0-9])/g, '$1 $2')  // Add space between letter and number
+            .replace(/([0-9])([a-zA-Z])/g, '$1 $2')  // Add space between number and letter
+            .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+            .trim()  // Remove any leading/trailing spaces
+            .replace(/\b\w/g, char => char.toUpperCase());  // Capitalize first letter of each word
+    }
 
     Object.entries(PAGES).forEach(([key, page]) => {
         const card = document.createElement('div');
@@ -181,29 +208,13 @@ function createNavigationPage() {
         const cardColor = page.type === 'scenario' ? 'success' : 'primary';
 
         card.innerHTML = `
-            <div class="card h-100 border-${cardColor}" style="cursor: pointer; transition: all 0.2s;">
-                <div class="card-body">
-                    <h5 class="card-title text-${cardColor}">${key}</h5>
-                    <p class="card-text text-muted">${page.description}</p>
-                </div>
+            <div class="p-3">
+                <button class="btn btn-${cardColor} btn-sm mb-2 w-100">${toTitleCase(key)}</button>
+                <p class="text-muted small mb-0">${page.description}</p>
             </div>
         `;
 
-        // Add hover effects
-        const cardElement = card.querySelector('.card');
-        cardElement.addEventListener('mouseenter', () => {
-            cardElement.classList.add(`bg-${cardColor}`, 'text-white');
-            cardElement.querySelector('.card-text').classList.remove('text-muted');
-            cardElement.querySelector('.card-text').classList.add('text-white-50');
-        });
-
-        cardElement.addEventListener('mouseleave', () => {
-            cardElement.classList.remove(`bg-${cardColor}`, 'text-white');
-            cardElement.querySelector('.card-text').classList.add('text-muted');
-            cardElement.querySelector('.card-text').classList.remove('text-white-50');
-        });
-
-        cardElement.addEventListener('click', () => {
+        card.querySelector('button').addEventListener('click', () => {
             window.location.hash = key;
             runPage(key);
         });
@@ -213,6 +224,27 @@ function createNavigationPage() {
         } else {
             functionsGrid.appendChild(card);
         }
+    });
+
+    // Populate tools
+    Object.entries(TOOLS).forEach(([filename, tool]) => {
+        const card = document.createElement('div');
+        card.className = 'col-lg-4 col-md-6 col-sm-12 mb-3';
+
+        const toolName = filename.replace('.html', '');
+
+        card.innerHTML = `
+            <div class="p-3">
+                <button class="btn btn-warning btn-sm mb-2 w-100">${toTitleCase(toolName)}</button>
+                <p class="text-muted small mb-0">${tool.description}</p>
+            </div>
+        `;
+
+        card.querySelector('button').addEventListener('click', () => {
+            window.open(filename, '_blank');
+        });
+
+        toolsGrid.appendChild(card);
     });
 }
 

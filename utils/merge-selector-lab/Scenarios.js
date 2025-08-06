@@ -68,7 +68,6 @@ function binaryTree()
     while (i >= 2)
     {
         let min_size = d3.min(mt.parts.filter(d => d.active), d => d.bytes);
-        console.log("MIN SIZE", min_size);
         mt.mergeParts(mt.parts.filter(d => d.active && d.bytes == min_size).slice(0,2));
         i--;
     }
