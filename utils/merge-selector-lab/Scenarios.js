@@ -179,19 +179,6 @@ function runSelector(mt, count, selector)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const SCENARIOS = {
-    'explainVisualizations': 'Small demo with 20 parts using max-entropy merge strategy with 7 merges',
-    'binaryTree': 'Creates 16 equal-sized parts and merges them in a binary tree pattern',
-    'aggressiveMerging': 'Demonstrates aggressive merging by merging all parts after each insert',
-    'randomMess': 'Creates chaotic state with 100 random inserts followed by 30 random merges',
-    'maxEntropyMergesDemo': 'Long-running demo with 300 iterations of inserts and max-entropy merges',
-    'simpleMergesDemo': 'Inserts 1000 parts and applies simple merge strategy',
-    'maxEntropyDemo': 'Inserts 1000 parts and applies max-entropy merge strategy with adaptive scoring',
-    'oneBigMerge': 'Creates 16 parts and merges them all into one large part',
-    'simpleMergesWithInserts': 'Periodic scenario with 1000 iterations of 10 inserts and simple merges',
-    'maxEntropyWithInserts': 'Periodic scenario with 1000 iterations of 10 inserts and max-entropy merges'
-};
-
 export function runScenario(scenarioName = 'simpleMergesDemo')
 {
     switch (scenarioName) {

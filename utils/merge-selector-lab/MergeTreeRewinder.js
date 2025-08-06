@@ -201,10 +201,6 @@ export class MergeTreeRewinder {
         <script src="https://d3js.org/d3.v7.min.js"></script>
     </head>
     <body>
-        <div class="container-fluid">
-            <div class="p-3" id="opt-container"></div>
-        </div>
-
         <div class="container-fluid bg-primary text-white">
             <div class="p-3" id="metrics-container"></div>
         </div>

@@ -1,5 +1,5 @@
 import { SimulationContainer } from './SimulationContainer.js';
-import { runScenario, SCENARIOS } from './Scenarios.js';
+import { runScenario } from './Scenarios.js';
 import { sequenceInserter } from './sequenceInserter.js';
 import { customScenario } from './customScenario.js';
 import { floatLayerMerges } from './floatLayerMerges.js';
@@ -7,12 +7,24 @@ import { delayMs } from './util.js';
 
 // Global pages configuration including scenarios and other functions
 export const PAGES = {
-    // Include all scenarios
-    ...Object.fromEntries(
-        Object.entries(SCENARIOS).map(([key, desc]) => [key, { description: desc, type: 'scenario' }])
-    ),
+    // Tutorial scenarios
+    'explainVisualizations': { description: 'Small demo with 20 parts using max-entropy merge strategy with 7 merges', type: 'tutorial', color: 'info' },
+    'binaryTree': { description: 'Creates 16 equal-sized parts and merges them in a binary tree pattern', type: 'tutorial', color: 'info' },
+    'aggressiveMerging': { description: 'Demonstrates aggressive merging by merging all parts after each insert', type: 'tutorial', color: 'info' },
+    'oneBigMerge': { description: 'Creates 16 parts and merges them all into one large part', type: 'tutorial', color: 'info' },
+    'randomMess': { description: 'Creates chaotic state with 100 random inserts followed by 30 random merges', type: 'tutorial', color: 'info' },
+
+    // Sequential Simple Selector scenarios
+    'simpleMergesDemo': { description: 'Inserts 1000 parts and applies simple merge strategy', type: 'simple', color: 'success' },
+    'simpleMergesWithInserts': { description: 'Periodic scenario with 1000 iterations of 10 inserts and simple merges', type: 'simple', color: 'success' },
+
+    // Sequential Max Entropy Selector scenarios
+    'maxEntropyMergesDemo': { description: 'Long-running demo with 300 iterations of inserts and max-entropy merges', type: 'entropy', color: 'warning' },
+    'maxEntropyDemo': { description: 'Inserts 1000 parts and applies max-entropy merge strategy with adaptive scoring', type: 'entropy', color: 'warning' },
+    'maxEntropyWithInserts': { description: 'Periodic scenario with 1000 iterations of 10 inserts and max-entropy merges', type: 'entropy', color: 'warning' },
+
     // Add other functions (parallel merging)
-    'periodicArrivals': { description: 'Simulation with periodic part arrivals and float layer merges (parallel merging)', type: 'function' }
+    'periodicArrivals': { description: 'Simulation with periodic part arrivals and float layer merges (parallel merging)', type: 'function', color: 'primary' }
 };
 
 // Tools that open separate HTML pages
@@ -25,7 +37,7 @@ export const TOOLS = {
 
 function createNavigationPage() {
     // Hide all existing containers
-    const containers = ['opt-container', 'metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
+    const containers = ['metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
     containers.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -57,8 +69,23 @@ function createNavigationPage() {
         </div>
         <div class="row">
             <div class="col-12">
-                <h2 class="text-success pb-2 mb-4">Single-Threaded Merging Scenarios</h2>
-                <div class="row" id="scenarios-grid"></div>
+                <h2 class="text-info pb-2 mb-4">Tutorial</h2>
+                <p class="text-muted">Explain visualizations, binary tree, aggressive merging, one big merge, random mess</p>
+                <div class="row" id="tutorial-grid"></div>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-12">
+                <h2 class="text-success pb-2 mb-4">Sequential Simple Selector</h2>
+                <p class="text-muted">Simple merges demo, simple merges with inserts</p>
+                <div class="row" id="simple-grid"></div>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-12">
+                <h2 class="text-warning pb-2 mb-4">Sequential Max Entropy Selector</h2>
+                <p class="text-muted">Max entropy merges demo, max entropy demo, max entropy with inserts</p>
+                <div class="row" id="entropy-grid"></div>
             </div>
         </div>
         <div class="row mt-5">
@@ -69,16 +96,26 @@ function createNavigationPage() {
         </div>
         <div class="row mt-5">
             <div class="col-12">
-                <h2 class="text-warning pb-2 mb-4">Analysis Tools</h2>
+                <h2 class="text-secondary pb-2 mb-4">Analysis Tools</h2>
                 <div class="row" id="tools-grid"></div>
             </div>
         </div>
     `;
 
     // Populate scenarios
-    const scenariosGrid = document.getElementById('scenarios-grid');
+    const tutorialGrid = document.getElementById('tutorial-grid');
+    const simpleGrid = document.getElementById('simple-grid');
+    const entropyGrid = document.getElementById('entropy-grid');
     const functionsGrid = document.getElementById('functions-grid');
     const toolsGrid = document.getElementById('tools-grid');
+
+    // Grid mapping configuration
+    const gridMapping = {
+        'tutorial': tutorialGrid,
+        'simple': simpleGrid,
+        'entropy': entropyGrid,
+        'function': functionsGrid
+    };
 
     // Function to convert camelCase to Title Case
     function toTitleCase(str) {
@@ -96,7 +133,8 @@ function createNavigationPage() {
         const card = document.createElement('div');
         card.className = 'col-lg-4 col-md-6 col-sm-12 mb-3';
 
-        const cardColor = page.type === 'scenario' ? 'success' : 'primary';
+        const cardColor = page.color || 'secondary';
+        const targetGrid = gridMapping[page.type] || functionsGrid;
 
         card.innerHTML = `
             <div class="p-3">
@@ -110,11 +148,7 @@ function createNavigationPage() {
             runPage(key);
         });
 
-        if (page.type === 'scenario') {
-            scenariosGrid.appendChild(card);
-        } else {
-            functionsGrid.appendChild(card);
-        }
+        targetGrid.appendChild(card);
     });
 
     // Populate tools
@@ -126,7 +160,7 @@ function createNavigationPage() {
 
         card.innerHTML = `
             <div class="p-3">
-                <button class="btn btn-warning btn-sm mb-2 w-100">${toTitleCase(toolName)}</button>
+                <button class="btn btn-secondary btn-sm mb-2 w-100">${toTitleCase(toolName)}</button>
                 <p class="text-muted small mb-0">${tool.description}</p>
             </div>
         `;
@@ -141,7 +175,7 @@ function createNavigationPage() {
 
 function showContainers() {
     // Show all existing containers
-    const containers = ['opt-container', 'metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
+    const containers = ['metrics-container', 'util-container', 'rewind-container', 'time-container', 'var-container'];
     containers.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -167,7 +201,7 @@ function runPage(pageKey) {
     showContainers();
 
     // Run the appropriate function
-    if (page.type === 'scenario') {
+    if (page.type === 'tutorial' || page.type === 'simple' || page.type === 'entropy') {
         demo(pageKey);
     } else if (pageKey === 'periodicArrivals') {
         periodicArrivals();
