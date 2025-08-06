@@ -1,4 +1,7 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: The test really wants lower quality result to be returned from the index
+--                       with rescoring=OFF. That is required to confirm binary quantization works
+--                       as expected. In parallel replicas, rescoring is always ON.
 
 -- Test for binary quantization index. Also has good number of calls to reinterpret() to convert native float bytes to Array(Float32)
 
