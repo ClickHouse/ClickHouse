@@ -3393,18 +3393,18 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             }
 
             /// Watches for this requests are added to the watches lists
-            if (zk_request->has_watch)
+            const auto update_watches = [&](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp)
             {
-                if (response->error == Coordination::Error::ZOK)
+                if (resp->error == Coordination::Error::ZOK)
                 {
                     static constexpr std::array list_requests{
                         Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
 
-                    auto is_list_watch = std::ranges::contains(list_requests, zk_request->getOpNum());
+                    auto is_list_watch = std::ranges::contains(list_requests, req->getOpNum());
 
                     auto & watches_type = is_list_watch ? list_watches : watches;
 
-                    auto [watch_it, path_inserted] = watches_type.try_emplace(zk_request->getPath());
+                    auto [watch_it, path_inserted] = watches_type.try_emplace(req->getPath());
                     auto [path_it, session_inserted] = watch_it->second.emplace(session_id);
                     if (session_inserted)
                     {
@@ -3412,9 +3412,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                         sessions_and_watchers[session_id].emplace(WatchInfo{.path = watch_it->first, .is_list_watch = is_list_watch});
                     }
                 }
-                else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
+                else if (resp->error == Coordination::Error::ZNONODE && req->getOpNum() == Coordination::OpNum::Exists)
                 {
-                    auto [watch_it, path_inserted] = watches.try_emplace(zk_request->getPath());
+                    auto [watch_it, path_inserted] = watches.try_emplace(req->getPath());
                     auto session_insert_info = watch_it->second.emplace(session_id);
                     if (session_insert_info.second)
                     {
@@ -3422,6 +3422,26 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                         sessions_and_watchers[session_id].emplace(WatchInfo{.path = watch_it->first, .is_list_watch = false});
                     }
                 }
+            };
+
+            if (zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+            {
+                const auto * multi_read_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(zk_request.get());
+                const auto * multi_read_response = dynamic_cast<const Coordination::ZooKeeperMultiReadResponse *>(response.get());
+                chassert(multi_read_request != nullptr);
+                chassert(multi_read_response != nullptr);
+
+                for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
+                {
+                    if (subrequest->has_watch)
+                    {
+                        update_watches(subrequest, subresponse);
+                    }
+                }
+            }
+            else if (zk_request->has_watch)
+            {
+                update_watches(zk_request, response);
             }
 
             /// If this requests processed successfully we need to check watches

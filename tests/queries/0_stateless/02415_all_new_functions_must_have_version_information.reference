@@ -81,10 +81,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -95,7 +91,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
 coalesce
 compareSubstrings
@@ -260,10 +255,6 @@ gccMurmurHash
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-geoDistance
-geohashDecode
-geohashEncode
-geohashesInBox
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
@@ -284,8 +275,6 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-greatCircleAngle
-greatCircleDistance
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -296,9 +285,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hex
-hilbertDecode
-hilbertEncode
 hiveHash
 hop
 hopEnd
@@ -370,8 +356,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-mortonDecode
-mortonEncode
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -475,8 +459,6 @@ partitionId
 path
 pathFull
 pi
-pointInEllipses
-pointInPolygon
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -818,8 +800,6 @@ tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes

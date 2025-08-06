@@ -333,7 +333,7 @@ class ClickhouseIntegrationTestsRunner:
         report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
+            f"timeout --verbose --signal=KILL 2m ./runner {runner_opts} {image_cmd} -- "
             f"--setup-plan --report-log={report_file}"
         )
 

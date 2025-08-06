@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"apply_patch_parts_join_cache_buckets", 8, 8, "New setting"},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
