@@ -1,0 +1,22 @@
+---SIMPLE PARENTNESS---
+['<tag>simple</tag>']
+['<child>with child</child>']
+['<child>first</child>','<child>second</child>']
+---BY INDEX---
+['<child>second</child>']
+['<third>1</third>','<third>4</third>']
+---TEXT---
+['with child text']
+['first','second']
+['second']
+['3','6']
+---WITH ATTRIBUTES---
+['<tag attr="attribute">simple attribute</tag>']
+['<tag attr="attribute">simple attribute</tag>']
+['<tag attr="attribute" second_attr>two attributes</tag>']
+['<tag attr="attribute" second_attr="second_attribute">two attributes</tag>']
+['<child attr>with child attribute</child>']
+['<child id="1">with child attribute</child>']
+['3','6']
+---FULL---
+['success','success']

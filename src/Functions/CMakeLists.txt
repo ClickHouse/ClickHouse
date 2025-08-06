@@ -145,6 +145,9 @@ endif()
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
+add_subdirectory(XPath)
+list (APPEND PRIVATE_LIBS clickhouse_functions_xpath)
+
 add_subdirectory(keyvaluepair)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
