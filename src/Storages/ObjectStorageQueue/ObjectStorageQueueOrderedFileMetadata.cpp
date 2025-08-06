@@ -312,7 +312,9 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 
     const auto processor_info = getProcessorInfo(processor);
 
-    while (true)
+    const size_t max_num_tries = 1000;
+    Coordination::Error code;
+    for (size_t i = 0; i < max_num_tries; ++i)
     {
         Coordination::Requests requests;
 
@@ -335,7 +337,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
 
         Coordination::Responses responses;
-        const auto code = zk_client->tryMulti(requests, responses);
+        code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
             const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses.back());
@@ -369,6 +371,11 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         LOG_INFO(log_, "Bucket lock id path was probably created or removed "
                  "while acquiring the bucket (error code: {}), will retry", code);
     }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file processing within {} retries, last error: {}",
+        max_num_tries, code);
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
@@ -381,7 +388,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     if (is_path_with_hive_partitioning)
         processed_node_hive_path = std::filesystem::path(processed_node_path) / getHivePart(path);
 
-    while (true)
+    const size_t max_num_tries = 1000;
+    Coordination::Error code;
+    for (size_t i = 0; i < max_num_tries; ++i)
     {
         std::optional<NodeMetadata> processed_node;
         std::optional<Coordination::Stat> processed_node_stat;
@@ -390,7 +399,19 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         auto processed_file_info = getLastProcessedFile(&processed_node_stat_, zk_client, true);
         if (processed_file_info.file_path.has_value())
         {
-            if (processed_file_info.is_failed)
+            Coordination::Requests requests;
+            std::vector<std::string> paths{processed_node_path, failed_node_path};
+            auto responses = zk_client->tryGet(paths);
+
+            auto check_code = [this](auto code_)
+            {
+                if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
+                    throw zkutil::KeeperException::fromPath(code_, path);
+            };
+            check_code(responses[0].error);
+            check_code(responses[1].error);
+
+            if (responses[1].error == Coordination::Error::ZOK)
             {
                 LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
                 return {false, FileStatus::State::Failed};
@@ -444,7 +465,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
-        const auto code = zk_client->tryMulti(requests, responses);
+        code = zk_client->tryMulti(requests, responses);
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         if (code == Coordination::Error::ZOK)
@@ -478,6 +499,11 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         /// most likely the processing node id path node was removed or created so let's try again
         LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file processing within {} retries, last error: {}",
+        max_num_tries, code);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(

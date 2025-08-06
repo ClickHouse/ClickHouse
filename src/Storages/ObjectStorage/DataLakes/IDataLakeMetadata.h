@@ -5,6 +5,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 
 namespace DB
 {
@@ -35,9 +37,9 @@ public:
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
@@ -58,11 +60,21 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    /// Some data lakes specify information for reading files from disks.
+    /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+
 protected:
     ObjectIterator createKeysIterator(
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_) const;
+
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_,
+        UInt64 snapshot_version_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

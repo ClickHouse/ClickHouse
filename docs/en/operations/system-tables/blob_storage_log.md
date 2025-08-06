@@ -19,12 +19,12 @@ Columns:
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Time of the event.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the event with microseconds precision.
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event. Possible values:
-    - `'Upload'`
-    - `'Delete'`
-    - `'MultiPartUploadCreate'`
-    - `'MultiPartUploadWrite'`
-    - `'MultiPartUploadComplete'`
-    - `'MultiPartUploadAbort'`
+  - `'Upload'`
+  - `'Delete'`
+  - `'MultiPartUploadCreate'`
+  - `'MultiPartUploadWrite'`
+  - `'MultiPartUploadComplete'`
+  - `'MultiPartUploadAbort'`
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the query associated with the event, if any.
 - `thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Identifier of the thread performing the operation.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread performing the operation.

@@ -38,7 +38,7 @@ class ClickHouseTable:
         )
 
     def get_hash_query(self, rename=None):
-        return f"SELECT cityHash64(groupArray(sipHash128(*))) FROM {self.get_sql_escaped_full_name(rename)}{" FINAL" if self.supports_final() else ""} ORDER BY ALL;"
+        return f"SELECT cityHash64(groupArray(sipHash128(*))) FROM (SELECT * FROM {self.get_sql_escaped_full_name(rename)}{" FINAL" if self.supports_final() else ""} ORDER BY ALL);"
 
     def supports_final(self) -> bool:
         to_check: str = self.table_engine
@@ -154,7 +154,7 @@ class ElOraculoDeTablas:
                         f"Hash mismatch for table {next_tbl.get_sql_escaped_full_name()}"
                     )
                     logger.warn(message)
-                    raise Exception(message)
+                    raise ValueError(message)
 
             try:
                 # Rename back

@@ -12,7 +12,7 @@ class MergingSortedTransform final : public IMergingTransform<MergingSortedAlgor
 {
 public:
     MergingSortedTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         const SortDescription & description,
         size_t max_block_size_rows,

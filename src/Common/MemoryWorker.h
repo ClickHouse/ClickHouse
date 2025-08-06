@@ -77,7 +77,6 @@ private:
 #if USE_JEMALLOC
     JemallocMibCache<uint64_t> epoch_mib{"epoch"};
     JemallocMibCache<size_t> resident_mib{"stats.resident"};
-    JemallocMibCache<size_t> allocated_mib{"stats.allocated"};
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)

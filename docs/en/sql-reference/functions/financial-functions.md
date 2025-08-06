@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Financial Functions'
 sidebar_label: 'Financial'
-sidebar_position: 125
 slug: /sql-reference/functions/financial-functions
 title: 'Financial Functions'
 ---
 
-# Financial Functions
+# Financial functions
 
 ## financialInternalRateOfReturn {#financialInternalRateOfReturn}
 
@@ -64,7 +63,6 @@ SELECT financialInternalRateOfReturn([-100, 60, 60], 0.2);
 
 - The function uses Newton-Raphson and TOMS748 methods for finding the root.
 - At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
-
 
 ## financialInternalRateOfReturnExtended {#financialInternalRateOfReturnExtended}
 

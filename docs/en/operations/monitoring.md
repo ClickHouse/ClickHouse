@@ -43,7 +43,7 @@ ClickHouse comes with a built-in advanced observability dashboard feature which 
 - Total MergeTree parts
 - Max parts for partition
 
-## Resource Utilization {#resource-utilization}
+## Resource utilization {#resource-utilization}
 
 ClickHouse also monitors the state of hardware resources by itself such as:
 
@@ -52,7 +52,7 @@ ClickHouse also monitors the state of hardware resources by itself such as:
 
 This data is collected in the `system.asynchronous_metric_log` table.
 
-## ClickHouse Server Metrics {#clickhouse-server-metrics}
+## ClickHouse server metrics {#clickhouse-server-metrics}
 
 ClickHouse server has embedded instruments for self-state monitoring.
 

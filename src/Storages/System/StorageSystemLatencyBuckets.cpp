@@ -15,8 +15,8 @@ ColumnsDescription StorageSystemLatencyBuckets::getColumnsDescription()
 
     for (size_t i = 0, end = LatencyBuckets::end(); i < end; ++i)
     {
-        auto name = fmt::format("LatencyEvent_{}", LatencyBuckets::getName(LatencyBuckets::Event(i)));
-        const auto * comment = LatencyBuckets::getDocumentation(LatencyBuckets::Event(i));
+        auto name = fmt::format("LatencyEvent_{}", LatencyBuckets::getName(LatencyBuckets::LatencyEvent(i)));
+        const auto * comment = LatencyBuckets::getDocumentation(LatencyBuckets::LatencyEvent(i));
         result.add({std::move(name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), comment});
     }
 
@@ -27,7 +27,7 @@ void StorageSystemLatencyBuckets::fillData(MutableColumns & res_columns, Context
 {
     for (size_t i = 0, end = LatencyBuckets::end(); i < end; ++i)
     {
-        auto & bucket_bounds = LatencyBuckets::getBucketBounds(LatencyBuckets::Event(i));
+        auto & bucket_bounds = LatencyBuckets::getBucketBounds(LatencyBuckets::LatencyEvent(i));
         res_columns[i]->insert(Array(bucket_bounds.begin(), bucket_bounds.end()));
     }
 }

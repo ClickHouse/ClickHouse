@@ -209,6 +209,21 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_empty_table(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine, n=0)
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+
 def test_restore_materialized_view_with_definer():
     instance.query("CREATE DATABASE test")
     instance.query(
@@ -2035,6 +2050,28 @@ def test_required_privileges_with_partial_revokes():
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
 
+
+def test_rmv_no_definer():
+    backup_name = new_backup_name()
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE USER u1")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
+    instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE TABLE test.tgt (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
+
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP USER u1")
+    instance.query("DROP TABLE test.rmv")
+
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert (
+        instance.query(
+            "SELECT name FROM system.tables where database='test' AND name='rmv'"
+        ).strip()
+        == "rmv"
+    )
 
 # Test for the "clickhouse_backupview" utility.
 
