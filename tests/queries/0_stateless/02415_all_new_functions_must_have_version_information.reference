@@ -81,10 +81,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -95,7 +91,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
 coalesce
 compareSubstrings
@@ -290,9 +285,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hex
-hilbertDecode
-hilbertEncode
 hiveHash
 hop
 hopEnd
@@ -364,8 +356,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-mortonDecode
-mortonEncode
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -810,8 +800,6 @@ tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes
