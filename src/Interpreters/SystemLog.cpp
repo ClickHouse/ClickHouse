@@ -609,6 +609,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         block.setColumns(std::move(columns));
 
+        LOG_TRACE(log, "Filled block with, {} entries", block.rows());
+
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
@@ -630,11 +632,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
             /* async_isnert */ false);
         BlockIO io = interpreter.execute();
 
+        LOG_TRACE(log, "Build pipeline");
+
         PushingPipelineExecutor executor(io.pipeline);
 
         executor.start();
         executor.push(block);
         executor.finish();
+
+        LOG_TRACE(log, "Inserted");
     }
     catch (...)
     {
