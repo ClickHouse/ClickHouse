@@ -8,11 +8,12 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <roaring.hh>
-#include <array>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 #include <absl/container/flat_hash_map.h>
+
+#include "config.h"
 
 /// GinIndexStore manages the Generalized Inverted Index ("gin") (text index) for a data part, and it is made up of one or more
 /// immutable index segments.
@@ -47,6 +48,41 @@ public:
     static const CompressionCodecPtr & zstdCodec();
 };
 
+#if USE_FASTPFOR
+class GinIndexPostingListDeltaPforCompression {
+public:
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
+
+    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+private:
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    /// FastPFor does not have AVX512 support yet, but we can still use 256-bit support.
+    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
+    static constexpr size_t FASTPFOR_THRESHOLD = 8;
+#elif defined(__AVX__) && defined(__AVX2__)
+    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
+    static constexpr size_t FASTPFOR_THRESHOLD = 8;
+#else
+    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
+    static constexpr size_t FASTPFOR_THRESHOLD = 4;
+#endif
+};
+#endif
+
+class GinIndexPostingListBitmapZstdCompression {
+public:
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
+
+    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+private:
+    static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
+    static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
+    static constexpr UInt64 ARRAY_CONTAINER_MASK = 0x1;
+    static constexpr UInt64 ROARING_CONTAINER_MASK = 0x0;
+    static constexpr UInt64 ROARING_COMPRESSED_MASK = 0x1;
+    static constexpr UInt64 ROARING_UNCOMPRESSED_MASK = 0x0;
+};
+
 /// Build a postings list for a term
 class GinIndexPostingsBuilder
 {
@@ -62,15 +98,9 @@ public:
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
-
 private:
-#if defined(__AVX__) && defined(__AVX2__)
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
-    static constexpr size_t FASTPFOR_THRESHOLD = 8;
-#else
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
-    static constexpr size_t FASTPFOR_THRESHOLD = 4;
-#endif
+    static constexpr UInt64 BITMAP_ZSTD_COMPRESSION_MASK = 0x0;
+    static constexpr UInt64 DELTA_PFOR_COMPRESSION_MASK = 0x1;
 
     roaring::Roaring rowids;
 };
