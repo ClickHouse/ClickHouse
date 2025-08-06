@@ -414,7 +414,8 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
     for (size_t octet = 0; octet < padding; ++octet)
     {
         *dst++ = '0';
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t octet = 4 - src_size; octet < limit; ++octet)
@@ -429,14 +430,16 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
 
         memcpy(dst, str, len);
         dst += len;
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t mask = 0; mask < mask_tail_octets; ++mask)
     {
+        if (mask > 0)
+            *dst++ = '.';
         memcpy(dst, mask_string, mask_length);
         dst += mask_length;
-        *dst++ = '.';
     }
 }
 
