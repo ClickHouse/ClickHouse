@@ -120,12 +120,15 @@ SELECT 'Test text(tokenizer = "ngram", ngram_size = 2) on a column with two part
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String)
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick b10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 INSERT INTO tab VALUES (201, 'rick c01'), (202, 'mick c02'), (203, 'nick c03');
+
+ALTER TABLE tab ADD INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE tab FINAL;
 
 -- check text index was created
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
