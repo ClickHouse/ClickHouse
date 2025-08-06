@@ -341,7 +341,7 @@ public:
         return false;
     }
 
-    bool tryExecuteString(const IColumn *col, ColumnPtr &col_res) const
+    bool tryExecuteString(const IColumn * col, ColumnPtr & col_res) const
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
 
@@ -357,8 +357,8 @@ public:
             size_t size = in_offsets.size();
 
             out_offsets.resize(size);
-            /// reserve `word_size` bytes for each input
-            out_vec.resize((in_vec.size() - size) * word_size);
+            /// reserve `word_size` bytes for each input byte
+            out_vec.resize(in_vec.size() * word_size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
