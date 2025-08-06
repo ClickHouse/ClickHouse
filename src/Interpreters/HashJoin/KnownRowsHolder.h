@@ -25,11 +25,12 @@ public:
 private:
     struct PairHash
     {
-        std::size_t operator()(const Type & p) const
+        size_t operator()(const Type & p) const
         {
-            auto h1 = std::hash<const Columns *>{}(p.first);
-            auto h2 = std::hash<RowRef::SizeT>{}(p.second);
-            return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+            UInt64 crc = -1ULL;
+            crc = _mm_crc32_u64(crc, reinterpret_cast<UInt64>(p.first));
+            crc = _mm_crc32_u64(crc, p.second);
+            return crc;
         }
     };
 
@@ -61,10 +62,8 @@ public:
         {
             if (items <= MAX_LINEAR)
             {
-                set_holder_ptr = std::make_unique<SetHolder>();
-                set_holder_ptr->set_empty_key(Type(nullptr, 0));
-                set_holder_ptr->resize(new_items + items);
-                set_holder_ptr->insert(std::cbegin(array_holder), std::cbegin(array_holder) + items);
+                set_holder_ptr = std::make_unique<SetHolder>(
+                    std::cbegin(array_holder), std::cbegin(array_holder) + items, Type(nullptr, 0), new_items + items);
             }
             set_holder_ptr->insert(from, to);
         }
