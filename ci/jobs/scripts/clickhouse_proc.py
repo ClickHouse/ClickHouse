@@ -377,6 +377,12 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
         proc = subprocess.Popen(
             command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
         )
@@ -674,6 +680,18 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return [f"{temp_dir}/coordination.tar.gz"]
         else:
             print("WARNING: Coordination logs not found")
+            return []
+
+    @classmethod
+    def _get_jemalloc_profs(cls):
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.gz --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.gz").exists():
+            return [f"{temp_dir}/jemalloc.tar.gz"]
+        else:
+            print("WARNING: Jemalloc profiles not found")
             return []
 
     def _get_logs_archives_server(self):

@@ -1,3 +1,4 @@
+#include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 
 #include <IO/WriteHelpers.h>
@@ -353,6 +354,19 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
                 /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
                 MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+
+#if USE_JEMALLOC
+                if (level == VariableContext::Global && jemalloc_flush_profile_on_memory_exceeded && DB::getJemallocValue<bool>("prof.active"))
+                {
+                    static std::atomic<uint64_t> flush_count = 0;
+                    auto * flush_prefix = DB::getJemallocValue<char *>("opt.prof_prefix");
+                    if (!flush_prefix)
+                        LOG_WARNING(getLogger("MemoryTracker"), "Cannot flush memory profile, empty prefix");
+                    else if (flush_count.fetch_add(1, std::memory_order_relaxed) < 100) // so we don't flush too many profiles
+                        DB::flushJemallocProfile(flush_prefix);
+                }
+#endif
+
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
@@ -441,6 +455,30 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
         if (log_memory_usage && (level == VariableContext::Process || level == VariableContext::Global)
             && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
             logMemoryUsage(will_be);
+
+#if USE_JEMALLOC
+        if (level == VariableContext::Global && jemalloc_flush_profile_interval_bytes && DB::getJemallocValue<bool>("prof.active"))
+        {
+            static std::atomic<uint64_t> previous_flushed_peak = 0;
+            auto * flush_prefix = DB::getJemallocValue<char *>("opt.prof_prefix");
+            if (!flush_prefix)
+                LOG_WARNING(getLogger("MemoryTracker"), "Cannot flush memory profile, empty prefix");
+            else
+            {
+                auto previous_peak = previous_flushed_peak.load(std::memory_order_relaxed);
+                if (static_cast<uint64_t>(will_be) > (previous_peak + jemalloc_flush_profile_interval_bytes)
+                    && previous_flushed_peak.compare_exchange_strong(previous_peak, will_be, std::memory_order_relaxed))
+                {
+                    LOG_INFO(
+                        getLogger("MemoryTracker"),
+                        "Flushing memory after updating peak to {}",
+                        formatReadableSizeWithBinarySuffix(will_be));
+                    previous_flushed_peak.store(will_be, std::memory_order_relaxed);
+                    DB::flushJemallocProfile(flush_prefix);
+                }
+            }
+        }
+#endif
 
         return true;
     }
