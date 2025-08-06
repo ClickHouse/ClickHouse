@@ -48,6 +48,11 @@ bool SQLBase::isDettached() const
     return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED;
 }
 
+String SQLBase::getDatabaseName() const
+{
+    return "d" + (db ? std::to_string(db->dname) : "efault");
+}
+
 String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
 {
     if (isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine())
@@ -131,9 +136,9 @@ String SQLTable::getFullName(const bool setdbname) const
 
     if (db || setdbname)
     {
-        res += "d" + (db ? std::to_string(db->dname) : "efault") + ".";
+        res += getDatabaseName() + ".";
     }
-    res += "t" + std::to_string(tname);
+    res += getTableName();
     return res;
 }
 

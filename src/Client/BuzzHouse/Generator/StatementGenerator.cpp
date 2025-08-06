@@ -503,8 +503,8 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
 
     if (t.isMergeTreeFamily())
     {
-        const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-        const String tname = "t" + std::to_string(t.tname);
+        const String dname = t.getDatabaseName();
+        const String tname = t.getTableName();
         const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions(false, dname, tname);
 
         if (table_has_partitions)
@@ -1311,8 +1311,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     else if (alter_table && nopt2 < (alter_view + alter_table + 1))
     {
         SQLTable & t = const_cast<SQLTable &>(rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get());
-        const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-        const String tname = "t" + std::to_string(t.tname);
+        const String dname = t.getDatabaseName();
+        const String tname = t.getTableName();
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
         this->allow_not_deterministic = !t.is_deterministic;
@@ -2138,8 +2138,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 AttachPartitionFrom * apf = ati->mutable_attach_partition_from();
                 PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
                 const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-                const String dname2 = t2.db ? ("d" + std::to_string(t2.db->dname)) : "";
-                const String tname2 = "t" + std::to_string(t2.tname);
+                const String dname2 = t2.getDatabaseName();
+                const String tname2 = t2.getTableName();
                 const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
                 pexpr->set_partition_id(
@@ -2161,8 +2161,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 AttachPartitionFrom * apf = ati->mutable_replace_partition_from();
                 PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
                 const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-                const String dname2 = t2.db ? ("d" + std::to_string(t2.db->dname)) : "";
-                const String tname2 = "t" + std::to_string(t2.tname);
+                const String dname2 = t2.getDatabaseName();
+                const String tname2 = t2.getTableName();
                 const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
                 pexpr->set_partition_id(
@@ -3441,8 +3441,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     {
         BackupRestoreObject * bro = bre->mutable_bobject();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-        const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-        const String tname = "t" + std::to_string(t.tname);
+        const String dname = t.getDatabaseName();
+        const String tname = t.getTableName();
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
         t.setName(bro->mutable_object()->mutable_est(), false);

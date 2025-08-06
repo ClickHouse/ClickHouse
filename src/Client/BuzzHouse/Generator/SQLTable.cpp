@@ -2252,7 +2252,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.postgresql_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
@@ -2265,7 +2265,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.mysql_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
             dsd->set_user(sc.user);
@@ -2278,7 +2278,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.mongodb_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);

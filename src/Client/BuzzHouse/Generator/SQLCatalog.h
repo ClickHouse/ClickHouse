@@ -292,6 +292,8 @@ public:
 
     bool isDettached() const;
 
+    String getDatabaseName() const;
+
     String getTablePath(const FuzzConfig & fc, bool client) const;
 
     String getMetadataPath(const FuzzConfig & fc, bool client) const;
@@ -337,8 +339,8 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("t" + std::to_string(tname));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table(getTableName());
     }
 };
 
@@ -362,7 +364,7 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
         te->add_params()->mutable_table()->set_table("v" + std::to_string(tname));
     }
 
@@ -387,7 +389,7 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
         te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
     }
 

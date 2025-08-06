@@ -234,7 +234,7 @@ void StatementGenerator::setTableFunction(
 
         mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         mfunc->set_rdatabase(sc.database);
-        mfunc->set_rtable("t" + std::to_string(t.tname));
+        mfunc->set_rtable(t.getTableName());
         mfunc->set_user(sc.user);
         mfunc->set_password(sc.password);
     }
@@ -247,7 +247,7 @@ void StatementGenerator::setTableFunction(
 
         pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
         pfunc->set_rdatabase(sc.database);
-        pfunc->set_rtable("t" + std::to_string(t.tname));
+        pfunc->set_rtable(t.getTableName());
         pfunc->set_user(sc.user);
         pfunc->set_password(sc.password);
         pfunc->set_rschema("test");
@@ -258,7 +258,7 @@ void StatementGenerator::setTableFunction(
         SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
-        sfunc->set_rtable("t" + std::to_string(t.tname));
+        sfunc->set_rtable(t.getTableName());
     }
     else if (usage == TableFunctionUsage::EngineReplace && t.isEngineReplaceable())
     {
@@ -272,9 +272,11 @@ void StatementGenerator::setTableFunction(
         {
             sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
-            S3Func_FName val = t.isAnyS3Engine()
-                ? S3Func_FName::S3Func_FName_s3
-                : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3);
+            const S3Func_FName val = (allow_chaos && rg.nextLargeNumber() < 11)
+                ? static_cast<S3Func_FName>(rg.randomInt<uint32_t>(2, 4))
+                : (t.isAnyS3Engine()
+                       ? S3Func_FName::S3Func_FName_s3
+                       : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3));
 
             if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
@@ -293,10 +295,12 @@ void StatementGenerator::setTableFunction(
         {
             afunc = tfunc->mutable_azure();
             const ServerCredentials & sc = fc.azurite_server.value();
-            AzureBlobStorageFunc_FName val = t.isAnyAzureEngine()
-                ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
-                : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
-                                            : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure);
+            const AzureBlobStorageFunc_FName val = (allow_chaos && rg.nextLargeNumber() < 11)
+                ? static_cast<AzureBlobStorageFunc_FName>(rg.randomInt<uint32_t>(1, 3))
+                : (t.isAnyAzureEngine()
+                       ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
+                       : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
+                                                   : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure));
 
             if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
@@ -316,9 +320,11 @@ void StatementGenerator::setTableFunction(
         else if (t.isOnLocal() || t.isFileEngine())
         {
             ffunc = tfunc->mutable_file();
-            FileFunc_FName val = t.isFileEngine()
-                ? FileFunc_FName::FileFunc_FName_file
-                : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
+            const FileFunc_FName val = (allow_chaos && rg.nextLargeNumber() < 11)
+                ? static_cast<FileFunc_FName>(rg.randomInt<uint32_t>(1, 3))
+                : (t.isFileEngine() ? FileFunc_FName::FileFunc_FName_file
+                                    : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal
+                                                                : FileFunc_FName::FileFunc_FName_deltaLakeLocal));
 
             if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
