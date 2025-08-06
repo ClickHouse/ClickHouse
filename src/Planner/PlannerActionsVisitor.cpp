@@ -173,12 +173,7 @@ public:
                 {
                     // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
-                    {
-                        if (constant_node.receivedFromInitiatorServer())
-                            result = calculateActionNodeNameWithCastIfNeeded(constant_node);
-                        else
-                            result = calculateActionNodeName(constant_node.getSourceExpression());
-                    }
+                        result = calculateActionNodeName(constant_node.getSourceExpression());
                     else
                         result = calculateConstantActionNodeName(constant_node);
                 }
@@ -838,8 +833,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
-            if (constant_node.receivedFromInitiatorServer())
-                return calculateActionNodeNameWithCastIfNeeded(constant_node);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
         return calculateConstantActionNodeName(constant_node);
