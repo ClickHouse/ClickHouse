@@ -324,7 +324,6 @@ void generateManifestList(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
-    std::cerr << "MANIFEST ENTRY NAMES SIZE " << manifest_entry_names.size() << '\n';
     for (const auto & manifest_entry_name : manifest_entry_names)
     {
         avro::GenericDatum entry_datum(schema.root());
@@ -385,7 +384,6 @@ void generateManifestList(
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
 
-        std::cerr << "write!\n";
         writer.write(entry_datum);
     }
     {
