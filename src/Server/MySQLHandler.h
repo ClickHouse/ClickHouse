@@ -117,8 +117,6 @@ protected:
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
-
-    bool initialized_system_tables = false;
 };
 
 #if USE_SSL
