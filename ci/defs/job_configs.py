@@ -130,7 +130,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE,
@@ -140,7 +140,7 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN,
@@ -149,7 +149,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
             ],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
@@ -158,7 +158,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
@@ -167,7 +167,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_UBSAN,
@@ -176,12 +176,12 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.BUILDER_AMD,
+            runs_on=RunnerLabels.BUILDER_ARM,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_RELEASE,
