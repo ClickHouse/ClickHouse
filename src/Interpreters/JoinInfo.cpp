@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_hash_join_threshold;
 
     extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
@@ -79,6 +80,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
 
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
+    extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
@@ -101,6 +103,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
     max_joined_block_size_rows = query_settings[Setting::max_joined_block_size_rows];
+    max_joined_block_size_bytes = query_settings[Setting::max_joined_block_size_bytes];
     min_joined_block_size_rows = query_settings[Setting::min_joined_block_size_rows];
     min_joined_block_size_bytes = query_settings[Setting::min_joined_block_size_bytes];
 
@@ -158,6 +161,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
 
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
+    max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     join_output_by_rowlist_perkey_rows_threshold = settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
@@ -197,6 +201,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
 
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
+    settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;

@@ -269,8 +269,14 @@ struct ScatteredBlock : private boost::noncopyable
         chassert(rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();
         new_selector->reserve(selector.size());
-        std::copy_if(
-            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
+        auto & new_selector_data = new_selector->getData();
+        size_t i = 0;
+        for (auto it = selector.begin(); it != selector.end(); ++it, ++i)
+        {
+            chassert(i < filter.size());
+            if (filter[i])
+                new_selector_data.push_back(*it);
+        }
         selector = Selector(std::move(new_selector));
     }
 

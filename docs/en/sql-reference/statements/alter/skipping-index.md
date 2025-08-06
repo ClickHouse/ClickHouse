@@ -27,7 +27,6 @@ The following operations are available:
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Deletes the secondary index files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-
 The commands `ADD`, `DROP`, and `CLEAR` are lightweight in the sense that they only change metadata or remove files.
 Also, they are replicated, syncing indices metadata via ClickHouse Keeper or ZooKeeper.
 

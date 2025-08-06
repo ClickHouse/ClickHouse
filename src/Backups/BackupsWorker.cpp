@@ -15,11 +15,15 @@
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
+#endif
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
@@ -591,6 +595,15 @@ void BackupsWorker::doBackup(
     bool on_cluster,
     const ClusterPtr & cluster)
 {
+#if CLICKHOUSE_CLOUD
+    if (backup_settings.experimental_lightweight_snapshot)
+    {
+        auto zookeeper = context->getGlobalContext()->getZooKeeper();
+        if (zookeeper->exists(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup ID {} has existed. Please unlock this backup or change another name", backup_id);
+    }
+#endif
+
     bool is_internal_backup = backup_settings.internal;
 
     /// Checks access rights if this is not ON CLUSTER query.
@@ -655,6 +668,16 @@ void BackupsWorker::doBackup(
         uncompressed_size = backup->getUncompressedSize();
         compressed_size = backup->getCompressedSize();
     }
+
+#if CLICKHOUSE_CLOUD
+    /// We need to commit the lightweight backup in keeper indicating the transaction of the backup is done.
+    if (backup_settings.experimental_lightweight_snapshot && !is_internal_backup)
+    {
+        auto zookeeper = context->getGlobalContext()->getZooKeeper();
+        zookeeper->create(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id, "", zkutil::CreateMode::Persistent);
+        LOG_INFO(log, "Snapshot {} has been created", backup_id);
+    }
+#endif
 
     /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
     setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
@@ -945,7 +968,6 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     LOG_TRACE(log, "Opened backup for reading");
     return backup;
 }
-
 
 void BackupsWorker::doRestore(
     const std::shared_ptr<ASTBackupQuery> & restore_query,
