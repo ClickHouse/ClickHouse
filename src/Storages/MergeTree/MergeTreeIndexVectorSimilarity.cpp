@@ -424,15 +424,15 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
 {
-    static constexpr auto MAX_POSTFILTER_MULTIPLIER = 1000.0;
+    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_POSTFILTER_MULTIPLIER
+        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(index_fetch_multiplier * parameters->limit)))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_POSTFILTER_MULTIPLIER);
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
