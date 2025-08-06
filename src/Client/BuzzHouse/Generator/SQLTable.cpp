@@ -1348,7 +1348,8 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+        if ((b.isMergeTreeFamily() || b.isLogFamily())
+            && ((b.toption.has_value() && b.toption.value() == TShared) || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
