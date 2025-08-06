@@ -114,6 +114,7 @@
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
+#include <Server/ArrowFlightHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -3088,6 +3089,26 @@ void Server::createServers(
                         connection_filter));
             });
         }
+
+#if USE_ARROWFLIGHT
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        {
+            port_name = "arrowflight_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Arrow Flight compatibility protocol: " + address.toString(),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    true);
+            });
+        }
+#endif
 
         if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
         {
