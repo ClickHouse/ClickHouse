@@ -147,10 +147,6 @@ jobs:
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
-          test_name: "{JOB_NAME_GH}"
       - name: Prepare env script
         run: |
           rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
@@ -282,7 +278,7 @@ class PullRequestPushYamlGen:
             job_name = job.name
             job_addons = []
 
-            job_addons.append(AltinityWorkflowTemplates.JOB_SETUP_STEPS)
+            job_addons.append(AltinityWorkflowTemplates.JOB_SETUP_STEPS.format(JOB_NAME_GH = job_name))
             if job_name == Settings.CI_CONFIG_JOB_NAME:
                 job_addons.append(AltinityWorkflowTemplates.ADDITIONAL_CI_CONFIG_STEPS)
 

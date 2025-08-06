@@ -48,7 +48,7 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
+          test_name: "Config Workflow"
 
       - name: Note report location to summary
         env:
@@ -58,10 +58,6 @@ jobs:
           REPORT_LINK=https://s3.amazonaws.com/altinity-build-artifacts/$PR_NUMBER/$COMMIT_SHA/ci_run_report.html
           echo "Workflow Run Report: [View Report]($REPORT_LINK)" >> $GITHUB_STEP_SUMMARY
 
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
-          test_name: "Config Workflow"
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -105,12 +101,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Dockers Build (amd)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -154,12 +146,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Dockers Build (arm)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -203,12 +191,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Dockers Build (multiplatform manifest)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -252,12 +236,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_tidy)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -301,12 +281,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -350,12 +326,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -399,12 +371,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_asan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -448,12 +416,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_tsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -497,12 +461,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_msan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -546,12 +506,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -595,12 +551,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_binary)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -644,12 +596,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (arm_release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -693,12 +641,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (arm_coverage)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -742,12 +686,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (arm_binary)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -791,12 +731,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_darwin)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -840,12 +776,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (arm_darwin)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -889,12 +821,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (arm_v80compat)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -938,12 +866,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_freebsd)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -987,12 +911,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (ppc64le)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1036,12 +956,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_compat)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1085,12 +1001,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (amd_musl)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1134,12 +1046,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (riscv64)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1183,12 +1091,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (s390x)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1232,12 +1136,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (loongarch64)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1281,12 +1181,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Build (fuzzers)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1330,12 +1226,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Unit tests (asan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1379,12 +1271,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Unit tests (tsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1428,12 +1316,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Unit tests (msan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1477,12 +1361,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Unit tests (ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1526,12 +1406,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Docker server image"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1575,12 +1451,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Docker keeper image"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1624,12 +1496,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Install packages (release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1673,12 +1541,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Install packages (aarch64)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1722,12 +1586,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Compatibility check (release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1771,12 +1631,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Compatibility check (aarch64)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1820,12 +1676,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_asan, distributed plan, 1/2)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1869,12 +1721,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_asan, distributed plan, 2/2)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1918,12 +1766,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_binary)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -1967,12 +1811,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2016,12 +1856,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2065,12 +1901,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_binary, ParallelReplicas, s3 storage)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2114,12 +1946,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2163,12 +1991,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2212,12 +2036,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, 1/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2261,12 +2081,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, 2/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2310,12 +2126,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, 3/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2359,12 +2171,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_msan, 1/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2408,12 +2216,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_msan, 2/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2457,12 +2261,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_msan, 3/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2506,12 +2306,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_msan, 4/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2555,12 +2351,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2604,12 +2396,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_debug, distributed plan, s3 storage)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2653,12 +2441,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, s3 storage, 1/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2702,12 +2486,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, s3 storage, 2/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2751,12 +2531,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_tsan, s3 storage, 3/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2800,12 +2576,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (arm_binary)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2849,12 +2621,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (azure, arm_asan, 1/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2898,12 +2666,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (azure, arm_asan, 2/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2947,12 +2711,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (azure, arm_asan, 3/3)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -2996,12 +2756,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 1/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3045,12 +2801,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 2/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3094,12 +2846,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 3/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3143,12 +2891,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 4/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3192,12 +2936,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 5/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3241,12 +2981,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (asan, old analyzer, 6/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3290,12 +3026,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (release, 1/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3339,12 +3071,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (release, 2/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3388,12 +3116,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (release, 3/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3437,12 +3161,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (release, 4/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3486,12 +3206,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (aarch64, distributed plan, 1/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3535,12 +3251,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (aarch64, distributed plan, 2/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3584,12 +3296,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (aarch64, distributed plan, 3/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3633,12 +3341,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (aarch64, distributed plan, 4/4)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3682,12 +3386,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 1/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3731,12 +3431,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 2/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3780,12 +3476,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 3/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3829,12 +3521,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 4/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3878,12 +3566,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 5/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3927,12 +3611,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Integration tests (tsan, 6/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -3976,12 +3656,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,1/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4025,12 +3701,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,2/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4074,12 +3746,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,3/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4123,12 +3791,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,4/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4172,12 +3836,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,5/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4221,12 +3881,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stateless tests (amd_coverage,6/6)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4270,12 +3926,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stress test (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4319,12 +3971,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stress test (amd_tsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4368,12 +4016,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stress test (amd_ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4417,12 +4061,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "Stress test (amd_msan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4466,12 +4106,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "AST fuzzer (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4515,12 +4151,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "AST fuzzer (amd_tsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4564,12 +4196,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "AST fuzzer (amd_msan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4613,12 +4241,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "AST fuzzer (amd_ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4662,12 +4286,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "BuzzHouse (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4711,12 +4331,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "BuzzHouse (amd_tsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4760,12 +4376,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "BuzzHouse (amd_msan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4809,12 +4421,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "BuzzHouse (amd_ubsan)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4858,12 +4466,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "ClickBench (amd_release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4907,12 +4511,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "ClickBench (arm_release)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -4956,12 +4556,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "SQLancer (amd_debug)"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
@@ -5005,12 +4601,8 @@ jobs:
       - name: Docker setup
         uses: ./.github/actions/docker_setup
         with:
-          test_name: "{JOB_NAME_GH}"
-
-      - name: Docker setup
-        uses: ./.github/actions/docker_setup
-        with:
           test_name: "SQLTest"
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
