@@ -38,10 +38,13 @@ function explainVisualizations()
     return mt;
 }
 
+const DEMO_PART_COUNT = 16;
+
 function oneBigMerge()
 {
     const mt = new MergeTree();
-    randomInserts(mt, {count: 16, min_size: 10, max_size: 100});
+    for (let i = 0; i < DEMO_PART_COUNT; i++)
+        mt.insertPart(1 << 20);
     mt.mergeParts(mt.parts.filter(d => d.active));
     return mt;
 }
@@ -50,7 +53,7 @@ function aggressiveMerging()
 {
     const mt = new MergeTree();
     mt.insertPart(1 << 20);
-    for (let i = 0; i < 15; i++)
+    for (let i = 0; i < DEMO_PART_COUNT - 1; i++)
     {
         mt.insertPart(1 << 20);
         mt.mergeParts(mt.parts.filter(d => d.active));
@@ -61,7 +64,7 @@ function aggressiveMerging()
 function binaryTree()
 {
     const mt = new MergeTree();
-    for (let i = 0; i < 16; i++)
+    for (let i = 0; i < DEMO_PART_COUNT; i++)
         mt.insertPart(1 << 20);
     let i = mt.parts.length;
     while (i >= 2)
@@ -81,17 +84,6 @@ function randomMess()
     return mt;
 }
 
-function maxEntropyMergesDemo()
-{
-    const mt = new MergeTree();
-    for (let i = 0; i < 300; i++)
-    {
-        randomInserts(mt, {count: 10, min_size: 10, max_size: 100});
-        runSelector(mt, 3, maxEntropyMerges({min_parts: 2, max_parts: 20, min_score: Math.log2(5)}));
-    }
-    return mt;
-}
-
 function simpleMergesDemo()
 {
     const mt = new MergeTree();
@@ -104,7 +96,7 @@ function simpleMergesDemo()
     return mt;
 }
 
-function maxEntropyDemo()
+function maxEntropyMergesDemo()
 {
     const mt = new MergeTree();
     const max_wa = 5;
@@ -134,7 +126,7 @@ function simpleMergesWithInserts()
     return mt;
 }
 
-function maxEntropyWithInserts()
+function maxEntropyMergesWithInserts()
 {
     const mt = new MergeTree();
     const max_wa = 5;
@@ -184,24 +176,22 @@ export function runScenario(scenarioName = 'simpleMergesDemo')
     switch (scenarioName) {
         case 'explainVisualizations':
             return explainVisualizations();
+        case 'oneBigMerge':
+            return oneBigMerge();
         case 'binaryTree':
             return binaryTree();
         case 'aggressiveMerging':
             return aggressiveMerging();
         case 'randomMess':
             return randomMess();
-        case 'maxEntropyMergesDemo':
-            return maxEntropyMergesDemo();
         case 'simpleMergesDemo':
             return simpleMergesDemo();
-        case 'maxEntropyDemo':
-            return maxEntropyDemo();
-        case 'oneBigMerge':
-            return oneBigMerge();
+        case 'maxEntropyMergesDemo':
+            return maxEntropyMergesDemo();
         case 'simpleMergesWithInserts':
             return simpleMergesWithInserts();
-        case 'maxEntropyWithInserts':
-            return maxEntropyWithInserts();
+        case 'maxEntropyMergesWithInserts':
+            return maxEntropyMergesWithInserts();
         default:
             throw new Error(`Unknown scenario: ${scenarioName}. Available scenarios: ${Object.keys(SCENARIOS).join(', ')}`);
     }
