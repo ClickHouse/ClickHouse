@@ -262,8 +262,8 @@ void StatementGenerator::setTableFunction(
     }
     else if (
         usage == TableFunctionUsage::EngineReplace
-        && (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine() || t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine()
-            || t.isURLEngine() || t.isRedisEngine()))
+        && (t.isOnS3() || t.isOnAzure() || t.isOnLocal() || t.isFileEngine() || t.isURLEngine() || t.isRedisEngine() || t.isMongoDBEngine()
+            || t.isDictionaryEngine()))
     {
         Expr * structure = nullptr;
         S3Func * sfunc = nullptr;
@@ -271,7 +271,7 @@ void StatementGenerator::setTableFunction(
         AzureBlobStorageFunc * afunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isIcebergS3Engine() || t.isDeltaLakeS3Engine() || t.isAnyS3Engine())
+        if (t.isOnS3())
         {
             sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
@@ -288,11 +288,11 @@ void StatementGenerator::setTableFunction(
             {
                 sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
-            sfunc->set_resource(t.getTablePath(fc, false) + ((!allow_chaos && t.isS3Engine() && rg.nextBool()) ? "*" : ""));
+            sfunc->set_resource(t.getTablePath(fc, false) + ((!allow_chaos && t.isS3QueueEngine() && rg.nextBool()) ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
         }
-        else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
+        else if (t.isOnAzure())
         {
             afunc = tfunc->mutable_azure();
             const ServerCredentials & sc = fc.azurite_server.value();
@@ -312,11 +312,11 @@ void StatementGenerator::setTableFunction(
             }
             afunc->set_connection_string(sc.server_hostname);
             afunc->set_container(sc.container);
-            afunc->set_blobpath(t.getTablePath(fc, false) + ((allow_chaos && !t.isAzureEngine() && rg.nextBool()) ? "*" : ""));
+            afunc->set_blobpath(t.getTablePath(fc, false) + ((allow_chaos && t.isAzureQueueEngine() && rg.nextBool()) ? "*" : ""));
             afunc->set_user(sc.user);
             afunc->set_password(sc.password);
         }
-        else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
+        else if (t.isOnLocal() || t.isFileEngine())
         {
             ffunc = tfunc->mutable_file();
             FileFunc_FName val = t.isFileEngine()
@@ -332,7 +332,7 @@ void StatementGenerator::setTableFunction(
             {
                 ffunc->set_fname(val);
             }
-            ffunc->set_path(t.getTablePath(fc, false) + ((allow_chaos && !t.isFileEngine() && rg.nextBool()) ? "*" : ""));
+            ffunc->set_path(t.getTablePath(fc, false));
             if (t.isFileEngine())
             {
                 if (t.file_format.has_value())
@@ -408,7 +408,7 @@ void StatementGenerator::setTableFunction(
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, allow_chaos));
         }
-        if (sfunc || afunc || t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine())
+        if (sfunc || afunc || t.isOnLocal())
         {
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
@@ -421,7 +421,7 @@ void StatementGenerator::setTableFunction(
             {
                 setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, afunc);
             }
-            else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine())
+            else if (t.isOnLocal())
             {
                 setObjectStoreParams<SQLTable, FileFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, ffunc);
             }

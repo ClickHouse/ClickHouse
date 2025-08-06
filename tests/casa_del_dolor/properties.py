@@ -1078,7 +1078,7 @@ def modify_server_settings(
     # Get number of clusters if generated, to be used in `users.xml` if needed
     remote_servers = root.find("remote_servers")
     if remote_servers is not None:
-        number_clusters = len(list(remote_servers))
+        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
