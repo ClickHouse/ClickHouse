@@ -28,13 +28,13 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
-        *JobConfigs.tidy_build_jobs,
+        *JobConfigs.tidy_build_arm_jobs,
         *[
             job.set_dependency(
                 [
                     JobNames.STYLE_CHECK,
                     JobNames.FAST_TEST,
-                    *[j.name for j in JobConfigs.tidy_build_jobs],
+                    *[j.name for j in JobConfigs.tidy_build_arm_jobs],
                 ]
             )
             for job in JobConfigs.build_jobs
@@ -47,7 +47,7 @@ workflow = Workflow.Config(
         *[
             j.set_dependency(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                if "sequential" in j.name
+                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
@@ -56,7 +56,7 @@ workflow = Workflow.Config(
             [
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
-                JobConfigs.tidy_build_jobs[0].name,
+                JobConfigs.tidy_build_arm_jobs[0].name,
             ]
         ),
         JobConfigs.bugfix_validation_ft_pr_job,

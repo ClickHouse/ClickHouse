@@ -383,7 +383,17 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
-    query = query->clone();
+    {
+        /// we clone query to avoid modifying the original one
+        /// but we move tail buffer to the new query
+        auto copy_ptr = query;
+        query = query->clone();
+        if (auto * insert_query = copy_ptr->as<ASTInsertQuery>())
+        {
+            if (insert_query->tail)
+                insert_query->tail.reset();
+        }
+    }
     preprocessInsertQuery(query, query_context);
 
     String bytes;

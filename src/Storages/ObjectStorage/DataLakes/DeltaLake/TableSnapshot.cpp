@@ -89,7 +89,8 @@ public:
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
         bool enable_expression_visitor_logging_,
-        LoggerPtr log_)
+        LoggerPtr log_,
+        UInt64 snapshot_version_)
         : engine(engine_)
         , snapshot(snapshot_)
         , scan(scan_)
@@ -101,6 +102,7 @@ public:
         , list_batch_size(list_batch_size_)
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
+        , snapshot_version(snapshot_version_)
         , thread([&, thread_group = DB::CurrentThread::getGroup()] {
             /// Attach to current query thread group, to be able to
             /// have query id in logs and metrics from scanDataFunc.
@@ -189,6 +191,11 @@ public:
         /// For now do the same as StorageObjectStorageSource::GlobIterator.
         /// TODO: is it possible to do a precise estimation?
         return std::numeric_limits<size_t>::max();
+    }
+
+    std::optional<UInt64> getSnapshotVersion() const override
+    {
+        return snapshot_version;
     }
 
     DB::ObjectInfoPtr next(size_t) override
@@ -327,6 +334,7 @@ private:
     const size_t list_batch_size;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
+    const UInt64 snapshot_version;
 
     std::exception_ptr scan_exception;
 
@@ -432,7 +440,8 @@ DB::ObjectIterator TableSnapshot::iterate(
         callback,
         list_batch_size,
         enable_expression_visitor_logging,
-        log);
+        log,
+        snapshot_version);
 }
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
