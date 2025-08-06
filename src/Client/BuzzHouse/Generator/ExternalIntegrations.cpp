@@ -1563,13 +1563,10 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     if (glue_cat && (nopt < glue_cat + 1))
     {
         cat = &sc.glue_catalog.value();
-        SetValue * sv4 = svs->add_other_values();
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
         sv1->set_value("'glue'");
         sv2->set_value("'gtest'");
-        sv4->set_property("region");
-        sv4->set_value("'" + cat->region + "'");
     }
     else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
     {
@@ -1595,6 +1592,13 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     de->add_params()->set_svalue(sc.password);
     sv3->set_property("storage_endpoint");
     sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
+    if (!cat->region.empty())
+    {
+        SetValue * sv4 = svs->add_other_values();
+
+        sv4->set_property("storage_region");
+        sv4->set_value("'" + cat->region + "'");
+    }
     if (rg.nextSmallNumber() < 4)
     {
         SetValue * sv5 = svs->add_other_values();
@@ -1636,21 +1640,16 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
 
         sv1->set_property("storage_catalog_type");
         sv2->set_property("storage_warehouse");
-        sv3->set_property("storage_endpoint");
+        sv3->set_property("object_storage_endpoint");
         sv4->set_property("storage_catalog_url");
         sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
         switch (b.catalog)
         {
-            case CatalogTable::Glue: {
-                SetValue * sv5 = svs->add_other_values();
-
+            case CatalogTable::Glue:
                 sv1->set_value("'glue'");
                 sv2->set_value("'gtest'");
                 sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
-                sv5->set_property("storage_region");
-                sv5->set_value("'" + cat->region + "'");
-            }
-            break;
+                break;
             case CatalogTable::Hive:
                 sv1->set_value("'hive'");
                 sv2->set_value("'htest'");
@@ -1664,6 +1663,13 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
             default:
                 break;
         }
+        if (!cat->region.empty())
+        {
+            SetValue * sv5 = svs->add_other_values();
+
+            sv5->set_property("storage_region");
+            sv5->set_value("'" + cat->region + "'");
+        }
     }
 }
 
@@ -1676,9 +1682,10 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 
 bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
 {
-    const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
-    const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
-    const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
+    const bool isDataLake = b.isDeltaLakeS3Engine() || b.isIcebergS3Engine();
+    const uint32_t glue_cat = 5 * static_cast<uint32_t>(isDataLake && sc.glue_catalog.has_value());
+    const uint32_t hive_cat = 5 * static_cast<uint32_t>(isDataLake && sc.hive_catalog.has_value());
+    const uint32_t rest_cat = 5 * static_cast<uint32_t>(isDataLake && sc.rest_catalog.has_value());
     const uint32_t no_cat = 15;
     const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);

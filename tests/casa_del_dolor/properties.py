@@ -1065,7 +1065,7 @@ def modify_server_settings(
         distributed_ddl_xml = root.find("distributed_ddl")
         if distributed_ddl_xml is not None and distributed_ddl_xml.find("path") is None:
             path_xml = ET.SubElement(distributed_ddl_xml, "path")
-            path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+            path_xml.text = "/clickhouse/task_queue/ddl"
         # Make sure `zookeeper_path` in transaction_log is set
         transaction_log_xml = root.find("transaction_log")
         if (
@@ -1073,7 +1073,7 @@ def modify_server_settings(
             and transaction_log_xml.find("zookeeper_path") is None
         ):
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
-            zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+            zookeeper_path_xml.text = "/clickhouse/txn"
 
     # Get number of clusters if generated, to be used in `users.xml` if needed
     remote_servers = root.find("remote_servers")
