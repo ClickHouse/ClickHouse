@@ -54,6 +54,7 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE URL PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
+set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT * FROM url('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -72,6 +73,7 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE S3 PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
+set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT * FROM s3('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
