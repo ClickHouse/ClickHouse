@@ -106,7 +106,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_size; ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
-            size_t repeated_size = str_size * repeat_time + 1;
+            size_t repeated_size = str_size * repeat_time;
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
