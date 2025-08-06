@@ -74,8 +74,19 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
-
 using namespace Iceberg;
+
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+    buffer_metadata->write(data.data(), data.size());
+    buffer_metadata->finalize();
+}
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
@@ -473,18 +484,12 @@ void IcebergMetadata::createInitial(
         location_path = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-    buffer_metadata->write(metadata_content.data(), metadata_content.size());
-    buffer_metadata->finalize();
+    writeMessageToFile(metadata_content, filename, object_storage, local_context);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        auto buffer_version_hint = object_storage->writeObject(
-            StoredObject(filename_version_hint), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-        buffer_version_hint->write(filename.data(), filename.size());
-        buffer_version_hint->finalize();
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context);
     }
     if (catalog)
     {

@@ -881,18 +881,11 @@ bool IcebergStorageSink::initializeMetadata()
             return false;
         }
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(storage_metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
-
+        writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
         if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = filename_generator.generateVersionHint();
-            auto buffer_version_hint = object_storage->writeObject(
-                StoredObject(filename_version_hint.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-            buffer_version_hint->write(storage_metadata_name.data(), storage_metadata_name.size());
-            buffer_version_hint->finalize();
+            writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
         }
         if (catalog)
         {

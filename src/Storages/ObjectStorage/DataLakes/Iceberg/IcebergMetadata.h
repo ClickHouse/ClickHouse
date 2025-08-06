@@ -28,6 +28,12 @@
 namespace DB
 {
 
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context);
+
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
