@@ -327,9 +327,9 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
 {
-    return {};
+    return nullptr;
 }
 
 void IStorage::renameInMemory(const StorageID & new_table_id)

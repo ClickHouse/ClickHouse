@@ -95,7 +95,7 @@ TEST(Statistics, Estimator)
     ColumnStatisticsPtr stats_c = mock_statistics("c");
     stats_c->build(std::move(c));
 
-    ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimator estimator(getContext().context);
     estimator.addStatistics(stats_a);
     estimator.addStatistics(stats_b);
     estimator.addStatistics(stats_c);
