@@ -196,7 +196,7 @@ ManifestFileContent::ManifestFileContent(
         if (!manifest_file_column_characteristics.has_value())
         {
             continue;
-        }        
+        }
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
         common_partition_specification.emplace_back(source_id, transform_name, partition_name);

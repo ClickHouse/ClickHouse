@@ -526,7 +526,7 @@ void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context
             local_context,
             manifest_list_entry.manifest_file_path,
             manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id);        
+            manifest_list_entry.added_snapshot_id);
         for (const auto & manifest_file_entry : manifest_file_ptr->getFiles(Iceberg::FileContentType::DATA))
         {
             schema_id_by_data_file.emplace(manifest_file_entry.file_path, manifest_file_entry.schema_id);
