@@ -52,7 +52,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Check if join can do runtime filtering on left table
     const auto & join_info = join_step->getJoinInfo();
     if (join_info.kind != JoinKind::Inner ||
-        join_info.strictness != JoinStrictness::All ||
+        (join_info.strictness != JoinStrictness::All && join_info.strictness != JoinStrictness::Any && join_info.strictness != JoinStrictness::Semi) ||
         (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global) ||
         !join_info.expression.disjunctive_conditions.empty())
     {
