@@ -41,9 +41,13 @@ void OwnFormattingChannel::log(const Poco::Message &)
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "OwnFormattingChannel called with Poco::Message instead of ExtendedLogMessage");
 }
 
-void OwnFormattingChannel::log(Poco::Message &&)
+void OwnFormattingChannel::log(Poco::Message && msg)
 {
-    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "OwnFormattingChannel called with Poco::Message instead of ExtendedLogMessage");
+    std::string text;
+    ExtendedLogMessage extended(msg);
+    pFormatter->formatExtended(extended, text);
+    msg.setText(text);
+    pChannel->log(std::move(msg));
 }
 
 OwnFormattingChannel::~OwnFormattingChannel() = default;
