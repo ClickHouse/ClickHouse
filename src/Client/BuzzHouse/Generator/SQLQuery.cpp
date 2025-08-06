@@ -260,10 +260,7 @@ void StatementGenerator::setTableFunction(
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (
-        usage == TableFunctionUsage::EngineReplace
-        && (t.isOnS3() || t.isOnAzure() || t.isOnLocal() || t.isFileEngine() || t.isURLEngine() || t.isRedisEngine() || t.isMongoDBEngine()
-            || t.isDictionaryEngine()))
+    else if (usage == TableFunctionUsage::EngineReplace && t.isEngineReplaceable())
     {
         Expr * structure = nullptr;
         S3Func * sfunc = nullptr;
@@ -399,6 +396,21 @@ void StatementGenerator::setTableFunction(
         else if (t.isDictionaryEngine())
         {
             t.setName(tfunc->mutable_dictionary(), false);
+        }
+        else if (t.isNullEngine())
+        {
+            structure = tfunc->mutable_nullf();
+        }
+        else if (t.isGenerateRandomEngine())
+        {
+            GenerateRandomFunc * gfunc = tfunc->mutable_grandom();
+            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+
+            structure = gfunc->mutable_structure();
+            gfunc->set_random_seed(rg.nextRandomUInt64());
+            gfunc->set_max_string_length(string_length_dist(rg.generator));
+            gfunc->set_max_array_length(nested_rows_dist(rg.generator));
         }
         else
         {
@@ -604,7 +616,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
-    const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
+    const uint32_t random_data_udf = 3 * static_cast<uint32_t>(this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t table_engine_udf = 10 * static_cast<uint32_t>(has_replaceable_table && this->allow_engine_udf);
@@ -976,15 +988,24 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
-        GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
-        std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+        TableFunction * tf = tof->mutable_tfunc();
+        GenerateRandomFunc * grf = fc.allow_infinite_tables && rg.nextSmallNumber() < 9 ? tf->mutable_grandom() : nullptr;
 
         addRandomRelation(
-            rg, rel_name, (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(), false, grf->mutable_structure());
-        grf->set_random_seed(rg.nextRandomUInt64());
-        grf->set_max_string_length(string_length_dist(rg.generator));
-        grf->set_max_array_length(nested_rows_dist(rg.generator));
+            rg,
+            rel_name,
+            (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(),
+            false,
+            grf ? grf->mutable_structure() : tf->mutable_nullf());
+        if (grf)
+        {
+            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+
+            grf->set_random_seed(rg.nextRandomUInt64());
+            grf->set_max_string_length(string_length_dist(rg.generator));
+            grf->set_max_array_length(nested_rows_dist(rg.generator));
+        }
     }
     else if (
         dictionary

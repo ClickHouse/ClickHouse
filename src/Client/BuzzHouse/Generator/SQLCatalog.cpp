@@ -23,7 +23,8 @@ bool SQLBase::isNotTruncableEngine() const
 bool SQLBase::isEngineReplaceable() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine();
+        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
+        || isNullEngine() || isGenerateRandomEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
