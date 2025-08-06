@@ -45,9 +45,9 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <IO/Progress.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
-#include <base/UUID.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
@@ -56,10 +56,15 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Names.h>
 #include <Core/Block.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
+
+#include <base/UUID.h>
+#include <base/scope_guard.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <cassert>
@@ -551,15 +556,17 @@ public:
         SharedHeader input_header, SharedHeader output_header,
         ASTPtr select_query_,
         StorageID source_id_, StoragePtr source_storage_, StorageMetadataPtr source_metadata_,
-        StorageID view_id_,
+        StorageID view_id_, StoragePtr view_storage_, StorageMetadataPtr view_metadata_,
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
-        , source_storage(source_storage_)
         , source_metadata(source_metadata_)
+        , source_storage(source_storage_)
         , view_id(view_id_)
+        , view_metadata(view_metadata_)
+        , view_storage(view_storage_)
         , inner_id(inner_id_)
         , inner_metadata(inner_metadata_)
         , inner_storage(inner_storage_)
@@ -599,9 +606,11 @@ protected:
 private:
     ASTPtr select_query;
     StorageID source_id;
-    StoragePtr source_storage;
     StorageMetadataPtr source_metadata;
+    StoragePtr source_storage;
     StorageID view_id;
+    StorageMetadataPtr view_metadata;
+    StoragePtr view_storage;
     StorageID inner_id;
     StorageMetadataPtr inner_metadata;
     StoragePtr inner_storage;
@@ -648,6 +657,10 @@ private:
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
+
+#define NEW_VERSION 1
+
+#if not NEW_VERSION
         bool insert_null_as_default = false;
 
         auto adding_missing_defaults_dag = addMissingDefaults(
@@ -670,6 +683,80 @@ private:
             ActionsDAG::MatchColumnsMode::Name);
 
         auto final_dag = ActionsDAG::merge(std::move(merged_dag), std::move(converting_types_dag));
+#else
+        bool insert_null_as_default = false;
+
+        // no adding_missing_defaults_dag
+        auto debugCWTAN = [] (const ColumnsWithTypeAndName & columns)
+        {
+            WriteBufferFromOwnString out;
+            for (const auto & col : columns)
+                out << col.dumpStructure() << ", ";
+            return out.str();
+        };
+
+        auto filter_columns_by_name = [] (const ColumnsWithTypeAndName & columns, const Names & columns_to_filter)
+        {
+            NameSet columns_to_filter_set(columns_to_filter.begin(), columns_to_filter.end());
+            ColumnsWithTypeAndName result;
+            for (const auto & column : columns)
+            {
+                if (columns_to_filter_set.contains(column.name))
+                    result.push_back(column);
+            }
+            return result;
+        };
+
+        auto view_id_ = view_id;
+        auto build_convertation = [&debugCWTAN, &filter_columns_by_name, &local_context, view_id_, insert_null_as_default] (const Block & input, StorageMetadataPtr result_metadata, String debug_str)
+        {
+            auto filtered = filter_columns_by_name(result_metadata->getSampleBlock().getColumnsWithTypeAndName(), input.getNames());
+
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "makeConvertingActions view {} as {} source: {} result: {} but filtered: {}",
+                view_id_.getTableName(), debug_str, debugCWTAN(input.getColumnsWithTypeAndName()),
+                result_metadata->getSampleBlock().dumpStructure(), debugCWTAN(filtered));
+
+            auto converting_types_dag = ActionsDAG::makeConvertingActions(
+                input.getColumnsWithTypeAndName(),
+                filtered,
+                ActionsDAG::MatchColumnsMode::Name);
+
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "addMissingDefaults view {} as {}  source: {} but {} result: {}",
+                view_id_.getTableName(), debug_str,
+                debugCWTAN(converting_types_dag.getResultColumns()), debugCWTAN(filtered),
+                debugCWTAN(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
+
+            auto adding_missing_defaults_dag = addMissingDefaults(
+                filtered,
+                result_metadata->getSampleBlock().getNamesAndTypesList(),
+                result_metadata->getColumns(),
+                local_context,
+                insert_null_as_default);
+
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "createSubcolumnsExtractionActions view {} as {} source: {} result names: {}",
+                view_id_.getTableName(), debug_str, debugCWTAN(adding_missing_defaults_dag.getResultColumns()), fmt::join(adding_missing_defaults_dag.getRequiredColumnsNames(), ", "));
+
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+                Block(adding_missing_defaults_dag.getResultColumns()),
+                adding_missing_defaults_dag.getRequiredColumnsNames(),
+                local_context);
+
+            auto merged_dag = ActionsDAG::merge(std::move(converting_types_dag), std::move(adding_missing_defaults_dag));
+
+            return ActionsDAG::merge(std::move(merged_dag), std::move(extracting_subcolumns_dag));
+        };
+
+        ActionsDAG conversion_to_view_result = build_convertation(
+            pipeline.getHeader(),
+             view_metadata, "VIEW RESULT");
+        ActionsDAG conversion_to_inner_result = build_convertation(
+            Block(conversion_to_view_result.getResultColumns()),
+            inner_metadata, "INNER RESULT");
+        auto final_dag = ActionsDAG::merge(std::move(conversion_to_view_result), std::move(conversion_to_inner_result));
+#endif
 
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
             pipeline.getSharedHeader(),
@@ -729,6 +816,9 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
+
+    LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
+        init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
 }
 
 
@@ -788,12 +878,76 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     return {select_context, insert_context};
 }
 
+String InsertDependenciesBuilder::debugTree() const
+{
+    WriteBufferFromOwnString output_buffer;
+
+    DependencyPath path;
+    std::function<void(StorageIDPrivate)> visit = [&](StorageIDPrivate id)
+    {
+        path.pushBack(id);
+        SCOPE_EXIT({
+            path.popBack();
+        });
+
+        output_buffer << debugPath(path);
+
+        if (isView(id))
+        {
+            if (inner_tables.contains(id))
+                visit(inner_tables.at(id));
+        }
+        else
+        {
+            auto view_id = path.parent(1);
+            chassert(isView(view_id));
+            for (const auto & child_id: dependent_views.at(view_id))
+                visit(child_id);
+        }
+    };
+
+    visit(root_view);
+    return output_buffer.str();
+}
+
+String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
+{
+    WriteBufferFromOwnString output_buffer;
+    output_buffer << "path " << path.debugInfo() << "\n";
+
+    const auto & current = path.current();
+    output_buffer << "is view: " << (isView(current) ? "True" : "it is not a view") << "\n";
+
+    if (isView(current))
+    {
+        output_buffer << "source table: " << (source_tables.contains(current) ? source_tables.at(current).getTableName() : "<not set>") << "\n";
+        output_buffer << "select query: " << select_queries.at(current)->formatForLogging() << "\n";
+
+        if (metadata_snapshots.contains(current))
+        {
+            auto view_metadata = metadata_snapshots.at(current);
+            output_buffer << "view table header: " << view_metadata->getSampleBlock().dumpStructure() << "\n";
+        }
+
+        auto inner_id = inner_tables.at(current);
+        output_buffer << "inner table: " << inner_id.getTableName() << "\n";
+        auto inner_metadata = metadata_snapshots.at(inner_id);
+        output_buffer << "inner table header: " << inner_metadata->getSampleBlock().dumpStructure() << "\n";
+
+
+        output_buffer << "input header: " << input_headers.at(current)->dumpStructure() << "\n";
+        output_buffer << "output header: " << output_headers.at(current)->dumpStructure() << "\n";
+    }
+
+    output_buffer << "\n";
+    return output_buffer.str();
+}
 
 bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
-    LOG_TEST(logger, "observePath: {}", path.debugString());
+    LOG_TEST(logger, "observePath {}", path.debugInfo());
 
     auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
@@ -1103,7 +1257,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
             input_header, output_header,
             select_query,
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
-            view_id,
+            view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
@@ -1117,7 +1271,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
             input_header, output_header,
             select_query,
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
-            view_id,
+            view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
@@ -1376,7 +1530,7 @@ void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
         throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugString(), id);
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugInfo(), id);
 
     path.push_back(id);
     visited.insert(id);
@@ -1390,9 +1544,9 @@ void InsertDependenciesBuilder::DependencyPath::popBack()
 }
 
 
-String InsertDependenciesBuilder::DependencyPath::debugString() const
+String InsertDependenciesBuilder::DependencyPath::debugInfo() const
 {
-    return fmt::format("{}", fmt::join(path, " :-> "));
+    return fmt::format("{}", fmt::join(path, " -> "));
 }
 
 

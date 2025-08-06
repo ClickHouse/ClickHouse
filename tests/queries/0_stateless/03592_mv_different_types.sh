@@ -14,7 +14,7 @@ ORDER BY value;
 
 CREATE TABLE middle
 (
-    type Enum8('Null' = 0, 'String' = 34, 'Array' = 91, 'Bool' = 98, 'Double' = 100, 'Int64' = 105, 'UInt64' = 117, 'Object' = 123)
+    type Enum8('ENUM_VAL_1' = 0, 'ENUM_VAL_2' = 34)
 )
 ENGINE = MergeTree
 ORDER BY type;
@@ -30,9 +30,9 @@ EOF
 
 
 ${CLICKHOUSE_CLIENT} <<EOF
-CREATE MATERIALIZED VIEW source_to_destination_mv TO middle
+CREATE MATERIALIZED VIEW source_to_destination_mv TO destination
 (
-    type Enum8('Null' = 0, 'String' = 34, 'Array' = 91, 'Bool' = 98, 'Double' = 100, 'Int64' = 105, 'UInt64' = 117, 'Object' = 123)
+    type Enum8('ENUM_VAL_1' = 0, 'ENUM_VAL_2' = 34)
 )
 AS SELECT
     value as type
@@ -45,27 +45,26 @@ FROM source;
 
 CREATE MATERIALIZED VIEW middle_to_destination_mv TO destination
 (
-    type Enum8('Null' = 0, 'String' = 34, 'Array' = 91, 'Bool' = 98, 'Double' = 100, 'Int64' = 105, 'UInt64' = 117, 'Object' = 123)
+    type Enum8('ENUM_VAL_1' = 0, 'ENUM_VAL_2' = 34)
 )
 AS SELECT
     type as type
 FROM middle;
 EOF
 
-${CLICKHOUSE_CLIENT} <<EOF
+${CLICKHOUSE_CLIENT} --send_logs_level='error' <<EOF
 INSERT INTO source ("value")
-VALUES ('Null'),
-       ('String'),
-       ('Array'),
-       ('Bool'),
-       ('Double'),
-       ('Int64'),
-       ('UInt64'),
-       ('Object')
+VALUES ('ENUM_VAL_1'),
+       ('ENUM_VAL_2');
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SELECT *
 FROM destination
 ORDER BY type
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+INSERT INTO source ("value")
+VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 EOF
