@@ -795,11 +795,12 @@ std::vector<ParsedDataFileInfo> IcebergMetadata::getDataFiles(
         { return ParsedDataFileInfo{this->configuration.lock(), entry, position_delete_files}; });
 }
 
-std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
+std::vector<Iceberg::ManifestFileEntry>
+IcebergMetadata::getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     return getFilesImpl<ManifestFileEntry>(
         filter_dag,
-        FileContentType::POSITIONAL_DELETE,
+        FileContentType::POSITION_DELETE,
         local_context,
         // In the current design we can't avoid storing ManifestFileEntry in RAM explicitly for position deletes
         [](const ManifestFileEntry & entry) { return entry; });
@@ -833,7 +834,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id);
         auto data_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITIONAL_DELETE);
+        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
         if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
@@ -886,7 +887,7 @@ ObjectIterator IcebergMetadata::iterate(
 {
     SharedLockGuard lock(mutex);
     auto position_deletes_files
-        = std::make_unique<std::vector<Iceberg::ManifestFileEntry>>(getPositionalDeleteFiles(filter_dag, local_context));
+        = std::make_unique<std::vector<Iceberg::ManifestFileEntry>>(getPositionDeleteFiles(filter_dag, local_context));
     auto data_files = getDataFiles(filter_dag, local_context, *position_deletes_files);
     return std::make_shared<IcebergKeysIterator>(std::move(data_files), std::move(position_deletes_files), object_storage, callback);
 }

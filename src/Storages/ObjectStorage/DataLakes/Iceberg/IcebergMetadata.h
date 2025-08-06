@@ -43,9 +43,6 @@ struct ParsedDataFileInfo
         return std::tie(data_object_file_path_key) < std::tie(other.data_object_file_path_key);
     }
 };
-
-using ParsedDataFileInfos = std::vector<ParsedDataFileInfo>;
-
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
@@ -152,7 +149,7 @@ private:
         const ActionsDAG * filter_dag,
         ContextPtr local_context,
         const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
-    std::vector<Iceberg::ManifestFileEntry> getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+    std::vector<Iceberg::ManifestFileEntry> getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);

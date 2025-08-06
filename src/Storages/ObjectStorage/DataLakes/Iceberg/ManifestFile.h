@@ -26,7 +26,7 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITIONAL_DELETE = 1,
+    POSITION_DELETE = 1,
     EQUALITY_DELETE = 2
 };
 

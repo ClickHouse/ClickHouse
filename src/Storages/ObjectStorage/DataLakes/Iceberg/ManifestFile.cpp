@@ -36,11 +36,12 @@ String FileContentTypeToString(FileContentType type)
     {
         case FileContentType::DATA:
             return "data";
-        case FileContentType::POSITIONAL_DELETE:
+        case FileContentType::POSITION_DELETE:
             return "position_deletes";
         case FileContentType::EQUALITY_DELETE:
             return "equality_deletes";
     }
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
 }
 
 namespace
@@ -127,7 +128,7 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContent
 {
     if (content_type == FileContentType::DATA)
         return data_files;
-    else if (content_type == FileContentType::POSITIONAL_DELETE)
+    else if (content_type == FileContentType::POSITION_DELETE)
         return position_deletes_files;
     else
         throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
@@ -376,7 +377,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     /*reference_data_file = */ std::nullopt);
                 break;
-            case FileContentType::POSITIONAL_DELETE: {
+            case FileContentType::POSITION_DELETE: {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                 std::optional<String> reference_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))

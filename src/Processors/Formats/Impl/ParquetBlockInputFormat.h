@@ -221,7 +221,7 @@ private:
 
         size_t adaptive_chunk_size = 0;
 
-        std::vector<int> row_groups_idxs;
+        std::vector<size_t> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
         // If use_native_reader, only native_record_reader is used;
@@ -323,7 +323,7 @@ private:
     std::condition_variable condvar;
 
     std::vector<RowGroupBatchState> row_group_batches;
-    std::vector<int> row_group_batches_skipped_rows;
+    std::vector<size_t> row_group_batches_skipped_rows;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
     size_t row_group_batches_completed = 0;
 

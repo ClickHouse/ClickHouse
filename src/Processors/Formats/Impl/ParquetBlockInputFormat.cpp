@@ -1144,9 +1144,14 @@ Chunk ParquetBlockInputFormat::read()
     if (need_only_count)
     {
         auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
-        int total_rows_before = row_group_batches_skipped_rows[0];
-        for (size_t i = 0; i < row_group_batches_completed; ++i)
-            total_rows_before += row_group_batches[i].total_rows + row_group_batches_skipped_rows[i+1];
+        size_t total_rows_before = std::accumulate(
+                                       row_group_batches_skipped_rows.begin(),
+                                       row_group_batches_skipped_rows.begin() + row_group_batches_completed + 1,
+                                       0ull)
+            + std::accumulate(row_group_batches.begin(),
+                              row_group_batches.begin() + row_group_batches_completed,
+                              0ull,
+                              [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
 
         row_group_batches_completed++;
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
@@ -1184,11 +1189,18 @@ Chunk ParquetBlockInputFormat::read()
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
 
-            int total_rows_before = row_group_batches_skipped_rows[0];
-            for (size_t i = 0; i < chunk.row_group_batch_idx; ++i)
-                total_rows_before += row_group_batches[i].total_rows + row_group_batches_skipped_rows[i+1];
-            for (size_t i = 0; i < chunk.chunk_idx; ++i)
-                total_rows_before += row_group.chunk_sizes[i];
+
+            size_t total_rows_before = std::accumulate(
+                                           row_group_batches_skipped_rows.begin(),
+                                           row_group_batches_skipped_rows.begin() + chunk.row_group_batch_idx + 1,
+                                           0ull)
+                + std::accumulate(row_group_batches.begin(),
+                                  row_group_batches.begin() + chunk.row_group_batch_idx,
+                                  0ull,
+                                  [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; })
+
+                + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
+
 
             chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
 
