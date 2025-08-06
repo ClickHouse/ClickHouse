@@ -180,7 +180,6 @@ private:
             for (int i = 0; i < precision; ++i)
                 writeChar('0', out);
         }
-        writeChar(0, out);
     }
 
 public:
