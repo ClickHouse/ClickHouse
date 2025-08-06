@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -66,6 +67,7 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 namespace DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -150,6 +152,14 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
         };
 
     }
+}
+
+FileNamesGenerator::Result FileNamesGenerator::generateVersionHint()
+{
+    return Result{
+        .path_in_metadata = fmt::format("{}version-hint.text", metadata_dir),
+        .path_in_storage = fmt::format("{}version-hint.text", storage_metadata_dir),
+    };
 }
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
@@ -871,11 +881,12 @@ bool IcebergStorageSink::initializeMetadata()
             return false;
         }
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(storage_metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
-
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
+        if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = filename_generator.generateVersionHint();
+            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
+        }
         if (catalog)
         {
             String catalog_filename = metadata_name;
