@@ -107,4 +107,9 @@ OpenSSLInitializer::~OpenSSLInitializer()
     cleanup();
 }
 
+bool OpenSSLInitializer::isFIPSEnabled() const
+{
+    return EVP_default_properties_is_fips_enabled(nullptr);
+}
+
 }

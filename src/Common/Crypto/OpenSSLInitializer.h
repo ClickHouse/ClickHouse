@@ -24,7 +24,7 @@ public:
     static void initialize();
     static void cleanup();
 
-    bool isFIPSEnabled() const { return false; }
+    bool isFIPSEnabled() const;
 
 private:
     OpenSSLInitializer();
