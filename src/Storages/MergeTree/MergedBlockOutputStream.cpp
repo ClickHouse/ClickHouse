@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
-    extern const MergeTreeSettingsInt64 max_compress_block_size;
+    extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsBool statistics_compact_format;
     extern const MergeTreeSettingsBool use_statistics_for_serialization_info;
 }
