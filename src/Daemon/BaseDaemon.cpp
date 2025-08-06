@@ -47,6 +47,7 @@
 #include <filesystem>
 
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 

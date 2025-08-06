@@ -144,16 +144,11 @@ void OwnSplitChannel::logSplit(
     try
     {
         /// Log data to child channels
-        for (auto & [name, extended_tuple] : channels)
+        for (auto & [name, channel] : channels)
         {
-            auto & [simple_channel, extended_channel, priority] = extended_tuple;
+            auto priority = channel->getPriority();
             if (priority >= msg.getPriority())
-            {
-                if (extended_channel)
-                    extended_channel->logExtended(msg_ext); // extended child
-                else
-                    simple_channel->log(msg); // ordinary child
-            }
+                channel->logExtended(msg_ext);
         }
 
         /// Log to "TCP queue" if message is not too noisy
@@ -197,11 +192,10 @@ void OwnSplitChannel::logSplit(
 
 
 void OwnSplitChannel::addChannel(
-    Poco::AutoPtr<Poco::Channel> channel, const std::string & name, int level, const ProfileEvents::Event &, const ProfileEvents::Event &)
+    ChannelPtr channel, const std::string & name, int level, const ProfileEvents::Event &, const ProfileEvents::Event &)
 {
-    auto extended_tuple = ExtendedChannelWithPriority(
-        std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()), static_cast<Poco::Message::Priority>(level));
-    channels.emplace(name, std::move(extended_tuple));
+    channel->setLevel(level);
+    channels.emplace(name, channel);
 }
 
 void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>> log_queue, int max_priority)
@@ -214,21 +208,14 @@ void OwnSplitChannel::setLevel(const std::string & name, int level)
 {
      auto it = channels.find(name);
      if (it != channels.end())
-     {
-         auto & [simple_channel, extended_channel, priority] = it->second;
-         priority = static_cast<Poco::Message::Priority>(level);
-     }
+         it->second->setLevel(level);
 }
 
 void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const std::string& name, const std::string& value)
 {
     auto it = channels.find(channel_name);
     if (it != channels.end())
-    {
-        auto & [simple_channel, extended_channel, priority] = it->second;
-        if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(extended_channel))
-            channel->setProperty(name, value);
-    }
+        it->second->setProperty(name, value);
 }
 
 OwnAsyncSplitChannel::OwnAsyncSplitChannel(size_t async_queue_size_)
@@ -430,8 +417,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
 
         for (size_t i = 0; i < queues.size(); i++)
         {
-            auto & [simple_channel, extended_channel, priority] = *channels[i];
-            if (priority >= msg_priority)
+            if (channels[i]->getPriority() >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
     }
@@ -473,7 +459,7 @@ AsyncLogMetrics OwnAsyncSplitChannel::getAsynchronousMetrics()
     {
         for (size_t i = 0; i < channels.size(); i++)
         {
-            if (channels[i] == &element.second)
+            if (channels[i] == element.second.get())
             {
                 metrics.push_back({element.first, static_cast<double>(queues[i]->getCurrentMessageSize())});
                 break;
@@ -492,22 +478,14 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
+    auto & extended_channel = channels[i];
 
     auto log_notification = [&](auto & async_message)
     {
         if (!async_message)
             return;
-        const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get());
-        {
-            if (own_notification)
-            {
-                auto & [simple_channel, extended_channel, priority] = *channels[i];
-                if (extended_channel)
-                    extended_channel->logExtended(own_notification->msg_ext); // extended child
-                else
-                    simple_channel->log(*(own_notification->msg_ext).base); // ordinary child
-            }
-        }
+        if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get()))
+            extended_channel->logExtended(own_notification->msg_ext);
     };
 
     while (is_open)
@@ -594,15 +572,11 @@ void OwnAsyncSplitChannel::runTextLog()
 void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value)
 {
     if (auto it = name_to_channels.find(channel_name); it != name_to_channels.end())
-    {
-        auto & [simple_channel, extended_channel, priority] = it->second;
-        if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(extended_channel))
-            channel->setProperty(name, value);
-    }
+        it->second->setProperty(name, value);
 }
 
 void OwnAsyncSplitChannel::addChannel(
-    Poco::AutoPtr<Poco::Channel> channel,
+    ChannelPtr channel,
     const std::string & name,
     int level,
     const ProfileEvents::Event & event_on_passed_message_,
@@ -611,14 +585,12 @@ void OwnAsyncSplitChannel::addChannel(
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel '{}' while the split channel is open", name);
 
-    auto element = name_to_channels.try_emplace(
-        name,
-        ExtendedChannelWithPriority{
-            std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()), static_cast<Poco::Message::Priority>(level)});
+    auto element = name_to_channels.try_emplace(name, channel);
     if (!element.second)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
+    channel->setLevel(level);
 
-    channels.emplace_back(&element.first->second);
+    channels.emplace_back(element.first->second.get());
     queues.emplace_back(std::make_unique<AsyncLogMessageQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_));
     threads.emplace_back(nullptr);
     const size_t i = threads.size() - 1;
@@ -638,9 +610,6 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
 {
     if (auto it = name_to_channels.find(name); it != name_to_channels.end())
-    {
-        auto & [simple_channel, extended_channel, priority] = it->second;
-        priority = static_cast<Poco::Message::Priority>(level);
-    }
+        it->second->setLevel(level);
 }
 }

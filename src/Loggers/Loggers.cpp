@@ -1,6 +1,7 @@
 #include <Loggers/Loggers.h>
 
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
@@ -130,7 +131,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
             pf = new OwnPatternFormatter;
 
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
+        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, log_file);
         split->addChannel(
             log, "FileLog", log_level, ProfileEvents::AsyncLoggingFileLogTotalMessages, ProfileEvents::AsyncLoggingFileLogDroppedMessages);
     }
@@ -169,7 +170,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
             pf = new OwnPatternFormatter;
 
-        Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
+        auto errorlog = std::make_shared<DB::OwnFormattingChannel>(pf, error_log_file);
         errorlog->open();
         split->addChannel(
             errorlog,
@@ -213,7 +214,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
             pf = new OwnPatternFormatter;
 
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
+        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, syslog_channel);
         split->addChannel(
             log, "Syslog", syslog_level, ProfileEvents::AsyncLoggingSyslogTotalMessages, ProfileEvents::AsyncLoggingSyslogDroppedMessages);
     }
@@ -235,7 +236,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             pf = new OwnJSONPatternFormatter(config);
         else
             pf = new OwnPatternFormatter(color_enabled);
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
+        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, new Poco::ConsoleChannel);
         split->addChannel(
             log,
             "Console",

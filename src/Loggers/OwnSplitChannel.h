@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Loggers/ExtendedLogChannel.h>
 #include <base/strong_typedef.h>
 
 #include <atomic>
@@ -12,7 +11,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
@@ -25,6 +23,7 @@ using Event = StrongTypedef<size_t, struct EventTag>;
 namespace DB
 {
 
+class OwnFormattingChannel;
 class InternalTextLogsQueue;
 template <typename>
 class SystemLogQueue;
@@ -37,9 +36,7 @@ using AsyncLogMetrics = std::vector<AsyncLogMetric>;
 class OwnSplitChannelBase : public Poco::Channel
 {
 public:
-    using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
-    /// Handler and its pointer cast to extended interface
-    using ExtendedChannelWithPriority = std::tuple<ChannelPtr, ExtendedLogChannel *, Poco::Message::Priority>;
+    using ChannelPtr = std::shared_ptr<OwnFormattingChannel>;
 
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override = 0;
@@ -49,7 +46,7 @@ public:
 
     /// Adds a child channel
     virtual void addChannel(
-        Poco::AutoPtr<Poco::Channel> channel,
+        ChannelPtr channel,
         const std::string & name,
         int level,
         const ProfileEvents::Event & event_on_passed_message_,
@@ -78,11 +75,7 @@ public:
 
     /// Adds a child channel
     void addChannel(
-        Poco::AutoPtr<Poco::Channel> channel,
-        const std::string & name,
-        int level,
-        const ProfileEvents::Event &,
-        const ProfileEvents::Event &) override;
+        ChannelPtr channel, const std::string & name, int level, const ProfileEvents::Event &, const ProfileEvents::Event &) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
 
@@ -91,7 +84,7 @@ public:
     void logSplit(
         const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name);
 
-    std::map<std::string, ExtendedChannelWithPriority> channels;
+    std::map<std::string, ChannelPtr> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
     std::atomic<bool> stop_logging = false;
@@ -159,7 +152,7 @@ public:
 
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
     void addChannel(
-        Poco::AutoPtr<Poco::Channel> channel,
+        ChannelPtr channel,
         const std::string & name,
         int level,
         const ProfileEvents::Event & event_on_passed_message_,
@@ -177,8 +170,8 @@ private:
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
-    std::map<std::string, ExtendedChannelWithPriority> name_to_channels;
-    std::vector<ExtendedChannelWithPriority *> channels;
+    std::map<std::string, ChannelPtr> name_to_channels;
+    std::vector<OwnFormattingChannel *> channels;
     std::vector<std::unique_ptr<AsyncLogMessageQueue>> queues;
     std::vector<std::unique_ptr<Poco::Thread>> threads;
     std::vector<std::unique_ptr<OwnRunnableForChannel>> runnables;
