@@ -94,9 +94,9 @@ Checks whether the argument's data type is `Nullable` (i.e it allows `NULL` valu
     {
         "Usage example",
         R"(
-CREATE TABLE tab(
-  ordinary_col UInt32,
-  nullable_col Nullable(UInt32)
+CREATE TABLE tab (
+    ordinary_col UInt32,
+    nullable_col Nullable(UInt32)
 )
 ENGINE = MergeTree
 ORDER BY tuple();

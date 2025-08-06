@@ -195,10 +195,10 @@ Returns the leftmost non-`NULL` argument.
 
 CREATE TABLE aBook
 (
-  name String,
-  mail Nullable(String),
-  phone Nullable(String),
-  telegram Nullable(UInt32)
+    name String,
+    mail Nullable(String),
+    phone Nullable(String),
+    telegram Nullable(UInt32)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
