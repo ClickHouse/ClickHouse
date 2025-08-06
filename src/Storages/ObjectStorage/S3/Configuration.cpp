@@ -294,7 +294,7 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
 }
 
 template <typename T>
-std::optional<T> getFromPositionOrKeyValue(
+static std::optional<T> getFromPositionOrKeyValue(
     const std::string & key,
     const ASTs & args,
     const std::unordered_map<std::string_view, size_t> & engine_args_to_idx,
@@ -309,7 +309,7 @@ std::optional<T> getFromPositionOrKeyValue(
     return std::nullopt;
 };
 
-std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context)
+static std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context)
 {
     std::unordered_map<std::string, Field> key_value_args;
     for (const auto & arg : function_args)
@@ -345,22 +345,38 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
     return key_value_args;
 }
 
+static ASTs::iterator getFirstKeyValueArgument(ASTs & args)
+{
+    ASTs::iterator first_key_value_arg_it = args.end();
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        const auto * function_ast = (*it)->as<ASTFunction>();
+        if (function_ast && function_ast->name == "equals")
+        {
+             if (first_key_value_arg_it == args.end())
+                first_key_value_arg_it = it;
+        }
+        else if (first_key_value_arg_it != args.end())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Expected positional arguments to go before key-value arguments");
+        }
+    }
+    return first_key_value_arg_it;
+}
+
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
 
-    auto * it = std::remove_if(args.begin(), args.end(), [](const ASTPtr & arg)
-    {
-        const auto * function_ast = arg->as<ASTFunction>();
-        return function_ast && function_ast->name == "equals";
-    });
-
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     ASTs key_value_asts;
-    if (it != args.end())
+    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+        first_key_value_arg_it != args.end())
     {
-        key_value_asts = ASTs(it, args.end());
+        key_value_asts = ASTs(first_key_value_arg_it, args.end());
         count -= key_value_asts.size();
     }
 
@@ -706,30 +722,30 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 
         HTTPHeaderEntries tmp_headers;
 
-        auto * key_value_it = std::remove_if(args.begin(), args.end(), [](const ASTPtr & arg)
-        {
-            const auto * function_ast = arg->as<ASTFunction>();
-            return function_ast && function_ast->name == "equals";
-        });
-
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
         ASTs key_value_asts;
-        if (key_value_it != args.end())
+        auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+        if (first_key_value_arg_it != args.end())
         {
-            key_value_asts = ASTs(key_value_it, args.end());
+            key_value_asts = ASTs(first_key_value_arg_it, args.end());
             count -= key_value_asts.size();
         }
 
         if (count == 0 || count > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", getMaxNumberOfArguments(), count);
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected 1 to {} arguments in table function s3, got {}",
+                getMaxNumberOfArguments(), count);
+        }
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
 
         bool format_in_key_value = false;
         bool structure_in_key_value = false;
-        for (auto * it = key_value_it; it != args.end(); ++it)
+        for (auto * it = first_key_value_arg_it; it != args.end(); ++it)
         {
             const auto & arg = *it;
             const auto * function_ast = arg->as<ASTFunction>();
@@ -783,7 +799,8 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             with_structure = false;
         }
 
-        args.erase(key_value_it, args.end());
+        /// We will return it back at the end.
+        args.erase(first_key_value_arg_it, args.end());
 
         /// s3(s3_url)
         if (count == 1)

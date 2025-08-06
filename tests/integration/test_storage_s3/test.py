@@ -2758,6 +2758,14 @@ def test_key_value_args(started_cluster):
         f"insert into function s3('{url}', format = TSVRaw, structure = 'a Int32, b String', partition_strategy='hive') partition by b select number, toString(number) from numbers(10) settings s3_truncate_on_insert=1"
     )
 
+    # Check order - positional args before key-value
+    assert (
+        "Expected positional arguments to go before key-value arguments"
+        in node.query_and_get_error(
+            f"insert into function s3('{url}', structure = 'a Int32, b String', partition_strategy='hive', TSV) partition by b select number, toString(number) from numbers(10) settings s3_truncate_on_insert=1"
+        )
+    )
+
     # Check s3Cluster
     # TODO: fix with new analyzer enabled
     assert 2 == int(
