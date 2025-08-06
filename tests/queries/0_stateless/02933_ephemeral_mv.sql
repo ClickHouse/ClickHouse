@@ -22,7 +22,12 @@ SELECT
   toUInt32(num) as num_ephemeral
 FROM raw;
 
+-- SET send_logs_level = 'test';
+
 INSERT INTO raw VALUES ('3', '3'), ('42', '42');
+
+SET send_logs_level = 'error';
+
 SELECT name, num FROM parsed_eph;
 
 DROP VIEW parse_mv_eph;

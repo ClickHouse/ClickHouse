@@ -21,7 +21,7 @@ ORDER BY (k0);
 CREATE MATERIALIZED VIEW mv0 TO t1
 (
   k0 String,
-  v0 AggregateFunction(groupArrayLast(1), Nullable(String))
+  v00 AggregateFunction(groupArrayLast(1), Nullable(String))
 )
 AS SELECT
   k0,
@@ -29,7 +29,9 @@ AS SELECT
 FROM t0
 GROUP BY k0;
 
+--set send_logs_level = 'test';
 INSERT INTO t0 SELECT * FROM generateRandom(2, 9) LIMIT 9;
+--set send_logs_level = 'error';
 
 SELECT v00 FROM t1 ORDER BY k0 FORMAT JSONEachRow;
 

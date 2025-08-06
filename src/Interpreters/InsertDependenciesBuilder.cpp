@@ -687,7 +687,7 @@ private:
         bool insert_null_as_default = false;
 
         // no adding_missing_defaults_dag
-        auto debugCWTAN = [] (const ColumnsWithTypeAndName & columns)
+        auto debugColumns = [] (const ColumnsWithTypeAndName & columns)
         {
             WriteBufferFromOwnString out;
             for (const auto & col : columns)
@@ -695,66 +695,101 @@ private:
             return out.str();
         };
 
-        auto filter_columns_by_name = [] (const ColumnsWithTypeAndName & columns, const Names & columns_to_filter)
+        auto construct_columns_to_convert = [] (const ColumnsWithTypeAndName & src, const ColumnsWithTypeAndName & dst)
         {
-            NameSet columns_to_filter_set(columns_to_filter.begin(), columns_to_filter.end());
+            NameToIndexMap name_to_index_map;
+            for (size_t i = 0; i < dst.size(); ++i)
+                name_to_index_map[dst[i].name] = i;
+
             ColumnsWithTypeAndName result;
-            for (const auto & column : columns)
+            for (const auto & column : src)
             {
-                if (columns_to_filter_set.contains(column.name))
+                if (name_to_index_map.contains(column.name))
+                    result.push_back(dst[name_to_index_map[column.name]]);
+                else
                     result.push_back(column);
             }
             return result;
         };
 
-        auto view_id_ = view_id;
-        auto build_convertation = [&debugCWTAN, &filter_columns_by_name, &local_context, view_id_, insert_null_as_default] (const Block & input, StorageMetadataPtr result_metadata, String debug_str)
+        auto build_convertation = [&] (const Block & input, StorageMetadataPtr result_metadata, String debug_str)
         {
-            auto filtered = filter_columns_by_name(result_metadata->getSampleBlock().getColumnsWithTypeAndName(), input.getNames());
+            auto to_convert = construct_columns_to_convert(input.getColumnsWithTypeAndName(), result_metadata->getSampleBlock().getColumnsWithTypeAndName());
 
             LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "makeConvertingActions view {} as {} source: {} result: {} but filtered: {}",
-                view_id_.getTableName(), debug_str, debugCWTAN(input.getColumnsWithTypeAndName()),
-                result_metadata->getSampleBlock().dumpStructure(), debugCWTAN(filtered));
+                "makeConvertingActions view {} as {}\n"
+                "source: {}\n"
+                "result: {} but filtered: {}",
+                view_id.getTableName(), debug_str,
+                debugColumns(input.getColumnsWithTypeAndName()),
+                result_metadata->getSampleBlock().dumpStructure(), debugColumns(to_convert));
 
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
-                filtered,
+                to_convert,
                 ActionsDAG::MatchColumnsMode::Name);
 
             LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "addMissingDefaults view {} as {}  source: {} but {} result: {}",
-                view_id_.getTableName(), debug_str,
-                debugCWTAN(converting_types_dag.getResultColumns()), debugCWTAN(filtered),
-                debugCWTAN(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
+                "converting_types_dag view {} as {}\n"
+                "dump DAG {}",
+                view_id.getTableName(), debug_str,
+                converting_types_dag.dumpDAG());
+
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "addMissingDefaults view {} as {}\n"
+                "source: {} but {}\n"
+                "result: {}",
+                view_id.getTableName(), debug_str,
+                debugColumns(converting_types_dag.getResultColumns()), debugColumns(to_convert),
+                debugColumns(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
 
             auto adding_missing_defaults_dag = addMissingDefaults(
-                filtered,
+                Block(to_convert),
                 result_metadata->getSampleBlock().getNamesAndTypesList(),
                 result_metadata->getColumns(),
                 local_context,
                 insert_null_as_default);
 
             LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "createSubcolumnsExtractionActions view {} as {} source: {} result names: {}",
-                view_id_.getTableName(), debug_str, debugCWTAN(adding_missing_defaults_dag.getResultColumns()), fmt::join(adding_missing_defaults_dag.getRequiredColumnsNames(), ", "));
+                "adding_missing_defaults_dag view {} as {}\n"
+                "dump DAG {}",
+                view_id.getTableName(), debug_str,
+                adding_missing_defaults_dag.dumpDAG());
+
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "createSubcolumnsExtractionActions view {} as {}\n"
+                "source: {} but {}\n"
+                "result names: {}",
+                view_id.getTableName(), debug_str,
+                debugColumns(converting_types_dag.getResultColumns()), debugColumns(to_convert),
+                fmt::join(adding_missing_defaults_dag.getRequiredColumnsNames(), ", "));
 
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
-                Block(adding_missing_defaults_dag.getResultColumns()),
+                Block(to_convert),
                 adding_missing_defaults_dag.getRequiredColumnsNames(),
                 local_context);
 
-            auto merged_dag = ActionsDAG::merge(std::move(converting_types_dag), std::move(adding_missing_defaults_dag));
+            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "extracting_subcolumns_dag view {} as {}\n"
+                "dump DAG {}",
+                view_id.getTableName(), debug_str,
+                extracting_subcolumns_dag.dumpDAG());
 
-            return ActionsDAG::merge(std::move(merged_dag), std::move(extracting_subcolumns_dag));
+            return ActionsDAG::merge(
+                std::move(converting_types_dag),
+                ActionsDAG::merge(
+                     std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
         };
 
         ActionsDAG conversion_to_view_result = build_convertation(
             pipeline.getHeader(),
-             view_metadata, "VIEW RESULT");
+            view_metadata,
+            "VIEW RESULT");
         ActionsDAG conversion_to_inner_result = build_convertation(
-            Block(conversion_to_view_result.getResultColumns()),
-            inner_metadata, "INNER RESULT");
+            view_metadata->getSampleBlock(),
+            inner_metadata,
+            "INNER RESULT");
+
         auto final_dag = ActionsDAG::merge(std::move(conversion_to_view_result), std::move(conversion_to_inner_result));
 #endif
 

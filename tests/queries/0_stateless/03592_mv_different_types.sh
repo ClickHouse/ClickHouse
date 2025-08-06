@@ -28,7 +28,7 @@ ENGINE = MergeTree
 ORDER BY type;
 EOF
 
-
+echo "test source_to_destination_mv"
 ${CLICKHOUSE_CLIENT} <<EOF
 CREATE MATERIALIZED VIEW source_to_destination_mv TO destination
 (
@@ -37,22 +37,10 @@ CREATE MATERIALIZED VIEW source_to_destination_mv TO destination
 AS SELECT
     value as type
 FROM source;
-
-CREATE MATERIALIZED VIEW source_to_middle_mv TO middle
-AS SELECT
-    value as type
-FROM source;
-
-CREATE MATERIALIZED VIEW middle_to_destination_mv TO destination
-(
-    type Enum8('ENUM_VAL_1' = 0, 'ENUM_VAL_2' = 34)
-)
-AS SELECT
-    type as type
-FROM middle;
 EOF
 
-${CLICKHOUSE_CLIENT} --send_logs_level='error' <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
+--set send_logs_level='trace';
 INSERT INTO source ("value")
 VALUES ('ENUM_VAL_1'),
        ('ENUM_VAL_2');
@@ -67,4 +55,54 @@ EOF
 ${CLICKHOUSE_CLIENT} <<EOF
 INSERT INTO source ("value")
 VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE IF EXISTS source_to_destination_mv;
+EOF
+
+echo "test source_to_middle_mv and middle_to_destination_mv"
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE MATERIALIZED VIEW source_to_middle_mv TO middle
+AS SELECT
+    value as type
+FROM source;
+
+CREATE MATERIALIZED VIEW middle_to_destination_mv TO destination
+(
+    type Enum8('ENUM_VAL_1' = 0, 'ENUM_VAL_2' = 34)
+)
+AS SELECT
+    type as type
+FROM middle;
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+-- set send_logs_level='trace';
+INSERT INTO source ("value")
+VALUES ('ENUM_VAL_1'),
+       ('ENUM_VAL_2');
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+SELECT *
+FROM destination
+ORDER BY type
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+INSERT INTO source ("value")
+VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+EOF
+
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE IF EXISTS source_to_middle_mv;
+DROP TABLE IF EXISTS middle_to_destination_mv;
+EOF
+
+#############
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS middle;
+DROP TABLE IF EXISTS destination;
 EOF
