@@ -74,7 +74,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
-
 using namespace Iceberg;
 
 IcebergMetadata::IcebergMetadata(
@@ -472,12 +471,13 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+    writeMessageToFile(metadata_content, filename, object_storage, local_context);
+
+    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-        buffer_metadata->write(metadata_content.data(), metadata_content.size());
-        buffer_metadata->finalize();
+        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context);
     }
     if (catalog)
     {
