@@ -18,7 +18,7 @@ export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertP
 
     const sumVectors = (vectors) => vectors.reduce((acc, vec) => acc.map((val, index) => val + vec[index]), new Array(vectors[0].length).fill(0));
 
-    // Auxilary y-vector expressed as a function of x-vector:
+    // Auxiliary y-vector expressed as a function of x-vector:
     // y[i] = sum(x[k], k=0..i), note that y[-1] = 0
     const y = (x, i) => x.slice(0, i + 1).reduce((acc, val) => acc + val, 0); // Note that y(x, -1) = 0
 

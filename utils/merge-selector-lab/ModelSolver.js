@@ -177,7 +177,7 @@ export class ModelSolver {
         }
     }
 
-    // Solves models in a number of points and store solution for futher interpolation
+    // Solves models in a number of points and store solution for further interpolation
     async train(minPartSize, maxPartSize, workersMax, partsStep, workersStep, method, onProgress) {
         // Feasible ranges for parameters
         this.partsMax = maxPartSize / minPartSize;

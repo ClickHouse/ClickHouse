@@ -88,7 +88,7 @@ export function* floatLayerMerges({insertPartSize, layerBases, mergeRight})
             {
                 const target = sizes[layer + 1]; // Approximate target size of resulting part
 
-                // Check alignment with begining of target interval
+                // Check alignment with beginning of target interval
                 const target_lo = Math.floor(begin_part.left_bytes / target) * target; // 1st boundary to the left of `left`
                 const target_mi = target_lo + target; // 1st boundary to the right of `left`
                 const target_hi = target_mi + target; // 2nd boundary to the right of `left`
