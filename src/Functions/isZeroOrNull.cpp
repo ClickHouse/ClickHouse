@@ -132,9 +132,9 @@ Checks if the argument is either zero (`0`) or `NULL`.
     )";
     FunctionDocumentation::Syntax syntax = "isZeroOrNull(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "A numeric value.", {"Number"}}
+        {"x", "A numeric value.", {"UInt"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is `NULL` or equal to zero, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is `NULL` or equal to zero, otherwise `0`.", {"UInt8/16/32/64", "Float32/Float64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
