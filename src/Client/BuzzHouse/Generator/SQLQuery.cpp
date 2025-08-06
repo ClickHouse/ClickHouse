@@ -276,7 +276,7 @@ void StatementGenerator::setTableFunction(
                 ? S3Func_FName::S3Func_FName_s3
                 : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3);
 
-            if (cluster.has_value())
+            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
                 sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 4));
                 sfunc->mutable_cluster()->set_cluster(cluster.value());
@@ -298,7 +298,7 @@ void StatementGenerator::setTableFunction(
                 : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
                                             : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure);
 
-            if (cluster.has_value())
+            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
                 afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
                 afunc->mutable_cluster()->set_cluster(cluster.value());
@@ -320,7 +320,7 @@ void StatementGenerator::setTableFunction(
                 ? FileFunc_FName::FileFunc_FName_file
                 : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
 
-            if (cluster.has_value())
+            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
                 ffunc->set_fname(static_cast<FileFunc_FName>(static_cast<uint32_t>(val) + 3));
                 ffunc->mutable_cluster()->set_cluster(cluster.value());
@@ -347,7 +347,7 @@ void StatementGenerator::setTableFunction(
         {
             URLFunc * ufunc = tfunc->mutable_url();
 
-            if (cluster.has_value())
+            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
                 ufunc->mutable_cluster()->set_cluster(cluster.value());

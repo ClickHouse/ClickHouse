@@ -1620,7 +1620,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
             idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
-            if (rg.nextBool())
+            if (next_tokenizer == "ngram" && rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
@@ -1630,7 +1630,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             {
                 String buf;
                 DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
-                std::uniform_int_distribution<size_t> next_dist(UINT32_C(0), separators.size());
+                std::uniform_int_distribution<size_t> next_dist(UINT32_C(1), separators.size());
 
                 std::shuffle(separators.begin(), separators.end(), rg.generator);
                 const size_t nlen = next_dist(rg.generator);
