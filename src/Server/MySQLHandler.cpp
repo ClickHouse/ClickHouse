@@ -29,7 +29,6 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include <IO/WriteBufferFromString.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -171,7 +170,7 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "SHOW COLLATIONS" into creating temporary system mysql table.
+/// Replace "SHOW COLLATIONS" into empty response.
 static String showCollationsReplacementQuery(const String & /*query*/)
 {
     return "SELECT 1 LIMIT 0";
