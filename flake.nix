@@ -113,8 +113,6 @@
     contrib-jwt-cpp = { url = "github:Thalhammer/jwt-cpp/a6927cb8140858c34e05d1a954626b9849fbcdfc"; flake = false; };
     contrib-zstd = { url = "github:facebook/zstd/437081852c396eeb61edb7d47044d8cad911885e"; flake = false; };
     contrib-lz4 = { url = "github:lz4/lz4/ebb370ca83af193212df4dcbadcc5d87bc0de2f0"; flake = false; };
-    contrib-simde = { url = "github:simd-everywhere/simde/53f8c0853a7231dbf5d1efb0f0eba3529850e996"; flake = false; };
-    contrib-FastPFOR = { url = "github:fast-pack/FastPFOR/039134b61d39d52a18c72717ee1ec2afb797a222"; flake = false; };
     contrib-librdkafka = { url = "github:ClickHouse/librdkafka/73bde76a915cf79d7fd7c49632a86857681d6a4b"; flake = false; };
     contrib-cctz = { url = "github:ClickHouse/cctz/6440590af6962a2ed22ef574c2289a54ccf165fb"; flake = false; };
     contrib-zlib-ng = { url = "github:ClickHouse/zlib-ng/a2fbeffdc30a8b0ce6d54ee31208e2688eac4c9f"; flake = false; };
@@ -238,5 +236,7 @@
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/5ae9bfe8cab2fd930764501d7203dbe3651fc9b5"; flake = false; };
     contrib-nlohmann-json = { url = "github:nlohmann/json/55f93686c01528224f448c19128836e7df245f72"; flake = false; };
     contrib-crc32c = { url = "github:google/crc32c/02e65f4fd3065d27b2e29324800ca6d04df16126"; flake = false; };
+    contrib-simde = { url = "github:simd-everywhere/simde/53f8c0853a7231dbf5d1efb0f0eba3529850e996"; flake = false; };
+    contrib-FastPFOR = { url = "github:fast-pack/FastPFOR/039134b61d39d52a18c72717ee1ec2afb797a222"; flake = false; };
   };
 }
