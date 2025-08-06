@@ -1,11 +1,13 @@
-#include <Interpreters/misc.h>
+#include "Interpreters/ActionsDAG.h"
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
 #include <iostream>
 
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -18,13 +20,46 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * filter, ActionsDAG::Node * prewhere) const
+{
+    if (filter == nullptr && prewhere == nullptr)
+    {
+        return estimateRelationProfile();
+    }
+    else if (filter == nullptr)
+    {
+        return estimateRelationProfile(prewhere);
+    }
+    else if (prewhere == nullptr)
+    {
+        return estimateRelationProfile(filter);
+    }
+    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
+        return extractAtomFromTree(node_, out);
+    }).extractRPN();
+    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
+        return extractAtomFromTree(node_, out);
+    }).extractRPN();
+    rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
+    RPNElement last_rpn;
+    last_rpn.function = RPNElement::FUNCTION_AND;
+    rpn.push_back(last_rpn);
+    return estimateRelationProfileImpl(rpn);
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPNBuilderTreeNode & node) const
 {
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(node_, out);
     }).extractRPN();
+    return estimateRelationProfileImpl(rpn);
+}
 
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const
+{
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
     for (auto & element : rpn)
@@ -93,13 +128,30 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPN
     auto* final_element = rpn_stack.top();
     final_element->finalize(column_estimators);
     RelationProfile result;
-    result.rows = final_element->selectivity * total_rows;
+    result.rows = static_cast<UInt64>(final_element->selectivity * total_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        Float64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_profile.emplace(column_name, cardinality);
+        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, cardinality);
     }
     return result;
+}
+
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+{
+    RelationProfile result;
+    result.rows = total_rows;
+    for (const auto & [column_name, estimator] : column_estimators)
+    {
+        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+    }
+    return result;
+}
+
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * node) const
+{
+    RPNBuilderTreeContext tree_context(getContext());
+    return estimateRelationProfile(RPNBuilderTreeNode(node, tree_context));
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -208,8 +260,6 @@ void ConditionSelectivityEstimator::addStatistics(ColumnStatisticsPtr column_sta
 
 void ConditionSelectivityEstimator::ColumnEstimator::addStatistics(ColumnStatisticsPtr other_stats)
 {
-    /// if (part_statistics.contains(part_name))
-    ///     throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
     if (stats == nullptr)
     {
         stats = other_stats;
@@ -225,10 +275,13 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
     {
         result += stats->estimateRange(range);
     }
+    /// In case that there is an empty statistics.
+    if (stats->rowCount() == 0)
+        return 0;
     return result / stats->rowCount();
 }
 
-Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
+UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
 {
     return stats->estimateCardinality();
 }

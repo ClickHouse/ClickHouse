@@ -20,6 +20,7 @@ public:
 
     Float64 estimateLess(const Field & val) const override;
 
+    String debugString() const override { return "MinMax : (" + toString(min) + ", " + toString(max); }
 private:
     Float64 min = std::numeric_limits<Float64>::max();
     Float64 max = std::numeric_limits<Float64>::min();
