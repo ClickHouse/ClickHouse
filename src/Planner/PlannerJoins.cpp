@@ -53,6 +53,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_join_condition;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -360,11 +361,14 @@ void buildJoinClauseImpl(
         }
         else
         {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns nullability will be changed later which make this expression not right.
-            if (!join_use_nulls)
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
                 join_clause.addResidualCondition(node);
             }
@@ -1003,7 +1007,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 
 std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader & right_table_expression_header)
+    const Block & right_table_expression_header)
 {
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return {};
@@ -1059,7 +1063,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
       */
     Block right_table_expression_header_with_storage_column_names;
 
-    for (const auto & right_table_expression_column : *right_table_expression_header)
+    for (const auto & right_table_expression_column : right_table_expression_header)
     {
         auto table_column_name_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
         if (table_column_name_it == right_table_expression.column_mapping.end())
@@ -1070,7 +1074,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);
     }
 
-    return std::make_shared<DirectKeyValueJoin>(table_join, *right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
+    return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
 }
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
@@ -1095,8 +1099,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader & left_table_expression_header,
-    SharedHeader & right_table_expression_header,
+    const Block & left_table_expression_header,
+    const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
     UInt64 hash_table_key_hash,
     std::optional<UInt64> rhs_size_estimation)
@@ -1219,8 +1223,8 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    SharedHeader left_table_expression_header,
-    SharedHeader right_table_expression_header,
+    const Block & left_table_expression_header,
+    const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
     UInt64 hash_table_key_hash,
     std::optional<UInt64> rhs_size_estimation)
@@ -1238,7 +1242,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (auto storage = table_join->getStorageJoin())
     {
         Names required_column_names;
-        for (const auto & result_column : *right_table_expression_header)
+        for (const auto & result_column : right_table_expression_header)
         {
             auto source_column_name_it = right_table_expression.column_mapping.find(result_column.name);
             if (source_column_name_it == right_table_expression.column_mapping.end())

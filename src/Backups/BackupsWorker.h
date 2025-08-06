@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 #include <Backups/BackupOperationInfo.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -100,10 +99,6 @@ private:
 
     BackupPtr openBackupForReading(const BackupInfo & backup_info, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
-#if CLICKHOUSE_CLOUD
-    BackupMutablePtr openBackupForUnlockSnapshot(const BackupInfo & backup_info, const ContextPtr & context) const;
-#endif
-
     void doRestore(
         const std::shared_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
@@ -144,7 +139,6 @@ private:
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
-    const bool shutdown_wait_backups_and_restores;
     const bool remove_backup_files_after_failure;
     const bool test_randomize_order;
     const bool test_inject_sleep;

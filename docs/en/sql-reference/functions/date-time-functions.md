@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Functions for Working with Dates and Times'
-sidebar_label: 'Dates and time'
+sidebar_label: 'Dates and Times'
+sidebar_position: 45
 slug: /sql-reference/functions/date-time-functions
 title: 'Functions for Working with Dates and Times'
 ---
 
-# Functions for working with dates and times
+# Functions for Working with Dates and Times
 
 Most functions in this section accept an optional time zone argument, e.g. `Europe/Amsterdam`. In this case, the time zone is the specified one instead of the local (default) one.
 
@@ -231,7 +232,7 @@ Alias: `TIMESTAMP`
 **Examples**
 
 ```sql
-SELECT timestamp('2023-12-31') AS ts;
+SELECT timestamp('2023-12-31') as ts;
 ```
 
 Result:
@@ -243,7 +244,7 @@ Result:
 ```
 
 ```sql
-SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
 ```
 
 Result:
@@ -1351,15 +1352,16 @@ Result:
 Query with timezone:
 
 ```sql
-WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
-SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
+┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
+│               2020-01-01 12:20:30.999000000 │
+└─────────────────────────────────────────────┘
 ```
 
 Result:
 
 ```text
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 13:20:30.999000000 │
+│                     2020-01-01 12:20:30.999 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1410,7 +1412,7 @@ Result:
 
 ```text
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 13:20:30.999999000 │
+│               2020-01-01 12:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1465,7 +1467,7 @@ Result:
 
 ```text
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 13:20:30.999999999 │
+│              2020-01-01 12:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -1996,8 +1998,8 @@ Query:
 
 ```sql
 SELECT
-  toISOYear(toDate('2024/10/02')) AS year1,
-  toISOYear(toDateTime('2024-10-02 01:30:00')) AS year2
+  toISOYear(toDate('2024/10/02')) as year1,
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 Result:
@@ -2631,7 +2633,7 @@ Date or date with time with the specified `value` expressed in `unit` added to `
 **Example**
 
 ```sql
-SELECT timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
+select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 ```
 
 Result:
@@ -2680,7 +2682,7 @@ Date or date with time obtained by subtracting `value`, expressed in `unit`, fro
 **Example**
 
 ```sql
-SELECT timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
+select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
 ```
 
 Result:
@@ -2858,8 +2860,7 @@ Result:
 
 ## nowInBlock {#nowInBlock}
 
-Returns the current date and time at the moment of processing of each block of data.
-In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
 
@@ -2897,74 +2898,6 @@ Result:
 │ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
 │ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
 └─────────────────────┴─────────────────────┴──────────┘
-```
-
-## nowInBlock64 {#nowInBlock64}
-
-Returns the current date and time at the moment of processing of each block of data in milliseconds.
-In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
-
-It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
-
-**Syntax**
-
-```sql
-nowInBlock([scale[, timezone]])
-```
-
-**Arguments**
-
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typical values used: 3 (milliseconds), 6 (microseconds), 9 (nanoseconds) (optional).
-
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
-
-**Returned value**
-
-- Current date and time at the moment of processing of each block of data with precision in  10<sup>-precision</sup> seconds. [DateTime](../data-types/datetime.md).
-
-**Example**
-
-```sql
-SELECT
-    now64(),
-    nowInBlock64(),
-    sleep(1)
-FROM numbers(3)
-SETTINGS max_block_size = 1
-FORMAT PrettyCompactMonoBlock
-```
-
-Result:
-
-```text
-┌─────────────────now64()─┬──────────nowInBlock64()─┬─sleep(1)─┐
-│ 2025-07-29 17:07:29.526 │ 2025-07-29 17:07:29.534 │        0 │
-│ 2025-07-29 17:07:29.526 │ 2025-07-29 17:07:30.535 │        0 │
-│ 2025-07-29 17:07:29.526 │ 2025-07-29 17:07:31.535 │        0 │
-└─────────────────────────┴─────────────────────────┴──────────┘
-```
-
-**Example with parameters**
-
-```sql
-SELECT
-    nowInBlock64(6),
-    nowInBlock64(6, 'America/Sao_Paulo'),
-    nowInBlock64(9, 'Pacific/Pitcairn'),
-    sleep(1)
-FROM numbers(3)
-SETTINGS max_block_size = 1
-FORMAT PrettyCompactMonoBlock
-```
-
-Result:
-
-```text
-┌────────────nowInBlock64(6)─┬─nowInBlock64(6, 'America/Sao_Paulo')─┬─nowInBlock64(9, 'Pacific/Pitcairn')─┬─sleep(1)─┐
-│ 2025-07-29 17:09:37.775725 │ 2025-07-29 17:09:37.775815           │ 2025-07-29 12:09:37.775856787       │        0 │
-│ 2025-07-29 17:09:38.776867 │ 2025-07-29 17:09:38.776888           │ 2025-07-29 12:09:38.776903370       │        0 │
-│ 2025-07-29 17:09:39.777645 │ 2025-07-29 17:09:39.777688           │ 2025-07-29 12:09:39.777725056       │        0 │
-└────────────────────────────┴──────────────────────────────────────┴─────────────────────────────────────┴──────────┘
 ```
 
 ## today {#today}

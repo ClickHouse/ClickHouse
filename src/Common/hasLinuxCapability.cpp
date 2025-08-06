@@ -1,6 +1,6 @@
 #if defined(OS_LINUX)
 
-#include <Common/hasLinuxCapability.h>
+#include "hasLinuxCapability.h"
 
 #include <syscall.h>
 #include <unistd.h>

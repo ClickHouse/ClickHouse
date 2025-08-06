@@ -81,7 +81,7 @@ public:
     {
     }
 
-    virtual int performQuery(const String &) { return 1; }
+    virtual bool performQuery(const String &) { return false; }
 
     virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
 
@@ -147,7 +147,7 @@ public:
 
     bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
-    int performQuery(const String & query) override;
+    bool performQuery(const String & query) override;
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 #else
@@ -171,8 +171,6 @@ private:
 
     PostgreSQLUniqueKeyPtr postgres_connection;
 
-    int sqlstateToInt(const String & sqlstate);
-
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, PostgreSQLUniqueKeyPtr pcon)
         : ClickHouseIntegratedDatabase(fcc, scc)
@@ -191,7 +189,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    int performQuery(const String & query) override;
+    bool performQuery(const String & query) override;
 #else
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
@@ -233,7 +231,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    int performQuery(const String & query) override;
+    bool performQuery(const String & query) override;
 #else
 public:
     const std::filesystem::path sqlite_path;
@@ -319,13 +317,13 @@ class MinIOIntegration : public ClickHouseIntegration
 private:
     bool sendRequest(const String & resource);
 
-    String getConnectionURL(bool client);
-
 public:
     explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)
     {
     }
+
+    String getConnectionURL();
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
@@ -362,6 +360,8 @@ public:
         : ClickHouseIntegration(fcc, ssc)
     {
     }
+
+    String getConnectionURL();
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
@@ -439,7 +439,7 @@ public:
 
     void dropPeerTableOnRemote(const SQLTable & t);
 
-    int performQuery(PeerTableDatabase pt, const String & query);
+    bool performQuery(PeerTableDatabase pt, const String & query);
 
     bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, PerformanceResult & res);
 
