@@ -21,6 +21,7 @@ The table contains information about [mutations](/sql-reference/statements/alter
 - `command` ([String](/sql-reference/data-types/string.md)) — The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
 - `create_time` ([DateTime](/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was submitted for execution.
+- `finish_time` ([DateTime](/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was finished or zero if mutation still in process.
 
 - `block_numbers.partition_id` ([Array](/sql-reference/data-types/array.md)([String](/sql-reference/data-types/string.md))) — For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty.
 
