@@ -126,6 +126,15 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
 
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
+inline ALWAYS_INLINE size_t trackMemoryThrow(std::size_t size, AllocationTrace & trace, TAlign... align)
+{
+    std::size_t actual_size = getActualAllocationSize(size, align...);
+    trace = CurrentMemoryTracker::alloc(actual_size);
+    return actual_size;
+}
+
+template <std::same_as<std::align_val_t>... TAlign>
+requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
