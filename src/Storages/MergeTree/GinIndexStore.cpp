@@ -49,7 +49,7 @@ const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
 }
 
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforCompression::serialize(WriteBuffer & buffer, const roaring::Roaring& rowids, UInt64 header_mask)
+UInt64 GinIndexPostingListDeltaPforCompression::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask)
 {
     const UInt64 cardinality = rowids.cardinality();
 

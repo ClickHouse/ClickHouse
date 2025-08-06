@@ -51,31 +51,35 @@ public:
 };
 
 #if USE_FASTPFOR
-class GinIndexPostingListDeltaPforCompression {
+class GinIndexPostingListDeltaPforCompression
+{
 public:
     static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
 
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+
 private:
-#if defined(__AVX512F__) && defined(__AVX512BW__)
+#    if defined(__AVX512F__) && defined(__AVX512BW__)
     /// FastPFor does not have AVX512 support yet, but we can still use 256-bit support.
     static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
     static constexpr size_t FASTPFOR_THRESHOLD = 8;
-#elif defined(__AVX__) && defined(__AVX2__)
+#    elif defined(__AVX__) && defined(__AVX2__)
     static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
     static constexpr size_t FASTPFOR_THRESHOLD = 8;
-#else
+#    else
     static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
     static constexpr size_t FASTPFOR_THRESHOLD = 4;
-#endif
+#    endif
 };
 #endif
 
-class GinIndexPostingListBitmapZstdCompression {
+class GinIndexPostingListBitmapZstdCompression
+{
 public:
     static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
 
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+
 private:
     static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
     static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
@@ -100,6 +104,7 @@ public:
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
+
 private:
     static constexpr UInt64 BITMAP_ZSTD_COMPRESSION_MASK = 0x0;
     static constexpr UInt64 DELTA_PFOR_COMPRESSION_MASK = 0x1;
