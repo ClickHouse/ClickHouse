@@ -111,6 +111,8 @@ std::unique_ptr<S3::Client> getClient(
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
         s3_slow_all_threads_after_network_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_network_error]);
 
+    bool s3_slow_all_threads_after_retryable_error = false;
+
     bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
@@ -121,6 +123,7 @@ std::unique_ptr<S3::Client> getClient(
         s3_max_redirects,
         s3_retry_attempts,
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         for_disk_s3,
         request_settings.get_request_throttler,

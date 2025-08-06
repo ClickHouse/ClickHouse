@@ -70,10 +70,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -83,7 +79,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
 coalesce
 concat
@@ -170,10 +165,6 @@ fromUnixTimestamp64Second
 fuzzBits
 gccMurmurHash
 generateUUIDv4
-geoDistance
-geohashDecode
-geohashEncode
-geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
@@ -188,15 +179,12 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-greatCircleAngle
-greatCircleDistance
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hex
 hiveHash
 hop
 hopEnd
@@ -359,8 +347,6 @@ partitionId
 path
 pathFull
 pi
-pointInEllipses
-pointInPolygon
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -651,8 +637,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes

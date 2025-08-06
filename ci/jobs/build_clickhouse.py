@@ -125,13 +125,19 @@ def main():
     results = []
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"mkdir -p {build_dir}")
-        results.append(
-            Result.from_commands_run(
-                name="Checkout Submodules",
-                command=f"git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs {min([Utils.cpu_count(), 20])}",
+
+        def do_checkout():
+            res = Shell.check(
+                f"mkdir -p {build_dir} && git submodule sync && git submodule init"
+            )
+            res = res and Shell.check(
+                f"git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch",
                 retries=3,
             )
+            return res
+
+        results.append(
+            Result.from_commands_run(name="Checkout Submodules", command=do_checkout)
         )
         res = results[-1].is_ok()
 
@@ -153,6 +159,17 @@ def main():
             Shell.check(
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
+        elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+        # The sccache server sometimes fails to start because of issues with S3
+        # It should start before cmake, since cmake can precompile binaries during
+        # configuration stage
+        results.append(
+            Result.from_commands_run(
+                name="Start sccache server", command="sccache --start-server", retries=3
+            )
+        )
+        run_shell("sccache stats", "sccache --show-stats")
         results.append(
             Result.from_commands_run(
                 name="Cmake configuration",
@@ -167,15 +184,12 @@ def main():
 
     files = []
     if res and JobStages.BUILD in stages:
-        run_shell("sccache start server", "sccache --start-server", retries=3)
-        run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
             targets = "-k0 all"
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         else:
             targets = "clickhouse-bundle"
         results.append(
