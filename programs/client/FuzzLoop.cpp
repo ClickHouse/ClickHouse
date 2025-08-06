@@ -698,7 +698,7 @@ bool Client::buzzHouse()
                     const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
 
-                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().supportsOptimize());
+                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t dump_table = 50;

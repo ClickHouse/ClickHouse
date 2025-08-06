@@ -311,12 +311,6 @@ public:
         return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
     }
 
-    bool supportsOptimize() const
-    {
-        return isMergeTreeFamily() || isBufferEngine()
-            || (isDistributedEngine() && (SQLBase::supportsFinal(sub) || sub == TableEngineValues::MergeTree));
-    }
-
     bool hasSignColumn() const
     {
         return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;

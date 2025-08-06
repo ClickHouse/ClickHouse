@@ -526,8 +526,6 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
     }
 }
 
-static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAttached() && t.supportsOptimize(); };
-
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
     const std::optional<String> & cluster = t.getCluster();
@@ -568,7 +566,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     {
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
-    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && (strict || rg.nextSmallNumber() < 3));
+    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4));
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
@@ -579,7 +577,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 {
     if (systemTables.empty() || rg.nextMediumNumber() < 91)
     {
-        generateNextOptimizeTableInternal(rg, rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda)), false, ot);
+        generateNextOptimizeTableInternal(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), false, ot);
     }
     else
     {
@@ -1241,13 +1239,11 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
 }
 
-static const auto alter_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.isFileEngine(); };
-
 void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 {
     SQLObjectName * sot = at->mutable_object();
     const uint32_t alter_view = 5 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
-    const uint32_t alter_table = 15 * static_cast<uint32_t>(collectionHas<SQLTable>(alter_table_lambda));
+    const uint32_t alter_table = 15 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t alter_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t prob_space2 = alter_view + alter_table + alter_database;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
@@ -1314,7 +1310,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     }
     else if (alter_table && nopt2 < (alter_view + alter_table + 1))
     {
-        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomly(filterCollection<SQLTable>(alter_table_lambda)).get());
+        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get());
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
@@ -3760,17 +3756,14 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const uint32_t insert = 180 * static_cast<uint32_t>(has_tables);
     const uint32_t light_delete = 6 * static_cast<uint32_t>(has_tables);
     const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
-    const uint32_t optimize_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(optimize_table_lambda));
+    const uint32_t optimize_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t desc_table = 2;
     const uint32_t exchange = 1
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
                                     || collectionCount<SQLDictionary>(attached_dictionaries) > 1));
-    const uint32_t alter = 6
-        * static_cast<uint32_t>(
-                               collectionHas<SQLTable>(alter_table_lambda) || collectionHas<SQLView>(attached_views)
-                               || collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t alter = 6 * static_cast<uint32_t>(has_tables || has_views || has_databases);
     const uint32_t set_values = 5;
     const uint32_t attach = 2
         * static_cast<uint32_t>(!in_parallel
