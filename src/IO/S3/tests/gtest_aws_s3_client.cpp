@@ -125,6 +125,7 @@ void testServerSideEncryption(
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
+    bool s3_slow_all_threads_after_retryable_error = true;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
@@ -137,12 +138,12 @@ void testServerSideEncryption(
         s3_max_redirects,
         s3_retry_attempts,
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
         /* put_request_throttler = */ {},
-        uri.uri.getScheme()
-    );
+        uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
 
@@ -397,6 +398,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
+    bool s3_slow_all_threads_after_retryable_error = true;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
@@ -411,12 +413,12 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_max_redirects,
         s3_retry_attempts,
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
         /* put_request_throttler = */ {},
-        "http"
-    );
+        "http");
 
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>();
