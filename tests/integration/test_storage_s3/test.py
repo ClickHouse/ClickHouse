@@ -2771,19 +2771,16 @@ def test_key_value_args(started_cluster):
     assert 2 == int(
         node.query(
             f"select a from s3Cluster(cluster, '{url}', TSVRaw, structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'none') where b = '2'",
-            settings={"allow_experimental_analyzer": 0},
         )
     )
     assert 2 == int(
         node.query(
             f"select a from s3Cluster(cluster, '{url}', format = TSVRaw, structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'none') where b = '2'",
-            settings={"allow_experimental_analyzer": 0},
         )
     )
     assert 2 == int(
         node.query(
             f"select a from s3Cluster(cluster, '{url}', structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'none') where b = '2'",
-            settings={"allow_experimental_analyzer": 0},
         )
     )
 
