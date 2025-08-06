@@ -925,10 +925,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
             zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, String(), zkutil::CreateMode::Persistent));
     }
 
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates", "",
-        zkutil::CreateMode::Persistent));
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates/in_progress", "",
-        zkutil::CreateMode::Persistent));
+    /// For synchronization of lightweight updates (see PatchPartsLock.h)
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates/in_progress", String(), zkutil::CreateMode::Persistent));
 
     for (auto & future : futures)
     {

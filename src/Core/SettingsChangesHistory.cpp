@@ -58,10 +58,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
-            {"vector_search_with_rescoring", true, true, "New setting."},
+            {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
