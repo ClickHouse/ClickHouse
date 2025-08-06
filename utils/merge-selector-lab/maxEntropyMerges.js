@@ -1,4 +1,4 @@
-export function* maxWaMerges({min_parts, max_parts, min_score})
+export function* maxEntropyMerges({min_parts, max_parts, min_score})
 {
     // TODO: adapt for parallel merges
     let mt = yield {type: 'getMergeTree'};

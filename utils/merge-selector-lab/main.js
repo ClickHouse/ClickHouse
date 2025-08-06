@@ -1,17 +1,8 @@
-import { Chart } from './Chart.js';
-import { MergeTree } from './MergeTree.js';
 import { SimulationContainer } from './SimulationContainer.js';
-import { runScenario, noArrivalsScenario, SCENARIOS } from './Scenarios.js';
+import { runScenario, SCENARIOS } from './Scenarios.js';
 import { sequenceInserter } from './sequenceInserter.js';
 import { customScenario } from './customScenario.js';
-import { fixedBaseMerges } from './fixedBaseMerges.js';
-import { floatBaseMerges } from './floatBaseMerges.js';
-import { factorsAsBaseMerges } from './factorsAsBaseMerges.js';
-import { simpleMerges } from './simpleMerges.js';
-import { integerLayerMerges } from './integerLayerMerges.js';
 import { floatLayerMerges } from './floatLayerMerges.js';
-import { factorizeNumber, allFactorPermutations } from './factorization.js';
-import { clickHousePartsInserter } from './clickHousePartsInserter.js';
 import { delayMs } from './util.js';
 
 // Global pages configuration including scenarios and other functions
@@ -31,106 +22,6 @@ export const TOOLS = {
     'train_solver.html': { description: 'Machine learning tool for training merge optimization solvers using gradient descent methods', type: 'tool' },
     'float_layer_merges.html': { description: 'Specialized simulation for float layer merge strategies with sequence insertion patterns', type: 'tool' }
 };
-
-async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
-{
-    let min_y = Infinity;
-    let best_base = null;
-    for (let base = 2; base <= parts / 2; base++)
-    {
-        const time_integral =
-              (base - 3) * parts / 2 * Math.log(parts) / Math.log(base)
-            + (base + 1) / (base - 1) * parts * (parts - 1) / 2
-            + total_time
-            ;
-
-        const y = time_integral / total_time * (new MergeTreeSimulator()).mergeDuration(1 << 20, 2);
-        series.addPoint({x: base, y});
-
-        if (min_y > y)
-        {
-            min_y = y;
-            best_base = base;
-        }
-
-        await delayMs(1);
-    }
-    return {y: min_y, base: best_base};
-}
-
-async function iterateBaseLinear(selector, series, parts, total_time = 1.0)
-{
-    let min_y = Infinity;
-    let best = null;
-    for (let base = 2; base <= parts / 2; base++)
-    {
-        let mt = noArrivalsScenario(selector, {base, parts, total_time});
-        mt.title = `${selector.name} ║ Parts: ${parts}, Base: ${base} ║`;
-        mt.selector = selector;
-        mt.base = base;
-        const time_integral = mt.integral_active_part_count;
-
-        const y = time_integral / total_time;
-        if (series)
-            series.addPoint({x: base, y, mt});
-
-        if (min_y > y)
-        {
-            min_y = y;
-            best = mt;
-        }
-
-        await delayMs(1);
-    }
-    return {y: min_y, mt: best};
-}
-
-async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
-{
-    let min_y = Infinity;
-    let best = null;
-    // const permutations = [...allFactorPermutations(factorizeNumber(parts)), [parts]];
-    const permutations = allFactorPermutations(factorizeNumber(parts));
-    //console.log("ALL PERMUTATIONS", permutations);
-    for (const factors of permutations)
-    {
-        // console.log(`Permutation: ${factors.join(' x ')} = ${parts}`);
-        let mt = noArrivalsScenario(selector, {factors, parts, total_time});
-        mt.title = `${selector.name} ║ Parts: ${parts} = ${factors.join(' x ')} ║`;
-        mt.selector = selector;
-        mt.base = factors[0];
-        const time_integral = mt.integral_active_part_count;
-
-        const y = time_integral / total_time;
-        if (series)
-            series.addPoint({x: factors[0], y, mt});
-
-        if (min_y > y)
-        {
-            min_y = y;
-            best = mt;
-        }
-
-        await delayMs(1);
-    }
-    return {y: min_y, mt: best};
-}
-
-function argMin(array, func)
-{
-    let min_value = Infinity;
-    let result = null;
-    for (const element of array)
-    {
-        const value = func(element);
-        if (min_value > value)
-        {
-            min_value = value;
-            result = element;
-        }
-    }
-    return result;
-}
 
 function createNavigationPage() {
     // Hide all existing containers

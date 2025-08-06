@@ -1,7 +1,6 @@
 import { MergeTree } from './MergeTree.js';
 import { simpleMerges } from './simpleMerges.js';
-import { maxWaMerges } from './maxWaMerges.js';
-import { fixedBaseMerges } from './fixedBaseMerges.js';
+import { maxEntropyMerges } from './maxEntropyMerges.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Scenario helpers
@@ -31,11 +30,11 @@ function randomMerges(mt, {count, min_parts, max_parts})
 ////////////////////////////////////////////////////////////////////////////////
 // Scenarios
 //
-function explainDemo()
+function explainVisualizations()
 {
     const mt = new MergeTree();
     randomInserts(mt, {count: 20, min_size: 10, max_size: 100});
-    runSelector(mt, 7, maxWaMerges({min_parts: 2, max_parts: 5, min_score: 1.5}));
+    runSelector(mt, 7, maxEntropyMerges({min_parts: 2, max_parts: 5, min_score: 1.5}));
     return mt;
 }
 
@@ -82,18 +81,18 @@ function randomMess()
     return mt;
 }
 
-function maxWaDemo()
+function maxEntropyMergesDemo()
 {
     const mt = new MergeTree();
     for (let i = 0; i < 300; i++)
     {
         randomInserts(mt, {count: 10, min_size: 10, max_size: 100});
-        runSelector(mt, 3, maxWaMerges({min_parts: 2, max_parts: 20, min_score: Math.log2(5)}));
+        runSelector(mt, 3, maxEntropyMerges({min_parts: 2, max_parts: 20, min_score: Math.log2(5)}));
     }
     return mt;
 }
 
-function simple1000()
+function simpleMergesDemo()
 {
     const mt = new MergeTree();
     for (let i = 0; i < 1; i++)
@@ -105,7 +104,7 @@ function simple1000()
     return mt;
 }
 
-function maxWa1000()
+function maxEntropyDemo()
 {
     const mt = new MergeTree();
     const max_wa = 5;
@@ -116,12 +115,12 @@ function maxWa1000()
         const inserts = mt.parts.filter(d => d.level == 0);
         const avg_insert_size = d3.sum(inserts, d => d.bytes) / inserts.length;
         const min_score = Math.log2(current_size/avg_insert_size) / (max_wa - 1);
-        runSelector(mt, 10, maxWaMerges({min_parts: 2, max_parts: 100, min_score}));
+        runSelector(mt, 1000, maxEntropyMerges({min_parts: 2, max_parts: 100, min_score}));
     }
     return mt;
 }
 
-function simple10000Period()
+function simpleMergesWithInserts()
 {
     const mt = new MergeTree();
     let dt = 0.1;
@@ -135,7 +134,7 @@ function simple10000Period()
     return mt;
 }
 
-function maxWa10000Period()
+function maxEntropyWithInserts()
 {
     const mt = new MergeTree();
     const max_wa = 5;
@@ -146,7 +145,7 @@ function maxWa10000Period()
         const inserts = mt.parts.filter(d => d.level == 0);
         const avg_insert_size = d3.sum(inserts, d => d.bytes) / inserts.length;
         const min_score = Math.log2(current_size/avg_insert_size) / (max_wa - 1);
-        runSelector(mt, 10, maxWaMerges({min_parts: 2, max_parts: 100, min_score}));
+        runSelector(mt, 10, maxEntropyMerges({min_parts: 2, max_parts: 100, min_score}));
     }
     return mt;
 }
@@ -178,59 +177,44 @@ function runSelector(mt, count, selector)
     }
 }
 
-export function noArrivalsScenario(selector, opts)
-{
-    const mt = new MergeTree();
-    const {parts, total_time} = opts;
-
-    randomInserts(mt, {count: parts, min_size: 1, max_size: 1});
-    runSelector(mt, mt.active_part_count, selector);
-    if (mt.time < total_time)
-        mt.advanceTime(total_time);
-    return mt;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 export const SCENARIOS = {
-    'explainDemo': 'Small demo with 20 parts using maxWa merge strategy with 7 merges',
+    'explainVisualizations': 'Small demo with 20 parts using max-entropy merge strategy with 7 merges',
     'binaryTree': 'Creates 16 equal-sized parts and merges them in a binary tree pattern',
     'aggressiveMerging': 'Demonstrates aggressive merging by merging all parts after each insert',
     'randomMess': 'Creates chaotic state with 100 random inserts followed by 30 random merges',
-    'maxWaDemo': 'Long-running demo with 300 iterations of inserts and maxWa merges',
-    'simple1000': 'Inserts 1000 parts and applies simple merge strategy',
-    'maxWa1000': 'Inserts 1000 parts and applies maxWa merge strategy with adaptive scoring',
+    'maxEntropyMergesDemo': 'Long-running demo with 300 iterations of inserts and max-entropy merges',
+    'simpleMergesDemo': 'Inserts 1000 parts and applies simple merge strategy',
+    'maxEntropyDemo': 'Inserts 1000 parts and applies max-entropy merge strategy with adaptive scoring',
     'oneBigMerge': 'Creates 16 parts and merges them all into one large part',
-    'simple10000Period': 'Periodic scenario with 1000 iterations of 10 inserts and simple merges',
-    'maxWa10000Period': 'Periodic scenario with 1000 iterations of 10 inserts and maxWa merges',
-    'noArrivalsScenario': 'Fixed base merge scenario with 256 parts and base factor of 4'
+    'simpleMergesWithInserts': 'Periodic scenario with 1000 iterations of 10 inserts and simple merges',
+    'maxEntropyWithInserts': 'Periodic scenario with 1000 iterations of 10 inserts and max-entropy merges'
 };
 
-export function runScenario(scenarioName = 'simple1000')
+export function runScenario(scenarioName = 'simpleMergesDemo')
 {
     switch (scenarioName) {
-        case 'explainDemo':
-            return explainDemo();
+        case 'explainVisualizations':
+            return explainVisualizations();
         case 'binaryTree':
             return binaryTree();
         case 'aggressiveMerging':
             return aggressiveMerging();
         case 'randomMess':
             return randomMess();
-        case 'maxWaDemo':
-            return maxWaDemo();
-        case 'simple1000':
-            return simple1000();
-        case 'maxWa1000':
-            return maxWa1000();
+        case 'maxEntropyMergesDemo':
+            return maxEntropyMergesDemo();
+        case 'simpleMergesDemo':
+            return simpleMergesDemo();
+        case 'maxEntropyDemo':
+            return maxEntropyDemo();
         case 'oneBigMerge':
             return oneBigMerge();
-        case 'simple10000Period':
-            return simple10000Period();
-        case 'maxWa10000Period':
-            return maxWa10000Period();
-        case 'noArrivalsScenario':
-            return noArrivalsScenario(fixedBaseMerges, {base: 4, parts: 256});
+        case 'simpleMergesWithInserts':
+            return simpleMergesWithInserts();
+        case 'maxEntropyWithInserts':
+            return maxEntropyWithInserts();
         default:
             throw new Error(`Unknown scenario: ${scenarioName}. Available scenarios: ${Object.keys(SCENARIOS).join(', ')}`);
     }
