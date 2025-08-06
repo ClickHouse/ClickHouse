@@ -45,7 +45,7 @@ void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr &
     if (build_stats_for_serialization)
         stats_for_serialization.build(block);
 
-    if (build_minmax_idx)
+    if (minmax_idx && build_minmax_idx)
         minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 }
 

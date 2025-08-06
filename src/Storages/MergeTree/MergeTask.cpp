@@ -599,20 +599,29 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos = loadSerializationInfosFromStatistics(source_statistics, info_settings);
-
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
-    {
-        /// Skip empty parts,
-        /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
-        /// since they can incorrectly set min,
-        /// that will be changed after one more merge/OPTIMIZE.
-        if (!global_ctx->merge_may_reduce_rows && !part->isEmpty())
-            minmax_idx->merge(*part->minmax_idx);
-
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    if (!global_ctx->new_data_part->isProjectionPart())
+    {
+        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+    }
+
+    if (!global_ctx->merge_may_reduce_rows)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            /// Skip empty parts,
+            /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
+            /// since they can incorrectly set min,
+            /// that will be changed after one more merge/OPTIMIZE.
+            if (!part->isEmpty())
+                minmax_idx->merge(*part->minmax_idx);
+        }
     }
 
     if (global_ctx->new_data_part->info.isPatch())
@@ -1003,13 +1012,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
-
-        if (global_ctx->merge_may_reduce_rows)
-        {
-            global_ctx->new_data_part->minmax_idx->update(
-                block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
-        }
-
         calculateProjections(block);
 
         UInt64 result_rows = 0;

@@ -275,9 +275,8 @@ SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatis
 
         const auto & desc = column_stats->getDescription();
         const auto & stats = column_stats->getStats();
-        auto non_nullable_type = removeNullable(desc.data_type);
 
-        if (isStringOrFixedString(non_nullable_type) && stats.contains(StatisticsType::Uniq))
+        if (isStringOrFixedString(desc.data_type) && stats.contains(StatisticsType::Uniq))
         {
             size_t cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
 

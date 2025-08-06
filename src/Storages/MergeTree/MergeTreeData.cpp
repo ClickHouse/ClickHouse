@@ -9809,10 +9809,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
-
     new_data_part->partition = partition;
-
-    new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -9845,13 +9842,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addMinMaxIndex(minmax_idx, false);
     const auto & index_factory = MergeTreeIndexFactory::instance();
+
     MergedBlockOutputStream out(
         new_data_part,
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        PartLevelStatistics{},
+        part_level_statistics,
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,

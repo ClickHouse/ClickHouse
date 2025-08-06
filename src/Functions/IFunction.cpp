@@ -380,7 +380,6 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
 
     if (useDefaultImplementationForLowCardinalityColumns())
     {
-
         DataTypePtr dictionary_type = recursiveRemoveLowCardinality(result_type);
 
         bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
@@ -425,7 +424,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     }
 
     convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
-    return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
 }
 
 ColumnPtr IExecutableFunction::execute(
