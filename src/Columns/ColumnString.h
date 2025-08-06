@@ -157,7 +157,7 @@ public:
 #endif
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
-        const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
+        const size_t size_to_append = src.sizeAt(n);
 
         if (size_to_append == 0)
         {
@@ -167,7 +167,7 @@ public:
         else
         {
             const size_t old_size = chars.size();
-            const size_t offset = src.offsets[n - 1];
+            const size_t offset = src.offsetAt(n);
             const size_t new_size = old_size + size_to_append;
 
             chars.resize(new_size);
@@ -257,7 +257,7 @@ public:
 #endif
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
-        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
+        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n), rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m));
     }
 
     /// Variant of compareAt for string comparison with respect of collation.
