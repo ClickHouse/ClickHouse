@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
+#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -73,17 +74,24 @@ public:
 private:
     void build();
 
-    UInt64 getResultIndex(UInt64 col_idx, UInt64 row_idx) const
+    UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
-        return patches[col_idx]->result_indices[row_idx];
+        return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    UInt64 getPatchIndex(UInt64 col_idx, UInt64 row_idx) const
+    UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
-        return patches[col_idx]->patch_indices[row_idx];
+        return patches[patch_idx]->patch_row_indices[row_idx];
+    }
+
+    UInt64 getPatchColIndex(UInt64 patch_idx, UInt64 row_idx) const
+    {
+        return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_col_indices[row_idx];
     }
 
     PatchesToApply patches;
+    std::vector<Block> all_patch_blocks;
+
     IColumn::Offsets src_col_indices;
     IColumn::Offsets src_row_indices;
     IColumn::Offsets dst_row_indices;
@@ -91,17 +99,32 @@ private:
 
 void CombinedPatchBuilder::build()
 {
-    std::vector<UInt64> heap;
-    std::vector<UInt64> cursors(patches.size());
-    std::vector<const IColumn::Versions *> versions(patches.size());
+    std::vector<std::vector<size_t>> patch_to_block_idx(patches.size());
 
     for (size_t i = 0; i < patches.size(); ++i)
     {
-        versions[i] = &getColumnUInt64Data(patches[i]->patch_block, PartDataVersionColumn::name);
+        size_t num_sources = patches[i]->getNumSources();
+        patch_to_block_idx[i].resize(num_sources);
 
-        if (!patches[i]->empty())
+        for (size_t j = 0; j < num_sources; ++j)
+        {
+            patch_to_block_idx[i][j] = all_patch_blocks.size();
+            all_patch_blocks.push_back(patches[i]->patch_blocks[j]);
+        }
+    }
+
+    std::vector<UInt64> heap;
+    std::vector<UInt64> cursors(patches.size());
+    std::vector<const IColumn::Versions *> versions(all_patch_blocks.size());
+
+    for (size_t i = 0; i < patches.size(); ++i)
+    {
+        if (patches[i]->getNumRows() > 0)
             heap.push_back(i);
     }
+
+    for (size_t i = 0; i < all_patch_blocks.size(); ++i)
+        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
 
     enum class RowOp
     {
@@ -110,7 +133,7 @@ void CombinedPatchBuilder::build()
         Update,
     };
 
-    auto get_row_op = [&](UInt64 col_idx, UInt64 row_idx)
+    auto get_row_op = [&](UInt64 patch_idx, UInt64 row_idx)
     {
         chassert(src_col_indices.size() == dst_row_indices.size());
         chassert(src_row_indices.size() == dst_row_indices.size());
@@ -118,63 +141,69 @@ void CombinedPatchBuilder::build()
         if (dst_row_indices.empty())
             return RowOp::Add;
 
-        UInt64 last_dst_row = dst_row_indices.back();
-        UInt64 current_dst_row = getResultIndex(col_idx, row_idx);
-        chassert(current_dst_row >= last_dst_row);
+        UInt64 last_result_row = dst_row_indices.back();
+        UInt64 current_result_row = getResultRowIndex(patch_idx, row_idx);
 
-        if (current_dst_row != last_dst_row)
+        chassert(current_result_row >= last_result_row);
+
+        if (current_result_row != last_result_row)
             return RowOp::Add;
 
-        UInt64 last_src_col = src_col_indices.back();
-        UInt64 last_src_row = src_row_indices.back();
-        UInt64 current_src_row = getPatchIndex(col_idx, row_idx);
+        UInt64 last_patch_col = src_col_indices.back();
+        UInt64 last_patch_row = src_row_indices.back();
 
-        UInt64 last_version = (*versions[last_src_col])[last_src_row];
-        UInt64 current_version = (*versions[col_idx])[current_src_row];
+        UInt64 current_patch_col = getPatchColIndex(patch_idx, row_idx);
+        UInt64 current_patch_row = getPatchRowIndex(patch_idx, row_idx);
+        UInt64 current_block_idx = patch_to_block_idx[patch_idx][current_patch_col];
+
+        UInt64 last_version = (*versions[last_patch_col])[last_patch_row];
+        UInt64 current_version = (*versions[current_block_idx])[current_patch_row];
 
         return current_version > last_version ? RowOp::Update : RowOp::Skip;
     };
 
     auto greater = [&](UInt64 lhs, UInt64 rhs)
     {
-        return getResultIndex(lhs, cursors[lhs]) > getResultIndex(rhs, cursors[rhs]);
+        return getResultRowIndex(lhs, cursors[lhs]) > getResultRowIndex(rhs, cursors[rhs]);
     };
 
     std::make_heap(heap.begin(), heap.end(), greater);
 
     while (!heap.empty())
     {
-        UInt64 col_idx = heap.front();
-        UInt64 row_idx = cursors[col_idx];
+        UInt64 patch_idx = heap.front();
+        UInt64 row_idx = cursors[patch_idx];
 
         std::pop_heap(heap.begin(), heap.end(), greater);
         heap.pop_back();
 
-        auto row_op = get_row_op(col_idx, row_idx);
+        auto row_op = get_row_op(patch_idx, row_idx);
 
         if (row_op != RowOp::Skip)
         {
-            UInt64 patch_row = getPatchIndex(col_idx, row_idx);
-            UInt64 result_row = getResultIndex(col_idx, row_idx);
+            UInt64 patch_col = getPatchColIndex(patch_idx, row_idx);
+            UInt64 patch_row = getPatchRowIndex(patch_idx, row_idx);
+            UInt64 result_row = getResultRowIndex(patch_idx, row_idx);
+            UInt64 block_idx = patch_to_block_idx[patch_idx][patch_col];
 
             if (row_op == RowOp::Update)
             {
-                src_col_indices.back() = col_idx;
+                src_col_indices.back() = block_idx;
                 src_row_indices.back() = patch_row;
                 dst_row_indices.back() = result_row;
             }
             else
             {
-                src_col_indices.push_back(col_idx);
+                src_col_indices.push_back(block_idx);
                 src_row_indices.push_back(patch_row);
                 dst_row_indices.push_back(result_row);
             }
         }
 
-        ++cursors[col_idx];
-        if (cursors[col_idx] < patches[col_idx]->rows())
+        ++cursors[patch_idx];
+        if (cursors[patch_idx] < patches[patch_idx]->getNumRows())
         {
-            heap.push_back(col_idx);
+            heap.push_back(patch_idx);
             std::push_heap(heap.begin(), heap.end(), greater);
         }
     }
@@ -184,12 +213,12 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
 {
     std::vector<IColumn::Patch::Source> sources;
 
-    for (const auto & patch : patches)
+    for (const auto & patch_block : all_patch_blocks)
     {
         IColumn::Patch::Source source =
         {
-            .column = *patch->patch_block.getByName(column_name).column,
-            .versions = getColumnUInt64Data(patch->patch_block, PartDataVersionColumn::name),
+            .column = *patch_block.getByName(column_name).column,
+            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
         };
 
         sources.push_back(std::move(source));
@@ -205,18 +234,25 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches, const Block & result_block)
+Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_block)
 {
     std::vector<Block> headers;
 
     for (const auto & patch : patches)
     {
-        Block header = patch->patch_block.cloneEmpty();
+        if (patch->patch_blocks.empty())
+            continue;
 
-        for (const auto & column : patch->patch_block)
+        /// All blocks in one patch must have the same structure.
+        for (size_t i = 1; i < patch->patch_blocks.size(); ++i)
+            assertCompatibleHeader(patch->patch_blocks[i], patch->patch_blocks[0], "patch parts");
+
+        Block header = patch->patch_blocks[0].cloneEmpty();
+
+        for (const auto & column : patch->patch_blocks[0])
         {
-            /// System columns may differ because we allow to apply combined patches with different modes.
-            /// Ignore columns that are not present in result block.
+            /// System columns may differ in patches because we allow to apply combined patches
+            /// with different modes. Ignore columns that are not present in result block.
             if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
                 header.erase(column.name);
         }
@@ -226,12 +262,37 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
 
     for (size_t i = 1; i < headers.size(); ++i)
         assertCompatibleHeader(headers[i], headers[0], "patch parts");
+
+    return headers.empty() ? Block{} : headers.front();
+}
+
+bool canApplyPatchesRaw(const PatchesToApply & patches)
+{
+    for (const auto & patch : patches)
+    {
+        if (patch->getNumSources() != 1)
+        {
+            return false;
+        }
+
+        if (patches.size() > 1)
+        {
+            for (const auto & column : patch->patch_blocks.front())
+            {
+                if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
+                    return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 void applyPatchesToBlockRaw(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Block & updated_header,
     UInt64 source_data_version)
 {
     if (patches.empty())
@@ -239,10 +300,7 @@ void applyPatchesToBlockRaw(
 
     for (auto & result_column : result_block)
     {
-        if (!patches[0]->patch_block.has(result_column.name))
-            continue;
-
-        if (isPatchPartSystemColumn(result_column.name))
+        if (!updated_header.has(result_column.name))
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
@@ -250,18 +308,21 @@ void applyPatchesToBlockRaw(
 
         for (const auto & patch_to_apply : patches)
         {
+            chassert(patch_to_apply->patch_blocks.size() == 1);
+            const auto & patch_block = patch_to_apply->patch_blocks.front();
+
             IColumn::Patch::Source source =
             {
-                .column = *patch_to_apply->patch_block.getByName(result_column.name).column,
-                .versions = getColumnUInt64Data(patch_to_apply->patch_block, PartDataVersionColumn::name),
+                .column = *patch_block.getByName(result_column.name).column,
+                .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
             };
 
             IColumn::Patch patch =
             {
                 .sources = {std::move(source)},
                 .src_col_indices = nullptr,
-                .src_row_indices = patch_to_apply->patch_indices,
-                .dst_row_indices = patch_to_apply->result_indices,
+                .src_row_indices = patch_to_apply->patch_row_indices,
+                .dst_row_indices = patch_to_apply->result_row_indices,
                 .dst_versions = result_versions,
             };
 
@@ -277,6 +338,7 @@ void applyPatchesToBlockCombined(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Block & updated_header,
     UInt64 source_data_version)
 {
     if (patches.empty())
@@ -286,10 +348,7 @@ void applyPatchesToBlockCombined(
 
     for (auto & result_column : result_block)
     {
-        if (!patches[0]->patch_block.has(result_column.name))
-            continue;
-
-        if (isPatchPartSystemColumn(result_column.name))
+        if (!updated_header.has(result_column.name))
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
@@ -311,7 +370,6 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Applying patch parts with mode {} requires only one part, got: {}", patch.mode, patch.source_parts.size());
 
     auto patch_to_apply = std::make_shared<PatchToApply>();
-    patch_to_apply->patch_block = patch_block;
 
     size_t num_rows = result_block.rows();
     size_t patch_rows = patch_block.rows();
@@ -319,6 +377,7 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     if (num_rows == 0 || patch_rows == 0)
         return patch_to_apply;
 
+    patch_to_apply->patch_blocks.emplace_back(patch_block);
     Stopwatch watch;
 
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
@@ -337,8 +396,8 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
 
     size_t size_to_reserve = std::min(static_cast<size_t>(patch_end - patch_begin), num_rows);
 
-    patch_to_apply->result_indices.reserve(size_to_reserve);
-    patch_to_apply->patch_indices.reserve(size_to_reserve);
+    patch_to_apply->result_row_indices.reserve(size_to_reserve);
+    patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
     /// Optimize in case when _part_offset has all consecutive rows.
     if (last_result_offset - first_result_offset + 1 == num_rows)
@@ -348,8 +407,8 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
             chassert(patch_offset_data[patch_row] >= first_result_offset);
             size_t result_row = patch_offset_data[patch_row] - first_result_offset;
 
-            patch_to_apply->patch_indices.push_back(patch_row);
-            patch_to_apply->result_indices.push_back(result_row);
+            patch_to_apply->patch_row_indices.push_back(patch_row);
+            patch_to_apply->result_row_indices.push_back(result_row);
         }
     }
     else
@@ -372,8 +431,8 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
             }
             else
             {
-                patch_to_apply->patch_indices.push_back(patch_it++);
-                patch_to_apply->result_indices.push_back(result_it++);
+                patch_to_apply->patch_row_indices.push_back(patch_it++);
+                patch_to_apply->result_row_indices.push_back(result_it++);
             }
         }
     }
@@ -384,63 +443,21 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     return patch_to_apply;
 }
 
-std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_block)
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry)
 {
-    Stopwatch watch;
+    std::shared_lock lock(join_entry.mutex);
 
-    size_t num_patch_rows = patch_block.rows();
+    auto patch_to_apply = std::make_shared<PatchToApply>();
+    patch_to_apply->patch_blocks.reserve(join_entry.blocks.size());
 
-    const auto & patch_block_number = getColumnUInt64Data(patch_block, BlockNumberColumn::name);
-    const auto & patch_block_offset = getColumnUInt64Data(patch_block, BlockOffsetColumn::name);
-    const auto & patch_data_version = getColumnUInt64Data(patch_block, PartDataVersionColumn::name);
-
-    auto data = std::make_shared<PatchJoinSharedData>();
-    if (num_patch_rows == 0)
-        return data;
-
-    data->hash_map.reserve(num_patch_rows);
-    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    OffsetsHashMap * offsets_hash_map = nullptr;
-
-    data->min_block = prev_block_number;
-    data->max_block = 0;
-
-    for (size_t i = 0; i < num_patch_rows; ++i)
+    for (const auto & block : join_entry.blocks)
     {
-        UInt64 block_number = patch_block_number[i];
-        UInt64 block_offset = patch_block_offset[i];
-
-        if (block_number != prev_block_number)
-        {
-            prev_block_number = block_number;
-            offsets_hash_map = &data->hash_map[block_number];
-
-            data->min_block = std::min(data->min_block, block_number);
-            data->max_block = std::max(data->max_block, block_number);
-        }
-
-        auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
-
-        /// Keep only the row with the highest version.
-        if (inserted || patch_data_version[i] > patch_data_version[it->second])
-            it->second = i;
+        if (block->rows() != 0)
+            patch_to_apply->patch_blocks.push_back(*block);
     }
 
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::BuildPatchesJoinMicroseconds, elapsed);
-
-    return data;
-}
-
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_block, const PatchJoinSharedData & join_data)
-{
-    auto patch_to_apply = std::make_shared<PatchToApply>();
-    patch_to_apply->patch_block = patch_block;
-
     size_t num_rows = result_block.rows();
-    size_t num_patch_rows = patch_block.rows();
-
-    if (num_rows == 0 || num_patch_rows == 0 || join_data.hash_map.empty())
+    if (num_rows == 0 || join_entry.hash_map.empty())
         return patch_to_apply;
 
     Stopwatch watch;
@@ -451,16 +468,17 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
 
-    size_t size_to_reserve = std::min(num_rows, join_data.hash_map.size());
-    patch_to_apply->result_indices.reserve(size_to_reserve);
-    patch_to_apply->patch_indices.reserve(size_to_reserve);
+    size_t size_to_reserve = std::min(num_rows, join_entry.hash_map.size());
+    patch_to_apply->result_row_indices.reserve(size_to_reserve);
+    patch_to_apply->patch_col_indices.reserve(size_to_reserve);
+    patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
     const OffsetsHashMap * offsets_hash_map = nullptr;
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (result_block_number[row] < join_data.min_block || result_block_number[row] > join_data.max_block)
+        if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
         {
             continue;
         }
@@ -468,8 +486,8 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto it = join_data.hash_map.find(prev_block_number);
-            offsets_hash_map = it != join_data.hash_map.end() ? &it->second : nullptr;
+            auto it = join_entry.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
         }
 
         if (offsets_hash_map)
@@ -478,8 +496,9 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
 
             if (offset_it != offsets_hash_map->end())
             {
-                patch_to_apply->result_indices.push_back(row);
-                patch_to_apply->patch_indices.push_back(offset_it->second);
+                patch_to_apply->result_row_indices.push_back(row);
+                patch_to_apply->patch_col_indices.push_back(offset_it->second.first);
+                patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
             }
         }
     }
@@ -501,26 +520,12 @@ void applyPatchesToBlock(
 
     Stopwatch watch;
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    assertPatchesBlockStructure(patches, result_block);
-#endif
+    auto updated_header = getUpdatedHeader(patches, result_block);
 
-    bool can_apply_all_inplace = true;
-    const auto & patch_header = patches[0]->patch_block;
-
-    for (const auto & column : patch_header)
-    {
-        if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
-        {
-            can_apply_all_inplace = false;
-            break;
-        }
-    }
-
-    if (patches.size() == 1 || can_apply_all_inplace)
-        applyPatchesToBlockRaw(result_block, versions_block, patches, source_data_version);
+    if (canApplyPatchesRaw(patches))
+        applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);
     else
-        applyPatchesToBlockCombined(result_block, versions_block, patches, source_data_version);
+        applyPatchesToBlockCombined(result_block, versions_block, patches, updated_header, source_data_version);
 
     auto elapsed = watch.elapsedMicroseconds();
     ProfileEvents::increment(ProfileEvents::ApplyPatchesMicroseconds, elapsed);
