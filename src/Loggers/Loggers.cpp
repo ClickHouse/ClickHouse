@@ -22,9 +22,16 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
 extern const Event AsyncLoggingConsoleDroppedMessages;
+extern const Event AsyncLoggingConsoleTotalMessages;
+
 extern const Event AsyncLoggingFileLogDroppedMessages;
-extern const Event AsyncLoggingFileErrorLogDroppedMessages;
+extern const Event AsyncLoggingFileLogTotalMessages;
+
+extern const Event AsyncLoggingErrorFileLogDroppedMessages;
+extern const Event AsyncLoggingErrorFileLogTotalMessages;
+
 extern const Event AsyncLoggingSyslogDroppedMessages;
+extern const Event AsyncLoggingSyslogTotalMessages;
 }
 
 namespace DB
@@ -124,7 +131,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
-        split->addChannel(log, "FileLog", log_level, &ProfileEvents::AsyncLoggingFileLogDroppedMessages);
+        split->addChannel(
+            log, "FileLog", log_level, ProfileEvents::AsyncLoggingFileLogTotalMessages, ProfileEvents::AsyncLoggingFileLogDroppedMessages);
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
@@ -163,7 +171,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->open();
-        split->addChannel(errorlog, "ErrorFileLog", errorlog_level, &ProfileEvents::AsyncLoggingFileErrorLogDroppedMessages);
+        split->addChannel(
+            errorlog,
+            "ErrorFileLog",
+            errorlog_level,
+            ProfileEvents::AsyncLoggingErrorFileLogTotalMessages,
+            ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
     }
 
     if (config.getBool("logger.use_syslog", false))
@@ -201,7 +214,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
-        split->addChannel(log, "Syslog", syslog_level, &ProfileEvents::AsyncLoggingSyslogDroppedMessages);
+        split->addChannel(
+            log, "Syslog", syslog_level, ProfileEvents::AsyncLoggingSyslogTotalMessages, ProfileEvents::AsyncLoggingSyslogDroppedMessages);
     }
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
@@ -222,7 +236,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
             pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-        split->addChannel(log, "Console", console_log_level, &ProfileEvents::AsyncLoggingConsoleDroppedMessages);
+        split->addChannel(
+            log,
+            "Console",
+            console_log_level,
+            ProfileEvents::AsyncLoggingConsoleTotalMessages,
+            ProfileEvents::AsyncLoggingConsoleDroppedMessages);
     }
 
     if (allowTextLog() && config.has("text_log"))

@@ -49,7 +49,11 @@ public:
 
     /// Adds a child channel
     virtual void addChannel(
-        Poco::AutoPtr<Poco::Channel> channel, const std::string & name, int level, const ProfileEvents::Event * event_on_drop_async_log_)
+        Poco::AutoPtr<Poco::Channel> channel,
+        const std::string & name,
+        int level,
+        const ProfileEvents::Event & event_on_passed_message_,
+        const ProfileEvents::Event & event_on_dropped_message_)
         = 0;
 
     virtual void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) = 0;
@@ -73,7 +77,12 @@ public:
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
 
     /// Adds a child channel
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name, int level, const ProfileEvents::Event *) override;
+    void addChannel(
+        Poco::AutoPtr<Poco::Channel> channel,
+        const std::string & name,
+        int level,
+        const ProfileEvents::Event &,
+        const ProfileEvents::Event &) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
 
@@ -97,7 +106,8 @@ using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 class AsyncLogMessageQueue
 {
 public:
-    explicit AsyncLogMessageQueue(size_t max_size_, const ProfileEvents::Event * event_on_drop_async_log_);
+    explicit AsyncLogMessageQueue(
+        size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
 
     using Queue = std::deque<AsyncLogMessagePtr>;
 
@@ -120,8 +130,9 @@ public:
 private:
     Queue message_queue;
     std::condition_variable condition;
-    const ProfileEvents::Event * event_on_drop_async_log;
-    /// Maximum size of the queue, to prevent memory overflow
+    const ProfileEvents::Event & event_on_passed_message;
+    const ProfileEvents::Event & event_on_drop_message;
+    /// Default queue limit, to prevent memory overflow
     const size_t max_size = 10000;
     size_t dropped_messages = 0;
     std::mutex mutex;
@@ -151,7 +162,8 @@ public:
         Poco::AutoPtr<Poco::Channel> channel,
         const std::string & name,
         int level,
-        const ProfileEvents::Event * event_on_drop_async_log_) override;
+        const ProfileEvents::Event & event_on_passed_message_,
+        const ProfileEvents::Event & event_on_dropped_message_) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
     void setLevel(const std::string & name, int level) override;
