@@ -133,7 +133,6 @@ private:
         if (unlikely(repeat_time <= 0))
             return;
 
-        size -= 1;
         UInt64 k = 0;
         UInt64 last_bit = repeat_time & 1;
         repeat_time >>= 1;
