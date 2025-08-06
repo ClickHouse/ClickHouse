@@ -802,6 +802,9 @@ void IcebergStorageSink::finalizeBuffers()
         total_chunks_size += write_buffers[partition_key]->count();
     }
 
+    if (data_filenames.empty())
+        return;
+
     while (!initializeMetadata())
     {
     }
