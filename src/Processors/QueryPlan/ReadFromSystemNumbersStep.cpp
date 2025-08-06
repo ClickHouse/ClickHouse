@@ -655,26 +655,20 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
     }
 }
 
-const StorageSystemNumbers & ReadFromSystemNumbersStep::getStorage() const
+UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
 {
     const auto * numbers_storage = storage->as<StorageSystemNumbers>();
     if (!numbers_storage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not StorageSystemNumbers");
-    return *numbers_storage;
-}
-
-UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
-{
-    const auto & numbers_storage = getStorage();
 
     UInt64 estimated_rows = 0;
 
-    if (numbers_storage.limit.has_value())
+    if (numbers_storage->limit.has_value())
     {
         estimated_rows = itemCountInRange(
-            numbers_storage.offset,
-            numbers_storage.offset + numbers_storage.limit.value(),
-            numbers_storage.step);
+            numbers_storage->offset,
+            numbers_storage->offset + numbers_storage->limit.value(),
+            numbers_storage->step);
     }
 
     if (limit.has_value() && (estimated_rows == 0 || limit.value() < estimated_rows))
@@ -685,8 +679,10 @@ UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
 
 String ReadFromSystemNumbersStep::getColumnName() const
 {
-    const auto & numbers_storage = getStorage();
-    return numbers_storage.column_name;
+    const auto * numbers_storage = storage->as<StorageSystemNumbers>();
+    if (!numbers_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not StorageSystemNumbers");
+    return numbers_storage->column_name;
 }
 
 StorageID ReadFromSystemNumbersStep::getStorageID() const

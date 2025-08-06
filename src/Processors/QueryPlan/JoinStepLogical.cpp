@@ -133,7 +133,8 @@ static void addToNullableIfNeeded(
 
     if (outputs.empty())
     {
-        ColumnWithTypeAndName column(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "__join_result_dummy");
+        auto column_type = std::make_shared<DataTypeUInt8>();
+        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, "__join_result_dummy");
         const auto * node = &actions_dag->addColumn(std::move(column));
         actions_after_join.push_back(node);
         outputs.push_back(node);

@@ -3541,7 +3541,7 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
     if (!const_column)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize non-constant column {}", value.getName());
+            "Cannot serialize non-constant column {} as constant", value.getName());
 
     const auto & data = const_column->getDataColumn();
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
