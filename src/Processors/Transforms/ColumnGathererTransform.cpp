@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include "Processors/Chunk.h"
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
