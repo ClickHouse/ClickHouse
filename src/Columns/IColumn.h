@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
@@ -239,6 +240,7 @@ public:
     /// Parameter length could be ignored if column values have fixed size.
     /// All data will be inserted as single element
     virtual void insertData(const char * pos, size_t length) = 0;
+    void insertData(std::string_view sv) { insertData(sv.data(), sv.size()); }
 
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.

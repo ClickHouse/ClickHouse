@@ -7126,7 +7126,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     {
         auto name = setting.getName();
         key_column.insertData(name.data(), name.size());
-        value_column.insert(setting.getValueString());
+        value_column.insertData(setting.getValueString());
         size++;
     }
 
