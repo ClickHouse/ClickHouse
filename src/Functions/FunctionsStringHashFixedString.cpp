@@ -20,6 +20,7 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <Common/OpenSSLHelpers.h>
+#    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
 #if USE_SHA3IUF
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int OPENSSL_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -56,10 +58,14 @@ class OpenSSLProvider
 public:
     static constexpr auto name = ProviderImpl::name;
     static constexpr auto length = ProviderImpl::length;
+    static constexpr auto available_in_fips_mode = ProviderImpl::available_in_fips_mode;
 
     OpenSSLProvider()
         : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
     {
+        if (OpenSSLInitializer::instance().isFIPSEnabled() && !available_in_fips_mode)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
+
         if (!ctx_template)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
@@ -92,6 +98,7 @@ struct MD4Impl
 {
     static constexpr auto name = "MD4";
     static constexpr const EVP_MD * (*provider)() = &EVP_md4;
+    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = MD4_DIGEST_LENGTH
@@ -102,6 +109,7 @@ struct MD5Impl
 {
     static constexpr auto name = "MD5";
     static constexpr const EVP_MD * (*provider)() = &EVP_md5;
+    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = MD5_DIGEST_LENGTH
@@ -112,6 +120,7 @@ struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
+    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = SHA_DIGEST_LENGTH
@@ -122,6 +131,7 @@ struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha224;
+    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA224_DIGEST_LENGTH
@@ -133,6 +143,7 @@ struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha256;
+    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -143,6 +154,7 @@ struct SHA384Impl
 {
     static constexpr auto name = "SHA384";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha384;
+    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA384_DIGEST_LENGTH
@@ -153,6 +165,7 @@ struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha512;
+    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA512_DIGEST_LENGTH
@@ -163,6 +176,7 @@ struct SHA512Impl256
 {
     static constexpr auto name = "SHA512_256";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha512_256;
+    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -173,6 +187,7 @@ struct RIPEMD160Impl
 {
     static constexpr auto name = "RIPEMD160";
     static constexpr const EVP_MD * (*provider)() = &EVP_ripemd160;
+    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = RIPEMD160_DIGEST_LENGTH
