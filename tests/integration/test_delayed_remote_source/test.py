@@ -25,6 +25,7 @@ def test_delayed_remote_source(start_cluster):
         """
         SYSTEM ENABLE FAILPOINT use_delayed_remote_source;
         SELECT count() FROM remoteSecure('localhost');
+        SYSTEM DISABLE FAILPOINT use_delayed_remote_source;
         """
     )
 
