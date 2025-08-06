@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import csv
 import json
 import logging
@@ -112,7 +113,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> List[Re
                     # Python does not support TSV, so we unescape manually
                     result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
                 else:
-                    result.set_files(line[3])
+                    result.set_files(ast.literal_eval(line[3]))
 
             results.append(result)
     return results
