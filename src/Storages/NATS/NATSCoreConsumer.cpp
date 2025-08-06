@@ -8,17 +8,6 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_NATS;
 }
 
-NATSCoreConsumer::NATSCoreConsumer(
-    NATSConnectionPtr connection,
-    const std::vector<String> & subjects,
-    const String & subscribe_queue_name,
-    LoggerPtr log,
-    uint32_t queue_size,
-    const std::atomic<bool> & stopped)
-    : INATSConsumer(std::move(connection), subjects, subscribe_queue_name, log, queue_size, stopped)
-{
-}
-
 void NATSCoreConsumer::subscribe()
 {
     if (isSubscribed())

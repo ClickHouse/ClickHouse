@@ -8,7 +8,7 @@ namespace DB
 class NATSCoreProducer : public INATSProducer
 {
 public:
-    NATSCoreProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_);
+    using INATSProducer::INATSProducer;
 
 private:
     natsStatus publishMessage(const String & message) override;

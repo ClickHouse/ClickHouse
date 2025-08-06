@@ -13,13 +13,7 @@ namespace DB
 class NATSCoreConsumer : public INATSConsumer
 {
 public:
-    NATSCoreConsumer(
-        NATSConnectionPtr connection,
-        const std::vector<String> & subjects,
-        const String & subscribe_queue_name,
-        LoggerPtr log,
-        uint32_t queue_size,
-        const std::atomic<bool> & stopped);
+    using INATSConsumer::INATSConsumer;
 
     void subscribe() override;
 };
