@@ -36,9 +36,9 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 
         if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
-        if (type == "Any")
+        else if (type == "Any")
             result += "`](/sql-reference/data-types)";
-        if (type == "String" || type == "String literal")
+        else if (type == "String" || type == "String literal")
             result += "`](/sql-reference/data-types/string)";
         else if (type.starts_with("FixedString"))
             result += "`](/sql-reference/data-types/fixedstring)";
