@@ -413,7 +413,7 @@ public:
             size_t size = col_fstr_in->size();
 
             out_offsets.resize(size);
-            out_vec.resize(in_vec.size() * word_size + size);
+            out_vec.resize(in_vec.size() * word_size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
