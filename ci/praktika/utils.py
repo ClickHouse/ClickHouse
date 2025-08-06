@@ -41,6 +41,8 @@ class MetaClasses:
                 return [cls.to_dict(i) for i in obj]
             elif isinstance(obj, dict):
                 return {k: cls.to_dict(v) for k, v in obj.items()}
+            elif isinstance(obj, Path):
+                return str(obj)
             else:
                 return obj
 
