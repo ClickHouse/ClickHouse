@@ -221,7 +221,7 @@ private:
 
         size_t adaptive_chunk_size = 0;
 
-        std::vector<size_t> row_groups_idxs;
+        std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
         // If use_native_reader, only native_record_reader is used;
