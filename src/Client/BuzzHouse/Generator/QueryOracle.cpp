@@ -146,7 +146,7 @@ void QueryOracle::insertOnTableOrCluster(
             : (cluster.has_value() ? TableFunctionUsage::ClusterCall
                                    : (replaceable ? TableFunctionUsage::EngineReplace : TableFunctionUsage::RemoteCall));
 
-        gen.setTableFunction(rg, usage, t, tof->mutable_tfunc());
+        gen.setTableFunction(rg, usage, false, t, tof->mutable_tfunc());
     }
     else
     {
@@ -266,7 +266,7 @@ void QueryOracle::generateExportQuery(
     ff->set_outformat(outf);
     if (rg.nextSmallNumber() < 4)
     {
-        ff->set_fcomp(rg.pickRandomly(BuzzHouse::StatementGenerator::fileCompress));
+        ff->set_fcomp(rg.pickRandomly(BuzzHouse::StatementGenerator::compression));
     }
     if (rg.nextSmallNumber() < 10)
     {
