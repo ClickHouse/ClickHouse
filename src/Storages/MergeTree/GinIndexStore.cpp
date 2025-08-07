@@ -120,8 +120,8 @@ std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar
     UInt32 prev = 0;
     for (size_t i = 0; const UInt32 rowid : rowids)
     {
-        prev = rowid;
         deltas[i] = rowid - prev;
+        prev = rowid;
         ++i;
     }
     return deltas;
