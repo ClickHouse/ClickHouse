@@ -206,10 +206,10 @@ public:
             size_t src_offset = 0;
             size_t dst_offset = 0;
 
-            const UUIDSerializer uuid_deserializer(variant);
+            const UUIDSerializer uuid_serializer(variant);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_deserializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_bytes_length;
                 dst_offset += uuid_text_length;
                 offsets_res[i] = dst_offset;
@@ -262,7 +262,7 @@ public:
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
-        const UUIDSerializer uuid_deserializer(parseVariant(arguments));
+        const UUIDSerializer uuid_serializer(parseVariant(arguments));
         if (const auto * col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto & vec_in = col_in->getChars();
@@ -282,8 +282,8 @@ public:
                 /// If string has correct length but contains something not like UUID - implementation specific behaviour.
 
                 size_t string_size = offsets_in[i] - src_offset;
-                if (string_size == uuid_text_length + 1)
-                    uuid_deserializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                if (string_size == uuid_text_length)
+                    uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 else
                     memset(&vec_res[dst_offset], 0, uuid_bytes_length);
 
@@ -316,7 +316,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_deserializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_text_length;
                 dst_offset += uuid_bytes_length;
             }
