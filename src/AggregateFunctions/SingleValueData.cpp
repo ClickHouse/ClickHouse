@@ -1146,6 +1146,7 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
         throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
 
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+    /// The strings are serialized as zero terminated.
     Int32 size_to_write = size ? size : -1;
     writeBinaryLittleEndian(size_to_write, buf);
     if (has())
@@ -1168,11 +1169,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         return;
     }
 
-    /// It's not null-terminated, but it must be (for historical reasons). There are two variants:
-    /// - The value was serialized by one of the incompatible versions of ClickHouse. We had some range of versions
-    ///   that used to serialize SingleValueDataString without terminating '\0'. Let's just append it.
-    /// - An attacker sent crafted data. Sanitize it and append '\0'.
-    /// In all other cases the string must be already null-terminated.
+    /// The strings are serialized as zero terminated.
 
     UInt32 rhs_size = rhs_size_signed;
     if (rhs_size <= MAX_SMALL_STRING_SIZE + 1)
@@ -1180,8 +1177,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         /// Don't free large_data here.
         size = rhs_size;
         buf.readStrict(small_data, size - 1);
-        if (*buf.position() == '\0')
-            buf.ignore();
+        assertChar(0, buf);
     }
     else
     {
@@ -1189,8 +1185,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         allocateLargeDataIfNeeded(rhs_size + 1, arena);
         size = rhs_size;
         buf.readStrict(large_data, size - 1);
-        if (*buf.position() == '\0')
-            buf.ignore();
+        assertChar(0, buf);
     }
 }
 
