@@ -1079,16 +1079,12 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 
 char * SingleValueDataString::getDataMutable()
 {
-    return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
+    return size <= MAX_SMALL_STRING_SIZE + 1 ? small_data : large_data;
 }
 
 const char * SingleValueDataString::getData() const
 {
-    const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
-    /// It must always be terminated with null-character
-    chassert(0 < size);
-    chassert(data_ptr[size - 1] == '\0');
-    return data_ptr;
+    return size <= MAX_SMALL_STRING_SIZE + 1 ? small_data : large_data;
 }
 
 StringRef SingleValueDataString::getStringRef() const
@@ -1127,14 +1123,12 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
 
         if (value_size > 0)
             memcpy(small_data, value.data, value.size);
-        small_data[value_size] = 0;
     }
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
         size = value_size + 1;
         memcpy(large_data, value.data, value.size);
-        small_data[value_size] = 0;
     }
 }
 
@@ -1155,7 +1149,10 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
     Int32 size_to_write = size ? size : -1;
     writeBinaryLittleEndian(size_to_write, buf);
     if (has())
-        buf.write(getData(), size);
+    {
+        buf.write(getData(), size - 1);
+        buf.write('\0');
+    }
 }
 
 void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
@@ -1171,46 +1168,30 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         return;
     }
 
-    UInt32 rhs_size = rhs_size_signed;
-    if (rhs_size <= MAX_SMALL_STRING_SIZE)
-    {
-        /// Don't free large_data here.
-        size = rhs_size;
-        buf.readStrict(small_data, size);
-    }
-    else
-    {
-        /// Reserve one byte more for null-character
-        allocateLargeDataIfNeeded(rhs_size + 1, arena);
-        size = rhs_size;
-        buf.readStrict(large_data, size);
-    }
-
-    /// Check if the string we read is null-terminated (getDataMutable does not have the assertion)
-    if (0 < size && getDataMutable()[size - 1] == '\0')
-        return;
-
     /// It's not null-terminated, but it must be (for historical reasons). There are two variants:
     /// - The value was serialized by one of the incompatible versions of ClickHouse. We had some range of versions
     ///   that used to serialize SingleValueDataString without terminating '\0'. Let's just append it.
     /// - An attacker sent crafted data. Sanitize it and append '\0'.
     /// In all other cases the string must be already null-terminated.
 
-    /// NOTE We cannot add '\0' unconditionally, because it will be duplicated.
-    /// NOTE It's possible that a string that actually ends with '\0' was written by one of the incompatible versions.
-    ///      Unfortunately, we cannot distinguish it from normal string written by normal version.
-    ///      So such strings will be trimmed.
-
-    if (size == MAX_SMALL_STRING_SIZE)
+    UInt32 rhs_size = rhs_size_signed;
+    if (rhs_size <= MAX_SMALL_STRING_SIZE + 1)
     {
-        /// Special case: We have to move value to large_data
-        allocateLargeDataIfNeeded(size + 1, arena);
-        memcpy(large_data, small_data, size);
+        /// Don't free large_data here.
+        size = rhs_size;
+        buf.readStrict(small_data, size - 1);
+        if (*buf.position() == '\0')
+            buf.ignore();
     }
-
-    /// We have enough space to append
-    ++size;
-    getDataMutable()[size - 1] = '\0';
+    else
+    {
+        /// Reserve one byte more for null-character
+        allocateLargeDataIfNeeded(rhs_size + 1, arena);
+        size = rhs_size;
+        buf.readStrict(large_data, size - 1);
+        if (*buf.position() == '\0')
+            buf.ignore();
+    }
 }
 
 bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
