@@ -25,6 +25,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <config.h>
 
+#include <Storages/ObjectStorage/Utils.h>
+
+
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -259,7 +262,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
