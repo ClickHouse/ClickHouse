@@ -1122,7 +1122,6 @@ void KeeperStateMachine<Storage>::optimizeStorage()
     LockGuardWithStats<false> lock(storage_mutex);
     LOG_INFO(log, "Optimizing storage");
     storage->optimize();
-    LOG_INFO(log, "Done optimizing storage");
 }
 
 template class KeeperStateMachine<KeeperMemoryStorage>;

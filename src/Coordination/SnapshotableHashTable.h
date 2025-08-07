@@ -23,7 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace CoordinationSetting
@@ -120,8 +120,8 @@ private:
 
     uint64_t approximate_data_size{0};
 
-    float min_load_factor = 0;
-    uint64_t min_node_count_for_auto_optimize = 0;
+    float min_load_factor{0.0f};
+    uint64_t min_node_count_for_auto_optimize{0};
 
     enum OperationType
     {
