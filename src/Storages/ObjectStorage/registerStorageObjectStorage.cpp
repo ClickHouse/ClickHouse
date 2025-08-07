@@ -1,6 +1,11 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -10,8 +15,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -20,6 +23,12 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace Setting
+{
+    extern const SettingsBool write_full_path_in_iceberg_metadata;
+}
+
 
 namespace
 {
@@ -59,18 +68,22 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
+    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+    context_copy->setSettings(settings_copy);
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
         configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
-        args.getContext(), /// Use global context.
+        context_copy, /// Use global context.
         args.table_id,
         args.columns,
         args.constraints,
         args.comment,
         format_settings,
         args.mode,
+        configuration->getCatalog(context, args.query.attach),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

@@ -3037,7 +3037,7 @@ bool KeeperStorageBase::isFinalized() const
 }
 
 template<typename Container>
-void KeeperStorage<Container>::preprocessRequest(
+KeeperDigest KeeperStorage<Container>::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,
@@ -3090,7 +3090,7 @@ void KeeperStorage<Container>::preprocessRequest(
                 /// initially leader preprocessed without knowing the log idx
                 /// on the second call we have that information and can set the log idx for the correct transaction
                 last_transaction.log_idx = log_idx;
-                return;
+                return current_digest;
             }
 
             if (new_last_zxid <= last_zxid)
@@ -3105,7 +3105,11 @@ void KeeperStorage<Container>::preprocessRequest(
     }
 
     std::list<Delta> new_deltas;
-    SCOPE_EXIT({
+    bool finalized = false;
+    const auto finalize = [&]
+    {
+        if (finalized)
+            return;
         uncommitted_state.applyDeltas(new_deltas, keeper_context->digestEnabled() ? &new_digest : nullptr);
         uncommitted_state.addDeltas(std::move(new_deltas));
 
@@ -3128,6 +3132,11 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         uncommitted_state.cleanup(getZXID());
+        finalized = true;
+    };
+
+    SCOPE_EXIT({
+        chassert(finalized, "Finalize not called before returning");
     });
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -3203,7 +3212,9 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         new_deltas.emplace_back(transaction->zxid, CloseSessionDelta{session_id});
-        return;
+
+        finalize();
+        return transaction->nodes_digest;
     }
 
     const auto preprocess_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
@@ -3231,6 +3242,8 @@ void KeeperStorage<Container>::preprocessRequest(
     };
 
     callOnConcreteRequestType(*zk_request, preprocess_request);
+    finalize();
+    return transaction->nodes_digest;
 }
 
 template<typename Container>
@@ -3310,8 +3323,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
                 auto responses = processWatchesImpl(delta.path, watches, list_watches, sessions_and_watchers, Coordination::Event::DELETED);
+                total_watches_count -= responses.size();
                 results.insert(results.end(), responses.begin(), responses.end());
-                total_watches_count -= results.size();
             }
         }
 
@@ -3380,18 +3393,18 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             }
 
             /// Watches for this requests are added to the watches lists
-            if (zk_request->has_watch)
+            const auto update_watches = [&](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp)
             {
-                if (response->error == Coordination::Error::ZOK)
+                if (resp->error == Coordination::Error::ZOK)
                 {
                     static constexpr std::array list_requests{
                         Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
 
-                    auto is_list_watch = std::ranges::contains(list_requests, zk_request->getOpNum());
+                    auto is_list_watch = std::ranges::contains(list_requests, req->getOpNum());
 
                     auto & watches_type = is_list_watch ? list_watches : watches;
 
-                    auto [watch_it, path_inserted] = watches_type.try_emplace(zk_request->getPath());
+                    auto [watch_it, path_inserted] = watches_type.try_emplace(req->getPath());
                     auto [path_it, session_inserted] = watch_it->second.emplace(session_id);
                     if (session_inserted)
                     {
@@ -3399,9 +3412,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                         sessions_and_watchers[session_id].emplace(WatchInfo{.path = watch_it->first, .is_list_watch = is_list_watch});
                     }
                 }
-                else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
+                else if (resp->error == Coordination::Error::ZNONODE && req->getOpNum() == Coordination::OpNum::Exists)
                 {
-                    auto [watch_it, path_inserted] = watches.try_emplace(zk_request->getPath());
+                    auto [watch_it, path_inserted] = watches.try_emplace(req->getPath());
                     auto session_insert_info = watch_it->second.emplace(session_id);
                     if (session_insert_info.second)
                     {
@@ -3409,6 +3422,26 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                         sessions_and_watchers[session_id].emplace(WatchInfo{.path = watch_it->first, .is_list_watch = false});
                     }
                 }
+            };
+
+            if (zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+            {
+                const auto * multi_read_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(zk_request.get());
+                const auto * multi_read_response = dynamic_cast<const Coordination::ZooKeeperMultiReadResponse *>(response.get());
+                chassert(multi_read_request != nullptr);
+                chassert(multi_read_response != nullptr);
+
+                for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
+                {
+                    if (subrequest->has_watch)
+                    {
+                        update_watches(subrequest, subresponse);
+                    }
+                }
+            }
+            else if (zk_request->has_watch)
+            {
+                update_watches(zk_request, response);
             }
 
             /// If this requests processed successfully we need to check watches

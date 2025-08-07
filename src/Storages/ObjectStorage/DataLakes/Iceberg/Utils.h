@@ -23,6 +23,12 @@
 namespace Iceberg
 {
 
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context);
+
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
 struct TransformAndArgument
@@ -55,7 +61,7 @@ struct MetadataFileWithInfo
 };
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
-String createEmptyMetadataFile(
+std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,

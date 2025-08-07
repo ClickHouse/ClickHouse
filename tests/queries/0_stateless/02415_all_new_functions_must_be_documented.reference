@@ -62,7 +62,6 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 asinh
-assumeNotNull
 atan
 atan2
 atanh
@@ -70,10 +69,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -83,9 +78,7 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
-coalesce
 concat
 concatAssumeInjective
 connectionId
@@ -163,7 +156,6 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromDaysSinceYearZero32
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
@@ -171,10 +163,6 @@ fromUnixTimestamp64Second
 fuzzBits
 gccMurmurHash
 generateUUIDv4
-geoDistance
-geohashDecode
-geohashEncode
-geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
@@ -189,15 +177,12 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-greatCircleAngle
-greatCircleDistance
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hex
 hiveHash
 hop
 hopEnd
@@ -205,7 +190,6 @@ hopStart
 hostName
 hypot
 identity
-ifNull
 ignore
 ilike
 in
@@ -224,12 +208,8 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isNotNull
-isNull
-isNullable
 isValidJSON
 isValidUTF8
-isZeroOrNull
 javaHash
 javaHashUTF16LE
 joinGet
@@ -324,7 +304,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-nullIf
 nullIn
 nullInIgnoreSet
 or
@@ -360,8 +339,6 @@ partitionId
 path
 pathFull
 pi
-pointInEllipses
-pointInPolygon
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -579,8 +556,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toNullable
-toStartOfMillisecond
 toString
 toStringCutToZero
 toTime
@@ -622,7 +597,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-today
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -654,8 +628,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes
