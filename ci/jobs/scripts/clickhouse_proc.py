@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -639,6 +640,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
         if Path(self.GDB_LOG).exists():
             res.append(self.GDB_LOG)
         if all:
@@ -683,16 +685,73 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return []
 
     @classmethod
-    def _get_jemalloc_profs(cls):
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        print(profiles)
+        if not profiles:
+            return []
+
+        profiles = profiles.split('\n')
+        print(profiles)
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split('.')
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+        print(latest_profiles)
+
+        # fetch jeprof
+        # Shell.check(f"wget -qO- https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in | sed -e 's/jemalloc_version/5.3.0-12-g41a859ef/g' -e 's/JEMALLOC_PREFIX//g' > {temp_dir}/jeprof", verbose=True)
+        if Shell.check(
+            f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
+            verbose=True,
+        ) and Shell.check(
+            f"sed -i -e 's/@jemalloc_version@/5.3.0-12-g41a859ef/g' -e 's/@JEMALLOC_PREFIX@//g' {temp_dir}/jeprof && chmod +x {temp_dir}/jeprof"
+        ):
+            has_flamegraph = Shell.check(
+                f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
+                verbose=True,
+            )
+            chbinary = Shell.get_output("which clickhouse")
+            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/bin/llvm-addr2line-$LLVM_VERSION,nm:/bin/llvm-nm-$LLVM_VERSION,objdump:/bin/llvm-objdump-$LLVM_VERSION,c++filt:/usr/bin/c++filt {chbinary}"
+            for pid, profile in latest_profiles.items():
+                Shell.check(
+                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt",
+                    verbose=True,
+                )
+
+                if has_flamegraph:
+                    Shell.check(
+                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                        verbose=True,
+                    )
+
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.gz --files-from <(find . -type d -name jemalloc_profiles)",
             verbose=True,
         )
         if Path(f"{temp_dir}/jemalloc.tar.gz").exists():
-            return [f"{temp_dir}/jemalloc.tar.gz"]
+            res.append(f"{temp_dir}/jemalloc.tar.gz")
         else:
             print("WARNING: Jemalloc profiles not found")
             return []
+        return res
 
     def _get_logs_archives_server(self):
         assert Path(
