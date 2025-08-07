@@ -2449,3 +2449,87 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
+<<<<<<< HEAD
+=======
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
+    
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            a INT NOT NULL
+        ) using iceberg
+        TBLPROPERTIES ('format-version' = '2',
+            'commit.manifest.min-count-to-merge' = '1',
+            'commit.manifest-merge.enabled' = 'true');
+        """
+    )
+
+    values_list = ", ".join(["(1)" for _ in range(5)])
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
+        """
+    )
+
+    spark.sql(
+    f"""
+        ALTER TABLE {TABLE_NAME} ADD COLUMN b INT;
+    """
+    )
+
+    values_list = ", ".join(["(1, 2)" for _ in range(5)])
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES {values_list};
+        """
+    )
+
+    spark.sql(f"CALL system.rewrite_manifests('{TABLE_NAME}')")
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+    )
+
+    instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
+
+
+def test_time_travel_bug_fix_validation(started_cluster):
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
+
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+
+    default_download_directory(
+        started_cluster,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    first_snapshot = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+
+    instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
+
+
+    assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
+>>>>>>> f5dd2e0508d21226057474fecbe4ab10b50641c2
