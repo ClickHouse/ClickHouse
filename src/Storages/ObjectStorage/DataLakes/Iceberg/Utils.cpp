@@ -71,6 +71,18 @@ namespace Iceberg
 
 using namespace DB;
 
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+    buffer_metadata->write(data.data(), data.size());
+    buffer_metadata->finalize();
+}
+
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
@@ -421,6 +433,9 @@ Poco::JSON::Object::Ptr getPartitionField(
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_name, field.value());
+
+    if (!column_name_to_source_id.contains(*field))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", *field);
     result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
     result->set(Iceberg::f_field_id, ++partition_iter);
 
