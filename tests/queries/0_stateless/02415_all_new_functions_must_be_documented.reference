@@ -161,7 +161,6 @@ fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 fuzzBits
-gccMurmurHash
 generateUUIDv4
 getMacro
 getOSKernelVersion
@@ -201,8 +200,6 @@ initialQueryID
 initializeAggregation
 intExp10
 intExp2
-intHash32
-intHash64
 isConstant
 isDecimalOverflow
 isIPAddressInRange
@@ -214,9 +211,6 @@ javaHash
 javaHashUTF16LE
 joinGet
 joinGetOrNull
-jumpConsistentHash
-kafkaMurmurHash
-kostikConsistentHash
 left
 leftPad
 leftPadUTF8
@@ -266,11 +260,6 @@ multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-murmurHash2_32
-murmurHash2_64
-murmurHash3_128
-murmurHash3_32
-murmurHash3_64
 neighbor
 netloc
 ngramDistance
