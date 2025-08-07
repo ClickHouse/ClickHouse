@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
-#include <usearch/index_plugins.hpp>
 
 #if USE_USEARCH
 
+#include <usearch/index_plugins.hpp>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
@@ -609,7 +609,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             if (distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index can only be used with the cosine distance as distance function");
             if (index.arguments[2].safeGet<UInt64>() % 8 != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that teh dimension is a multiple of 8");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that the dimension is a multiple of 8");
         }
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters

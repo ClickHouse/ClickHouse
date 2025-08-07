@@ -438,7 +438,7 @@ However, on most datasets, half-precision brain float quantization (`bf16`) resu
 Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
 We recommend both quantizations only if the the size of the vector similarity index is significantly larger than the available DRAM size.
 In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring)) to improve accuracy.
-Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalied), and 2) if the cosine distance is used as distance function.
+Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
 Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
 The rescoring step uses the original full-precision vectors stored in the table to identify the nearest neighbours via cosine distance.
 
