@@ -861,23 +861,29 @@ struct ReadColumnFromArrowColumnSettings
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
-    const std::shared_ptr<arrow::Field> & arrow_field);
+    const std::shared_ptr<arrow::Field> & arrow_field,
+    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
-    const std::shared_ptr<arrow::Field> & arrow_field)
+    const std::shared_ptr<arrow::Field> & arrow_field,
+    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
     switch (arrow_column->type()->id())
     {
@@ -1015,13 +1021,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
+                full_column_name,
                 dictionary_infos,
                 nested_type_hint,
                 false /*is_nullable_column*/,
                 true /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field);
+                arrow_field,
+                parquet_columns_to_clickhouse,
+                clickhouse_columns_to_parquet);
             if (!nested_column.column)
                 return {};
 
@@ -1116,13 +1125,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
+                Nested::concatenateName(full_column_name, "list.element"),
                 dictionary_infos,
                 nested_type_hint,
                 is_nested_nullable_column,
                 false /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field);
+                arrow_field,
+                parquet_columns_to_clickhouse,
+                clickhouse_columns_to_parquet);
             if (!nested_column.column)
                 return {};
 
@@ -1199,16 +1211,41 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 
+                if (parquet_columns_to_clickhouse)
+                {
+                    chassert(clickhouse_columns_to_parquet);
+
+                    auto column_to_search = full_column_name;
+                    if (column_to_search.ends_with("list.element"))
+                        column_to_search = column_to_search.substr(0, column_to_search.size() - 13);
+                    /// Full name of the parquet column.
+                    /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
+                    auto full_name = clickhouse_columns_to_parquet->at(column_to_search);
+                    full_name += "." + field_name;
+                    if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
+                    {
+                        field_name = it->second;
+                        size_t pos = field_name.rfind('.');
+                        /// Get the Clickhouse field as the last element of the name.
+                        /// For example, if we converted parquet "a.b" to clickhouse "c.d", the resulting field name would be "d".
+                        if (pos != std::string::npos)
+                            field_name = field_name.substr(pos + 1);
+                    }
+                }
+
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
                 auto column_with_type_and_name = readColumnFromArrowColumn(nested_arrow_column,
                     field_name,
+                    Nested::concatenateName(full_column_name, field_name),
                     dictionary_infos,
                     nested_type_hint,
                     field->nullable(),
                     false /*is_map_nested_column*/,
                     geo_metadata,
                     settings,
-                    arrow_field);
+                    arrow_field,
+                    parquet_columns_to_clickhouse,
+                    clickhouse_columns_to_parquet);
                 if (!column_with_type_and_name.column)
                     return {};
 
@@ -1243,13 +1280,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
                 auto dict_column = readColumnFromArrowColumn(arrow_dict_column,
                     column_name,
+                    full_column_name,
                     dictionary_infos,
                     nullptr /*nested_type_hint*/,
                     false /*is_nullable_column*/,
                     false /*is_map_nested_column*/,
                     geo_metadata,
                     settings,
-                    arrow_field);
+                    arrow_field,
+                    parquet_columns_to_clickhouse,
+                    clickhouse_columns_to_parquet);
 
                 if (!dict_column.column)
                     return {};
@@ -1336,13 +1376,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
+    std::string full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
-    const std::shared_ptr<arrow::Field> & arrow_field)
+    const std::shared_ptr<arrow::Field> & arrow_field,
+    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && !geo_metadata && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
@@ -1359,12 +1402,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
         auto nested_column = readNonNullableColumnFromArrowColumn(arrow_column,
             column_name,
+            full_column_name,
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
             geo_metadata,
             settings,
-            arrow_field);
+            arrow_field,
+            parquet_columns_to_clickhouse,
+            clickhouse_columns_to_parquet);
 
         if (!nested_column.column)
             return {};
@@ -1378,12 +1424,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
     return readNonNullableColumnFromArrowColumn(arrow_column,
         column_name,
+        full_column_name,
         dictionary_infos,
         type_hint,
         is_map_nested_column,
         geo_metadata,
         settings,
-        arrow_field);
+        arrow_field,
+        parquet_columns_to_clickhouse,
+        clickhouse_columns_to_parquet);
 }
 
 // Creating CH header by arrow schema. Will be useful in task about inserting
@@ -1419,7 +1468,9 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     bool allow_inferring_nullable_columns,
     bool case_insensitive_matching,
     bool allow_geoparquet_parser,
-    bool enable_json_parsing)
+    bool enable_json_parsing,
+    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1449,13 +1500,16 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         auto sample_column = readColumnFromArrowColumn(
             arrow_column,
             field->name(),
+            field->name(),
             dict_infos,
             nullptr /*nested_type_hint*/,
             field->nullable() /*is_nullable_column*/,
             false /*is_map_nested_column*/,
             geo_columns.contains(field->name()) ? std::optional(geo_columns[field->name()]) : std::nullopt,
             settings,
-            field);
+            field,
+            parquet_columns_to_clickhouse,
+            clickhouse_columns_to_parquet);
 
         if (sample_column.column)
             sample_columns.emplace_back(std::move(sample_column));
@@ -1469,6 +1523,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const std::string & format_name_,
     const FormatSettings & format_settings_,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -1487,6 +1542,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , is_stream(is_stream_)
     , enable_json_parsing(enable_json_parsing_)
     , parquet_columns_to_clickhouse(parquet_columns_to_clickhouse_)
+    , clickhouse_columns_to_parquet(clickhouse_columns_to_parquet_)
 {
 }
 
@@ -1581,13 +1637,16 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                     {
                         readColumnFromArrowColumn(arrow_column.column,
                             nested_table_name,
+                            nested_table_name,
                             dictionary_infos,
                             nested_table_type,
                             arrow_column.field->nullable() /*is_nullable_column*/,
                             false /*is_map_nested_column*/,
                             geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
                             settings,
-                            arrow_column.field)
+                            arrow_column.field,
+                            parquet_columns_to_clickhouse,
+                            clickhouse_columns_to_parquet)
                     };
 
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
@@ -1623,13 +1682,16 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
             const auto & arrow_column = name_to_arrow_column.find(search_column_name)->second;
             column = readColumnFromArrowColumn(arrow_column.column,
                 header_column.name,
+                header_column.name,
                 dictionary_infos,
                 header_column.type,
                 arrow_column.field->nullable(),
                 false /*is_map_nested_column*/,
                 geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
                 settings,
-                arrow_column.field);
+                arrow_column.field,
+                parquet_columns_to_clickhouse,
+                clickhouse_columns_to_parquet);
         }
 
         if (null_as_default)
@@ -1652,7 +1714,6 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 header_column.type->getName()));
             throw;
         }
-
         column.type = header_column.type;
         columns.push_back(std::move(column.column));
     }
