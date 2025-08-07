@@ -9,12 +9,14 @@ IMAGES_ENV = {
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "clickhouse/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
     "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
     "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
     "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
+    "clickhouse/mysql_dotnet_client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())

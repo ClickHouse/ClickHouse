@@ -40,6 +40,7 @@ DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
 DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
+
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
 DEFINE_ICEBERG_FIELD(manifest_length);
@@ -94,6 +95,8 @@ DEFINE_ICEBERG_FIELD_ALIAS(order_id, order-id);
 DEFINE_ICEBERG_FIELD_ALIAS(default_sort_order_id, default-sort-order-id);
 DEFINE_ICEBERG_FIELD_ALIAS(sort_orders, sort-orders);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_transform, transform);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_spec, partition-spec);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_specs, partition-specs);
@@ -120,4 +123,5 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, null_value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 }

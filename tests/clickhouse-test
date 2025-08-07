@@ -2521,6 +2521,7 @@ class TestSuite:
         self.parallel_tests = []
 
         self.all_tests = self.apply_test_runs(all_tests)
+
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
@@ -3057,7 +3058,8 @@ def do_run_tests(
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
-        random.shuffle(test_suite.parallel_tests)
+        if jobs > 1:
+            random.shuffle(test_suite.parallel_tests)
 
         batch_size = len(test_suite.parallel_tests) // jobs
         manager = multiprocessing.Manager()

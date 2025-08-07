@@ -105,7 +105,7 @@ add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
-list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -214,7 +214,7 @@ set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-f
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
@@ -703,6 +703,10 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::arrow_flight)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
 endif()
 
 if (ENABLE_BUZZHOUSE)

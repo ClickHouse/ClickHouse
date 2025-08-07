@@ -1,5 +1,4 @@
 #include <Poco/Timespan.h>
-#include <Common/LatencyBuckets.h>
 #include <Common/NetException.h>
 #include <Common/config_version.h>
 #include "config.h"
@@ -78,28 +77,6 @@ namespace ProfileEvents
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
-namespace LatencyBuckets
-{
-    extern const LatencyEvent S3FirstByteReadAttempt1Microseconds;
-    extern const LatencyEvent S3FirstByteReadAttempt2Microseconds;
-    extern const LatencyEvent S3FirstByteReadAttemptNMicroseconds;
-
-    extern const LatencyEvent S3FirstByteWriteAttempt1Microseconds;
-    extern const LatencyEvent S3FirstByteWriteAttempt2Microseconds;
-    extern const LatencyEvent S3FirstByteWriteAttemptNMicroseconds;
-
-    extern const LatencyEvent DiskS3FirstByteReadAttempt1Microseconds;
-    extern const LatencyEvent DiskS3FirstByteReadAttempt2Microseconds;
-    extern const LatencyEvent DiskS3FirstByteReadAttemptNMicroseconds;
-
-    extern const LatencyEvent DiskS3FirstByteWriteAttempt1Microseconds;
-    extern const LatencyEvent DiskS3FirstByteWriteAttempt2Microseconds;
-    extern const LatencyEvent DiskS3FirstByteWriteAttemptNMicroseconds;
-
-    extern const LatencyEvent S3ConnectMicroseconds;
-    extern const LatencyEvent DiskS3ConnectMicroseconds;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric S3Requests;
@@ -117,24 +94,26 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
-        const String & force_region_,
-        const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_,
-        unsigned int s3_retry_attempts_,
-        bool s3_slow_all_threads_after_network_error_,
-        bool enable_s3_requests_logging_,
-        bool for_disk_s3_,
-        bool s3_use_adaptive_timeouts_,
-        const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_)
+    std::function<ProxyConfiguration()> per_request_configuration_,
+    const String & force_region_,
+    const RemoteHostFilter & remote_host_filter_,
+    unsigned int s3_max_redirects_,
+    unsigned int s3_retry_attempts_,
+    bool s3_slow_all_threads_after_network_error_,
+    bool s3_slow_all_threads_after_retryable_error_,
+    bool enable_s3_requests_logging_,
+    bool for_disk_s3_,
+    bool s3_use_adaptive_timeouts_,
+    const ThrottlerPtr & get_request_throttler_,
+    const ThrottlerPtr & put_request_throttler_,
+    std::function<void(const ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
     , s3_retry_attempts(s3_retry_attempts_)
     , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
+    , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
@@ -318,30 +297,81 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-void PocoHTTPClient::addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount) const
+void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency) const
 {
-    if (amount == 0)
+    if (latency == 0)
         return;
 
-    static const LatencyBuckets::LatencyEvent events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
-        {LatencyBuckets::S3FirstByteReadAttempt1Microseconds, LatencyBuckets::S3FirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::S3FirstByteReadAttempt2Microseconds, LatencyBuckets::S3FirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::S3FirstByteReadAttemptNMicroseconds, LatencyBuckets::S3FirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::S3ConnectMicroseconds, LatencyBuckets::S3ConnectMicroseconds},
-    };
+    if (type == S3LatencyType::Connect)
+    {
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
+        static Histogram::MetricFamily & s3_connect = Histogram::Factory::instance().registerMetric(
+            "s3_connect_microseconds",
+            "Time to establish connection with S3, in microseconds.",
+            connect_buckets,
+            {}
+        );
+        s3_connect.withLabels({}).observe(latency);
 
-    static const LatencyBuckets::LatencyEvent disk_s3_events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
-        {LatencyBuckets::DiskS3FirstByteReadAttempt1Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::DiskS3FirstByteReadAttempt2Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::DiskS3FirstByteReadAttemptNMicroseconds, LatencyBuckets::DiskS3FirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::DiskS3ConnectMicroseconds, LatencyBuckets::DiskS3ConnectMicroseconds},
-    };
+        if (for_disk_s3)
+        {
+            static Histogram::MetricFamily & disk_s3_connect = Histogram::Factory::instance().registerMetric(
+                "disk_s3_connect_microseconds",
+                "Time to establish connection with DiskS3, in microseconds.",
+                connect_buckets,
+                {}
+            );
+            disk_s3_connect.withLabels({}).observe(latency);
+        }
+        return;
+    }
 
-    S3MetricKind kind = getMetricKind(request);
+    const String attempt_label = [](const S3LatencyType t)
+    {
+        switch (t)
+        {
+            case S3LatencyType::FirstByteAttempt1: return "1";
+            case S3LatencyType::FirstByteAttempt2: return "2";
+            case S3LatencyType::FirstByteAttemptN: return "N";
+            default: return "UNKNOWN";
+        }
+    }(type);
 
-    LatencyBuckets::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+    const String http_method_label = [](const Aws::Http::HttpMethod m)
+    {
+        switch (m)
+        {
+            case Aws::Http::HttpMethod::HTTP_GET:    return "GET";
+            case Aws::Http::HttpMethod::HTTP_HEAD:   return "HEAD";
+            case Aws::Http::HttpMethod::HTTP_POST:   return "POST";
+            case Aws::Http::HttpMethod::HTTP_DELETE: return "DELETE";
+            case Aws::Http::HttpMethod::HTTP_PUT:    return "PUT";
+            case Aws::Http::HttpMethod::HTTP_PATCH:  return "PATCH";
+        }
+    }(request.GetMethod());
+
+    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
+    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
+    const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
+
+    static Histogram::MetricFamily & s3_first_byte = Histogram::Factory::instance().registerMetric(
+        "s3_first_byte_microseconds",
+        "Time to receive the first byte from an S3 request, in microseconds.",
+        first_byte_buckets,
+        first_byte_labels
+    );
+    s3_first_byte.withLabels(first_byte_label_values).observe(latency);
+
     if (for_disk_s3)
-        LatencyBuckets::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+    {
+        static Histogram::MetricFamily & disk_s3_first_byte = Histogram::Factory::instance().registerMetric(
+            "disk_s3_first_byte_microseconds",
+            "Time to receive the first byte from a DiskS3 request, in microseconds.",
+            first_byte_buckets,
+            first_byte_labels
+        );
+        disk_s3_first_byte.withLabels(first_byte_label_values).observe(latency);
+    }
 }
 
 String extractAttemptFromInfo(const Aws::String & request_info)
@@ -560,8 +590,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
             latency_recorded = true;
 
             if (request.GetContentBody())
@@ -683,8 +713,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
         }
         LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
@@ -697,8 +727,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            addLatency(request, S3LatencyType::Connect, connect_time);
-            addLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
         }
         LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 

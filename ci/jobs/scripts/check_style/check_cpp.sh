@@ -66,7 +66,6 @@ declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
-EXTERN_TYPES[LatencyBuckets]=LatencyEvent
 
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
@@ -114,15 +113,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
     ErrorCodes::Value
-
-    LatencyBuckets::getName
-    LatencyBuckets::increment
-    LatencyBuckets::Count
-    LatencyBuckets::LatencyEvent
-    LatencyBuckets::end
-    LatencyBuckets::global_bucket_lists
-    LatencyBuckets::getColumnsDescription
-    LatencyBuckets::fillData
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -333,7 +323,7 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites' &&
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |

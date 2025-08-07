@@ -62,7 +62,6 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 asinh
-assumeNotNull
 atan
 atan2
 atanh
@@ -70,10 +69,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -83,9 +78,7 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
-coalesce
 concat
 concatAssumeInjective
 connectionId
@@ -190,7 +183,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hex
 hiveHash
 hop
 hopEnd
@@ -198,7 +190,6 @@ hopStart
 hostName
 hypot
 identity
-ifNull
 ignore
 ilike
 in
@@ -217,12 +208,8 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isNotNull
-isNull
-isNullable
 isValidJSON
 isValidUTF8
-isZeroOrNull
 javaHash
 javaHashUTF16LE
 joinGet
@@ -317,7 +304,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-nullIf
 nullIn
 nullInIgnoreSet
 or
@@ -570,7 +556,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toNullable
 toString
 toStringCutToZero
 toTime
@@ -643,8 +628,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes

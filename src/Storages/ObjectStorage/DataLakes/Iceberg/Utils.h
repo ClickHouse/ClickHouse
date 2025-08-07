@@ -23,6 +23,12 @@
 namespace Iceberg
 {
 
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context);
+
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
 struct TransformAndArgument

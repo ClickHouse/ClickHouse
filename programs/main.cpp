@@ -295,7 +295,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
 __attribute__((constructor(202))) void init_ssl()
 {
-    DB::OpenSSLInitializer::initialize();
+    DB::OpenSSLInitializer::instance();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -383,8 +383,6 @@ int main(int argc_, char ** argv_)
 #if defined(SANITIZE_COVERAGE)
     dumpCoverage();
 #endif
-
-    DB::OpenSSLInitializer::cleanup();
 
     return exit_code;
 }
