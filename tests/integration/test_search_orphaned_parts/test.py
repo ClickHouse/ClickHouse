@@ -12,6 +12,9 @@ def get_cluster(with_minio):
         user_configs=["configs/users.xml"],
         with_minio=with_minio,
         stay_alive=True,
+        # remote database disk adds MinIO implicitly
+        # FIXME: disable with_remote_database_disk if with_minio set to False explicitly
+        with_remote_database_disk=False,
     )
     logging.info("Starting cluster...")
     cluster.start()
