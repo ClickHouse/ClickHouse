@@ -2042,7 +2042,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     if (!is_database_guard)
     {
         static constexpr int MAX_TRY = 10;
-        static constexpr int INTERVAL_MS = 100;
+        static constexpr UInt64 INTERVAL_MS = 100;
         bool acquired_db_mutex_lock = false;
         for (int i = 0; i < MAX_TRY; ++i)
         {
@@ -2050,7 +2050,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
             if (acquired_db_mutex_lock)
                 break;
 
-            if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
             {
                 releaseTableLock();
                 throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
