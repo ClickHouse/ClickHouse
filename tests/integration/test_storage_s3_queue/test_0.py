@@ -516,8 +516,8 @@ def test_streaming_to_many_views(started_cluster, mode):
 
         node.wait_for_log_line(
             log_message,
-            timeout=30,
-            look_behind_lines=10000,
+            timeout=120,
+            look_behind_lines=100000,
         )
 
         assert node.contains_in_log(

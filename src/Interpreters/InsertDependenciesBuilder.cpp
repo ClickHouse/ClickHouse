@@ -659,14 +659,6 @@ private:
 
         bool insert_null_as_default = false;
 
-        auto debug_columns = [] (const ColumnsWithTypeAndName & columns)
-        {
-            WriteBufferFromOwnString out;
-            for (const auto & col : columns)
-                out << col.dumpStructure() << ", ";
-            return out.str();
-        };
-
         auto construct_columns_to_convert = [] (const ColumnsWithTypeAndName & src, const ColumnsWithTypeAndName & dst)
         {
             NameToIndexMap name_to_index_dst_map;
@@ -686,24 +678,17 @@ private:
 
         auto build_convertation = [&] (const Block & input, StorageMetadataPtr result_metadata)
         {
+            /// Some time input header contains lesser columns than result header,
+            /// and we need to convert types of input columns to match result header.
+            /// But at converting stage we have to only convert types of columns that are present in input header,
+            /// so we construct a list of columns to convert which contains only columns that are present in input header.
+            /// The additional columns that are present in result header are added later by `addMissingDefaults` function.
             auto to_convert = construct_columns_to_convert(input.getColumnsWithTypeAndName(), result_metadata->getSampleBlock().getColumnsWithTypeAndName());
-
-            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "makeConvertingActions view {} source: {} result: {} but filtered: {}",
-                view_id.getTableName(),
-                debug_columns(input.getColumnsWithTypeAndName()),
-                result_metadata->getSampleBlock().dumpStructure(), debug_columns(to_convert));
 
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
                 ActionsDAG::MatchColumnsMode::Name);
-
-            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "addMissingDefaults view {} source: {} but {} result: {}",
-                view_id.getTableName(),
-                debug_columns(converting_types_dag.getResultColumns()), debug_columns(to_convert),
-                debug_columns(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -711,12 +696,6 @@ private:
                 result_metadata->getColumns(),
                 local_context,
                 insert_null_as_default);
-
-            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "createSubcolumnsExtractionActions view {} source: {} but {} result names: {}",
-                view_id.getTableName(),
-                debug_columns(converting_types_dag.getResultColumns()), debug_columns(to_convert),
-                fmt::join(adding_missing_defaults_dag.getRequiredColumnsNames(), ", "));
 
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(to_convert),
