@@ -17,6 +17,7 @@ from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import exec_query_with_retry
 from helpers.config_cluster import minio_secret_key
+from helpers.s3_queue_common import generate_random_string
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -2682,7 +2683,7 @@ def test_archive(started_cluster):
 def test_key_value_args(started_cluster):
     node = started_cluster.instances["dummy"]
     restricted_node = started_cluster.instances["restricted_dummy"]
-    table_name = f"test_key_value_args_{uuid.uuid4()}"
+    table_name = f"test_key_value_args_{generate_random_string()}"
     bucket = started_cluster.minio_bucket
 
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}_data"
@@ -2767,7 +2768,6 @@ def test_key_value_args(started_cluster):
     )
 
     # Check s3Cluster
-    # TODO: fix with new analyzer enabled
     assert 2 == int(
         node.query(
             f"select a from s3Cluster(cluster, '{url}', TSVRaw, structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'none') where b = '2'",
@@ -2788,6 +2788,6 @@ def test_key_value_args(started_cluster):
         f"CREATE TABLE {table_name} (a Int32, b String) engine = S3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip')"
     )
     assert (
-        "S3(\\'http://minio1:9001/root/file\\', \\'TSVRaw\\', \\'format\\' = \\'TSVRaw\\', \\'access_key_id\\' = \\'minio\\', \\'secret_access_key\\' = \\'[HIDDEN]\\', \\'compression_method\\' = \\'gzip\\')"
+        f"S3(\\'{url}\\', \\'TSVRaw\\', \\'format\\' = \\'TSVRaw\\', \\'access_key_id\\' = \\'minio\\', \\'secret_access_key\\' = \\'[HIDDEN]\\', \\'compression_method\\' = \\'gzip\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
