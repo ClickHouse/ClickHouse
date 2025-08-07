@@ -459,6 +459,7 @@ KeeperMemNode KeeperMemNode::copyFromSnapshotNode()
     KeeperMemNode node_copy;
     node_copy.shallowCopy(*this);
     node_copy.children = std::move(children);
+    children.clear();
     return node_copy;
 }
 

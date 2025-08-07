@@ -317,6 +317,7 @@ public:
             if (list_itr->getVersion() <= snapshot_up_to_version)
             {
                 auto elem_copy = list_itr->copyFromSnapshotNode();
+                updateDataSize(UPDATE, key.size, list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
                 list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
