@@ -23,6 +23,7 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
+    generateSnowflakeID.cpp
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers

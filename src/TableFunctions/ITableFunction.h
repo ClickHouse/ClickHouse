@@ -80,6 +80,10 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    // INSERT INTO TABLE FUNCTION ... PARTITION BY
+    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
+    virtual void setPartitionBy(const ASTPtr &) {}
+
     /// Create storage according to the query.
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;

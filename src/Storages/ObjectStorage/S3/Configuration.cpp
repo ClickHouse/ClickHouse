@@ -21,6 +21,7 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/IPartitionStrategy.h>
 
 namespace DB
 {
@@ -52,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -75,7 +77,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_single_part_upload_size",
     "max_connections",
     "expiration_window_seconds",
-    "no_sign_request"
+    "no_sign_request",
+    "partition_strategy",
+    "partition_columns_in_data_file"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -88,7 +92,7 @@ std::string StorageS3Configuration::getPathInArchive() const
     if (url.archive_pattern.has_value())
         return url.archive_pattern.value();
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
 void StorageS3Configuration::check(ContextPtr context) const
@@ -170,6 +174,21 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
     auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+
+    if (collection.has("partition_strategy"))
+    {
+        const auto partition_strategy_name = collection.get<std::string>("partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        }
+
+        partition_strategy_type = partition_strategy_type_opt.value();
+    }
+
+    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -345,10 +364,60 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}};
         }
     }
-    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
-    else if (with_structure && count == 7)
+    /// For 7 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy)
+    /// if with_structure == 1:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
+    else if (count == 7)
     {
-        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
+        if (with_structure)
+        {
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
+            }
+        }
+        else
+        {
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}};
+        }
+    }
+    /// For 8 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, partition_columns_in_data_file)
+    /// if with_structure == 1:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, partition_columns_in_data_file)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy)
+    else if (count == 8)
+    {
+        if (with_structure)
+        {
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}};
+            }
+        }
+        else
+        {
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
+        }
+    }
+    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columns_in_data_file)
+    else if (with_structure && count == 9)
+    {
+        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}};
     }
 
     /// This argument is always the first
@@ -368,6 +437,24 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (engine_args_to_idx.contains("compression_method"))
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
+
+    if (engine_args_to_idx.contains("partition_strategy"))
+    {
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        }
+
+        partition_strategy_type = partition_strategy_type_opt.value();
+    }
+
+    if (engine_args_to_idx.contains("partition_columns_in_data_file"))
+        partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(args[engine_args_to_idx["partition_columns_in_data_file"]], "partition_columns_in_data_file");
+    else
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
     if (engine_args_to_idx.contains("access_key_id"))
         auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
@@ -567,7 +654,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             }
         }
         /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
-        else if (count == 7)
+        else
         {
             if (checkAndGetLiteralArgument<String>(args[4], "format") == "auto")
                 args[4] = format_literal;

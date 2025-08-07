@@ -201,6 +201,8 @@ private:
     FileRenamer file_renamer;
     bool was_renamed = false;
     bool distributed_processing = false;
+    NamesAndTypesList file_columns;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 class StorageFileSource : public SourceWithKeyCondition, WithContext
@@ -214,6 +216,7 @@ public:
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
+            const NamesAndTypesList & hive_columns,
             const ContextPtr & context_,
             bool distributed_processing_ = false);
 
@@ -301,6 +304,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
 
