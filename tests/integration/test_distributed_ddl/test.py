@@ -327,7 +327,7 @@ def test_kill_query(test_cluster):
     instance = test_cluster.instances["ch3"]
 
     test_cluster.ddl_check_query(
-        instance, "KILL QUERY ON CLUSTER 'cluster' WHERE NOT elapsed FORMAT TSV"
+        instance, "KILL QUERY ON CLUSTER 'cluster' WHERE NOT elapsed FORMAT TSV SETTINGS kill_throw_if_noop = false"
     )
 
 
