@@ -916,6 +916,8 @@ class ClickhouseIntegrationTestsRunner:
                 parallel_files_list.append(file)
 
         tests_execution_times = self.get_tests_execution_time()
+        assert len(tests_execution_times) > 400, \
+            f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
@@ -932,9 +934,11 @@ class ClickhouseIntegrationTestsRunner:
         ]
 
         logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
-        logging.info("Found %s new parallel modules.", len(new_parallel_tests))
+        logging.info("Found %s new parallel modules:", len(new_parallel_tests))
+        logging.info("%s", str(new_parallel_tests))
         logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
-        logging.info("Found %s new sequential modules.", len(new_sequential_tests))
+        logging.info("Found %s new sequential modules:", len(new_sequential_tests))
+        logging.info("%s", str(new_sequential_tests))
 
         # balance parallel tests
         parallel_heap = [(0, i, []) for i in range(num_groups)]
