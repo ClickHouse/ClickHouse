@@ -48,7 +48,7 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Category sipHash64_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash64_documentation = {sipHash64_description, sipHash64_syntax, sipHash64_arguments, sipHash64_returned_value, sipHash64_examples, sipHash64_introduced_in, sipHash64_category};
     factory.registerFunction<FunctionSipHash64>(sipHash64_documentation);
-    
+
     FunctionDocumentation::Description sipHash64Keyed_description = R"(
 Like [`sipHash64`](#siphash64) but additionally takes an explicit key argument instead of using a fixed key.
 )";
@@ -73,7 +73,7 @@ Like [`sipHash64`](#siphash64) but additionally takes an explicit key argument i
     FunctionDocumentation::Category sipHash64Keyed_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash64Keyed_documentation = {sipHash64Keyed_description, sipHash64Keyed_syntax, sipHash64Keyed_arguments, sipHash64Keyed_returned_value, sipHash64Keyed_examples, sipHash64Keyed_introduced_in, sipHash64Keyed_category};
     factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation);
-    
+
     FunctionDocumentation::Description sipHash128_description = R"(
 Like [`sipHash64`](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
@@ -103,7 +103,7 @@ New projects are advised to use [`sipHash128Reference`](#siphash128reference).
     FunctionDocumentation::Category sipHash128_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash128_documentation = {sipHash128_description, sipHash128_syntax, sipHash128_arguments, sipHash128_returned_value, sipHash128_examples, sipHash128_introduced_in, sipHash128_category};
     factory.registerFunction<FunctionSipHash128>(sipHash128_documentation);
-    
+
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
 Same as [`sipHash128`](#siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
@@ -144,7 +144,7 @@ New projects should probably use [sipHash128ReferenceKeyed](#siphash128reference
                        "instead of using a fixed key.",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
         .category = FunctionDocumentation::Category::Hash});
-    
+
     FunctionDocumentation::Description cityHash64_description = R"(
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
 
@@ -200,7 +200,7 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
             R"(
 ┌─groupBitXor(⋯age, city))─┐
 │     11639977218258521182 │
-└──────────────────────────┘            
+└──────────────────────────┘
             )"
         }
     };
@@ -208,7 +208,7 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
     FunctionDocumentation::Category cityHash64_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation cityHash64_documentation = {cityHash64_description, cityHash64_syntax, cityHash64_arguments, cityHash64_returned_value, cityHash64_examples, cityHash64_introduced_in, cityHash64_category};
     factory.registerFunction<FunctionCityHash64>(cityHash64_documentation);
-    
+
     FunctionDocumentation::Description farmFingerprint64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) value using the `Fingerprint64` method.
 
@@ -241,7 +241,7 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Category farmFingerprint64_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation farmFingerprint64_documentation = {farmFingerprint64_description, farmFingerprint64_syntax, farmFingerprint64_arguments, farmFingerprint64_returned_value, farmFingerprint64_examples, farmFingerprint64_introduced_in, farmFingerprint64_category};
     factory.registerFunction<FunctionFarmFingerprint64>(farmFingerprint64_documentation);
-    
+
     FunctionDocumentation::Description farmHash64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) using the `Hash64` method.
 
@@ -327,7 +327,7 @@ This hash function has two modes:
         R"(
 ┌─URLHash('htt⋯house.com')─┐
 │     13614512636072854701 │
-└──────────────────────────┘        
+└──────────────────────────┘
         )"
     },
     {
@@ -344,7 +344,7 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 -- hash of https://www.clickhouse.com/docs
 ┌─URLHash('htt⋯m/docs', 1)─┐
 │     13167253331440520598 │
-└──────────────────────────┘        
+└──────────────────────────┘
         )"
     }
     };
