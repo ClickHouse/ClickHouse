@@ -6103,13 +6103,19 @@ Do not add aliases to top level expression list on multiple joins rewrite
 Optimize sorting by sorting properties of input stream
 )", 0) \
     DECLARE(UInt64, keeper_max_retries, 10, R"(
-Max retries for general keeper operations
+Max retries for general keeper operations (everything except INSERT queries and backup operations)
 )", 0) \
     DECLARE(UInt64, keeper_retry_initial_backoff_ms, 100, R"(
-Initial backoff timeout for general keeper operations
+Initial backoff timeout for general keeper operations (everything except INSERT queries and backup operations)
 )", 0) \
     DECLARE(UInt64, keeper_retry_max_backoff_ms, 5000, R"(
-Max backoff timeout for general keeper operations
+Max backoff timeout for general keeper operations (everything except INSERT queries and backup operations)
+)", 0) \
+    DECLARE(Float, keeper_fault_injection_probability, 0.0f, R"(
+Approximate probability of failure for a general keeper operation (everything except INSERT queries and backup operations). Valid value is in interval [0.0f, 1.0f]
+)", 0) \
+    DECLARE(UInt64, keeper_fault_injection_seed, 0, R"(
+0 - random seed, otherwise the setting value
 )", 0) \
     DECLARE(UInt64, insert_keeper_max_retries, 20, R"(
 The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
