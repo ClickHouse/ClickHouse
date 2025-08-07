@@ -1,9 +1,3 @@
-option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_FASTPFOR)
-    message(STATUS "Not using FastPFOR")
-endif ()
-
 set(FASTPFOR_LIBRARY_DIR "${CMAKE_SOURCE_DIR}/contrib/FastPFOR")
 
 set (SRCS
@@ -22,13 +16,7 @@ add_library(_fastpfor ${SRCS})
 
 target_include_directories(_fastpfor SYSTEM BEFORE PUBLIC "${FASTPFOR_LIBRARY_DIR}/headers/")
 
-# SIMDe (SIMD everywhere) is a dependency of FastPFOR, but only on ARM
 if (ARCH_AARCH64)
-    set(SIMDE_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/simde)
-    add_library(_simde INTERFACE)
-    target_include_directories(_simde INTERFACE ${SIMDE_LIBRARY_DIR})
-    target_compile_definitions(_simde INTERFACE -DSIMDE_ENABLE_NATIVE_ALIASES -DSIMDE_ARM_NEON_A32V8_ENABLE -DSIMDE_ARM_NEON_A64V8_ENABLE)
-
     target_link_libraries(_fastpfor PRIVATE _simde)
 endif()
 

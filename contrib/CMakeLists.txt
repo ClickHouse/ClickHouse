@@ -264,13 +264,15 @@ add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
 
-# option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
-# if (ENABLE_FASTPFOR)
-#     add_contrib(FastPFOR-cmake FastPFOR)
-# else ()
-#     message(STATUS "Not using FastPFOR")
-# endif ()
-add_contrib(FastPFOR-cmake FastPFOR)
+option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
+if (ENABLE_FASTPFOR)
+    if (ARCH_AARCH64)
+        add_contrib(simde-cmake simde)
+    endif()
+    add_contrib(FastPFOR-cmake FastPFOR) # requires simde (only on ARM)
+else ()
+    message(STATUS "Not using FastPFOR")
+endif ()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
