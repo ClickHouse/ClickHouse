@@ -579,7 +579,9 @@ void ReadFromRemote::addLazyPipe(
             }
         }
 
-        // We assumed when we caught this error that a local replica was available but it is not, so we rethrow it here
+        /// We assumed when we caught an exception during obtaining connections, that it was possible to fallback to local replica,
+        /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
+        /// so we need to rethrow exception here, to avoid creating connections with zero replicas
         if (exception_ptr)
             std::rethrow_exception(exception_ptr);
 
