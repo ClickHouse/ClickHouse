@@ -48,7 +48,7 @@ struct ReplaceStringImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        /// The current index in the array of strings.
+        /// The current index in the column of strings.
         size_t i = 0;
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
@@ -58,33 +58,35 @@ struct ReplaceStringImpl
         {
             const UInt8 * match = searcher.search(pos, end - pos);
 
-            /// Copy the data without changing
+            /// Copy the data before the match without changing
             res_data.resize(res_data.size() + (match - pos));
             memcpy(&res_data[res_offset], pos, match - pos);
 
-            /// Determine which index it belongs to.
-            while (i < haystack_offsets.size() && begin + haystack_offsets[i] <= match)
+            /// Determine which index the match belongs to.
+            while (i < input_rows_count && begin + haystack_offsets[i] <= match)
             {
                 res_offsets[i] = res_offset + ((begin + haystack_offsets[i]) - pos);
                 ++i;
             }
             res_offset += (match - pos);
 
-            /// If you have reached the end, it's time to stop
-            if (i == haystack_offsets.size())
+            /// If we have reached the end, it's time to stop
+            if (i == input_rows_count)
                 break;
 
             /// Is it true that this string no longer needs to perform transformations.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not go through the boundaries of strings.
-            if (match + needle.size() < begin + haystack_offsets[i])
+            if (match + needle.size() <= begin + haystack_offsets[i])
             {
                 res_data.resize(res_data.size() + replacement.size());
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
                 if constexpr (replace == ReplaceStringTraits::Replace::First)
+                    can_finish_current_string = true;
+                else if (pos == begin + haystack_offsets[i])
                     can_finish_current_string = true;
             }
             else
@@ -411,7 +413,9 @@ struct ReplaceStringImpl
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
-                if (replace == ReplaceStringTraits::Replace::First || pos == begin + n * (i + 1))
+                if constexpr (replace == ReplaceStringTraits::Replace::First)
+                    can_finish_current_string = true;
+                else if (pos == begin + n * (i + 1))
                     can_finish_current_string = true;
             }
             else

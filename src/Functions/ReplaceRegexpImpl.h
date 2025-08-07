@@ -166,7 +166,7 @@ struct ReplaceRegexpImpl
                 {
                     /// Step one character to avoid infinite loop
                     ++match_pos;
-                    if (match_pos >= haystack_length)
+                    if (match_pos > haystack_length)
                         can_finish_current_string = true;
                 }
             }
