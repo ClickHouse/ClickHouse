@@ -80,6 +80,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/Net/SocketAddress.h>
@@ -172,6 +173,9 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool collect_workload;
+    extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsString collection_file_path;
 }
 
 namespace ServerSetting
@@ -1193,6 +1197,14 @@ static BlockIO executeQueryImpl(
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
         }
         throw;
+    }
+
+    if (!internal && context->getSettingsRef()[Setting::collect_workload] && !out_ast->getID().starts_with("FinishCollectingWorkload"))
+    {
+        WriteBufferFromFile out_buf(context->getSettingsRef()[Setting::collection_file_path], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+        out_buf.write(query.data(), query.size());
+        out_buf.write("\n", 1);
+        out_buf.finalize();
     }
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
