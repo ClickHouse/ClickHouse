@@ -51,12 +51,12 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
         throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed page is too long");
 
     /// From TryDecompressHadoop in arrow/cpp/src/arrow/util/compression_lz4.cc:
-    ///   Parquet files written with the Hadoop Lz4Codec use their own framing.
-    ///   The input buffer can contain an arbitrary number of "frames", each
-    ///   with the following structure:
-    ///   - bytes 0..3: big-endian uint32_t representing the frame decompressed size
-    ///   - bytes 4..7: big-endian uint32_t representing the frame compressed size
-    ///   - bytes 8...: frame compressed data
+    ///  > Parquet files written with the Hadoop Lz4Codec use their own framing.
+    ///  > The input buffer can contain an arbitrary number of "frames", each
+    ///  > with the following structure:
+    ///  > - bytes 0..3: big-endian uint32_t representing the frame decompressed size
+    ///  > - bytes 4..7: big-endian uint32_t representing the frame compressed size
+    ///  > - bytes 8...: frame compressed data
     while (compressed_size > 0)
     {
         if (compressed_size < 8)

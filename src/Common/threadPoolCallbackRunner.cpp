@@ -127,60 +127,67 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
 
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
-    ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
-
-    while (true)
     {
-#ifdef OS_LINUX
-        UInt32 x = queue_size.load(std::memory_order_relaxed);
+        ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+
         while (true)
         {
-            if (x == 0)
+    #ifdef OS_LINUX
+            UInt32 x = queue_size.load(std::memory_order_relaxed);
+            while (true)
             {
-                futexWait(&queue_size, 0);
-                x = queue_size.load(std::memory_order_relaxed);
+                if (x == 0)
+                {
+                    futexWait(&queue_size, 0);
+                    x = queue_size.load(std::memory_order_relaxed);
+                }
+                else if (queue_size.compare_exchange_weak(
+                            x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
+                    break;
             }
-            else if (queue_size.compare_exchange_weak(
-                        x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
-                break;
-        }
-#endif
+    #endif
 
-        std::function<void()> f;
-        {
-            std::unique_lock lock(mutex);
-
-#ifndef OS_LINUX
-            queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
-#endif
-
-            if (shutdown_requested)
+            std::function<void()> f;
             {
-                threads -= 1;
-                if (threads == 0)
-                    shutdown_cv.notify_all();
-                return;
+                std::unique_lock lock(mutex);
+
+    #ifndef OS_LINUX
+                queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
+    #endif
+
+                if (shutdown_requested)
+                    break;
+
+                chassert(!queue.empty());
+
+                f = std::move(queue.front());
+                queue.pop_front();
             }
 
-            chassert(!queue.empty());
+            try
+            {
+                f();
 
-            f = std::move(queue.front());
-            queue.pop_front();
+                CurrentThread::updatePerformanceCountersIfNeeded();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("FastThreadPool");
+                chassert(false);
+            }
+
+            active_tasks.fetch_sub(1, std::memory_order_relaxed);
         }
+    }
 
-        try
-        {
-            f();
-
-            CurrentThread::updatePerformanceCountersIfNeeded();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("FastThreadPool");
-            chassert(false);
-        }
-
-        active_tasks.fetch_sub(1, std::memory_order_relaxed);
+    /// Important that we destroy the `ThreadGroupSwitcher` before decrementing `threads`.
+    /// Otherwise ~ThreadGroupSwitcher may access global Context after the query is finished, which
+    /// may race with mutating Context (specifically, Settings) at the start of next query.
+    {
+        std::unique_lock lock(mutex);
+        threads -= 1;
+        if (threads == 0)
+            shutdown_cv.notify_all();
     }
 }
 

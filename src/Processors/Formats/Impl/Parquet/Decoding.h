@@ -104,6 +104,10 @@ struct FixedSizeConverter
     virtual ~FixedSizeConverter() = default;
 };
 
+/// TODO [parquet]: If we remove the 0 byte from ColumnString (https://github.com/ClickHouse/ClickHouse/pull/85063),
+///                 see what can be optimized here. E.g. for DELTA_LENGTH_BYTE_ARRAY memcpy the whole
+///                 buffer rather than one string at a time.
+///                 Same in encoder (maybe use DELTA_LENGTH_BYTE_ARRAY by default).
 struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
