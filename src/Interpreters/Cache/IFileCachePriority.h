@@ -125,9 +125,9 @@ public:
                 release();
         }
 
-    private:
         const size_t size;
         const size_t elements;
+    private:
         IFileCachePriority & priority;
         bool released = false;
     };
@@ -204,6 +204,8 @@ public:
         size_t size_to_evict = 0;
         size_t elements_to_evict = 0;
         HoldSpacePtr hold_space;
+
+        std::string formatForLog() const;
     };
     virtual EvictionInfo checkEvictionInfo(
         size_t size,

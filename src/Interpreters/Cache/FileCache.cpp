@@ -1064,6 +1064,10 @@ bool FileCache::tryReserve(
         main_eviction_info = main_priority->checkEvictionInfo(size, required_elements_num, cache_write_lock.value());
     }
 
+    LOG_TEST(log, "Main eviction info {}", main_eviction_info.formatForLog());
+    if (query_priority)
+        LOG_TEST(log, "Query eviction info {}", main_eviction_info.formatForLog());
+
     EvictionCandidates eviction_candidates;
     if (main_eviction_info.size_to_evict || main_eviction_info.elements_to_evict)
     {

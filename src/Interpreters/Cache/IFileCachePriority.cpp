@@ -1,4 +1,6 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -49,6 +51,19 @@ void IFileCachePriority::check(const CachePriorityGuard::WriteLock & lock) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));
     }
+}
+
+std::string IFileCachePriority::EvictionInfo::formatForLog() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "size to evict: " << size_to_evict << ", ";
+    wb << "elements to evict: " << elements_to_evict;
+    if (hold_space)
+    {
+        wb << ", " << "hold space size: " << size_to_evict << ", ";
+        wb << "hold space elements: " << elements_to_evict;
+    }
+    return wb.str();
 }
 
 }
