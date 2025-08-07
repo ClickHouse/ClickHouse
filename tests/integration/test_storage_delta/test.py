@@ -343,16 +343,12 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
-    assert (
-        instance.query(f"SELECT getSetting('allow_experimental_delta_kernel_rs')")
-        == "False"
-    )
     create_delta_table(
         instance,
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=False,
+        use_delta_kernel=use_delta_kernel,
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
