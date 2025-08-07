@@ -146,7 +146,7 @@ void validateSupportedColumns(
 
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-    ObjectInfo & object_info,
+    RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
@@ -180,7 +180,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     if (!object_info.metadata)
-        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
+        object_info.metadata = object_storage->getObjectMetadata(object_info.relative_path);
 
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -242,17 +242,17 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
-            hash.update(object_info.getPath());
+            hash.update(object_info.relative_path);
             hash.update(object_info.metadata->etag);
 
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
+            auto read_buffer_creator = [path = object_info.relative_path, object_size, nested_buffer_read_settings, object_storage]()
             { return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings); };
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object_info.getPath(),
+                object_info.relative_path,
                 cache_key,
                 cache,
                 FileCache::getCommonUser(),
@@ -269,14 +269,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 log,
                 "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
                 filesystem_cache_name,
-                object_info.getPath(),
+                object_info.relative_path,
                 object_info.metadata->etag,
                 toString(hash.get128()));
         }
     }
 
     if (!impl)
-        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
+        impl = object_storage->readObject(StoredObject(object_info.relative_path, "", object_size), nested_buffer_read_settings);
 
     if (!use_async_buffer)
         return impl;
@@ -312,7 +312,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 }
 
 std::string getUniqueStoragePathIdentifier(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfoBase & object_info, bool include_connection_info)
 {
     auto path = object_info.getPath();
     if (path.starts_with("/"))
@@ -321,5 +321,18 @@ std::string getUniqueStoragePathIdentifier(
     if (include_connection_info)
         return fs::path(configuration.getDataSourceDescription()) / path;
     return fs::path(configuration.getNamespace()) / path;
+}
+
+ObjectInfos convertRelativePathsToPlainObjectInfos(RelativePathsWithMetadata && relative_paths)
+{
+    ObjectInfos object_infos;
+    object_infos.reserve(relative_paths.size());
+
+    for (const auto & relative_path : relative_paths)
+    {
+        object_infos.emplace_back(std::make_shared<ObjectInfoPlain>(std::move(*relative_path)));
+    }
+
+    return object_infos;
 }
 }

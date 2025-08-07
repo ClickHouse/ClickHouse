@@ -135,7 +135,7 @@ protected:
 
     std::future<ReaderHolder> createReaderAsync();
 
-    void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    bool tryAddNumRowsToCache(const ObjectInfoBase & object_info, size_t num_rows);
     void lazyInitialize();
 };
 

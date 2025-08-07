@@ -20,6 +20,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoDeltaLake.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
@@ -235,12 +236,12 @@ public:
                 continue;
             }
 
-            object->metadata = object_storage->getObjectMetadata(object->getPath());
+            object->downloadBaseBlobMetadataIfNotSet(object_storage);
 
             if (callback)
             {
-                chassert(object->metadata);
-                callback(DB::FileProgress(0, object->metadata->size_bytes));
+                chassert(object->hasBaseBlobMetadata());
+                callback(DB::FileProgress(0, object->getBaseBlobMetadata().size_bytes));
             }
             return object;
         }
@@ -290,7 +291,7 @@ public:
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        auto object = std::make_shared<DB::ObjectInfoDeltaLake>(std::move(full_path));
 
         if (transform && !context->partition_columns.empty())
         {

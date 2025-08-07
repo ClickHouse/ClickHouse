@@ -1,10 +1,11 @@
+#include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/Iterators/ArchiveIterator.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
-#include <IO/Archives/createArchiveReader.h>
-#include <Storages/ObjectStorage/Utils.h>
-
 
 namespace DB {
 
@@ -31,7 +32,10 @@ ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
     const std::string & path_in_archive_,
     std::shared_ptr<IArchiveReader> archive_reader_,
     IArchiveReader::FileInfo && file_info_)
-    : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
+    : ObjectInfoBase(*archive_object_)
+    , path_in_archive(path_in_archive_)
+    , archive_reader(archive_reader_)
+    , file_info(file_info_)
 {
 }
 
@@ -57,11 +61,12 @@ ArchiveIterator::ArchiveIterator(
 std::shared_ptr<IArchiveReader>
 ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
 {
-    const auto size = object_info->metadata->size_bytes;
+    const auto size = object_info->base_object_info.metadata->size_bytes;
     return DB::createArchiveReader(
         /* path_to_archive */
         object_info->getPath(),
-        /* archive_read_function */ [=, this]() { return createReadBuffer(*object_info, object_storage, getContext(), log); },
+        /* archive_read_function */ [=, this]()
+        { return createReadBuffer(object_info->base_object_info, object_storage, getContext(), log); },
         /* archive_size */ size);
 }
 
@@ -82,8 +87,8 @@ ObjectInfoPtr ArchiveIterator::next(size_t processor)
                     return {};
                 }
 
-                if (!archive_object->metadata)
-                    archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+                if (!archive_object->base_object_info.metadata)
+                    archive_object->base_object_info.metadata = object_storage->getObjectMetadata(archive_object->getPath());
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -108,8 +113,8 @@ ObjectInfoPtr ArchiveIterator::next(size_t processor)
             if (!archive_object)
                 return {};
 
-            if (!archive_object->metadata)
-                archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+            if (!archive_object->base_object_info.metadata)
+                archive_object->base_object_info.metadata = object_storage->getObjectMetadata(archive_object->getPath());
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))

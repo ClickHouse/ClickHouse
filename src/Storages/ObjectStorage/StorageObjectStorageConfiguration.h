@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
@@ -21,25 +22,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-
-struct StorageObjectStorageQuerySettings
-{
-    /// Insert settings:
-    bool truncate_on_insert;
-    bool create_new_file_on_insert;
-
-    /// Schema inference settings:
-    bool schema_inference_use_cache;
-    SchemaInferenceMode schema_inference_mode;
-
-    /// List settings:
-    bool skip_empty_files;
-    size_t list_object_keys_size;
-    bool throw_on_zero_files_match;
-    bool ignore_non_existent_file;
-};
-
 
 class StorageObjectStorageConfiguration
 {
@@ -131,19 +113,7 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
-
     virtual void modifyFormatSettings(FormatSettings &) const {}
-
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
-
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /*object_info*/,
-        const SharedHeader & /*header*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        ContextPtr /*context_*/) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,

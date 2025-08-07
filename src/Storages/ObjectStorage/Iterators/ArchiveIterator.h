@@ -34,7 +34,7 @@ public:
 
     size_t estimatedKeysCount() override;
 
-    struct ObjectInfoInArchive : public ObjectInfo
+    struct ObjectInfoInArchive : public ObjectInfoBase
     {
         ObjectInfoInArchive(
             ObjectInfoPtr archive_object_,
@@ -47,21 +47,14 @@ public:
             return path_in_archive;
         }
 
-        std::string getPath() const override
-        {
-            return archive_object->getPath() + "::" + path_in_archive;
-        }
+        std::string getPath() const override { return ObjectInfoBase::getPath() + "::" + path_in_archive; }
 
-        std::string getPathToArchive() const override
-        {
-            return archive_object->getPath();
-        }
+        std::string getPathToArchive() const override { return ObjectInfoBase::getPath(); }
 
         bool isArchive() const override { return true; }
 
         size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
 
-        const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;
         const IArchiveReader::FileInfo file_info;

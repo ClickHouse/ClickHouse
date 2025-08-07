@@ -544,14 +544,14 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
 
     auto create_fn = [&]()
     {
-        ObjectInfo object_info(filename);
+        RelativePathWithMetadata relative_path_with_metadata(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (manifest_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         ManifestFileCacheKeys manifest_file_cache_keys;
@@ -686,14 +686,14 @@ ManifestFilePtr IcebergMetadata::getManifestFile(
 
     auto create_fn = [&]()
     {
-        ObjectInfo manifest_object_info(filename);
+        RelativePathWithMetadata relative_path_of_manifest(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (manifest_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
+        auto buffer = createReadBuffer(relative_path_of_manifest, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
         return std::make_shared<ManifestFileContent>(
@@ -936,56 +936,6 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
 
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
         header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
-}
-
-ParsedDataFileInfo::ParsedDataFileInfo(
-    StorageObjectStorageConfigurationPtr configuration_,
-    Iceberg::ManifestFileEntry data_object_,
-    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
-    : data_object_file_path_key(data_object_.file_path_key)
-    , data_object_file_path(data_object_.file_path)
-{
-    ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
-    /// It is done to have an invariant that position deletes objects which corresponds
-    /// to the data object form a subsegment in a position_deletes_objects_ vector.
-    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
-    /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
-    /// ManifestFileEntry has comparator by default which helps to do that.
-    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
-    auto end_it = std::upper_bound(
-        position_deletes_objects_.begin(),
-        position_deletes_objects_.end(),
-        data_object_,
-        [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
-        {
-            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
-                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
-        });
-    if (beg_it - position_deletes_objects_.begin() > end_it - position_deletes_objects_.begin())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
-            "beginning: {}, end: {}, position_deletes_objects size: {}",
-            beg_it - position_deletes_objects_.begin(),
-            end_it - position_deletes_objects_.begin(),
-            position_deletes_objects_.size());
-    }
-    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
-    if (!position_deletes_objects.empty() && configuration_->format != "Parquet")
-    {
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            configuration_->format);
-    }
-}
-
-
-IcebergDataObjectInfo::IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_)
-    : RelativePathWithMetadata(parsed_data_file_info_.data_object_file_path, std::move(metadata_))
-    , parsed_data_file_info(std::move(parsed_data_file_info_))
-{
 }
 
 IcebergKeysIterator::IcebergKeysIterator(

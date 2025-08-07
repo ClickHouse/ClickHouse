@@ -27,12 +27,14 @@ void validateSupportedColumns(
     const StorageObjectStorageConfiguration & configuration);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-    ObjectInfo & object_info,
+    RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt);
 
 std::string getUniqueStoragePathIdentifier(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfoBase & object_info, bool include_connection_info = true);
+
+ObjectInfos convertRelativePathsToPlainObjectInfos(RelativePathsWithMetadata && relative_paths);
 }

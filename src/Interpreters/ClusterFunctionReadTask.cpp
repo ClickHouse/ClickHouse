@@ -1,11 +1,12 @@
-#include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/SetSerialization.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
-#include <IO/WriteHelpers.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/SetSerialization.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoDeltaLake.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
 
@@ -26,8 +27,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
 
-    if (object->data_lake_metadata.has_value())
-        data_lake_metadata = object->data_lake_metadata.value();
+    if (object->getDataLakeMetadata().has_value())
+        data_lake_metadata = object->getDataLakeMetadata().value();
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -43,7 +44,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (isEmpty())
         return {};
 
-    auto object = std::make_shared<ObjectInfo>(path);
+    auto object = std::make_shared<ObjectInfoDeltaLake>(path);
     object->data_lake_metadata = data_lake_metadata;
     return object;
 }

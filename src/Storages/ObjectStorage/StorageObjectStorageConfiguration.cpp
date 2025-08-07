@@ -202,20 +202,4 @@ void StorageObjectStorageConfiguration::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
     }
 }
-
-bool StorageObjectStorageConfiguration::hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const
-{
-    return false;
-}
-
-
-std::shared_ptr<ISimpleTransform> StorageObjectStorageConfiguration::getPositionDeleteTransformer(
-    const ObjectInfoPtr & /*object_info*/,
-    const SharedHeader & /*header*/,
-    const std::optional<FormatSettings> & /*format_settings*/,
-    ContextPtr /*context_*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method getPositionDeleteTransformer() is not implemented for configuration type {}", getTypeName());
-}
 }
