@@ -16,6 +16,11 @@
 
 #include "config.h"
 
+#if USE_FASTPFOR
+#include <codecfactory.h>
+#endif
+
+
 /// GinIndexStore manages the Generalized Inverted Index ("gin") (text index) for a data part, and it is made up of one or more
 /// immutable index segments.
 ///
@@ -51,34 +56,31 @@ public:
 };
 
 #if USE_FASTPFOR
-class GinIndexPostingListDeltaPforCompression
+/// This class is responsible to serialize the posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
+/// Internally, the FastPfor library is used for the PFOR compression.
+class GinIndexPostingListDeltaPforSerialization
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
-
-    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
+    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-#    if defined(__AVX512F__) && defined(__AVX512BW__)
-    /// FastPFor does not have AVX512 support yet, but we can still use 256-bit support.
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
-    static constexpr size_t FASTPFOR_THRESHOLD = 8;
-#    elif defined(__AVX__) && defined(__AVX2__)
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
-    static constexpr size_t FASTPFOR_THRESHOLD = 8;
-#    else
+    static std::shared_ptr<FastPForLib::IntegerCODEC> codec();
+    static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
+    static void decodeDeltaScalar(std::vector<UInt32> & deltas);
+
     static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
+    /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
     static constexpr size_t FASTPFOR_THRESHOLD = 4;
-#    endif
 };
 #endif
 
-class GinIndexPostingListBitmapZstdCompression
+/// This class is responsible to serialize the posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
+class GinIndexPostingListRoaringZstdSerialization
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask);
-
-    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer, UInt64 header);
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
+    static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
     static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
@@ -106,8 +108,11 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    static constexpr UInt64 BITMAP_ZSTD_COMPRESSION_MASK = 0x0;
-    static constexpr UInt64 DELTA_PFOR_COMPRESSION_MASK = 0x1;
+    enum class Serialization : UInt8
+    {
+        ROARING_ZSTD = 1,
+        DELTA_PFOR = 2,
+    };
 
     roaring::Roaring rowids;
 };

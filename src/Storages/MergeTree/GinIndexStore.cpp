@@ -26,7 +26,6 @@
 #if USE_FASTPFOR
 #include <codecfactory.h>
 #include <fastpfor.h>
-#include <deltautil.h>
 #endif
 
 namespace DB
@@ -49,15 +48,12 @@ const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
 }
 
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforCompression::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask)
+UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
 {
-    const UInt64 cardinality = rowids.cardinality();
+    std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
-    PaddedPODArray<UInt32> deltas(cardinality);
-    rowids.toUint32Array(deltas.data());
-    FastPForLib::Delta::fastDelta(deltas.data(), deltas.size());
-
-    PaddedPODArray<UInt32> compressed(static_cast<size_t>(std::ceil(deltas.size() * 1.2))); // +20% buffer
+    /// FastPFOR requires the output buffer to be "big enough", so +20% buffer is our attempt to comply with that.
+    std::vector<UInt32> compressed(static_cast<size_t>(std::ceil(deltas.size() * 1.2)));
     size_t compressed_size = compressed.size();
     if (deltas.size() < FASTPFOR_THRESHOLD)
     {
@@ -66,63 +62,94 @@ UInt64 GinIndexPostingListDeltaPforCompression::serialize(WriteBuffer & buffer, 
     }
     else
     {
-        static thread_local FastPForLib::CODECFactory factory;
-        static thread_local FastPForLib::IntegerCODEC & codec = *factory.getFromName(FASTPFOR_CODEC_NAME);
-        codec.encodeArray(deltas.data(), deltas.size(), compressed.data(), compressed_size);
+        codec()->encodeArray(deltas.data(), deltas.size(), compressed.data(), compressed_size);
     }
 
-    UInt64 header = deltas.size();
-    header = (header << 1) | header_mask;
-    writeVarUInt(header, buffer);
-    writeVarUInt(compressed_size, buffer);
-    buffer.write(reinterpret_cast<char *>(compressed.data()), compressed_size * sizeof(UInt32));
+    UInt64 written_bytes = 0;
 
-    return getLengthOfVarUInt(header) + getLengthOfVarUInt(compressed_size) + (compressed_size * sizeof(UInt32));
+    UInt64 num_deltas = deltas.size();
+    writeVarUInt(num_deltas, buffer);
+    written_bytes += getLengthOfVarUInt(num_deltas);
+
+    writeVarUInt(compressed_size, buffer);
+    written_bytes += getLengthOfVarUInt(compressed_size);
+
+    buffer.write(reinterpret_cast<char *>(compressed.data()), compressed_size * sizeof(UInt32));
+    written_bytes += compressed_size * sizeof(UInt32);
+
+    return written_bytes;
 }
 
-GinIndexPostingsListPtr GinIndexPostingListDeltaPforCompression::deserialize(ReadBuffer & buffer, UInt64 header)
+GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
 {
-    size_t num_deltas = header;
+    size_t num_deltas = 0;
     size_t compressed_size = 0;
+    readVarUInt(num_deltas, buffer);
     readVarUInt(compressed_size, buffer);
 
-    PaddedPODArray<UInt32> compressed(compressed_size);
+    std::vector<UInt32> compressed(compressed_size);
     buffer.readStrict(reinterpret_cast<char *>(compressed.data()), compressed_size * sizeof(UInt32));
 
-    PaddedPODArray<UInt32> deltas(num_deltas);
+    std::vector<UInt32> deltas(num_deltas);
     if (deltas.size() < FASTPFOR_THRESHOLD)
     {
         std::memcpy(deltas.data(), compressed.data(), sizeof(UInt32) * deltas.size());
     }
     else
     {
-        static thread_local FastPForLib::CODECFactory factory;
-        static thread_local FastPForLib::IntegerCODEC & codec = *factory.getFromName(FASTPFOR_CODEC_NAME);
-        codec.decodeArray(compressed.data(), compressed_size, deltas.data(), num_deltas);
+        codec()->decodeArray(compressed.data(), compressed_size, deltas.data(), num_deltas);
     }
 
-    FastPForLib::Delta::fastinverseDelta2(deltas.data(), deltas.size());
+    decodeDeltaScalar(deltas);
 
     GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
     postings_list->addMany(deltas.size(), deltas.data());
     return postings_list;
 }
+
+std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
+{
+    static thread_local FastPForLib::CODECFactory factory;
+    static std::shared_ptr<FastPForLib::IntegerCODEC> codec = factory.getFromName(FASTPFOR_CODEC_NAME);
+    return codec;
+}
+
+std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
+{
+    std::vector<UInt32> deltas(rowids.cardinality());
+    UInt32 prev = 0;
+    for (size_t i = 0; const UInt32 rowid : rowids)
+    {
+        deltas[i] = rowid - prev;
+        prev = rowid;
+        ++i;
+    }
+    return deltas;
+}
+
+void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
+{
+    for (size_t i = 1; i < deltas.size(); ++i)
+        deltas[i] += deltas[i - 1];
+}
 #endif
 
-UInt64 GinIndexPostingListBitmapZstdCompression::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids, UInt64 header_mask)
+UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
 {
-    const UInt64 cardinality = rowids.cardinality();
+    const UInt64 num_rowids = rowids.cardinality();
 
-    if (cardinality < MIN_SIZE_FOR_ROARING_ENCODING)
+    if (num_rowids < MIN_SIZE_FOR_ROARING_ENCODING)
     {
-        std::vector<UInt32> values(cardinality);
+        std::vector<UInt32> values(num_rowids);
         rowids.toUint32Array(values.data());
 
-        UInt64 header = (cardinality << 1) | ARRAY_CONTAINER_MASK;
-        header = (header << 1) | header_mask;
-        writeVarUInt(header, buffer);
+        UInt64 header = (num_rowids << 1) | ARRAY_CONTAINER_MASK;
 
-        UInt64 written_bytes = getLengthOfVarUInt(header);
+        UInt64 written_bytes = 0;
+
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
         for (const auto & value : values)
         {
             writeVarUInt(value, buffer);
@@ -132,7 +159,7 @@ UInt64 GinIndexPostingListBitmapZstdCompression::serialize(WriteBuffer & buffer,
         return written_bytes;
     }
 
-    const bool compress = cardinality >= ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD;
+    const bool compress = num_rowids >= ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD;
     const UInt64 uncompressed_size = rowids.getSizeInBytes();
 
     std::vector<char> buf(uncompressed_size);
@@ -148,26 +175,36 @@ UInt64 GinIndexPostingListBitmapZstdCompression::serialize(WriteBuffer & buffer,
 
         header = (header << 2) | (ROARING_COMPRESSED_MASK << 1) | ROARING_CONTAINER_MASK;
 
-        header = (header << 1) | header_mask;
-        writeVarUInt(header, buffer);
-        writeVarUInt(compressed_size, buffer);
-        buffer.write(memory.data(), compressed_size);
+        UInt64 written_bytes = 0;
 
-        return getLengthOfVarUInt(header) + getLengthOfVarUInt(compressed_size) + compressed_size;
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
+        writeVarUInt(compressed_size, buffer);
+        written_bytes += getLengthOfVarUInt(compressed_size);
+
+        buffer.write(memory.data(), compressed_size);
+        written_bytes += compressed_size;
+
+        return written_bytes;
     }
     else
     {
         header = (header << 2) | (ROARING_UNCOMPRESSED_MASK << 1) | ROARING_CONTAINER_MASK;
 
-        header = (header << 1) | header_mask;
-        writeVarUInt(header, buffer);
-        buffer.write(buf.data(), uncompressed_size);
+        UInt64 written_bytes = 0;
 
-        return getLengthOfVarUInt(header) + uncompressed_size;
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
+        buffer.write(buf.data(), uncompressed_size);
+        written_bytes += uncompressed_size;
+
+        return written_bytes;
     }
 }
 
-GinIndexPostingsListPtr GinIndexPostingListBitmapZstdCompression::deserialize(ReadBuffer & buffer, UInt64 header)
+GinIndexPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /**
      * Header value maps into following states:
@@ -175,6 +212,8 @@ GinIndexPostingsListPtr GinIndexPostingListBitmapZstdCompression::deserialize(Re
      * In case of array container, the rest of the bits is the number of entries in the array.
      * In case of Roaring bitmap, the second lowest bit indicates if Roaring bitmap is compressed or uncompressed, the rest of the bits is the uncompressed size.
      */
+    UInt64 header = 0;
+    readVarUInt(header, buffer);
 
     if (header & ARRAY_CONTAINER_MASK) /// Array
     {
@@ -230,32 +269,40 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 {
     rowids.runOptimize();
+
+    UInt64 written_bytes = 0;
 #if USE_FASTPFOR
-    return GinIndexPostingListDeltaPforCompression::serialize(buffer, rowids, DELTA_PFOR_COMPRESSION_MASK);
+    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinIndexPostingListDeltaPforSerialization::serialize(buffer, rowids);
 #else
-    return GinIndexPostingListBitmapZstdCompression::serialize(buffer, rowids, BITMAP_ZSTD_COMPRESSION_MASK);
+    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinIndexPostingListRoaringZstdSerialization::serialize(buffer, rowids);
 #endif
+    return written_bytes;
 }
 
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
 {
-    UInt64 header = 0;
-    readVarUInt(header, buffer);
+    UInt8 serialization = 0;
+    readBinary(serialization, buffer);
 
-    const bool is_delta_pfor_compressed = header & DELTA_PFOR_COMPRESSION_MASK;
-    header >>= 1;
-
-    if (is_delta_pfor_compressed)
+    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
     {
 #if USE_FASTPFOR
-        return GinIndexPostingListDeltaPforCompression::deserialize(buffer, header);
+        return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
 #else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED, "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
 #endif
     }
 
-    return GinIndexPostingListBitmapZstdCompression::deserialize(buffer, header);
+    return GinIndexPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
