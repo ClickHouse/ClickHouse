@@ -687,12 +687,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     @classmethod
     def _get_jemalloc_profiles(cls):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
-        print(profiles)
         if not profiles:
             return []
 
         profiles = profiles.split('\n')
-        print(profiles)
 
         res = []
 
@@ -728,18 +726,18 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
                 verbose=True,
             )
-            chbinary = Shell.get_output("which clickhouse")
-            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/bin/llvm-addr2line-$LLVM_VERSION,nm:/bin/llvm-nm-$LLVM_VERSION,objdump:/bin/llvm-objdump-$LLVM_VERSION,c++filt:/usr/bin/c++filt {chbinary}"
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt {chbinary}"
             for pid, profile in latest_profiles.items():
                 Shell.check(
-                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt",
-                    verbose=True,
+                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                    verbose=True
                 )
 
                 if has_flamegraph:
                     Shell.check(
-                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                        verbose=True,
+                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                        verbose=True
                     )
 
         Shell.check(
