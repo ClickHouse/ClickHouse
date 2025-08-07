@@ -7,6 +7,6 @@ slug: /sql-reference/data-types/special-data-types/
 title: 'Special Data Types'
 ---
 
-# Special Data Types
+# Special data types
 
 Special data type values can't be serialized for saving in a table or output in query results, but can be used as an intermediate result during query execution.

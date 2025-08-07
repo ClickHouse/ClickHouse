@@ -6,6 +6,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -203,7 +205,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches)
+[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches, const Block & result_block)
 {
     std::vector<Block> headers;
 
@@ -214,7 +216,8 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
         for (const auto & column : patch->patch_block)
         {
             /// System columns may differ because we allow to apply combined patches with different modes.
-            if (isPatchPartSystemColumn(column.name))
+            /// Ignore columns that are not present in result block.
+            if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
                 header.erase(column.name);
         }
 
@@ -392,38 +395,35 @@ std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_bloc
     const auto & patch_data_version = getColumnUInt64Data(patch_block, PartDataVersionColumn::name);
 
     auto data = std::make_shared<PatchJoinSharedData>();
+    if (num_patch_rows == 0)
+        return data;
+
     data->hash_map.reserve(num_patch_rows);
-    bool is_first = true;
+    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    OffsetsHashMap * offsets_hash_map = nullptr;
+
+    data->min_block = prev_block_number;
+    data->max_block = 0;
 
     for (size_t i = 0; i < num_patch_rows; ++i)
     {
-        UInt128 key;
-        key.items[0] = patch_block_number[i];
-        key.items[1] = patch_block_offset[i];
+        UInt64 block_number = patch_block_number[i];
+        UInt64 block_offset = patch_block_offset[i];
 
-        bool inserted = false;
-        PatchHashMap::LookupResult it;
-        data->hash_map.emplace(key, it, inserted);
+        if (block_number != prev_block_number)
+        {
+            prev_block_number = block_number;
+            offsets_hash_map = &data->hash_map[block_number];
+
+            data->min_block = std::min(data->min_block, block_number);
+            data->max_block = std::max(data->max_block, block_number);
+        }
+
+        auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
 
         /// Keep only the row with the highest version.
-        if (!inserted && patch_data_version[i] <= patch_data_version[it->getMapped()])
-            continue;
-
-        it->getMapped() = i;
-
-        if (std::exchange(is_first, false))
-        {
-            data->min_block = patch_block_number[i];
-            data->max_block = patch_block_number[i];
-        }
-        else if (patch_block_number[i] < data->min_block)
-        {
-            data->min_block = patch_block_number[i];
-        }
-        else if (patch_block_number[i] > data->max_block)
-        {
-            data->max_block = patch_block_number[i];
-        }
+        if (inserted || patch_data_version[i] > patch_data_version[it->second])
+            it->second = i;
     }
 
     auto elapsed = watch.elapsedMicroseconds();
@@ -455,19 +455,32 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
     patch_to_apply->result_indices.reserve(size_to_reserve);
     patch_to_apply->patch_indices.reserve(size_to_reserve);
 
+    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    const OffsetsHashMap * offsets_hash_map = nullptr;
+
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_data.min_block || result_block_number[row] > join_data.max_block)
-            continue;
-
-        UInt128 key;
-        key.items[0] = result_block_number[row];
-        key.items[1] = result_block_offset[row];
-
-        if (const auto * found = join_data.hash_map.find(key))
         {
-            patch_to_apply->result_indices.push_back(row);
-            patch_to_apply->patch_indices.push_back(found->getMapped());
+            continue;
+        }
+
+        if (result_block_number[row] != prev_block_number)
+        {
+            prev_block_number = result_block_number[row];
+            auto it = join_data.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_data.hash_map.end() ? &it->second : nullptr;
+        }
+
+        if (offsets_hash_map)
+        {
+            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
+
+            if (offset_it != offsets_hash_map->end())
+            {
+                patch_to_apply->result_indices.push_back(row);
+                patch_to_apply->patch_indices.push_back(offset_it->second);
+            }
         }
     }
 
@@ -489,7 +502,7 @@ void applyPatchesToBlock(
     Stopwatch watch;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    assertPatchesBlockStructure(patches);
+    assertPatchesBlockStructure(patches, result_block);
 #endif
 
     bool can_apply_all_inplace = true;

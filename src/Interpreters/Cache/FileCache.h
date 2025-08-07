@@ -139,8 +139,18 @@ public:
         const CreateFileSegmentSettings & settings,
         const UserInfo & user);
 
+    FileSegmentsHolderPtr trySet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const UserInfo & user);
+
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
     void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
+
+    /// Remove file segment by `key` and `offset`. Does nothing if file segment does not exist.
+    void removeFileSegmentIfExists(const Key & key, size_t offset, const UserID & user_id);
 
     /// Remove files by `key`. Throws if key does not exist.
     void removeKey(const Key & key, const UserID & user_id);

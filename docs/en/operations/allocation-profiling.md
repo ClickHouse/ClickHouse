@@ -10,20 +10,20 @@ import TabItem from '@theme/TabItem';
 
 # Allocation profiling
 
-ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator that comes with some tools for allocation sampling and profiling.  
-To make allocation profiling more convenient, `SYSTEM` commands are provided along 4LW commands in Keeper.
+ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator. Jemalloc comes with some tools for allocation sampling and profiling.  
+To make allocation profiling more convenient, `SYSTEM` commands are provided along with four letter word (4LW) commands in Keeper.
 
 ## Sampling allocations and flushing heap profiles {#sampling-allocations-and-flushing-heap-profiles}
 
-If we want to sample and profile allocations in `jemalloc`, we need to start ClickHouse/Keeper with profiling enabled using environment variable `MALLOC_CONF`.
+If you want to sample and profile allocations in `jemalloc`, you need to start ClickHouse/Keeper with profiling enabled using the environment variable `MALLOC_CONF`:
 
 ```sh
 MALLOC_CONF=background_thread:true,prof:true
 ```
 
-`jemalloc` will sample allocation and store the information internally.
+`jemalloc` will sample allocations and store the information internally.
 
-We can tell `jemalloc` to flush current profile by running:
+You can tell `jemalloc` to flush the current profile by running:
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
@@ -38,26 +38,28 @@ We can tell `jemalloc` to flush current profile by running:
 </TabItem>
 </Tabs>
 
-By default, heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.  
-For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap` following the same rules.
+By default, the heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.  
+For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap`, and follows the same rules.
 
-A different location can be defined by appending the `MALLOC_CONF` environment variable with `prof_prefix` option.  
-For example, if we want to generate profiles in `/data` folder where the prefix for filename will be `my_current_profile` we can run ClickHouse/Keeper with following environment variable:
+A different location can be defined by appending the `MALLOC_CONF` environment variable with the `prof_prefix` option.  
+For example, if you want to generate profiles in the `/data` folder where the filename prefix will be `my_current_profile`, you can run ClickHouse/Keeper with the following environment variable:
+
 ```sh
 MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
 ```
-Generated file will append to prefix PID and sequence number.
+
+The generated file will be appended to the prefix PID and sequence number.
 
 ## Analyzing heap profiles {#analyzing-heap-profiles}
 
-After we generated heap profiles, we need to analyze them.  
-For that, we need to use `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) which can be installed in multiple ways:
-- installing `jemalloc` using system's package manager
-- cloning [jemalloc repo](https://github.com/jemalloc/jemalloc) and running autogen.sh from the root folder that will provide you with `jeprof` script inside the `bin` folder
+After heap profiles have been generated, they need to be analyzed.  
+For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) can be used. It can be installed in multiple ways:
+- Using the system's package manager
+- Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
 
 :::note
 `jeprof` uses `addr2line` to generate stacktraces which can be really slow.  
-If that's the case, we recommend installing an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
+If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
 
 ```bash
 git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
@@ -68,47 +70,47 @@ cp ./target/release/addr2line path/to/current/addr2line
 :::
 
 There are many different formats to generate from the heap profile using `jeprof`.
-We recommend to run `jeprof --help` to check usage and many different options the tool provides. 
+It is recommended to run `jeprof --help` for information on the usage and the various options the tool provides. 
 
-In general, `jeprof` command will look like this:
+In general, the `jeprof` command is used as:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
 ```
 
-If we want to compare which allocations happened between 2 profiles we can set the base argument:
+If you want to compare which allocations happened between two profiles you can set the `base` argument:
 
 ```sh
 jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
 ```
 
-For example:
+### Examples {#examples}
 
-- if we want to generate a text file with each procedure written per line:
+- if you want to generate a text file with each procedure written per line:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --text > result.txt
 ```
 
-- if we want to generate a PDF file with call-graph:
+- if you want to generate a PDF file with a call-graph:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
 ```
 
-### Generating flame graph {#generating-flame-graph}
+### Generating a flame graph {#generating-flame-graph}
 
-`jeprof` allows us to generate collapsed stacks for building flame graphs.
+`jeprof` allows you to generate collapsed stacks for building flame graphs.
 
-We need to use `--collapsed` argument:
+You need to use the `--collapsed` argument:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
 ```
 
-After that, we can use many different tools to visualize collapsed stacks.
+After that, you can use many different tools to visualize collapsed stacks.
 
-Most popular would be [FlameGraph](https://github.com/brendangregg/FlameGraph) which contains a script called `flamegraph.pl`:
+The most popular is [FlameGraph](https://github.com/brendangregg/FlameGraph) which contains a script called `flamegraph.pl`:
 
 ```sh
 cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
@@ -118,10 +120,10 @@ Another interesting tool is [speedscope](https://www.speedscope.app/) that allow
 
 ## Controlling allocation profiler during runtime {#controlling-allocation-profiler-during-runtime}
 
-If ClickHouse/Keeper were started with enabled profiler, they support additional commands for disabling/enabling allocation profiling during runtime.
+If ClickHouse/Keeper is started with the profiler enabled, additional commands for disabling/enabling allocation profiling during runtime are supported.
 Using those commands, it's easier to profile only specific intervals.
 
-Disable profiler:
+To disable the profiler:
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
@@ -136,7 +138,7 @@ Disable profiler:
 </TabItem>
 </Tabs>
 
-Enable profiler:
+To enable the profiler:
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
@@ -151,21 +153,22 @@ Enable profiler:
 </TabItem>
 </Tabs>
 
-It's also possible to control the initial state of the profiler by setting `prof_active` option which is enabled by default.  
-For example, if we don't want to sample allocations during startup but only after we enable the profiler, we can start ClickHouse/Keeper with following environment variable:
+It's also possible to control the initial state of the profiler by setting the `prof_active` option which is enabled by default.  
+For example, if you don't want to sample allocations during startup but only after, you can enable the profiler. You can start ClickHouse/Keeper with the following environment variable:
+
 ```sh
 MALLOC_CONF=background_thread:true,prof:true,prof_active:false
 ```
 
-and enable profiler at a later point.
+The profiler can be enabled later.
 
-## Additional options for profiler {#additional-options-for-profiler}
+## Additional options for the profiler {#additional-options-for-profiler}
 
-`jemalloc` has many different options available related to profiler which can be controlled by modifying `MALLOC_CONF` environment variable.
-For example, interval between allocation samples can be controlled with `lg_prof_sample`.  
-If you want to dump heap profile every N bytes you can enable it using `lg_prof_interval`.  
+`jemalloc` has many different options available, which are related to the profiler. They can be controlled by modifying the `MALLOC_CONF` environment variable.
+For example, the interval between allocation samples can be controlled with `lg_prof_sample`.  
+If you want to dump the heap profile every N bytes you can enable it using `lg_prof_interval`.  
 
-We recommend to check `jemalloc`s [reference page](https://jemalloc.net/jemalloc.3.html) for such options.
+It is recommended to check `jemalloc`s [reference page](https://jemalloc.net/jemalloc.3.html) for a complete list of options.
 
 ## Other resources {#other-resources}
 
@@ -180,7 +183,7 @@ It's important to be aware that none of these metrics are synchronized with each
 ```sql
 SELECT *
 FROM system.asynchronous_metrics
-WHERE metric ILIKE '%jemalloc%'
+WHERE metric LIKE '%jemalloc%'
 FORMAT Vertical
 ```
 
@@ -188,21 +191,20 @@ FORMAT Vertical
 
 ### System table `jemalloc_bins` {#system-table-jemalloc_bins}
 
-Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
+Contains information about memory allocations done via the jemalloc allocator in different size classes (bins) aggregated from all arenas.
 
 [Reference](/operations/system-tables/jemalloc_bins)
 
 ### Prometheus {#prometheus}
 
-All `jemalloc` related metrics from `asynchronous_metrics` are also exposed using Prometheus endpoint in both ClickHouse and Keeper.
+All `jemalloc` related metrics from `asynchronous_metrics` are also exposed using the Prometheus endpoint in both ClickHouse and Keeper.
 
 [Reference](/operations/server-configuration-parameters/settings#prometheus)
 
 ### `jmst` 4LW command in Keeper {#jmst-4lw-command-in-keeper}
 
-Keeper supports `jmst` 4LW command which returns [basic allocator statistics](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics).
+Keeper supports the `jmst` 4LW command which returns [basic allocator statistics](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
 
-Example:
 ```sh
 echo jmst | nc localhost 9181
 ```

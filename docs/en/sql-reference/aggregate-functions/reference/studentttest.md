@@ -28,7 +28,6 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 - `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
 
-
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two or four elements (if the optional `confidence_level` is specified):
@@ -37,7 +36,6 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 - [calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).]
 - [calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).]
-
 
 **Example**
 

@@ -59,6 +59,11 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
 }
 
+void DataTypeNullable::updateHashImpl(SipHash & hash) const
+{
+    nested_data_type->updateHash(hash);
+}
+
 ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
 {
     if (onlyNull())

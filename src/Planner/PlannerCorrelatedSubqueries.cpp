@@ -199,7 +199,7 @@ void projectCorrelatedColumns(
     const auto & lhs_plan_header = lhs_plan.getCurrentHeader();
 
     auto & outputs = project_only_correlated_columns_actions.getOutputs();
-    for (const auto & column : lhs_plan_header.getColumnsWithTypeAndName())
+    for (const auto & column : lhs_plan_header->getColumnsWithTypeAndName())
     {
         const auto * input_node = &project_only_correlated_columns_actions.addInput(column);
         if (correlated_column_identifiers_set.contains(column.name))
@@ -231,7 +231,7 @@ QueryPlan decorrelateQueryPlan(
 
         if (settings[Setting::correlated_subqueries_substitute_equivalent_expressions])
         {
-            ActionsDAG dag(decorrelated_plan_header.getNamesAndTypesList());
+            ActionsDAG dag(decorrelated_plan_header->getNamesAndTypesList());
             auto & outputs = dag.getOutputs();
 
             std::unordered_map<std::string_view, const ActionsDAG::Node *> decorrelated_nodes_names;
@@ -277,17 +277,17 @@ QueryPlan decorrelateQueryPlan(
         auto lhs_plan_header = lhs_plan.getCurrentHeader();
 
         ColumnsWithTypeAndName output_columns_and_types;
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header.getColumnsWithTypeAndName());
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header.getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header->getColumnsWithTypeAndName());
 
         JoinExpressionActions join_expression_actions(
-            lhs_plan_header.getColumnsWithTypeAndName(),
-            decorrelated_plan_header.getColumnsWithTypeAndName(),
+            lhs_plan_header->getColumnsWithTypeAndName(),
+            decorrelated_plan_header->getColumnsWithTypeAndName(),
             output_columns_and_types);
 
         Names output_columns;
-        output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
-        output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader().getNames());
+        output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
+        output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader()->getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
             lhs_plan_header,
@@ -324,8 +324,8 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         expression_step->decorrelateActions();
-        expression_step->getExpression().appendInputsForUnusedColumns(input_header);
-        for (const auto & column : input_header.getColumnsWithTypeAndName())
+        expression_step->getExpression().appendInputsForUnusedColumns(*input_header);
+        for (const auto & column : input_header->getColumnsWithTypeAndName())
             expression_step->getExpression().tryRestoreColumn(column.name);
 
         expression_step->updateInputHeader(input_header);
@@ -363,8 +363,8 @@ QueryPlan decorrelateQueryPlan(
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         filter_step->decorrelateActions();
-        filter_step->getExpression().appendInputsForUnusedColumns(input_header);
-        for (const auto & column : input_header.getColumnsWithTypeAndName())
+        filter_step->getExpression().appendInputsForUnusedColumns(*input_header);
+        for (const auto & column : input_header->getColumnsWithTypeAndName())
             filter_step->getExpression().tryRestoreColumn(column.name);
 
         node->step->updateInputHeader(input_header);
@@ -403,7 +403,7 @@ QueryPlan decorrelateQueryPlan(
         auto decorrelated_lhs_plan = process_isolated_subplan(context, node->children.front());
         auto decorrelated_rhs_plan = process_isolated_subplan(context, node->children.back());
 
-        Headers query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
+        SharedHeaders query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
 
         std::vector<QueryPlanPtr> child_plans;
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
@@ -469,7 +469,7 @@ void buildRenamingForScalarSubquery(
     const CorrelatedSubquery & correlated_subquery
 )
 {
-    ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
+    ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
     const auto * result_node = &dag.findInOutputs(correlated_subquery.action_node_name);
 
     ActionsDAG::NodeRawConstPtrs new_outputs{ result_node };
@@ -494,7 +494,7 @@ void buildExistsResultExpression(
     bool project_only_correlated_columns
 )
 {
-    ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
+    ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
     auto column = result_type->createColumnConst(1, 1);
     const auto * exists_result = &dag.materializeNode(dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name)));
@@ -574,16 +574,16 @@ QueryPlan buildLogicalJoin(
     const auto & rhs_plan_header = right_plan.getCurrentHeader();
 
     ColumnsWithTypeAndName output_columns_and_types;
-    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header.getColumnsWithTypeAndName());
-    output_columns_and_types.emplace_back(rhs_plan_header.getByName(correlated_subquery.action_node_name));
+    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
+    output_columns_and_types.emplace_back(rhs_plan_header->getByName(correlated_subquery.action_node_name));
 
     JoinExpressionActions join_expression_actions(
-        lhs_plan_header.getColumnsWithTypeAndName(),
-        rhs_plan_header.getColumnsWithTypeAndName(),
+        lhs_plan_header->getColumnsWithTypeAndName(),
+        rhs_plan_header->getColumnsWithTypeAndName(),
         output_columns_and_types);
 
     Names output_columns;
-    output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
+    output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
     output_columns.push_back(correlated_subquery.action_node_name);
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
@@ -666,7 +666,7 @@ void addStepForResultRenaming(
 )
 {
     const auto & header = correlated_subquery_plan.getCurrentHeader();
-    const auto & subquery_result_columns = header.getColumnsWithTypeAndName();
+    const auto & subquery_result_columns = header->getColumnsWithTypeAndName();
 
     if (subquery_result_columns.size() != 1)
         throw Exception(

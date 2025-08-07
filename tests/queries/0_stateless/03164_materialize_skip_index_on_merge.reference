@@ -16,6 +16,7 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
+            Ranges: 1
 default	tab	idx_a	430
 default	tab	idx_b	78
 Merge with materialize_skip_indexes_on_merge = 1
@@ -36,6 +37,7 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 50/50
+            Ranges: 1
 default	tab	idx_a	0
 default	tab	idx_b	0
 0	0
@@ -57,6 +59,7 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
+            Ranges: 1
 default	tab	idx_a	430
 default	tab	idx_b	78
 Merge after resetting materialize_skip_indexes_on_merge to default
@@ -77,5 +80,6 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 12/12
+            Ranges: 2
 default	tab	idx_a	441
 default	tab	idx_b	127

@@ -36,6 +36,7 @@ public:
         IServer & server_,
         TCPServer & tcp_server_,
         bool ssl_enabled_,
+        bool secure_required_,
         Int32 connection_id_,
         std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
@@ -62,6 +63,7 @@ private:
     TCPServer & tcp_server;
     std::unique_ptr<Session> session;
     bool ssl_enabled = false;
+    bool secure_required = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
