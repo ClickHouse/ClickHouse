@@ -49,7 +49,7 @@ ORDER BY key
 
 `tokenizer` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
+- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric ASCII characters.
 - `ngram` set the tokenizer to "tokens('ngram')". i.e. split strings into equally large n-grams.
 - `split` set the tokenizer to "tokens('split')", i.e. split strings along certain user-defined separator strings.
 - `no_op` set the tokenizer to "tokens('no_op')", i.e. no tokenization takes place (every row value is a token).
