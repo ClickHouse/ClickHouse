@@ -157,7 +157,7 @@ void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
 
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationLowCardinality>(dictionary_type);
+    return std::make_shared<SerializationLowCardinality>(dictionary_type, true);
 }
 
 void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
@@ -193,4 +193,12 @@ DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
 {
     return removeNullable(removeLowCardinality(type));
 };
+
+MutableColumnPtr createEmptyLowCardinalityColumn(const IDataType & type)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(type);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+}
+
 }

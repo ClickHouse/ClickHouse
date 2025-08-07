@@ -264,6 +264,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ServerSetting
@@ -792,8 +793,8 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
             estimator.incrementRowCount(part.data_part->rows_count);
-            for (const auto & stat : stats)
-                estimator.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -809,8 +810,8 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             {
                 auto stats = part.data_part->loadStatistics();
                 estimator.incrementRowCount(part.data_part->rows_count);
-                for (const auto & stat : stats)
-                    estimator.addStatistics(stat);
+                for (const auto & [column_name, stat] : stats)
+                    estimator.addStatistics(column_name, stat);
             }
         }
         catch (...)
@@ -9559,6 +9560,7 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 template <typename DataPartPtr>
 static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
 {
+    UNUSED(remove);
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
     {
@@ -9572,11 +9574,12 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
             continue;
 
         chassert(new_hint->structureEquals(*info));
-        if (remove)
-            new_hint->remove(*info);
-        else
-            new_hint->add(*info);
+        // if (remove)
+        //     new_hint->remove(*info);
+        // else
+        //     new_hint->add(*info);
     }
+
 }
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
@@ -9584,7 +9587,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     SerializationInfo::Settings settings =
     {
         .ratio_of_defaults_for_sparse = (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = true,
+        .number_of_uniq_for_low_cardinality = (*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -9806,10 +9809,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
-
     new_data_part->partition = partition;
-
-    new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -9842,13 +9842,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addMinMaxIndex(minmax_idx, false);
     const auto & index_factory = MergeTreeIndexFactory::instance();
+
     MergedBlockOutputStream out(
         new_data_part,
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        ColumnsStatistics{},
+        part_level_statistics,
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,

@@ -84,6 +84,9 @@ struct MergeTreeWriterSettings
     String primary_key_compression_codec;
     size_t primary_key_compress_block_size;
 
+    String statistics_compression_codec;
+    size_t statistics_compress_block_size;
+
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool save_marks_in_cache;

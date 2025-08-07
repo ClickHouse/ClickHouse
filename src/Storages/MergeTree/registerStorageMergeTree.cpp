@@ -17,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -24,6 +25,8 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -55,6 +58,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsString statistics_types;
 }
 
 namespace ServerSetting
@@ -320,6 +324,26 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
+}
+
+static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)
+{
+    ParserStatisticsType stat_type_parser;
+    auto stats_ast = parseQuery(stat_type_parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    ColumnStatisticsDescription::StatisticsTypeDescMap result;
+
+    for (const auto & arg : stats_ast->as<ASTFunction &>().arguments->children)
+    {
+        const auto * arg_func = arg->as<ASTFunction>();
+        if (!arg_func)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
+
+        auto stat_type = stringToStatisticsType(arg_func->name);
+        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg));
+    }
+
+    return result;
 }
 
 /// Extracts a zookeeper path from a specified CREATE TABLE query.
@@ -765,13 +789,38 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
+        String statistics_types_str = (*storage_settings)[MergeTreeSetting::statistics_types];
+
+        if (!statistics_types_str.empty())
+        {
+            auto stats_ast_map = parseColumnStatisticsFromString(statistics_types_str);
+            const auto & factory = MergeTreeStatisticsFactory::instance();
+
+            for (const auto & column : metadata.columns)
+            {
+                ColumnStatisticsDescription stats_desc;
+                stats_desc.data_type = column.type;
+                stats_desc.types_to_desc = stats_ast_map;
+                stats_desc = factory.cloneWithSupportedStatistics(stats_desc, column.type);
+
+                if (!stats_desc.empty())
+                {
+                    metadata.columns.modify(column.name, [&](ColumnDescription & column_desc)
+                    {
+                        column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/ true);
+                    });
+                }
+            }
+        }
+
         if (args.query.columns_list && args.query.columns_list->projections)
+        {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
                 metadata.projections.add(std::move(projection));
             }
-
+        }
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)

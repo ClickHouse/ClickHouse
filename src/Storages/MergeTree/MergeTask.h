@@ -199,11 +199,14 @@ private:
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
-        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsSubstreams gathered_columns_substreams{};
+        MergedBlockOutputStream::GatheredData gathered_data{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
+        ColumnsStatistics merging_statistics;
+        ColumnsStatistics gathering_statistics;
+        PartLevelStatistics gathering_part_level_statistics;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 

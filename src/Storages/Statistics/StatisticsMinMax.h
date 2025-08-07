@@ -28,7 +28,7 @@ private:
     DataTypePtr data_type;
 };
 
-void minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

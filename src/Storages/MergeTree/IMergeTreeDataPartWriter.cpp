@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -28,6 +29,10 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = recursiveRemoveSparse(src_column.column);
         src_column.column = src_column.column->convertToFullColumnIfConst();
+
+        if (!src_column.type->lowCardinality() && src_column.column->lowCardinality())
+            src_column.column = recursiveRemoveLowCardinality(src_column.column);
+
         result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
@@ -155,7 +160,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -172,7 +176,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -191,7 +194,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -210,7 +212,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             metadata_snapshot,
             virtual_columns,
             indices_to_recalc,
-            stats_to_recalc_,
             marks_file_extension_,
             default_codec_,
             writer_settings,
@@ -227,7 +228,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             metadata_snapshot,
             virtual_columns,
             indices_to_recalc,
-            stats_to_recalc_,
             marks_file_extension_,
             default_codec_,
             writer_settings,

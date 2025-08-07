@@ -361,50 +361,50 @@ SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
     return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
 }
 
-SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
-{
-    SerializationTuple::ElementSerializations serializations(elems.size());
-    const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
+// SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
+// {
+//     SerializationTuple::ElementSerializations serializations(elems.size());
+//     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
 
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
-    }
+//     for (size_t i = 0; i < elems.size(); ++i)
+//     {
+//         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
+//         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
+//         serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
+//     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
-}
+//     return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
+// }
 
-MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
-{
-    MutableSerializationInfos infos;
-    infos.reserve(elems.size());
-    for (const auto & elem : elems)
-        infos.push_back(elem->createSerializationInfo(settings));
+// MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
+// {
+//     MutableSerializationInfos infos;
+//     infos.reserve(elems.size());
+//     for (const auto & elem : elems)
+//         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
-}
+//     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+// }
 
-SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
-{
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
+// SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
+// {
+//     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+//         return getSerializationInfo(column_const->getDataColumn());
 
-    MutableSerializationInfos infos;
-    infos.reserve(elems.size());
+//     MutableSerializationInfos infos;
+//     infos.reserve(elems.size());
 
-    const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
-    assert(elems.size() == column_tuple.getColumns().size());
+//     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
+//     assert(elems.size() == column_tuple.getColumns().size());
 
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
-        infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
-    }
+//     for (size_t i = 0; i < elems.size(); ++i)
+//     {
+//         auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
+//         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
+//     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
-}
+//     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+// }
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {

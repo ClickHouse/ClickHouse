@@ -61,7 +61,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         input.skip_last_row = true;
     }
 
-    removeConstAndSparse(inputs);
+    removeConstAndSparse(*header, inputs);
     merged_data.initialize(*header, inputs);
     current_inputs = std::move(inputs);
 
@@ -94,7 +94,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(input);
+    removeConstAndSparse(*header, input);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 

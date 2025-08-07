@@ -1,3 +1,4 @@
+#include <Core/Block.h>
 #include <Processors/Chunk.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -193,6 +194,18 @@ void convertToFullIfSparse(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void convertToFullIfNonNativeLowCardinality(const Block & header, Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (columns[i]->lowCardinality() && !header.getByPosition(i).type->lowCardinality())
+            columns[i] = recursiveRemoveLowCardinality(columns[i]);
+    }
     chunk.setColumns(std::move(columns), num_rows);
 }
 

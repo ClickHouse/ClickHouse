@@ -19,7 +19,7 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
 
 void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 {
-    removeConstAndSparse(inputs);
+    removeConstAndSparse(*header, inputs);
     merged_data->initialize(*header, inputs);
 
     for (size_t source_num = 0; source_num < inputs.size(); ++source_num)
@@ -45,7 +45,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(input);
+    removeConstAndSparse(*header, input);
 
     auto & source = sources[source_num];
     source.skip_last_row = input.skip_last_row;

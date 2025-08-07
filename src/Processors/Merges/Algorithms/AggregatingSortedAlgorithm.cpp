@@ -265,7 +265,7 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeConstAndSparse(inputs);
+    removeConstAndSparse(*header, inputs);
     merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
@@ -277,7 +277,7 @@ void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(input);
+    removeConstAndSparse(*header, input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }

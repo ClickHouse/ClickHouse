@@ -49,16 +49,17 @@ public:
 
     using Inputs = std::vector<Input>;
 
-    static void removeConstAndSparse(Input & input)
+    static void removeConstAndSparse(const Block & header, Input & input)
     {
         convertToFullIfConst(input.chunk);
         convertToFullIfSparse(input.chunk);
+        convertToFullIfNonNativeLowCardinality(header, input.chunk);
     }
 
-    static void removeConstAndSparse(Inputs & inputs)
+    static void removeConstAndSparse(const Block & header, Inputs & inputs)
     {
         for (auto & input : inputs)
-            removeConstAndSparse(input);
+            removeConstAndSparse(header, input);
     }
 
     virtual const char * getName() const = 0;

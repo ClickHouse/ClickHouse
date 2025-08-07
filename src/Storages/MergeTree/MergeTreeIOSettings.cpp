@@ -27,6 +27,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
+    extern const MergeTreeSettingsString statistics_compression_codec;
+    extern const MergeTreeSettingsNonZeroUInt64 statistics_compress_block_size;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -45,6 +47,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , compress_primary_key((*storage_settings)[MergeTreeSetting::compress_primary_key])
     , primary_key_compression_codec((*storage_settings)[MergeTreeSetting::primary_key_compression_codec])
     , primary_key_compress_block_size((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size])
+    , statistics_compression_codec((*storage_settings)[MergeTreeSetting::statistics_compression_codec])
+    , statistics_compress_block_size((*storage_settings)[MergeTreeSetting::statistics_compress_block_size])
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
     , save_marks_in_cache(save_marks_in_cache_)

@@ -81,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -493,11 +494,12 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
+        auto storage_settings = source_part->storage.getSettings();
 
         SerializationInfo::Settings settings
         {
-            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false
+            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .number_of_uniq_for_low_cardinality = (*storage_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
         };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
@@ -649,16 +651,18 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
+    ColumnsStatistics stats_to_recalc;
+
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
+
     for (const auto & col_desc : columns)
     {
         if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(col_desc));
+            stats_to_recalc.emplace(col_desc.name, stats_factory.get(col_desc));
         }
     }
     return stats_to_recalc;
@@ -772,7 +776,7 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
-    const std::set<ColumnStatisticsPtr> & stats_to_recalc,
+    const ColumnsStatistics & stats_to_recalc,
     const NameSet & updated_columns_in_patches)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -801,8 +805,8 @@ static NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_skip)
         files_to_skip.insert(projection->getDirectoryName());
 
-    for (const auto & stat : stats_to_recalc)
-        files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
+    for (const auto & [column_name, _] : stats_to_recalc)
+        files_to_skip.insert(ColumnsStatistics::getFileName(column_name) + STATS_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {
@@ -1042,7 +1046,7 @@ void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        new_data_part->getSerializationInfos().writeJSONWithStats(out_hashing, {});
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -1176,7 +1180,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
@@ -1586,6 +1590,7 @@ private:
 
         ColumnsStatistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
+
         for (const auto & col : columns)
         {
             if (col.statistics.empty() || removed_stats.contains(col.name))
@@ -1593,7 +1598,8 @@ private:
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col));
+                auto stat = MergeTreeStatisticsFactory::instance().get(col);
+                stats_to_rewrite.emplace(col.name, std::move(stat));
             }
             else
             {
@@ -1759,17 +1765,19 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
+        PartLevelStatistics part_level_statistics;
+        part_level_statistics.addExplicitStats(stats_to_rewrite, true);
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
-            stats_to_rewrite,
+            part_level_statistics,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             ctx->source_part->getBytesUncompressedOnDisk(),
-            /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
 
@@ -1790,8 +1798,9 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
+        /// TODO: fix...
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
+            ctx->new_data_part, ctx->need_sync, nullptr, nullptr);
         ctx->out.reset();
     }
 
@@ -1996,12 +2005,15 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            PartLevelStatistics part_level_statistics;
+            part_level_statistics.addExplicitStats(ctx->stats_to_recalc, true);
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                part_level_statistics,
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk());
@@ -2026,9 +2038,12 @@ private:
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
+            /// TODO: fix...
+            IMergedBlockOutputStream::GatheredData gathered_data;
+
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
+                    ctx->new_data_part, gathered_data);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();

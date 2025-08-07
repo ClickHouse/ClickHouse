@@ -1,3 +1,4 @@
+#include <Core/TypeId.h>
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -668,7 +669,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
+
+                if (res_column.column->getDataType() != res_column.type->getColumnType()
+                    && res_column.column->getDataType() != TypeIndex::LowCardinality)
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
