@@ -2685,7 +2685,7 @@ def test_key_value_args(started_cluster):
     table_name = f"test_key_value_args_{uuid.uuid4()}"
     bucket = started_cluster.minio_bucket
 
-    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/file"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}_data"
 
     # Check format.
     assert (
@@ -2785,9 +2785,9 @@ def test_key_value_args(started_cluster):
     )
 
     node.query(
-        f"CREATE TABLE test (a Int32, b String) engine = S3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip')"
+        f"CREATE TABLE {table_name} (a Int32, b String) engine = S3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip')"
     )
     assert (
         "S3(\\'http://minio1:9001/root/file\\', \\'TSVRaw\\', \\'format\\' = \\'TSVRaw\\', \\'access_key_id\\' = \\'minio\\', \\'secret_access_key\\' = \\'[HIDDEN]\\', \\'compression_method\\' = \\'gzip\\')"
-        in node.query("SHOW CREATE TABLE test")
+        in node.query(f"SHOW CREATE TABLE {table_name}")
     )
