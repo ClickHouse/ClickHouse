@@ -163,88 +163,6 @@ jobs:
             python3 -m praktika run 'Dockers Build (arm)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_amd_tidy:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90aWR5KQ==') }}
-    name: "Build (amd_tidy)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Setup
-        uses: ./.github/actions/runner_setup
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_tidy)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_tidy)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  build_arm_tidy:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tidy]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
-    name: "Build (arm_tidy)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Setup
-        uses: ./.github/actions/runner_setup
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_amd_debug:
     runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
@@ -2174,7 +2092,7 @@ jobs:
 
   bugfix_validation_integration_tests:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tidy, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGludGVncmF0aW9uIHRlc3RzKQ==') }}
     name: "Bugfix validation (integration tests)"
     outputs:
@@ -3723,8 +3641,6 @@ jobs:
       - config_workflow
       - dockers_build_amd
       - dockers_build_arm
-      - build_amd_tidy
-      - build_arm_tidy
       - build_amd_debug
       - build_amd_release
       - build_amd_asan
