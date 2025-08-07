@@ -98,8 +98,6 @@ private:
     bool is_http_method_head;
     bool add_cors_header = false;
 
-    bool initialized = false;
-
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 

@@ -14,7 +14,7 @@
 #include <Common/re2.h>
 #include <Access/Credentials.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPResponseHeaderWriter.h>
 
 namespace CurrentMetrics
 {
@@ -59,6 +59,9 @@ public:
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+
+protected:
+    LoggerPtr log;
 
 private:
     struct Output
@@ -118,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;

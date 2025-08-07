@@ -1,7 +1,7 @@
-#include "DiskLocal.h"
+#include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
 #include <Common/createHardLink.h>
-#include "DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Context.h>

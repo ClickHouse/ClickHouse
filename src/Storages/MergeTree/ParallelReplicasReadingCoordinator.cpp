@@ -188,6 +188,7 @@ public:
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const { return false; }
+    virtual bool initializedWithEmptyRanges() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -235,6 +236,8 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     bool isReadingCompleted() const override;
+
+    bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -784,8 +787,13 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         request.min_number_of_marks,
         stats[request.replica_num].number_of_requests);
 
-    ParallelReadResponse response;
+    if (replica_status[request.replica_num].is_finished)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Got request from replica {} after ranges assignment has been completed for the replica",
+            request.replica_num);
 
+    ParallelReadResponse response;
     size_t current_mark_size = 0;
 
     /// 1. Try to select ranges meant for this replica by consistent hash
@@ -1170,7 +1178,9 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
                 replicas);
 
-            chassert(!replicas_used.empty());
+            if (pimpl && !pimpl->initializedWithEmptyRanges())
+                chassert(!replicas_used.empty());
+
             (*read_completed_callback)(replicas_to_exclude);
             read_completed_callback.reset();
         }

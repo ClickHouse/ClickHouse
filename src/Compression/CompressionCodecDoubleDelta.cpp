@@ -138,11 +138,7 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
-    std::string getDescription() const override
-    {
-        return "Stores difference between neighboring delta values; suitable for time series data.";
-    }
-
+    String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
 
 private:
     UInt8 data_bytes_size;

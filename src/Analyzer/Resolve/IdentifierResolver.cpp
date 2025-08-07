@@ -914,6 +914,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
 
+        if (!left_resolved_identifier && !right_resolved_identifier)
+            return {};
+
         return {
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,
                 .resolve_place = IdentifierResolvePlace::JOIN_TREE

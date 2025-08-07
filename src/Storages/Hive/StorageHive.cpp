@@ -143,7 +143,7 @@ public:
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
-        : ISource(getHeader(sample_block_, source_info_))
+        : ISource(std::make_shared<const Block>(getHeader(sample_block_, source_info_)))
         , WithContext(context_)
         , source_info(std::move(source_info_))
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
@@ -288,12 +288,12 @@ public:
                     context,
                     max_block_size,
                     updateFormatSettings(current_file),
-                    FormatParserGroup::singleThreaded(context->getSettingsRef()));
+                    FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
                 {
-                    pipe.addSimpleTransform([&](const Block & header)
+                    pipe.addSimpleTransform([&](const SharedHeader & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
@@ -443,7 +443,7 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, getContext()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -626,7 +626,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         context,
         context->getSettingsRef()[Setting::max_block_size],
         std::nullopt,
-        FormatParserGroup::singleThreaded(context->getSettingsRef()));
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
@@ -788,7 +788,7 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(header), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(header)), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , sources_info(std::move(sources_info_))
         , builder(std::move(builder_))
@@ -1102,7 +1102,7 @@ void registerStorageHive(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
-            .source_access_type = AccessType::HIVE,
+            .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }

@@ -1,4 +1,4 @@
-#include "QueryFuzzer.h"
+#include <Common/QueryFuzzer.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -719,7 +719,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic /*,        TypeIndex::Time,     TypeIndex::Time64*/};
+           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -27,7 +27,7 @@ class IOutputFormat : public IProcessor
 public:
     enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
 
-    IOutputFormat(const Block & header_, WriteBuffer & out_);
+    IOutputFormat(SharedHeader header_, WriteBuffer & out_);
 
     Status prepare() override;
     void work() override;

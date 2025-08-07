@@ -1,4 +1,4 @@
-#include "CachedOnDiskReadBufferFromFile.h"
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -108,6 +108,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
+        .user_id = user.user_id,
     };
 
     current_file_segment_counters.reset();
@@ -453,6 +454,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     chassert(file_segment.range() == range);
     chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
+    /// We set position to the end of file segment end,
+    /// and not to read_until_position, because in case of concurrent queries
+    /// which read the same file segment from different offsets
+    /// (same different threads of the same query), it will allow read buffer to be reused,
+    /// reducing number of s3 requests. This does apply however only to case when
+    /// those different threads hold the file segment at the same time, making its ref count > 2.
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
     switch (read_type)
@@ -818,7 +825,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(file_offset_of_buffer_end <= read_until_position);
+    chassert(
+        file_offset_of_buffer_end <= read_until_position,
+        fmt::format("file_offset_of_buffer_end {}, read_until_position {}", file_offset_of_buffer_end, read_until_position));
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -828,6 +837,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
+    chassert(!internal_buffer.empty());
     const size_t original_buffer_size = internal_buffer.size();
     if (!original_buffer_size)
         throw Exception(
@@ -1197,7 +1207,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     size_t new_pos = offset;
 
-    if (allow_seeks_after_first_read && !use_external_buffer)
+    if (allow_seeks_after_first_read)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {

@@ -16,7 +16,7 @@
 #include <Storages/StorageExecutable.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB

@@ -7,7 +7,7 @@
 #include <Functions/geometryConverters.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {

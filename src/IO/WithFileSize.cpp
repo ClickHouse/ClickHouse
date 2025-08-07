@@ -1,4 +1,4 @@
-#include "WithFileSize.h"
+#include <IO/WithFileSize.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/ReadBufferFromFileDecorator.h>

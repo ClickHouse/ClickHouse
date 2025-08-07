@@ -27,6 +27,12 @@ void StatisticsTDigest::build(const ColumnPtr & column)
     }
 }
 
+void StatisticsTDigest::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsTDigest * other = typeid_cast<const StatisticsTDigest*>(other_stats.get());
+    t_digest.merge(other->t_digest);
+}
+
 void StatisticsTDigest::serialize(WriteBuffer & buf)
 {
     t_digest.serialize(buf);

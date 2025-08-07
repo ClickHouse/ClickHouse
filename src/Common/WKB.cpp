@@ -3,7 +3,7 @@
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>

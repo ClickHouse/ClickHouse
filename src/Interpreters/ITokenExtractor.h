@@ -78,6 +78,7 @@ struct ITokenExtractor
 
     virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
 
+    virtual bool supportsStringLike() const = 0;
 };
 
 using TokenExtractorPtr = const ITokenExtractor *;
@@ -161,6 +162,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
 
     size_t getN() const { return n; }
 
+    bool supportsStringLike() const override { return true; }
 private:
     size_t n;
 };
@@ -176,6 +178,8 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
 };
 
 /// Parser extracting tokens which are separated by certain strings.
@@ -190,6 +194,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
+    bool supportsStringLike() const override { return false; }
 private:
     std::vector<String> separators;
 };
@@ -203,6 +208,8 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
     std::vector<String> getTokens(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
 };
 
 }

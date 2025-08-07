@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Block_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
@@ -118,7 +119,6 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
-class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -132,6 +132,7 @@ class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
+class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -549,7 +550,7 @@ public:
     void resetSharedContext();
 
 protected:
-    using SampleBlockCache = std::unordered_map<std::string, Block>;
+    using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
@@ -781,6 +782,10 @@ public:
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
+    bool getCPUSlotPreemption() const;
+    UInt64 getCPUSlotQuantum() const;
+    UInt64 getCPUSlotPreemptionTimeout() const;
+    void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -1330,7 +1335,6 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
-    std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1345,6 +1349,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
+    std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
 
     SystemLogs getSystemLogs() const;
 
