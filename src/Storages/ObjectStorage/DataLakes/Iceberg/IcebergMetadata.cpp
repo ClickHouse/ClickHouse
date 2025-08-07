@@ -645,6 +645,14 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        history_record.manifest_list_path = snapshot->getValue<String>(f_manifest_list);
+        const auto summary = snapshot->getObject(f_summary);
+        if (summary->has(f_added_data_files))
+            history_record.added_files = summary->getValue<Int32>(f_added_data_files);
+        if (summary->has(f_added_records))
+            history_record.added_records = summary->getValue<Int32>(f_added_records);
+        history_record.added_files_size = summary->getValue<Int32>(f_added_files_size);
+        history_record.num_partitions = summary->getValue<Int32>(f_changed_partition_count);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -675,6 +683,12 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     }
 
     return iceberg_history;
+}
+
+ManifestFilePtr IcebergMetadata::tryGetManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
+{
+    SharedLockGuard lock(mutex);
+    return getManifestFile(local_context, filename, inherited_sequence_number, inherited_snapshot_id);
 }
 
 ManifestFilePtr IcebergMetadata::getManifestFile(
@@ -969,7 +983,7 @@ ParsedDataFileInfo::ParsedDataFileInfo(
             end_it - position_deletes_objects_.begin(),
             position_deletes_objects_.size());
     }
-    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
+    position_deletes_objects = std::vector<Iceberg::ManifestFileEntry>{beg_it, end_it};
     if (!position_deletes_objects.empty() && configuration_->format != "Parquet")
     {
         throw Exception(
