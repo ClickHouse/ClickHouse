@@ -941,25 +941,25 @@ void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization) const
+void SingleValueDataNumeric<T>::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
     return memory.get().write(buf, serialization);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, const DataTypePtr & type, DB::Arena * arena)
+void SingleValueDataNumeric<T>::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena * arena)
 {
     return memory.get().read(buf, serialization, type, arena);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::isEqualTo(const DB::IColumn & column, size_t index) const
+bool SingleValueDataNumeric<T>::isEqualTo(const IColumn & column, size_t index) const
 {
     return memory.get().isEqualTo(column, index);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
+bool SingleValueDataNumeric<T>::isEqualTo(const SingleValueDataBase & to) const
 {
     /// to.has() is checked in memory.get().isEqualTo
     auto const & other = assert_cast<const Self &>(to);
@@ -967,13 +967,13 @@ bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) co
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::set(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+void SingleValueDataNumeric<T>::set(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().set(column, row_num, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Arena * arena)
+void SingleValueDataNumeric<T>::set(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().set
     auto const & other = assert_cast<const Self &>(to);
@@ -981,7 +981,7 @@ void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Aren
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfSmaller(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().setIfSmaller
     auto const & other = assert_cast<const Self &>(to);
@@ -989,7 +989,7 @@ bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to,
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfGreater(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().setIfGreater
     auto const & other = assert_cast<const Self &>(to);
@@ -997,49 +997,49 @@ bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to,
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfSmaller(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().setIfSmaller(column, row_num, arena);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfGreater(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().setIfGreater(column, row_num, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::setSmallest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+void SingleValueDataNumeric<T>::setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     return memory.get().setSmallest(column, row_begin, row_end, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::setGreatest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+void SingleValueDataNumeric<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     return memory.get().setGreatest(column, row_begin, row_end, arena);
 }
 
 template <typename T>
 void SingleValueDataNumeric<T>::setSmallestNotNullIf(
-    const DB::IColumn & column,
+    const IColumn & column,
     const UInt8 * __restrict null_map,
     const UInt8 * __restrict if_map,
     size_t row_begin,
     size_t row_end,
-    DB::Arena * arena)
+    Arena * arena)
 {
     return memory.get().setSmallestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
 }
 
 template <typename T>
 void SingleValueDataNumeric<T>::setGreatestNotNullIf(
-    const DB::IColumn & column,
+    const IColumn & column,
     const UInt8 * __restrict null_map,
     const UInt8 * __restrict if_map,
     size_t row_begin,
     size_t row_end,
-    DB::Arena * arena)
+    Arena * arena)
 {
     return memory.get().setGreatestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
 }
@@ -1075,37 +1075,7 @@ std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndexNotNullIf(
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
-namespace
-{
-
-struct StringValueCompatibility
-{
-    /// Old versions used to store terminating null-character in SingleValueDataString.
-    /// Then -WithTerminatingZero methods were removed from IColumn interface,
-    /// because these methods are quite dangerous and easy to misuse. It introduced incompatibility.
-    /// See https://github.com/ClickHouse/ClickHouse/pull/41431 and https://github.com/ClickHouse/ClickHouse/issues/42916
-    /// Here we keep these functions for compatibility.
-    /// It's safe because there's no way unsanitized user input (without \0 at the end) can reach these functions.
-
-    static StringRef getDataAtWithTerminatingZero(const ColumnString & column, size_t n)
-    {
-        auto res = column.getDataAt(n);
-        /// ColumnString always reserves extra byte for null-character after string.
-        /// But getDataAt returns StringRef without the null-character. Let's add it.
-        chassert(res.data[res.size] == '\0');
-        ++res.size;
-        return res;
-    }
-
-    static void insertDataWithTerminatingZero(ColumnString & column, const char * pos, size_t length)
-    {
-        chassert(0 < length);
-        chassert(pos[length - 1] == '\0');
-        column.insertData(pos, length - 1);
-    }
-};
-
-}
+/// String
 
 char * SingleValueDataString::getDataMutable()
 {
@@ -1123,7 +1093,7 @@ const char * SingleValueDataString::getData() const
 
 StringRef SingleValueDataString::getStringRef() const
 {
-    return StringRef(getData(), size);
+    return StringRef(getData(), size - 1);
 }
 
 void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
@@ -1153,23 +1123,25 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     if (value_size <= MAX_SMALL_STRING_SIZE)
     {
         /// Don't free large_data here.
-        size = value_size;
+        size = value_size + 1;
 
-        if (size > 0)
-            memcpy(small_data, value.data, size);
+        if (value_size > 0)
+            memcpy(small_data, value.data, value.size);
+        small_data[value_size] = 0;
     }
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
-        size = value_size;
-        memcpy(large_data, value.data, size);
+        size = value_size + 1;
+        memcpy(large_data, value.data, value.size);
+        small_data[value_size] = 0;
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+void SingleValueDataString::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
     if (has())
-        StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
+        assert_cast<ColumnString &>(to).insertData(getData(), size - 1);
     else
         assert_cast<ColumnString &>(to).insertDefault();
 }
@@ -1241,10 +1213,9 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     getDataMutable()[size - 1] = '\0';
 }
 
-bool SingleValueDataString::isEqualTo(const DB::IColumn & column, size_t row_num) const
+bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has()
-        && StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) == getStringRef();
+    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringRef();
 }
 
 bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
@@ -1255,7 +1226,7 @@ bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 
 void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
 {
-    changeImpl(StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num), arena);
+    changeImpl(assert_cast<const ColumnString &>(column).getDataAt(row_num), arena);
 }
 
 void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
@@ -1267,8 +1238,7 @@ void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has()
-        || StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) < getStringRef())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringRef())
     {
         set(column, row_num, arena);
         return true;
@@ -1290,8 +1260,7 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
 
 bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has()
-        || StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) > getStringRef())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringRef())
     {
         set(column, row_num, arena);
         return true;
@@ -1309,6 +1278,8 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     }
     return false;
 }
+
+/// Generic
 
 void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
@@ -1343,7 +1314,7 @@ bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) c
     return has() && value == column[row_num];
 }
 
-bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
+bool SingleValueDataGeneric::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return has() && to.has() && to.value == value;
@@ -1419,6 +1390,8 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
     return false;
 }
 
+/// GenericWithColumn
+
 void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
@@ -1457,7 +1430,7 @@ bool SingleValueDataGenericWithColumn::isEqualTo(const IColumn & column, size_t 
     return has() && !column.compareAt(row_num, 0, *value, -1);
 }
 
-bool SingleValueDataGenericWithColumn::isEqualTo(const DB::SingleValueDataBase & other) const
+bool SingleValueDataGenericWithColumn::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
