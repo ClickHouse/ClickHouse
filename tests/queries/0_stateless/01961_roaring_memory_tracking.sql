@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-asan, no-tsan, no-msan, no-ubsan
+-- Tags: no-replicated-database, no-asan, no-tsan, no-msan, no-ubsan, no-coverage
 
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
