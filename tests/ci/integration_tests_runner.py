@@ -558,7 +558,7 @@ class ClickhouseIntegrationTestsRunner:
                 print("Timeout expired - break test group execution")
                 break
             logging.info("Running test group %s for the %s retry", test_group, i)
-            # clear_ip_tables_and_restart_daemons()
+            clear_ip_tables_and_restart_daemons()
 
             test_names = set([])
             for test_name in tests_in_group:
@@ -595,80 +595,80 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
             # ignore retcode, since it meaningful due to pipe to tee
-            # with TeePopen(cmd, log_path) as proc:
-            #     global runner_subprocess  # pylint:disable=global-statement
-            #     runner_subprocess = proc
-            #     proc.wait()
+            with TeePopen(cmd, log_path) as proc:
+                global runner_subprocess  # pylint:disable=global-statement
+                runner_subprocess = proc
+                proc.wait()
 
-            # extra_logs_names = [log_basename]
-            # log_result_path = os.path.join(
-            #     self.path(), "integration_run_" + log_basename
-            # )
-            # shutil.copy(log_path, log_result_path)
-            # log_paths.append(log_result_path)
-            #
-            # for pytest_log_path in glob.glob(
-            #     os.path.join(self.repo_path, "tests/integration/pytest*.log")
-            # ):
-            #     new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
-            #     os.rename(
-            #         pytest_log_path,
-            #         os.path.join(self.repo_path, "tests/integration", new_name),
-            #     )
-            #     extra_logs_names.append(new_name)
-            #
-            # dockerd_log_path = os.path.join(
-            #     self.repo_path, "tests/integration/dockerd.log"
-            # )
-            # if os.path.exists(dockerd_log_path):
-            #     new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
-            #     os.rename(
-            #         dockerd_log_path,
-            #         os.path.join(self.repo_path, "tests/integration", new_name),
-            #     )
-            #     extra_logs_names.append(new_name)
-            #
-            # if os.path.exists(report_path):
-            #     extra_logs_names.append(report_name)
-            #     new_counters, new_tests_times = self._parse_report(report_path)
-            #     for state, tests in new_counters.items():
-            #         logging.info(
-            #             "Tests with %s state (%s): %s", state, len(tests), tests
-            #         )
-            #     self._update_counters(counters, new_counters)
-            #     for test_name, test_time in new_tests_times.items():
-            #         tests_times[test_name] = test_time
-            #
-            # test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
-            # test_data_dirs_diff = self._get_test_data_dirs_difference(
-            #     test_data_dirs_new, test_data_dirs
-            # )
-            # test_data_dirs = test_data_dirs_new
-            #
-            # if extra_logs_names or test_data_dirs_diff:
-            #     extras_result_path = os.path.join(
-            #         self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
-            #     )
-            #     self._compress_logs(
-            #         os.path.join(self.repo_path, "tests/integration"),
-            #         extra_logs_names + list(test_data_dirs_diff),
-            #         extras_result_path,
-            #     )
-            #     log_paths.append(extras_result_path)
-            #
-            # if len(counters["PASSED"]) == len(tests_in_group):
-            #     logging.info("All tests from group %s passed", test_group)
-            #     break
-            # if (
-            #     len(counters["PASSED"]) >= 0
-            #     and len(counters["FAILED"]) == 0
-            #     and len(counters["ERROR"]) == 0
-            # ):
-            #     logging.info(
-            #         "Seems like all tests passed but some of them are skipped or "
-            #         "deselected. Ignoring them and finishing group."
-            #     )
-            #     break
+            extra_logs_names = [log_basename]
+            log_result_path = os.path.join(
+                self.path(), "integration_run_" + log_basename
+            )
+            shutil.copy(log_path, log_result_path)
+            log_paths.append(log_result_path)
+
+            for pytest_log_path in glob.glob(
+                os.path.join(self.repo_path, "tests/integration/pytest*.log")
+            ):
+                new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
+                os.rename(
+                    pytest_log_path,
+                    os.path.join(self.repo_path, "tests/integration", new_name),
+                )
+                extra_logs_names.append(new_name)
+
+            dockerd_log_path = os.path.join(
+                self.repo_path, "tests/integration/dockerd.log"
+            )
+            if os.path.exists(dockerd_log_path):
+                new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
+                os.rename(
+                    dockerd_log_path,
+                    os.path.join(self.repo_path, "tests/integration", new_name),
+                )
+                extra_logs_names.append(new_name)
+
+            if os.path.exists(report_path):
+                extra_logs_names.append(report_name)
+                new_counters, new_tests_times = self._parse_report(report_path)
+                for state, tests in new_counters.items():
+                    logging.info(
+                        "Tests with %s state (%s): %s", state, len(tests), tests
+                    )
+                self._update_counters(counters, new_counters)
+                for test_name, test_time in new_tests_times.items():
+                    tests_times[test_name] = test_time
+
+            test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
+            test_data_dirs_diff = self._get_test_data_dirs_difference(
+                test_data_dirs_new, test_data_dirs
+            )
+            test_data_dirs = test_data_dirs_new
+
+            if extra_logs_names or test_data_dirs_diff:
+                extras_result_path = os.path.join(
+                    self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
+                )
+                self._compress_logs(
+                    os.path.join(self.repo_path, "tests/integration"),
+                    extra_logs_names + list(test_data_dirs_diff),
+                    extras_result_path,
+                )
+                log_paths.append(extras_result_path)
+
+            if len(counters["PASSED"]) == len(tests_in_group):
+                logging.info("All tests from group %s passed", test_group)
+                break
+            if (
+                len(counters["PASSED"]) >= 0
+                and len(counters["FAILED"]) == 0
+                and len(counters["ERROR"]) == 0
+            ):
+                logging.info(
+                    "Seems like all tests passed but some of them are skipped or "
+                    "deselected. Ignoring them and finishing group."
+                )
+                break
         else:
             # Mark all non tried tests as errors, with '::' in name
             # (example test_partition/test.py::test_partition_simple). For flaky check
@@ -1038,11 +1038,11 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_normal_check(self):
         logging.info("Pulling images")
-        # self._pre_pull_images()
-        # logging.info(
-        #     "Dump iptables before run %s",
-        #     subprocess.check_output("sudo iptables -nvL", shell=True),
-        # )
+        self._pre_pull_images()
+        logging.info(
+            "Dump iptables before run %s",
+            subprocess.check_output("sudo iptables -nvL", shell=True),
+        )
         parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
             "Found %s tests first 3 %s",
@@ -1127,9 +1127,9 @@ class ClickhouseIntegrationTestsRunner:
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
 
-            # if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
-            #     logging.info("Collected more than 20 failed/error tests, stopping")
-            #     break
+            if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
+                logging.info("Collected more than 20 failed/error tests, stopping")
+                break
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
