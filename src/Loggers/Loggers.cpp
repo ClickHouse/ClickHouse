@@ -339,7 +339,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     max_log_level = std::max(log_level, max_log_level);
 
     if (log_file)
-        split->setLevel("log", log_level);
+        split->setLevel("FileLog", log_level);
 
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
@@ -350,17 +350,17 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
         max_log_level = std::max(console_log_level, max_log_level);
-        split->setLevel("console", console_log_level);
+        split->setLevel("Console", console_log_level);
     }
     else
-        split->setLevel("console", 0);
+        split->setLevel("Console", 0);
 
     // Set level to errorlog
     if (error_log_file)
     {
         int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
         max_log_level = std::max(errorlog_level, max_log_level);
-        split->setLevel("errorlog", errorlog_level);
+        split->setLevel("ErrorFileLog", errorlog_level);
     }
 
     // Set level to syslog
@@ -370,7 +370,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
     }
-    split->setLevel("syslog", syslog_level);
+    split->setLevel("Syslog", syslog_level);
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);

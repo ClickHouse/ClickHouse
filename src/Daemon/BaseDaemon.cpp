@@ -632,15 +632,10 @@ void BaseDaemon::setupWatchdog()
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (async_channel)
+        if (auto * channel = dynamic_cast<OwnSplitChannelBase *>(logger().getChannel()))
         {
-            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
-        }
-        else if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
-        {
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
