@@ -236,4 +236,4 @@ def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
     )
 
     for node in [node_1, node_2]:
-        node.query("DROP TABLE IF EXISTS test_ttl")
+        node.query("DROP TABLE IF EXISTS test_ttl SYNC")
