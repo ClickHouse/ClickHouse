@@ -219,7 +219,6 @@ public:
 
 private:
     ACLs default_acls;
-    zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
     zkutil::ZooKeeperArgs args;
     std::atomic<int8_t> original_index{-1};
@@ -269,7 +268,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024, "zookeeper-client"};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;

@@ -10,7 +10,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/CompressionMethod.h>
+#include "IO/CompressionMethod.h"
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -20,7 +20,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
 }
 
 namespace ErrorCodes
@@ -83,7 +83,7 @@ Pipe getSourceFromInputFormat(
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
+            pipe.addSimpleTransform([&](const Block & cur_header)
             {
                 return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
             });

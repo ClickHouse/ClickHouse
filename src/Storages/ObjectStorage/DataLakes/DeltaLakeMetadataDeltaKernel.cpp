@@ -3,22 +3,23 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Common/logger_useful.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration_,
-    ContextPtr context)
+    ConfigurationObserverPtr configuration_)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
         std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
-            context,
             log))
 {
 }
@@ -55,9 +56,9 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
-ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
+DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const StorageSnapshotPtr & storage_snapshot,
+    const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
@@ -70,11 +71,30 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// Partition values will be added to result data right after data is read.
     const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
     const auto read_columns = table_snapshot->getReadSchema().getNameSet();
+    auto get_physical_name = [&](const std::string & column_name)
+    {
+        if (physical_names_map.empty())
+            return column_name;
+        auto it = physical_names_map.find(column_name);
+        if (it == physical_names_map.end())
+        {
+            Names keys;
+            keys.reserve(physical_names_map.size());
+            for (const auto & [key, _] : physical_names_map)
+                keys.push_back(key);
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Not found column {} in physical names map. There are only columns: {}",
+                column_name, fmt::join(keys, ", "));
+        }
+        return it->second;
+    };
 
     Block format_header;
     for (auto && column_with_type_and_name : info.format_header)
     {
-        auto physical_name = DeltaLake::getPhysicalName(column_with_type_and_name.name, physical_names_map);
+        auto physical_name = get_physical_name(column_with_type_and_name.name);
         if (!read_columns.contains(physical_name))
         {
             LOG_TEST(log, "Filtering out non-readable column: {}", column_with_type_and_name.name);
@@ -89,8 +109,9 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     if (!physical_names_map.empty())
     {
         for (auto & [column_name, _] : info.requested_columns)
-            column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
+            column_name = get_physical_name(column_name);
     }
+
     return info;
 }
 

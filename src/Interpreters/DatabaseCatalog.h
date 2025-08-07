@@ -137,7 +137,7 @@ public:
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
-    static void shutdown(std::function<void()> shutdown_system_logs);
+    static void shutdown();
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
@@ -282,7 +282,7 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    void shutdownImpl(std::function<void()> shutdown_system_logs);
+    void shutdownImpl();
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 

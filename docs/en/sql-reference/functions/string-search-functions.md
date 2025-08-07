@@ -1,6 +1,7 @@
 ---
 description: 'Documentation for Functions for Searching in Strings'
-sidebar_label: 'String search'
+sidebar_label: 'Searching in Strings'
+sidebar_position: 160
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
 ---
@@ -746,124 +747,6 @@ Query:
 
 ```sql
 SELECT multiSearchAnyCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x68']);
-```
-
-Result:
-
-```response
-1
-```
-
-## searchAny {#searchany}
-
-:::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
-:::
-
-Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
-
-**Syntax**
-
-```sql
-searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
-```
-
-**Parameters**
-
-- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-:::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
-:::
-
-:::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
-:::
-
-**Returned value**
-
-- 1, if there was at least one match.
-- 0, otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE text_table (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
-```
-
-Result:
-
-```response
-3
-```
-
-## searchAll {#searchall}
-
-:::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
-:::
-
-Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
-
-**Syntax**
-
-```sql
-searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
-```
-
-**Parameters**
-
-- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-:::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
-:::
-
-:::note
-Each string needle<sub>i</sub> would be tokenized as `tokens(needle<sub>i</sub>, [tokenizer from the index definition])`.
-This means both `['word1;word2']` and `['word1,word2']` would be tokenized as `['word1','word2']` in case of the `default` tokenizer.
-Refer [tokens](splitting-merging-functions.md#tokens) for more information about the supported separators.
-:::
-
-**Returned value**
-
-- 1, if all needles match.
-- 0, otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE text_table (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
 ```
 
 Result:
@@ -1893,7 +1776,7 @@ Query:
 **Examples**
 
 ```sql
-SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
@@ -1928,7 +1811,7 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 Query:
 
 ```sql
-SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:
