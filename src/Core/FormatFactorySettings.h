@@ -901,6 +901,33 @@ For example, instead of output:
 	}
 
 ],
+```
+    
+The output will be formatted as:
+    
+```json
+"data":
+[
+	{
+		"tuple": {
+			"a": 1,
+			"b": 2,
+			"c": 3
+		},
+		"array": [
+			1,
+			2,
+			3
+		],
+		"map": {
+			"a": 1,
+			"b": 2,
+			"c": 3
+		}
+	}
+
+],
+```
 
 Enabled by default.
 )", 0) \
