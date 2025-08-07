@@ -683,6 +683,11 @@ private:
             /// But at converting stage we have to only convert types of columns that are present in input header,
             /// so we construct a list of columns to convert which contains only columns that are present in input header.
             /// The additional columns that are present in result header are added later by `addMissingDefaults` function.
+            /// Also adding_missing_defaults_dag would require access to the subcolumns, so we extract them before adding defaults.
+            /// As a result, the order of actions is mattered and it is:
+            /// - convert types of columns that are present in input header
+            /// - extract subcolumns that are require for adding defaults
+            /// - add missing defaults for columns that are present in result header but not in input header
             auto to_convert = construct_columns_to_convert(input.getColumnsWithTypeAndName(), result_metadata->getSampleBlock().getColumnsWithTypeAndName());
 
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
