@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
@@ -83,6 +84,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
     const NamesAndTypesList & virtual_columns_,
+    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
     ContextPtr context_,
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
@@ -93,6 +95,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
+    , hive_partition_columns_to_read_from_file_path(hive_partition_columns_to_read_from_file_path_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
@@ -203,7 +206,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
                 /// So we are keeping it the way it is for now
                 VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, /* hive partition columns */{}, getContext());
+                    new_batch, paths, filter_expr, virtual_columns, hive_partition_columns_to_read_from_file_path, getContext());
 
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
@@ -1008,6 +1011,16 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified
                 }, getContext());
+
+            auto hive_partition_columns_to_read_from_file_path = file_iterator->getHivePartitionColumns();
+
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
 
             return chunk;
         }

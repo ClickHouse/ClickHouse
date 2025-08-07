@@ -7,6 +7,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -32,6 +33,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -234,22 +236,36 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
-    setInMemoryMetadata(storage_metadata);
 
-    LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
-
-    bool is_path_with_hive_partitioning = false;
+    auto virtuals = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
 
     if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
-        auto key_values = VirtualColumnUtils::parseHivePartitioningKeysAndValues(configuration->getPath());
-        if (!key_values.empty())
-            is_path_with_hive_partitioning = true;
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            storage_metadata.columns,
+            configuration->getRawPath().path,
+            std::nullopt,
+            context_
+        );
+        for (const auto & iter : hive_partition_columns_to_read_from_file_path)
+            virtuals.addEphemeral(iter.getNameInStorage(), iter.getTypeInStorage(), "");
     }
 
+    setVirtuals(virtuals);
+    setInMemoryMetadata(storage_metadata);
+
+    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+
+    LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, is_path_with_hive_partitioning, log);
+        zk_path, *queue_settings_,
+        storage_metadata.getColumns(),
+        configuration_->format,
+        context_,
+        is_attach,
+        is_path_with_hive_partitioning,
+        log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -462,6 +478,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -724,7 +741,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            PrepareReadingFromFormatHiveParams {storage_snapshot->metadata->getColumns().getAllPhysical(),
+                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+        );
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -1221,6 +1241,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,

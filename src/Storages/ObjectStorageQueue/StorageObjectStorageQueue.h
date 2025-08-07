@@ -166,6 +166,8 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }

@@ -49,6 +49,7 @@ public:
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
             const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
             ContextPtr context_,
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
@@ -71,6 +72,9 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        const NamesAndTypesList & getHivePartitionColumns() const
+            { return hive_partition_columns_to_read_from_file_path; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -79,6 +83,7 @@ public:
         const ObjectStoragePtr object_storage;
         const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
+        const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
