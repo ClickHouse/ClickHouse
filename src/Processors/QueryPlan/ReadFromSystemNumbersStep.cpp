@@ -31,7 +31,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -657,18 +656,15 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 
 UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
 {
-    const auto * numbers_storage = storage->as<StorageSystemNumbers>();
-    if (!numbers_storage)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not StorageSystemNumbers");
-
+    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
     UInt64 estimated_rows = 0;
 
-    if (numbers_storage->limit.has_value())
+    if (numbers_storage.limit.has_value())
     {
         estimated_rows = itemCountInRange(
-            numbers_storage->offset,
-            numbers_storage->offset + numbers_storage->limit.value(),
-            numbers_storage->step);
+            numbers_storage.offset,
+            numbers_storage.offset + numbers_storage.limit.value(),
+            numbers_storage.step);
     }
 
     if (limit.has_value() && (estimated_rows == 0 || limit.value() < estimated_rows))
@@ -679,10 +675,8 @@ UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
 
 String ReadFromSystemNumbersStep::getColumnName() const
 {
-    const auto * numbers_storage = storage->as<StorageSystemNumbers>();
-    if (!numbers_storage)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not StorageSystemNumbers");
-    return numbers_storage->column_name;
+    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
+    return numbers_storage.column_name;
 }
 
 StorageID ReadFromSystemNumbersStep::getStorageID() const
