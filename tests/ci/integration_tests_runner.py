@@ -13,11 +13,13 @@ import signal
 import subprocess
 import sys
 import time
+import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import yaml  # type: ignore[import-untyped]
+from clickhouse_driver import Client
 
 from ci_utils import kill_ci_runner
 from env_helper import IS_CI
@@ -25,6 +27,12 @@ from integration_test_images import IMAGES
 from report import JOB_TIMEOUT_TEST_NAME
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
+CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.com")
+CLICKHOUSE_PLAY_PORT = int(os.environ.get("CLICKHOUSE_PLAY_PORT", 9440))
+CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
+CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
+CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -190,6 +198,10 @@ class ClickhouseIntegrationTestsRunner:
         else:
             self.run_by_hash_total = 0
             self.run_by_hash_num = 0
+
+        # release/asan/tsan/msan
+        self.job_configuration = self.params.get("job_configuration", "")
+        self.pr_updated_at = self.params.get("pr_updated_at", "")
 
         self._all_tests = []  # type: List[str]
         self._tests_by_hash = []  # type: List[str]
@@ -546,7 +558,7 @@ class ClickhouseIntegrationTestsRunner:
                 print("Timeout expired - break test group execution")
                 break
             logging.info("Running test group %s for the %s retry", test_group, i)
-            clear_ip_tables_and_restart_daemons()
+            # clear_ip_tables_and_restart_daemons()
 
             test_names = set([])
             for test_name in tests_in_group:
@@ -583,80 +595,80 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
             # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            # with TeePopen(cmd, log_path) as proc:
+            #     global runner_subprocess  # pylint:disable=global-statement
+            #     runner_subprocess = proc
+            #     proc.wait()
 
-            extra_logs_names = [log_basename]
-            log_result_path = os.path.join(
-                self.path(), "integration_run_" + log_basename
-            )
-            shutil.copy(log_path, log_result_path)
-            log_paths.append(log_result_path)
-
-            for pytest_log_path in glob.glob(
-                os.path.join(self.repo_path, "tests/integration/pytest*.log")
-            ):
-                new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
-                os.rename(
-                    pytest_log_path,
-                    os.path.join(self.repo_path, "tests/integration", new_name),
-                )
-                extra_logs_names.append(new_name)
-
-            dockerd_log_path = os.path.join(
-                self.repo_path, "tests/integration/dockerd.log"
-            )
-            if os.path.exists(dockerd_log_path):
-                new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
-                os.rename(
-                    dockerd_log_path,
-                    os.path.join(self.repo_path, "tests/integration", new_name),
-                )
-                extra_logs_names.append(new_name)
-
-            if os.path.exists(report_path):
-                extra_logs_names.append(report_name)
-                new_counters, new_tests_times = self._parse_report(report_path)
-                for state, tests in new_counters.items():
-                    logging.info(
-                        "Tests with %s state (%s): %s", state, len(tests), tests
-                    )
-                self._update_counters(counters, new_counters)
-                for test_name, test_time in new_tests_times.items():
-                    tests_times[test_name] = test_time
-
-            test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
-            test_data_dirs_diff = self._get_test_data_dirs_difference(
-                test_data_dirs_new, test_data_dirs
-            )
-            test_data_dirs = test_data_dirs_new
-
-            if extra_logs_names or test_data_dirs_diff:
-                extras_result_path = os.path.join(
-                    self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
-                )
-                self._compress_logs(
-                    os.path.join(self.repo_path, "tests/integration"),
-                    extra_logs_names + list(test_data_dirs_diff),
-                    extras_result_path,
-                )
-                log_paths.append(extras_result_path)
-
-            if len(counters["PASSED"]) == len(tests_in_group):
-                logging.info("All tests from group %s passed", test_group)
-                break
-            if (
-                len(counters["PASSED"]) >= 0
-                and len(counters["FAILED"]) == 0
-                and len(counters["ERROR"]) == 0
-            ):
-                logging.info(
-                    "Seems like all tests passed but some of them are skipped or "
-                    "deselected. Ignoring them and finishing group."
-                )
-                break
+            # extra_logs_names = [log_basename]
+            # log_result_path = os.path.join(
+            #     self.path(), "integration_run_" + log_basename
+            # )
+            # shutil.copy(log_path, log_result_path)
+            # log_paths.append(log_result_path)
+            #
+            # for pytest_log_path in glob.glob(
+            #     os.path.join(self.repo_path, "tests/integration/pytest*.log")
+            # ):
+            #     new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
+            #     os.rename(
+            #         pytest_log_path,
+            #         os.path.join(self.repo_path, "tests/integration", new_name),
+            #     )
+            #     extra_logs_names.append(new_name)
+            #
+            # dockerd_log_path = os.path.join(
+            #     self.repo_path, "tests/integration/dockerd.log"
+            # )
+            # if os.path.exists(dockerd_log_path):
+            #     new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
+            #     os.rename(
+            #         dockerd_log_path,
+            #         os.path.join(self.repo_path, "tests/integration", new_name),
+            #     )
+            #     extra_logs_names.append(new_name)
+            #
+            # if os.path.exists(report_path):
+            #     extra_logs_names.append(report_name)
+            #     new_counters, new_tests_times = self._parse_report(report_path)
+            #     for state, tests in new_counters.items():
+            #         logging.info(
+            #             "Tests with %s state (%s): %s", state, len(tests), tests
+            #         )
+            #     self._update_counters(counters, new_counters)
+            #     for test_name, test_time in new_tests_times.items():
+            #         tests_times[test_name] = test_time
+            #
+            # test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
+            # test_data_dirs_diff = self._get_test_data_dirs_difference(
+            #     test_data_dirs_new, test_data_dirs
+            # )
+            # test_data_dirs = test_data_dirs_new
+            #
+            # if extra_logs_names or test_data_dirs_diff:
+            #     extras_result_path = os.path.join(
+            #         self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
+            #     )
+            #     self._compress_logs(
+            #         os.path.join(self.repo_path, "tests/integration"),
+            #         extra_logs_names + list(test_data_dirs_diff),
+            #         extras_result_path,
+            #     )
+            #     log_paths.append(extras_result_path)
+            #
+            # if len(counters["PASSED"]) == len(tests_in_group):
+            #     logging.info("All tests from group %s passed", test_group)
+            #     break
+            # if (
+            #     len(counters["PASSED"]) >= 0
+            #     and len(counters["FAILED"]) == 0
+            #     and len(counters["ERROR"]) == 0
+            # ):
+            #     logging.info(
+            #         "Seems like all tests passed but some of them are skipped or "
+            #         "deselected. Ignoring them and finishing group."
+            #     )
+            #     break
         else:
             # Mark all non tried tests as errors, with '::' in name
             # (example test_partition/test.py::test_partition_simple). For flaky check
@@ -809,6 +821,184 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
+    def get_tests_execution_time(self):
+
+        start_time_filter = "toStartOfDay(now())"
+        if self.pr_updated_at != "":
+            start_time_filter = f"parseDateTimeBestEffort('{self.pr_updated_at}')"
+
+        query = f"""
+            SELECT
+                file,
+                round(sum(test_duration_ms)) AS file_duration_ms
+            FROM
+            (
+                SELECT
+                    splitByString('::', test_name)[1] AS file,
+                    median(test_duration_ms) AS test_duration_ms
+                FROM checks
+                WHERE (check_name LIKE 'Integration%')
+                    AND (check_name LIKE '%{self.job_configuration}%')
+                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
+                    AND (check_start_time <= ({start_time_filter}))
+                    AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
+                    AND (test_status != 'SKIPPED')
+                    AND (test_name != '')
+                GROUP BY test_name
+            )
+            GROUP BY file
+            ORDER BY ALL
+        """
+        logging.info(query)
+
+        max_retries = 3
+        retry_delay_seconds = 5
+
+        for attempt in range(max_retries):
+            try:
+                logging.info("Connecting to ClickHouse to fetch test execution times (Attempt %s/%s)...", attempt + 1,
+                             max_retries)
+                client = Client(
+                    host=CLICKHOUSE_PLAY_HOST,
+                    port=CLICKHOUSE_PLAY_PORT,
+                    user=CLICKHOUSE_PLAY_USER,
+                    password=CLICKHOUSE_PLAY_PASSWORD,
+                    database=CLICKHOUSE_PLAY_DB,
+                    secure=True
+                )
+                test_times_rows = client.execute(query)
+                tests_execution_times = {row[0]: float(row[1]) for row in test_times_rows}
+                logging.info("Successfully fetched execution times for %s modules.", len(tests_execution_times))
+                return tests_execution_times
+
+            except Exception as e:
+                logging.warning(
+                    "Attempt %s/%s failed to fetch test times from ClickHouse: %s",
+                    attempt + 1,
+                    max_retries,
+                    e
+                )
+                # If this wasn't the last attempt, wait before retrying
+                if attempt < max_retries - 1:
+                    logging.info("Retrying in %s seconds...", retry_delay_seconds)
+                    time.sleep(retry_delay_seconds)
+                else:
+                    # If all retries fail, log the final error and re-raise
+                    logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
+                    raise
+
+    def group_tests_by_execution_time(self) -> List[List[str]]:
+        """
+        Groups tests into balanced deterministic sets using historical execution time
+        """
+        num_groups = self.run_by_hash_total
+        logging.info("Splitting tests by execution time into %s groups", num_groups)
+        if num_groups <= 0:
+            return []
+
+        file_to_test_map = self.group_test_by_file(self.all_tests)
+        all_current_files = sorted(list(file_to_test_map.keys()))
+
+        sequential_test_prefixes = [p.split("::", 1)[0] for p in self._get_parallel_tests_skip_list(self.repo_path)]
+        sequential_files_list = []
+        parallel_files_list = []
+
+        for file in all_current_files:
+            is_sequential = any(file.startswith(prefix) for prefix in sequential_test_prefixes)
+            if is_sequential:
+                sequential_files_list.append(file)
+            else:
+                parallel_files_list.append(file)
+
+        tests_execution_times = self.get_tests_execution_time()
+        known_db_modules_set = set(tests_execution_times.keys())
+
+        parallel_tests_with_known_time: Dict[str, float] = {
+            mod: tests_execution_times[mod] for mod in parallel_files_list if mod in known_db_modules_set
+        }
+        new_parallel_tests: List[str] = [
+            mod for mod in parallel_files_list if mod not in known_db_modules_set
+        ]
+        sequential_tests_with_known_time: Dict[str, float] = {
+            mod: tests_execution_times[mod] for mod in sequential_files_list if mod in known_db_modules_set
+        }
+        new_sequential_tests: List[str] = [
+            mod for mod in sequential_files_list if mod not in known_db_modules_set
+        ]
+
+        logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
+        logging.info("Found %s new parallel modules.", len(new_parallel_tests))
+        logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
+        logging.info("Found %s new sequential modules.", len(new_sequential_tests))
+
+        # balance parallel tests
+        parallel_heap = [(0, i, []) for i in range(num_groups)]
+        heapq.heapify(parallel_heap)
+
+        sorted_timed_parallel = sorted(
+            parallel_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+        )
+        for file, time in sorted_timed_parallel:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            files.append(file)
+            heapq.heappush(parallel_heap, (total_time + time, group_index, files))
+
+        for file in new_parallel_tests:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            files.append(file)
+            heapq.heappush(parallel_heap, (total_time, group_index, files))
+
+        test_file_groups = [[] for _ in range(num_groups)]
+        parallel_group_times = [0.0] * num_groups
+        while parallel_heap:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            test_file_groups[group_index] = files
+            parallel_group_times[group_index] = total_time
+
+        # balance sequential tests using a separate heap
+        # if using single heap, it will not be distributed equally
+        sequential_heap = [(parallel_group_times[i], i) for i in range(num_groups)]
+        heapq.heapify(sequential_heap)
+
+        sorted_timed_sequential = sorted(
+            sequential_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+        )
+        for file, time in sorted_timed_sequential:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            test_file_groups[group_index].append(file)
+            heapq.heappush(sequential_heap, (total_time + time, group_index))
+
+        for file in new_sequential_tests:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            test_file_groups[group_index].append(file)
+            heapq.heappush(sequential_heap, (total_time, group_index))
+
+        # heap contains final total times
+        total_group_times = [0.0] * num_groups
+        while sequential_heap:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            total_group_times[group_index] = total_time
+
+        # expand groups
+        final_test_groups = []
+        for group_of_test_files in test_file_groups:
+            test_name_group = []
+            for module_name in sorted(group_of_test_files):
+                test_name_group.extend(file_to_test_map.get(module_name, []))
+            final_test_groups.append(sorted(test_name_group))
+
+        # log
+        for i, test_group in enumerate(final_test_groups):
+            total_time = total_group_times[i]
+            parallel_time = parallel_group_times[i]
+            sequential_time = total_time - parallel_time
+            logging.info(
+                "Group %d | Tests: %d | Total time: %.2fs (parallel: %.2fs, sequential: %.2fs)",
+                i, len(test_group), total_time, parallel_time, sequential_time
+            )
+
+        return final_test_groups
+
     @property
     def tests_by_hash(self) -> List[str]:
         "Tries it's best to group the tests equally between groups"
@@ -817,6 +1007,20 @@ class ClickhouseIntegrationTestsRunner:
         if self.run_by_hash_total == 0:
             self._tests_by_hash = self.all_tests
             return self._tests_by_hash
+
+        # Split tests in groups by historical execution time
+        try:
+            all_groups = self.group_tests_by_execution_time()
+            self._tests_by_hash = all_groups[self.run_by_hash_num]
+            return self._tests_by_hash
+        except Exception as e:
+            logging.error("Can't split tests by execution time: %s", e)
+            logging.error(e)
+            # TODO remove after testing
+            raise
+
+        # Fallback in case play server doesn't work
+        # Split tests in groups by number of tests in group
         grouped_tests = self.group_test_by_file(self.all_tests)
         groups_by_hash = {
             g: [] for g in range(self.run_by_hash_total)
@@ -834,11 +1038,11 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_normal_check(self):
         logging.info("Pulling images")
-        self._pre_pull_images()
-        logging.info(
-            "Dump iptables before run %s",
-            subprocess.check_output("sudo iptables -nvL", shell=True),
-        )
+        # self._pre_pull_images()
+        # logging.info(
+        #     "Dump iptables before run %s",
+        #     subprocess.check_output("sudo iptables -nvL", shell=True),
+        # )
         parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
             "Found %s tests first 3 %s",
@@ -879,10 +1083,7 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        i = 0
-        for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
-            grouped_tests[f"parallel{i}"] = par_group
-            i += 1
+        grouped_tests['parallel'] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
@@ -926,9 +1127,9 @@ class ClickhouseIntegrationTestsRunner:
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
 
-            if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
-                logging.info("Collected more than 20 failed/error tests, stopping")
-                break
+            # if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
+            #     logging.info("Collected more than 20 failed/error tests, stopping")
+            #     break
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
