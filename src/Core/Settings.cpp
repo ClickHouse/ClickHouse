@@ -6943,7 +6943,7 @@ Allow to execute `insert` queries into iceberg.
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
 )", EXPERIMENTAL) \
-    DECLARE(String, iceberg_metadata_compression_method, "LZ4", R"(
+    DECLARE(String, iceberg_metadata_compression_method, "", R"(
 Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
