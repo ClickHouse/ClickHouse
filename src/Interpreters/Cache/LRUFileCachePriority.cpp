@@ -69,7 +69,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     {
         /// entry.size == 0 means entry was invalidated.
         if (queue_entry->size != 0
-            //&& !queue_entry->isEvicting(lock)
+            && !queue_entry->isEvictingUnlocked()
             && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
         {
             throw Exception(
