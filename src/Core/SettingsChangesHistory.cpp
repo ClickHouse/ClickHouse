@@ -58,7 +58,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
-            {"vector_search_with_rescoring", true, true, "New setting."},
             {"enable_writes_to_query_cache_disk", false, false, "New setting."},
             {"enable_reads_from_query_cache_disk", false, false, "New setting."},
             {"vector_search_with_rescoring", true, false, "New setting."},
