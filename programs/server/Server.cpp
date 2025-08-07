@@ -337,7 +337,6 @@ namespace ServerSetting
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsUInt64 lightweight_zookeeper_logger_flush_period_ms;
     extern const ServerSettingsUInt64 lightweight_zookeeper_logger_max_entries;
-    extern const ServerSettingsInt8 lightweight_zookeeper_logger_path_prefix_depth;
 }
 
 namespace ErrorCodes
@@ -2548,7 +2547,6 @@ try
         LightweightZooKeeperLoggerThread lightweight_zookeeper_logger_thread(
             server_settings[ServerSetting::lightweight_zookeeper_logger_flush_period_ms],
             server_settings[ServerSetting::lightweight_zookeeper_logger_max_entries],
-            server_settings[ServerSetting::lightweight_zookeeper_logger_path_prefix_depth],
             global_context->getSchedulePool(),
             global_context->getLightweightZooKeeperLog()
         );

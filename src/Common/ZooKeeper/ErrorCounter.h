@@ -24,7 +24,6 @@ public:
 
     void dumpToMapColumn(DB::ColumnMap * column) const
     {
-
         auto & offsets = column->getNestedColumn().getOffsets();
         auto & tuple_column = column->getNestedData();
         auto & key_column = tuple_column.getColumn(0);

@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
-#include <Common/LightweightZooKeeperLogger.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeEnum.h>
 
@@ -13,7 +13,7 @@ struct LightweightZooKeeperLogElement
 {
     /// Identifying a group.
     time_t event_time;
-    String path_prefix;
+    String parent_path;
     Coordination::OpNum operation;
     
     /// Group statistics.

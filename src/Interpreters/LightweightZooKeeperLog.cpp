@@ -49,7 +49,7 @@ DataTypePtr getOperationEnumType()
 
 DataTypePtr getErrorEnumType()
 {
-    return std::make_shared<DataTypeEnum16>(
+    return std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"ZOK",                         static_cast<Int8>(Coordination::Error::ZOK)},
@@ -100,7 +100,7 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
                 parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Time the group was flushed."});
 
-    result.add({"path_prefix",
+    result.add({"parent_path",
                 std::make_shared<DataTypeString>(),
                 "Prefix of the path."});
 
@@ -110,15 +110,15 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
 
     result.add({"count",
                 std::make_shared<DataTypeUInt32>(),
-                "Number of operations in the (path_prefix, operation) group."});
+                "Number of operations in the (parent_path, operation) group."});
 
     result.add({"errors",
                 std::make_shared<DataTypeMap>(getErrorEnumType(), std::make_shared<DataTypeUInt32>()),
-                "Errors in the (path_prefix, operation) group."});
+                "Errors in the (parent_path, operation) group."});
 
     result.add({"total_latency",
                 std::make_shared<DataTypeUInt64>(),
-                "Sum of all latencies in (path_prefix, operation) group, in milliseconds."});
+                "Sum of all latencies in (parent_path, operation) group, in milliseconds."});
     
     return result;
 }
@@ -129,7 +129,7 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
-    columns[i++]->insert(path_prefix);
+    columns[i++]->insert(parent_path);
     columns[i++]->insert(operation);
     columns[i++]->insert(count);
     errors.dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));

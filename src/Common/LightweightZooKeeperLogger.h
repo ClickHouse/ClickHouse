@@ -7,10 +7,11 @@
 #include <Common/logger_useful.h>
 #include <base/types.h>
 #include <atomic>
+#include <filesystem>
 #include <mutex>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
-#include "Interpreters/LightweightZooKeeperLog.h"
+#include <Interpreters/LightweightZooKeeperLog.h>
 #include "base/defines.h"
 
 namespace DB
@@ -22,11 +23,11 @@ public:
     struct EntryKey
     {
         Coordination::OpNum operation;
-        String path_prefix;
+        String parent_path;
 
         bool operator==(const EntryKey & other) const
         {
-            return operation == other.operation && path_prefix == other.path_prefix;
+            return operation == other.operation && parent_path == other.parent_path;
         }
     };
 
@@ -36,7 +37,7 @@ public:
         {
             SipHash hash;
             hash.update(entry_key.operation);
-            hash.update(entry_key.path_prefix);
+            hash.update(entry_key.parent_path);
             return hash.get64();
         }
     };
@@ -55,11 +56,10 @@ public:
         }
     };
 
-    explicit LightweightZooKeeperLoggerThread(UInt64 flush_period_ms_, UInt64 max_entries_, Int8 path_prefix_depth_, BackgroundSchedulePool & pool, std::shared_ptr<LightweightZooKeeperLog> log_)
+    explicit LightweightZooKeeperLoggerThread(UInt64 flush_period_ms_, UInt64 max_entries_, BackgroundSchedulePool & pool, std::shared_ptr<LightweightZooKeeperLog> log_)
     : log_name("LightweightZooKeeperLoggerThread")
     , flush_period_ms(flush_period_ms_)
     , max_entries(max_entries_)
-    , path_prefix_depth(path_prefix_depth_)
     , task(pool.createTask(log_name, [this]{ run(); }))
     , log(log_)
     , logger(getLogger(log_name))
@@ -76,18 +76,12 @@ public:
         task->deactivate();
     }
 
-    String stripPath(String path)
-    {
-        /// TODO(mstetsyuk): use path_prefix_depth to strip the path the right way
-        return "";
-    }
-
-    void observe(Coordination::OpNum operation, String path, UInt32 latency_ms, Coordination::Error error)
+    void observe(Coordination::OpNum operation, const std::filesystem::path & path, UInt32 latency_ms, Coordination::Error error)
     {
         size_t stats_entries;
         {
             std::lock_guard lock(stats_mutex);
-            stats[EntryKey{.operation = operation, .path_prefix = stripPath(std::move(path_prefix))}].observe(latency_ms, error);
+            stats[EntryKey{.operation = operation, .parent_path = path.parent_path()}].observe(latency_ms, error);
             stats_entries = stats.size();
         }
 
@@ -129,7 +123,6 @@ private:
     const String log_name;
     const UInt64 flush_period_ms;
     const UInt64 max_entries;
-    const Int8 path_prefix_depth;
     BackgroundSchedulePool::TaskHolder task;
     std::shared_ptr<LightweightZooKeeperLog> log;
     std::atomic<bool> need_stop{false};
@@ -147,7 +140,7 @@ private:
         {
             LightweightZooKeeperLogElement element{
                 .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-                .path_prefix = entry_key.path_prefix,
+                .parent_path = entry_key.parent_path,
                 .operation = entry_key.operation,
                 .count = entry_stats.count,
                 .errors = std::move(entry_stats.errors),
