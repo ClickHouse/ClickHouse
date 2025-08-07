@@ -53,6 +53,17 @@ public:
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
+        /// QueryKind is overused.
+        /// It is used to distinguish queries that are executed on worker nodes in the following cases:
+        /// 1. When a query is executed on a worker node in a distributed query with parallel *MergeTree replicas
+        /// 2. When a query is executed on a worker node in *Cluster functions like S3Cluster, etc.
+        /// 3. When a query is executed on a worker node in ON CLUSTER operations
+        /// As a result, it is difficult or impossible to run a query with parallel *MergeTree replicas that uses *Cluster functions,
+        /// because the query is marked as QueryKind::SECONDARY_QUERY but it is not clear for what purpose: parallel replicas or *Cluster functions.
+        /// In contrast to ON CLUSTER queries, when queries are executed on worker nodes in DDL replication, they are not marked as QueryKind::SECONDARY_QUERY.
+        /// Related to that case, there was a bug when a query in DDL replication had *Cluster functions; *Cluster functions expect a distributed file iterator which is not set in DDL replication.
+        /// When a query is marked as QueryKind::SECONDARY_QUERY, parsing and execution of the query is different.
+        /// Not all optimizations are applied, not all checks are made. The query is considered as already well-prepared and safe to execute.
     };
 
     ClientInfo();

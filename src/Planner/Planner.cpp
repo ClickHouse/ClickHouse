@@ -1628,6 +1628,13 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
+    LOG_TRACE(
+        log,
+        "Query from stage {} to stage {}{}",
+        QueryProcessingStage::toString(from_stage),
+        QueryProcessingStage::toString(select_query_options.to_stage),
+        select_query_options.only_analyze ? " only analyze" : "");
+
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
 
