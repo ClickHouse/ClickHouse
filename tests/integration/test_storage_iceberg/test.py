@@ -530,17 +530,23 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_row_based_deletes(started_cluster, storage_type):
+def test_position_deletes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg PARTITIONED BY (bucket(5, id)) TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
+        'merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
+        """
     )
-    spark.sql(
-        f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)"
-    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
+
+    def get_array(query_result: str):
+        arr = sorted([int(x) for x in query_result.strip().split("\n")])
+        print(arr)
+        return arr
 
     default_upload_directory(
         started_cluster,
@@ -551,18 +557,74 @@ def test_row_based_deletes(started_cluster, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
-    assert "UNSUPPORTED_METHOD" in error
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 100))
+
+    # Check that filters are applied after deletes
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} where id >= 15")) == 80
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} where id >= 15 SETTINGS optimize_trivial_count_query=1"
+            )
+        )
+        == 80
+    )
+
+    # Check deletes after deletes
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90))
+
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD truncate(1, data)")
+
+    # Check adds after deletes
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)"
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90)) + list(
+        range(100, 200)
+    )
+
+    # Check deletes after adds
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90)) + list(
+        range(100, 150)
+    )
+
+    assert get_array(
+        instance.query(
+            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1"
+        )
+    ) == [70]
+
+    # Clean up
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
@@ -2017,6 +2079,30 @@ def test_cluster_table_function_with_partition_pruning(
 
     instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
 
+def test_time_travel_bug_fix_validation(started_cluster):
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
+
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+
+    default_download_directory(
+        started_cluster,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    first_snapshot = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+
+    instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
+
+
+    assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
+
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_compressed_metadata(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
@@ -2363,25 +2449,3 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
-def test_time_travel_bug_fix_validation(started_cluster):
-    instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
-
-    create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
-
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
-
-    default_download_directory(
-        started_cluster,
-        "local",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    first_snapshot = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
-
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
-
-    instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
-
-    assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2

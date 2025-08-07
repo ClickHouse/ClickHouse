@@ -97,7 +97,7 @@ ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStr
 }
 
 template <ViewTarget::Kind target_kind>
-const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageTypeName() const
+const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() const
 {
     return target_table_type_name.c_str();
 }
