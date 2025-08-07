@@ -23,7 +23,7 @@ struct DecryptImpl
 REGISTER_FUNCTION(Decrypt)
 {
     FunctionDocumentation::Description description = R"(
-This function decrypts ciphertext into a plaintext using the following modes:
+This function decrypts AES-encrypted binary string using the following modes:
 
 - aes-128-ecb, aes-192-ecb, aes-256-ecb
 - aes-128-cbc, aes-192-cbc, aes-256-cbc
@@ -37,10 +37,10 @@ This function decrypts ciphertext into a plaintext using the following modes:
         {"mode", "Decryption mode.", {"String"}},
         {"ciphertext", "Encrypted text that needs to be decrypted.", {"String"}},
         {"key", "Decryption key.", {"String"}},
-        {"iv", "Initialization vector. Required for `-gcm` modes, Optional for others.", {"String"}},
-        {"aad", "Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception.", {"String"}}
+        {"iv", "Initialization vector. Required for `-gcm` modes, optional for others.", {"String"}},
+        {"aad", "Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others throws an exception.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the decrypted String.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns decrypted plaintext.", {"String"}};
     FunctionDocumentation::Examples examples = {
         {
             "Correctly decrypting encrypted data",

@@ -21,9 +21,10 @@ struct EncryptMySQLModeImpl
 REGISTER_FUNCTION(AESEncryptMysql)
 {
     FunctionDocumentation::Description description = R"(
-Produces the same ciphertext as the `encrypt` function on equal inputs.
+Encrypts text the same way as MySQL's `AES_ENCRYPT` function does.
+The resulting ciphertext can be decrypted with MySQL's `AES_DECRYPT` function.
+Produces the same ciphertext as the `encrypt` function for equal inputs.
 When `key` or `iv` are longer than they should normally be, `aes_encrypt_mysql` will stick to what MySQL's `aes_encrypt` does which is to 'fold' `key` and ignore the excess bits of `iv`.
-It is compatible with MySQL encryption. The resulting ciphertext can be decrypted with the `AES_DECRYPT` function.
 
 The supported encryption modes are:
 

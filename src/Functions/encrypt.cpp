@@ -22,7 +22,7 @@ struct EncryptImpl
 REGISTER_FUNCTION(Encrypt)
 {
     FunctionDocumentation::Description description = R"(
-This function encrypts data using modes:
+Encrypts plaintext into ciphertext using AES in one of the following modes:
 
 - aes-128-ecb, aes-192-ecb, aes-256-ecb
 - aes-128-cbc, aes-192-cbc, aes-256-cbc
@@ -39,7 +39,7 @@ This function encrypts data using modes:
         {"iv", "Initialization vector. Required for `-gcm` modes, optional for others.", {"String"}},
         {"aad", "Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others it throws an exception.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a ciphertext binary string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns binary string ciphertext.", {"String"}};
     FunctionDocumentation::Examples examples = {
         {
             "Example encryption",
