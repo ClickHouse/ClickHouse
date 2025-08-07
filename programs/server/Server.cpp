@@ -114,6 +114,7 @@
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
+#include <Server/ArrowFlightHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -1076,10 +1077,14 @@ try
     global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
 #endif
 
-    if (ThreadFuzzer::instance().isEffective())
-        global_context->addOrUpdateWarningMessage(
-            Context::WarningType::THREAD_FUZZER_IS_ENABLED,
-            PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
+    {
+        const auto & thread_fuzzer = ThreadFuzzer::instance();
+        thread_fuzzer.setup();
+        if (thread_fuzzer.isEffective())
+            global_context->addOrUpdateWarningMessage(
+                Context::WarningType::THREAD_FUZZER_IS_ENABLED,
+                PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
+    }
 
 #if defined(SANITIZER)
     auto sanitizers = getSanitizerNames();
@@ -2720,10 +2725,6 @@ try
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
-#if USE_GWP_ASAN
-        GWPAsan::initFinished();
-#endif
-
         try
         {
             global_context->startClusterDiscovery();
@@ -3088,6 +3089,26 @@ void Server::createServers(
                         connection_filter));
             });
         }
+
+#if USE_ARROWFLIGHT
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        {
+            port_name = "arrowflight_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Arrow Flight compatibility protocol: " + address.toString(),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    true);
+            });
+        }
+#endif
 
         if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
         {

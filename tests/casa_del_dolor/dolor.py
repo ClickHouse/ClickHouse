@@ -274,6 +274,15 @@ parser.add_argument(
     choices=range(0, 101),
     help="Probability to set keeper server properties",
 )
+parser.add_argument(
+    "--with-glue", action="store_true", help="With AWS Glue catalog for MinIO"
+)
+parser.add_argument(
+    "--with-rest", action="store_true", help="With Iceberg REST catalog for MinIO"
+)
+parser.add_argument(
+    "--with-hms", action="store_true", help="With Hive catalog for MinIO"
+)
 
 args = parser.parse_args()
 
@@ -301,7 +310,8 @@ random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
 # Start the cluster, by using one the server binaries
-server_path = os.path.join(tempfile.gettempdir(), "clickhouse")
+server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
+new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
 try:
     os.unlink(server_path)
 except FileNotFoundError:
@@ -366,6 +376,9 @@ for i in range(0, len(args.replica_values)):
             with_mysql8=args.with_mysql,
             with_mongo=args.with_mongodb,
             with_redis=args.with_redis,
+            with_iceberg_catalog=args.with_rest,
+            with_glue_catalog=args.with_glue,
+            with_hms_catalog=args.with_hms,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -418,6 +431,10 @@ def dolor_cleanup():
             pass
     try:
         os.unlink(server_path)
+    except FileNotFoundError:
+        pass
+    try:
+        os.unlink(new_temp_server_path)
     except FileNotFoundError:
         pass
     try:
@@ -515,7 +532,6 @@ while all_running:
             else:
                 current_server = random.choice(args.server_binaries)
             logger.info(f"Using the server binary {current_server} after restart")
-            new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
             try:
                 os.unlink(new_temp_server_path)
             except FileNotFoundError:

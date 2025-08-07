@@ -105,7 +105,6 @@ Expression must result in a `Date` or `DateTime`, e.g. `TTL date + INTERVAL 1 DA
 
 Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
 
-
 For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 #### SETTINGS {#settings}
@@ -210,8 +209,8 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+  - There are queries with a condition on column `c`.
+  - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
 - Improve data compression.
 
@@ -346,38 +345,44 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-### Available Types of Indices {#available-types-of-indices}
+### Skip Index Types {#skip-index-types}
 
 #### MinMax {#minmax}
 
-Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
-
 Syntax: `minmax`
+
+Stores for each index granule the minimum and maximum values of an expression.
+(If the expression is of type `tuple`, it stores the minimum and maximum for each tuple element.)
 
 #### Set {#set}
 
-Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
-
 Syntax: `set(max_rows)`
+
+Stores for each index granule at most `max_rows` many unique values of the specified expression (`max_rows = 0` means "store all unique values").
 
 #### Bloom filter {#bloom-filter}
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns. An optional `false_positive` parameter with possible values between 0 and 1 specifies the probability of receiving a false positive response from the filter. Default value: 0.025. Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`. For the `Map` data type, the client can specify if the index should be created for keys or values using [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
+Syntax: `bloom_filter([false_positive_rate])`
 
-Syntax: `bloom_filter([false_positive])`
+Stores for each index granule a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+Parameter `false_positive_rate` with a possible value between 0 and 1 (default: 0.025) specifies the probability of generating a positive (which increases the amount of data to be read).
+Supported data types: `(U)Int*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`.
+For the `Map` data type, the client can specify if the index should be created for keys or for values using [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues).
 
 #### N-gram bloom filter {#n-gram-bloom-filter}
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all n-grams from a block of data. Only works with datatypes: [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) and [Map](/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
-
 Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-- `n` — ngram size,
-- `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-- `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
-- `random_seed` — The seed for Bloom filter hash functions.
+Stores for each index granule a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
+Only works with datatypes: [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) and [Map](/sql-reference/data-types/map.md).
 
-Users can create [UDF](/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
+Parameters:
+- `n` - ngram size.
+- `size_of_bloom_filter_in_bytes` - Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+- `random_seed` - Seed for the bloom filter hash functions.
+- `number_of_hash_functions` - The number of hash functions used in the bloom filter.
+
+To estimate the parameters of `ngrambf_v1`, you can use the following [UDFs](/sql-reference/statements/create/function.md).
 
 ```sql
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
@@ -397,9 +402,9 @@ AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
 ```
-To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
-
+To use those functions, we need to specify two parameters at least.
+For example, if there are 4300 ngrams in the granule and we expect false positives to be less than 0.0001.
+The other parameters can be estimated by executing following queries:
 
 ```sql
 --- estimate number of bits in the filter
@@ -420,17 +425,20 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 Of course, you can also use those functions to estimate parameters by other conditions.
 The functions refer to the content [here](https://hur.st/bloomfilter).
 
-
 #### Token bloom filter {#token-bloom-filter}
-
-The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
 Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-#### Special-purpose {#special-purpose}
+The same as `ngrambf_v1`, but stores tokens instead of ngrams.
+Tokens are sequences separated by non-alphanumeric characters.
 
-- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
-- An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
+#### Vector similarity {#vector-similarity}
+
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
+
+### Text (experimental) {#text}
+
+Support full-text search, see [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -476,19 +484,18 @@ Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`
 For example:
 
 - Can be optimized:
-    - `s LIKE '%test%'`
-    - `NOT s NOT LIKE '%test%'`
-    - `s = 1`
-    - `NOT s != 1`
-    - `startsWith(s, 'test')`
+  - `s LIKE '%test%'`
+  - `NOT s NOT LIKE '%test%'`
+  - `s = 1`
+  - `NOT s != 1`
+  - `startsWith(s, 'test')`
 - Can not be optimized:
-    - `NOT s LIKE '%test%'`
-    - `s NOT LIKE '%test%'`
-    - `NOT s = 1`
-    - `s != 1`
-    - `NOT startsWith(s, 'test')`
+  - `NOT s LIKE '%test%'`
+  - `s NOT LIKE '%test%'`
+  - `NOT s = 1`
+  - `s != 1`
+  - `NOT startsWith(s, 'test')`
 :::
-
 
 ## Projections {#projections}
 Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
@@ -1033,7 +1040,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     Syntax `countmin`
 
-
 ### Supported data types {#supported-data-types}
 
 |           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
@@ -1043,7 +1049,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | TDigest   | ✔                                                  | ✗                     |
 | Uniq      | ✔                                                  | ✔                     |
 
-
 ### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
@@ -1052,7 +1057,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | MinMax    | ✗                     | ✔                            |
 | TDigest   | ✗                     | ✔                            |
 | Uniq      | ✔                     | ✗                            |
-
 
 ## Column-level settings {#column-level-settings}
 
