@@ -36,6 +36,7 @@
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 
+#include <Utils/IndexAdvisor/ParserIndexAdvisorQuery.h>
 
 namespace DB
 {
@@ -73,6 +74,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
+    ParserIndexAdvisorQuery index_advisor_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -102,7 +104,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || check_grant_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || update_p.parse(pos, node, expected);
+        || update_p.parse(pos, node, expected)
+        || index_advisor_p.parse(pos, node, expected);
 
     if (res && allow_in_parallel_with)
     {
