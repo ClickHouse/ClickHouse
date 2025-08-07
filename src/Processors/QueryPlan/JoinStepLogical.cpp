@@ -102,8 +102,8 @@ String formatJoinCondition(const JoinCondition & join_condition)
 }
 
 JoinStepLogical::JoinStepLogical(
-    const Block & left_header_,
-    const Block & right_header_,
+    SharedHeader left_header_,
+    SharedHeader right_header_,
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
@@ -201,7 +201,7 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
 
 void JoinStepLogical::updateOutputHeader()
 {
-    Header & header = output_header.emplace();
+    Block header;
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
     for (const auto * node : expression_actions.post_join_actions->getInputs())
@@ -212,7 +212,7 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
     }
 
-    if (!header)
+    if (header.empty())
     {
         for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
         {
@@ -221,6 +221,8 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
         }
     }
+
+    output_header = std::make_shared<const Block>(std::move(header));
 }
 
 JoinActionRef addNewOutput(const ActionsDAG::Node & node, ActionsDAGPtr & actions_dag)
@@ -268,7 +270,7 @@ JoinActionRef concatConditionsWithFunction(
     auto nodes = std::ranges::to<ActionsDAG::NodeRawConstPtrs>(std::views::transform(conditions, [](const auto & x) { return x.getNode(); }));
 
     const auto & result_node = actions_dag->addFunction(concat_function, nodes, {});
-    LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction: {}, {}", result_node.result_name, actions_dag->dumpDAG());
+    // LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction: {}, {}", result_node.result_name, actions_dag->dumpDAG());
     actions_dag->addOrReplaceInOutputs(result_node);
     return JoinActionRef(&result_node, actions_dag.get());
 }
@@ -516,14 +518,14 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
 
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
-static Block blockWithColumns(ColumnsWithTypeAndName columns)
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
-    Block block;
-    for (const auto & column : columns)
-        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
-    return block;
+    ColumnsWithTypeAndName columns;
+    columns.reserve(actions_dag.getOutputs().size());
+    for (const auto & node : actions_dag.getOutputs())
+        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    return std::make_shared<const Block>(Block{columns});
 }
-
 static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
 {
     for (auto & output_node : dag.getOutputs())
@@ -763,8 +765,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     table_join->setUsedColumns(expression_actions.post_join_actions->getRequiredColumnsNames());
     table_join->setJoinInfo(join_info);
 
-    Block left_sample_block = blockWithColumns(expression_actions.left_pre_join_actions->getResultColumns());
-    Block right_sample_block = blockWithColumns(expression_actions.right_pre_join_actions->getResultColumns());
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(*expression_actions.left_pre_join_actions);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(*expression_actions.right_pre_join_actions);
 
     if (swap_inputs)
     {
@@ -823,7 +825,7 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
         ActionsDAG result = std::move(*actions_dag);
         *actions_dag = std::move(new_dag);
 
-        updateInputHeader(result.getResultColumns(), side == JoinTableSide::Left ? 0 : 1);
+        updateInputHeader(std::make_shared<const Block>(result.getResultColumns()), side == JoinTableSide::Left ? 0 : 1);
 
         return result;
     }
