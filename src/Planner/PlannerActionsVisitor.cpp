@@ -69,22 +69,23 @@ namespace
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
 {
     const auto & [name, type] = constant_node.getValueNameAndType();
+    bool requires_cast_call = ConstantNode::requiresCastCall(type, constant_node.getResultType());
 
-    // Constant folded from _CAST
-    if (constant_node.receivedFromInitiatorServer())
+    DataTypePtr constant_type = type;
+    if (requires_cast_call)
     {
-        WriteBufferFromOwnString buffer;
-        buffer << "_CAST(" << name << "_" << constant_node.getColumn()->getValueNameAndType(0).second->getName() << ", '" << constant_node.getResultType()->getName() << "'_String)";
-        return buffer.str();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            constant_type = nullable_type->getNestedType();
+            requires_cast_call = true;
+        }
     }
-
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
         buffer << "_CAST(";
 
-    buffer << name << "_" << constant_node.getResultType()->getName();
+    buffer << name << "_" << constant_type->getName();
 
     if (requires_cast_call)
     {
@@ -173,7 +174,12 @@ public:
                 {
                     // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
-                        result = calculateActionNodeName(constant_node.getSourceExpression());
+                    {
+                        if (constant_node.receivedFromInitiatorServer())
+                            result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                        else
+                            result = calculateActionNodeName(constant_node.getSourceExpression());
+                    }
                     else
                         result = calculateConstantActionNodeName(constant_node);
                 }
@@ -833,6 +839,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
+            if (constant_node.receivedFromInitiatorServer())
+                return calculateActionNodeNameWithCastIfNeeded(constant_node);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
         return calculateConstantActionNodeName(constant_node);
