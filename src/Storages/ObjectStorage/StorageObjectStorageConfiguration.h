@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Storages/IPartitionStrategy.h>
-#include <Formats/FormatSettings.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Storages/prepareReadingFromFormat.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/StorageID.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Storages/IPartitionStrategy.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {

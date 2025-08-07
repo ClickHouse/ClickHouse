@@ -18,6 +18,8 @@
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+#include <Storages/ObjectStorage/Utils.h>
+
 
 namespace ProfileEvents
 {
@@ -169,7 +171,7 @@ ObjectStorageQueueSource::FileIterator::next()
     {
         file_metadatas.clear();
         Stopwatch get_object_watch;
-        Source::ObjectInfos new_batch;
+        ObjectInfos new_batch;
 
         while (new_batch.empty())
         {
@@ -198,7 +200,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 std::vector<String> paths;
                 paths.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
-                    paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
                 /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
                 /// So we are keeping it the way it is for now
@@ -341,7 +343,7 @@ ObjectStorageQueueSource::FileIterator::next()
     return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
@@ -359,7 +361,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::Obje
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
-    Source::ObjectInfos result;
+    ObjectInfos result;
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {

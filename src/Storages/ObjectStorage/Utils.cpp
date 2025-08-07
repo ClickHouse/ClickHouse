@@ -310,4 +310,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     return impl;
 }
+
+std::string getUniqueStoragePathIdentifier(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
+{
+    auto path = object_info.getPath();
+    if (path.starts_with("/"))
+        path = path.substr(1);
+
+    if (include_connection_info)
+        return fs::path(configuration.getDataSourceDescription()) / path;
+    return fs::path(configuration.getNamespace()) / path;
+}
 }

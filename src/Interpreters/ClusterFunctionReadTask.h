@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/Types.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
 
 
 namespace DB

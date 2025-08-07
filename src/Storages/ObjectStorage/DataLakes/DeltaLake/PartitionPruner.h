@@ -3,9 +3,9 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
 
 namespace DB
 {

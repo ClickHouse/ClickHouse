@@ -1,5 +1,5 @@
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB

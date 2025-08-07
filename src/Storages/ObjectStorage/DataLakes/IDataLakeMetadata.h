@@ -3,12 +3,12 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/ISimpleTransform.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {

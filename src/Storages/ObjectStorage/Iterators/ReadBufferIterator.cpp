@@ -1,10 +1,11 @@
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/Iterators/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/Iterators/ArchiveIterator.h>
 
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -47,7 +48,7 @@ ReadBufferIterator::ReadBufferIterator(
 
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
 {
-    auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, object_info);
+    auto source = getUniqueStoragePathIdentifier(*configuration, object_info);
     return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
 }
 
@@ -60,7 +61,7 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
         std::back_inserter(sources),
         [&](const auto & elem)
         {
-            return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem);
+            return getUniqueStoragePathIdentifier(*configuration, *elem);
         });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
 }
@@ -268,7 +269,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
 
         std::unique_ptr<ReadBuffer> read_buf;
         CompressionMethod compression_method;
-        using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
+        using ObjectInfoInArchive = ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);

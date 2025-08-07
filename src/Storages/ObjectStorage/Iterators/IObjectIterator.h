@@ -1,10 +1,13 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
+
 namespace DB
 {
+    
 using ObjectInfo = RelativePathWithMetadata;
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
+using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 
 struct IObjectIterator
