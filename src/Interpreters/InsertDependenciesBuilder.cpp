@@ -676,7 +676,7 @@ private:
             return result;
         };
 
-        auto build_convertation = [&] (const Block & input, StorageMetadataPtr result_metadata)
+        auto build_conversion = [&] (const Block & input, StorageMetadataPtr result_metadata)
         {
             /// Some time input header contains lesser columns than result header,
             /// and we need to convert types of input columns to match result header.
@@ -713,13 +713,12 @@ private:
                      std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
         };
 
-        auto final_dag = build_convertation(
-            pipeline.getHeader(),
-            inner_metadata);
-
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
             pipeline.getSharedHeader(),
-            std::make_shared<ExpressionActions>(std::move(final_dag))));
+            std::make_shared<ExpressionActions>(
+                build_conversion(
+                    pipeline.getHeader(),
+                    inner_metadata))));
 
         inner_metadata->check(pipeline.getHeader());
 
