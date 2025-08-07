@@ -44,7 +44,6 @@ JSON_VALUE
 MACNumToString
 MACStringToNum
 MACStringToOUI
-URLHash
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -90,7 +89,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-cityHash64
 compareSubstrings
 concat
 concatAssumeInjective
@@ -218,8 +216,6 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 factorial
-farmFingerprint64
-farmHash64
 file
 filesystemAvailable
 filesystemCapacity
@@ -283,7 +279,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hiveHash
 hop
 hopEnd
 hopStart
@@ -314,8 +309,6 @@ isValidJSON
 isValidUTF8
 jaroSimilarity
 jaroWinklerSimilarity
-javaHash
-javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
@@ -344,7 +337,6 @@ mapSubtract
 mapUpdate
 match
 materialize
-metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -578,12 +570,6 @@ simpleJSONExtractUInt
 simpleJSONHas
 sin
 sinh
-sipHash128
-sipHash128Keyed
-sipHash128Reference
-sipHash128ReferenceKeyed
-sipHash64
-sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime
@@ -814,7 +800,5 @@ wordShingleSimHashCaseInsensitiveUTF8
 wordShingleSimHashUTF8
 wyHash64
 xor
-xxHash32
-xxHash64
 xxh3
 zookeeperSessionUptime
