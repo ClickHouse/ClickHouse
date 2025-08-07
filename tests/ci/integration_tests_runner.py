@@ -18,8 +18,8 @@ from collections import OrderedDict, defaultdict
 from itertools import chain
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
+import requests
 import yaml  # type: ignore[import-untyped]
-from clickhouse_driver import Client
 
 from ci_utils import kill_ci_runner
 from env_helper import IS_CI
@@ -29,7 +29,6 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.com")
-CLICKHOUSE_PLAY_PORT = int(os.environ.get("CLICKHOUSE_PLAY_PORT", 9440))
 CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
 CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
 CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
@@ -822,9 +821,8 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, tests_log_paths
 
     def get_tests_execution_time(self):
-
         start_time_filter = "toStartOfDay(now())"
-        if self.pr_updated_at != "":
+        if self.pr_updated_at:
             start_time_filter = f"parseDateTimeBestEffort('{self.pr_updated_at}')"
 
         query = f"""
@@ -848,42 +846,49 @@ class ClickhouseIntegrationTestsRunner:
             )
             GROUP BY file
             ORDER BY ALL
+            FORMAT JSON
         """
         logging.info(query)
 
         max_retries = 3
         retry_delay_seconds = 5
 
+        url = f"https://{CLICKHOUSE_PLAY_HOST}/"
+        params = {
+            "database": CLICKHOUSE_PLAY_DB,
+            "user": CLICKHOUSE_PLAY_USER,
+            "password": CLICKHOUSE_PLAY_PASSWORD,
+        }
+
         for attempt in range(max_retries):
             try:
-                logging.info("Connecting to ClickHouse to fetch test execution times (Attempt %s/%s)...", attempt + 1,
-                             max_retries)
-                client = Client(
-                    host=CLICKHOUSE_PLAY_HOST,
-                    port=CLICKHOUSE_PLAY_PORT,
-                    user=CLICKHOUSE_PLAY_USER,
-                    password=CLICKHOUSE_PLAY_PASSWORD,
-                    database=CLICKHOUSE_PLAY_DB,
-                    secure=True
+                logging.info(
+                    "Querying play via HTTP (Attempt %s/%s)...",
+                    attempt + 1, max_retries
                 )
-                test_times_rows = client.execute(query)
-                tests_execution_times = {row[0]: float(row[1]) for row in test_times_rows}
-                logging.info("Successfully fetched execution times for %s modules.", len(tests_execution_times))
+
+                response = requests.post(url, params=params, data=query, timeout=120)
+                response.raise_for_status()
+                result_data = response.json().get("data", [])
+                tests_execution_times = {
+                    row['file']: float(row['file_duration_ms']) for row in result_data
+                }
+
+                logging.info(
+                    "Successfully fetched execution times for %s modules via HTTP.",
+                    len(tests_execution_times)
+                )
                 return tests_execution_times
 
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 logging.warning(
-                    "Attempt %s/%s failed to fetch test times from ClickHouse: %s",
-                    attempt + 1,
-                    max_retries,
-                    e
+                    "Attempt %s/%s failed to fetch test times via HTTP: %s",
+                    attempt + 1, max_retries, e
                 )
-                # If this wasn't the last attempt, wait before retrying
                 if attempt < max_retries - 1:
                     logging.info("Retrying in %s seconds...", retry_delay_seconds)
                     time.sleep(retry_delay_seconds)
                 else:
-                    # If all retries fail, log the final error and re-raise
                     logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
                     raise
 
