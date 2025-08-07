@@ -611,7 +611,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     }
 
-    if (!global_ctx->merge_may_reduce_rows)
+    if (minmax_idx && !global_ctx->merge_may_reduce_rows)
     {
         for (const auto & part : global_ctx->future_part->parts)
         {
