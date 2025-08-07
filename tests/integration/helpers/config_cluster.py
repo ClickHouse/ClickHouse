@@ -15,6 +15,10 @@ minio_secret_key = "ClickHouse_Minio_P@ssw0rd"
 mongo_user = "root"
 mongo_pass = "ClickHouse_MongoDB_P@ssw0rd"
 
+# RABBITMQ CREDENTIALS
+rabbitmq_username = "rabbitmq"
+rabbitmq_password = "ClickHouse_RabbitMQ_P@ssw0rd"
+
 # ODBC CREDENTIALS
 odbc_mysql_uid = "root"
 odbc_mysql_db = "clickhouse"
