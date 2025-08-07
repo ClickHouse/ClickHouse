@@ -33,6 +33,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
+    with_remote_database_disk=False,
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -41,6 +42,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
+    with_remote_database_disk=False,
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -48,12 +50,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
+    with_remote_database_disk=False,
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
+    with_remote_database_disk=False,
 )
 
 all_nodes = [
@@ -70,6 +74,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
+    with_remote_database_disk=False,
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
