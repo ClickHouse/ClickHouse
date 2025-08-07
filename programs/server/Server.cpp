@@ -12,7 +12,6 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include <Common/LightweightZooKeeperLogger.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -2544,17 +2543,6 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-
-        LightweightZooKeeperLoggerThread lightweight_zookeeper_logger_thread(
-            server_settings[ServerSetting::lightweight_zookeeper_logger_flush_period_ms],
-            server_settings[ServerSetting::lightweight_zookeeper_logger_max_entries],
-            global_context->getSchedulePool(),
-            global_context->getLightweightZooKeeperLog()
-        );
-        lightweight_zookeeper_logger_thread.start();
-        SCOPE_EXIT({
-            lightweight_zookeeper_logger_thread.shutdown();
-        });
 
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
