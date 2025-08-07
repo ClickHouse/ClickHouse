@@ -3,6 +3,7 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
 namespace DB
