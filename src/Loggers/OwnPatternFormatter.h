@@ -3,7 +3,7 @@
 
 #include <Poco/PatternFormatter.h>
 #include <Common/DateLUT.h>
-#include <Loggers/ExtendedLogChannel.h>
+#include "ExtendedLogChannel.h"
 
 
 /** Format log messages own way.

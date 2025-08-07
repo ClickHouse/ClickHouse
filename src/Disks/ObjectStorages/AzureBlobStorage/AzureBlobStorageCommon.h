@@ -54,8 +54,6 @@ struct RequestSettings
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
     bool read_only = false;
-    size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
-    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
 #if USE_AZURE_BLOB_STORAGE
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
@@ -149,18 +147,12 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
-
 Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly);
 
-BlobClientOptions getClientOptions(
-    const ContextPtr & context,
-    const Settings & settings,
-    const RequestSettings & request_settings,
-    bool for_disk);
-
+BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 #endif

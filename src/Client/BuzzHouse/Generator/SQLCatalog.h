@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 
@@ -117,17 +116,9 @@ public:
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
-    bool isAtomicDatabase() const { return deng == DatabaseEngineValues::DAtomic; }
-
-    bool isMemoryDatabase() const { return deng == DatabaseEngineValues::DMemory; }
-
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
-
-    bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
-
-    bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
 
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
@@ -141,7 +132,15 @@ public:
 
     String getName() const { return "d" + std::to_string(dname); }
 
-    void finishDatabaseSpecification(DatabaseEngine * dspec) const;
+    void finishDatabaseSpecification(DatabaseEngine * dspec) const
+    {
+        if (isReplicatedDatabase())
+        {
+            dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
+            dspec->add_params()->set_svalue("s1");
+            dspec->add_params()->set_svalue("r1");
+        }
+    }
 };
 
 struct SQLBase
@@ -156,7 +155,7 @@ public:
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
-    std::optional<InOutFormat> file_format;
+    InOutFormat file_format;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
@@ -223,19 +222,7 @@ public:
 
     bool isDeltaLakeS3Engine() const { return teng == TableEngineValues::DeltaLakeS3; }
 
-    bool isDeltaLakeAzureEngine() const { return teng == TableEngineValues::DeltaLakeAzure; }
-
-    bool isDeltaLakeLocalEngine() const { return teng == TableEngineValues::DeltaLakeLocal; }
-
-    bool isAnyDeltaLakeEngine() const { return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal; }
-
     bool isIcebergS3Engine() const { return teng == TableEngineValues::IcebergS3; }
-
-    bool isIcebergAzureEngine() const { return teng == TableEngineValues::IcebergAzure; }
-
-    bool isIcebergLocalEngine() const { return teng == TableEngineValues::IcebergLocal; }
-
-    bool isAnyIcebergEngine() const { return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal; }
 
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
@@ -253,13 +240,21 @@ public:
 
     bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
 
-    bool isNotTruncableEngine() const;
+    bool isNotTruncableEngine() const
+    {
+        return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
+            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeS3Engine() || isIcebergS3Engine()
+            || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
+            || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
+    }
 
-    bool isEngineReplaceable() const;
+    bool isAnotherRelationalDatabaseEngine() const
+    {
+        return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine()
+            || isExternalDistributedEngine();
+    }
 
-    bool isAnotherRelationalDatabaseEngine() const;
-
-    bool hasDatabasePeer() const;
+    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
 
     bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }
 
@@ -271,11 +266,9 @@ public:
 
     const std::optional<String> & getCluster() const { return cluster; }
 
-    bool isAttached() const;
+    bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 
-    bool isDettached() const;
-
-    String getTablePath(const FuzzConfig & fc, bool client) const;
+    bool isDettached() const { return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase
@@ -287,7 +280,16 @@ public:
     std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;
 
-    size_t numberOfInsertableColumns() const;
+    size_t numberOfInsertableColumns() const
+    {
+        size_t res = 0;
+
+        for (const auto & entry : cols)
+        {
+            res += entry.second.canBeInserted() ? 1 : 0;
+        }
+        return res;
+    }
 
     bool supportsFinal() const
     {
@@ -316,9 +318,17 @@ public:
         est->mutable_table()->set_table("t" + std::to_string(name));
     }
 
-    String getTableName() const;
+    String getFullName(const bool setdbname) const
+    {
+        String res;
 
-    String getFullName(bool setdbname) const;
+        if (db || setdbname)
+        {
+            res += "d" + (db ? std::to_string(db->dname) : "efault") + ".";
+        }
+        res += "t" + std::to_string(tname);
+        return res;
+    }
 
     void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
 
@@ -426,8 +436,6 @@ public:
     const String & getBottomName() const { return path[path.size() - 1].cname; }
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
-
-    String columnPathRef() const;
 };
 
 }

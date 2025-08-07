@@ -84,6 +84,36 @@ void moveChangelogBetweenDisks(
 
 constexpr auto DEFAULT_PREFIX = "changelog";
 
+inline std::string
+formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
+{
+    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
+}
+
+ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path)
+{
+    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
+    std::string filename_with_extension = path.filename();
+    std::string_view filename_with_extension_view = filename_with_extension;
+
+    auto first_dot = filename_with_extension.find('.');
+    if (first_dot == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
+
+    Strings filename_parts;
+    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
+    if (filename_parts.size() < 3)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
+
+    auto result = std::make_shared<ChangelogFileDescription>();
+    result->prefix = filename_parts[0];
+    result->from_log_index = parse<uint64_t>(filename_parts[1]);
+    result->to_log_index = parse<uint64_t>(filename_parts[2]);
+    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
+    result->path = path.generic_string();
+    return result;
+}
+
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -132,11 +162,6 @@ void ChangelogFileDescription::waitAllAsyncOperations()
     }
 
     file_operations.clear();
-}
-
-std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
-{
-    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
 /// Appendable log writer
@@ -198,7 +223,7 @@ public:
                     std::string new_path = path;
                     if (last_index_written && *last_index_written != current_file_description->to_log_index)
                     {
-                        new_path = Changelog::formatChangelogPath(
+                        new_path = formatChangelogPath(
                             current_file_description->prefix,
                             current_file_description->from_log_index,
                             *last_index_written,
@@ -343,7 +368,7 @@ public:
         if (log_file_settings.compress_logs)
             new_description->extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
-        new_description->path = Changelog::formatChangelogPath(
+        new_description->path = formatChangelogPath(
             new_description->prefix,
             new_start_log_index,
             new_start_log_index + log_file_settings.rotate_interval - 1,
@@ -617,7 +642,7 @@ LogEntryPtr getLogEntry(const CacheEntry & cache_entry)
 class ChangelogReader
 {
 public:
-    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(std::move(changelog_description_))
+    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
         auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
@@ -713,8 +738,8 @@ void PrefetchedCacheEntry::resolve(LogEntryPtr log_entry_)
 }
 
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_)
-    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
-    , commit_logs_cache(log_settings.commit_logs_cache_size_threshold)
+    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold, log_settings.latest_logs_cache_entry_count_threshold)
+    , commit_logs_cache(log_settings.commit_logs_cache_size_threshold, log_settings.commit_logs_cache_entry_count_threshold)
     , prefetch_queue(std::numeric_limits<uint64_t>::max())
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
@@ -809,7 +834,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         return;
 
     /// we don't start prefetch if there is no limit on latest logs cache
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
         return;
 
     /// commit logs is not empty and it's not next log
@@ -833,6 +858,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     prefetch_from = current_index;
 
     size_t total_size = 0;
+    size_t total_entries = 0;
     std::vector<FileReadInfo> file_infos;
     FileReadInfo * current_file_info = nullptr;
     size_t next_position = 0;
@@ -855,7 +881,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
             next_position = position + size_in_file;
         }
-        else if (total_size + entry_size > commit_logs_cache.size_threshold)
+        else if (total_size + entry_size > commit_logs_cache.size_threshold || total_entries + 1 > commit_logs_cache.count_threshold)
             break;
         else if (changelog_description == current_file_info->file_description && position == next_position)
         {
@@ -869,6 +895,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         }
 
         total_size += entry_size;
+        ++total_entries;
         commit_logs_cache.addEntry(current_index, entry_size, std::make_shared<PrefetchedCacheEntry>());
     }
 
@@ -884,8 +911,9 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     }
 }
 
-LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
+LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_, size_t count_threshold_)
     : size_threshold(size_threshold_)
+    , count_threshold(count_threshold_)
 {}
 
 void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t size)
@@ -1031,6 +1059,11 @@ void LogEntryStorage::InMemoryCache::clear()
     cache_size = 0;
 }
 
+bool LogEntryStorage::InMemoryCache::hasUnlimitedSpace() const
+{
+    return size_threshold == 0 && count_threshold == 0;
+}
+
 bool LogEntryStorage::InMemoryCache::empty() const
 {
     return cache.empty();
@@ -1043,7 +1076,16 @@ size_t LogEntryStorage::InMemoryCache::numberOfEntries() const
 
 bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) const
 {
-    return size_threshold == 0 || empty() || cache_size + log_entry_size < size_threshold;
+    if (hasUnlimitedSpace() || empty())
+        return true;
+
+    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
+        return false;
+
+    if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
+        return false;
+
+    return true;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1389,7 +1431,7 @@ uint64_t LogEntryStorage::termAt(uint64_t index) const
 void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
 {
     /// if we have unlimited space in latest logs cache we don't need log location
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
         return;
 
     if (indices_with_log_locations.empty())
@@ -1405,7 +1447,7 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
 void LogEntryStorage::refreshCache()
 {
     /// if we have unlimited space in latest logs cache we don't need log location
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
@@ -1427,8 +1469,17 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::lock_guard lock(commit_logs_cache_mutex);
+    const auto latest_log_cache_over_size_threshold = [&]
+    {
+        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+    };
+
+    const auto latest_log_cache_over_count_threshold = [&]
+    {
+        return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
+    };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && latest_logs_cache.cache_size > latest_logs_cache.size_threshold)
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
     {
         auto node = latest_logs_cache.popOldestEntry();
         auto log_entry_size = logEntrySize(getLogEntry(node.mapped()));
@@ -1589,63 +1640,6 @@ void LogEntryStorage::shutdown()
     if (commit_logs_prefetcher->joinable())
         commit_logs_prefetcher->join();
 }
-
-
-ChangelogFileDescriptionPtr Changelog::getChangelogFileDescription(const std::filesystem::path & path)
-{
-    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
-    std::string filename_with_extension = path.filename();
-    std::string_view filename_with_extension_view = filename_with_extension;
-
-    auto first_dot = filename_with_extension.find('.');
-    if (first_dot == std::string::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
-
-    Strings filename_parts;
-    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
-    if (filename_parts.size() < 3)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
-
-    auto result = std::make_shared<ChangelogFileDescription>();
-    result->prefix = filename_parts[0];
-    result->from_log_index = parse<uint64_t>(filename_parts[1]);
-    result->to_log_index = parse<uint64_t>(filename_parts[2]);
-    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
-    result->path = path.generic_string();
-    return result;
-}
-
-void Changelog::readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage)
-{
-    ChangelogReader reader(changelog_description);
-    reader.readChangelog(entry_storage, changelog_description->from_log_index, getLogger("Changelog"));
-}
-
-void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog)
-{
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    auto keeper_context = std::make_shared<KeeperContext>(true, settings);
-    keeper_context->setLogDisk(destination_changelog->disk);
-    LogFileSettings log_file_settings
-    {
-        .compress_logs = chooseCompressionMethod(destination_changelog->path, "auto") != CompressionMethod::None
-    };
-    LogEntryStorage entry_storage{log_file_settings, keeper_context};
-    readChangelog(source_changelog, entry_storage);
-
-    std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
-    ChangelogWriter writer(existing_changelogs, entry_storage, keeper_context, log_file_settings, /*move_changelog_cb_=*/{});
-    writer.setFile(destination_changelog, WriteMode::Rewrite);
-
-    for (auto i = destination_changelog->from_log_index; i <= destination_changelog->to_log_index; ++i)
-    {
-        auto entry = entry_storage.getEntry(i);
-        writer.appendRecord(buildRecord(i, entry));
-    }
-
-    writer.finalize();
-}
-
 
 Changelog::Changelog(
     LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)

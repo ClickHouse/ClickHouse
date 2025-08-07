@@ -3,8 +3,9 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/SourceWithKeyCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Core/BlockMissingValues.h>
-#include <Processors/ISource.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public ISource
+class IInputFormat : public SourceWithKeyCondition
 {
 protected:
 
@@ -28,7 +29,7 @@ protected:
 
 public:
     /// ReadBuffer can be nullptr for random-access formats.
-    IInputFormat(SharedHeader header, ReadBuffer * in_);
+    IInputFormat(Block header, ReadBuffer * in_);
 
     Chunk generate() override;
 
