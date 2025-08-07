@@ -57,7 +57,7 @@ public:
 
 #if USE_FASTPFOR
 /// This class is responsible to serialize the posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
-/// Internally, the FastPfor library is used for the PFOR compression.
+/// Internally, the FastPFOR library is used for the PFOR compression.
 class GinIndexPostingListDeltaPforSerialization
 {
 public:
@@ -101,10 +101,12 @@ public:
     /// Add a row_id into the builder
     void add(UInt32 row_id);
 
-    /// Serialize the content of builder to given WriteBuffer, returns the bytes of serialized data
+    /// Serializes the content of builder into given WriteBuffer.
+    /// Returns the number of bytes written into WriteBuffer.
     UInt64 serialize(WriteBuffer & buffer);
 
-    /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
+    /// Deserializes the postings list data from given ReadBuffer.
+    /// Returns a pointer to the GinIndexPostingsList created by deserialization.
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:

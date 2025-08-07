@@ -3,7 +3,6 @@
 #include <IO/VarInt.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
-#include <Common/PODArray.h>
 #include <Common/FST.h>
 #include <Common/HashTable/HashSet.h>
 #include <Compression/CompressionFactory.h>
@@ -24,8 +23,8 @@
 #include "config.h"
 
 #if USE_FASTPFOR
-#include <codecfactory.h>
-#include <fastpfor.h>
+#  include <codecfactory.h>
+#  include <fastpfor.h>
 #endif
 
 namespace DB
@@ -116,12 +115,13 @@ std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerializa
 
 std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
 {
-    std::vector<UInt32> deltas(rowids.cardinality());
+    const UInt64 num_rowids = rowids.cardinality();
+    std::vector<UInt32> deltas(num_rowids);
     UInt32 prev = 0;
     for (size_t i = 0; const UInt32 rowid : rowids)
     {
-        deltas[i] = rowid - prev;
         prev = rowid;
+        deltas[i] = rowid - prev;
         ++i;
     }
     return deltas;
