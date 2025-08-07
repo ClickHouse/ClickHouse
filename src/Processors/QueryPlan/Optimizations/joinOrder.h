@@ -4,6 +4,7 @@
 #include <Core/Joins.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -62,6 +63,28 @@ struct RelationStats
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
+    ConditionSelectivityEstimatorPtr estimator = nullptr;
+
+    void materialize(ActionsDAG::Node * node = nullptr)
+    {
+        if (estimator == nullptr)
+            return;
+        RelationProfile profile;
+        if (node == nullptr)
+        {
+            profile = estimator->estimateRelationProfile();
+        }
+        else
+        {
+            profile = estimator->estimateRelationProfile(node);
+        }
+        estimated_rows = static_cast<UInt64>(profile.rows);
+        for (const auto & [col_name, col_profile] : profile.column_profile)
+        {
+            column_stats.emplace(col_name, ColumnStats{static_cast<UInt64>(col_profile.num_distinct_values)});
+        }
+        estimator = nullptr;
+    }
 };
 
 struct QueryGraph

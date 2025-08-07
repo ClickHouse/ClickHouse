@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
@@ -178,6 +180,19 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
     {
         String table_diplay_name = reading->getStorageID().getTableName();
 
+        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        {
+            auto estimator_ = reading->getConditionSelectivityEstimator();
+            if (estimator_ != nullptr)
+            {
+                RelationStats stats{.estimated_rows = {}, .table_name = table_diplay_name, .estimator = estimator_};
+                if (!has_filter)
+                {
+                    stats.materialize();
+                }
+                return stats;
+            }
+        }
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_diplay_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
@@ -257,10 +272,16 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         return stats;
     }
 
-    if (const auto * expression_step = typeid_cast<const FilterStep *>(step))
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), true);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
+        if (stats.estimator != nullptr)
+        {
+            auto & dag = filter_step->getExpression();
+            auto * predicate = const_cast<ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+            stats.materialize(predicate);
+        }
+        remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 

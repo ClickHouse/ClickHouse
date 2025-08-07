@@ -258,6 +258,8 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
 
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+
 private:
     MergeTreeReaderSettings reader_settings;
 

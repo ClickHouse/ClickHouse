@@ -99,6 +99,23 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPN
     return result;
 }
 
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+{
+    RelationProfile result;
+    result.rows = total_rows;
+    for (const auto & [column_name, estimator] : column_estimators)
+    {
+        result.column_profile.emplace(column_name, estimator.estimateCardinality());
+    }
+    return result;
+}
+
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * node) const
+{
+    RPNBuilderTreeContext tree_context(getContext());
+    return estimateRelationProfile(RPNBuilderTreeNode(node, tree_context));
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
