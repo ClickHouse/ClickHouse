@@ -950,14 +950,6 @@
                 </replica>
             </shard>
         </default>
-        <test_cluster>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.

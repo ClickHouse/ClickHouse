@@ -715,7 +715,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         print(latest_profiles)
 
         # fetch jeprof
-        # Shell.check(f"wget -qO- https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in | sed -e 's/jemalloc_version/5.3.0-12-g41a859ef/g' -e 's/JEMALLOC_PREFIX//g' > {temp_dir}/jeprof", verbose=True)
         if Shell.check(
             f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
             verbose=True,
