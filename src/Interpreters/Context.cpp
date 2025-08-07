@@ -810,7 +810,8 @@ struct ContextSharedPart : boost::noncopyable
         Session::shutdownNamedSessions();
 
         /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
-        /// This must be done before shutting down BackupsWorker.
+        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
+        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
         SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
 
         /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
