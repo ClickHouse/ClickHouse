@@ -65,7 +65,7 @@ struct FormatStringImpl
         for (String & str : substrings)
         {
             /// To use memcpySmallAllowReadWriteOverflow15 for substrings we should allocate a bit more to each string.
-            /// That was chosen due to performance issues.
+            /// That was chosen due to performance reasons.
             if (!str.empty())
                 str.reserve(str.size() + right_padding);
             final_size += str.size();
@@ -75,11 +75,7 @@ struct FormatStringImpl
         final_size *= input_rows_count;
 
         for (size_t i = 1; i < substrings.size(); ++i)
-        {
             final_size += data[index_positions[i - 1]]->size();
-            if (offsets[index_positions[i - 1]])
-                final_size -= input_rows_count;
-        }
 
         res_data.resize(final_size);
         res_offsets.resize(input_rows_count);
