@@ -83,7 +83,7 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
-         vector_search_postfilter_multiplier = 3;
+         vector_search_index_fetch_multiplier = 3;
 
 SELECT 'Check that explicit PREWHERE disables the optimization';
 -- Expect no _distance column in result
