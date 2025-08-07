@@ -21,12 +21,12 @@ SELECT sum(value) FROM (SELECT number, sum(number) AS value FROM (SELECT *, toDe
 
 CREATE TABLE src (n UInt64, s FixedString(16)) ENGINE=Memory;
 CREATE TABLE dst (n UInt8, s String) ENGINE = Memory;
-CREATE MATERIALIZED VIEW mv TO dst (n String, s String) AS SELECT * FROM src;
+CREATE MATERIALIZED VIEW mv TO dst (n String) AS SELECT * FROM src;
 CREATE TABLE dist (n Int128) ENGINE=Distributed(test_cluster_two_shards, currentDatabase(), mv);
 
 INSERT INTO src SELECT number, toString(number) FROM numbers(1000);
-INSERT INTO mv SELECT toString(number + 1000), toString(number + 1000) FROM numbers(1000); -- { serverError TYPE_MISMATCH }
-INSERT INTO mv SELECT arrayJoin(['42', 'test']), 'A'; -- { serverError TYPE_MISMATCH }
+INSERT INTO mv SELECT toString(number + 1000) FROM numbers(1000); -- { serverError TYPE_MISMATCH }
+INSERT INTO mv SELECT arrayJoin(['42', 'test']); -- { serverError TYPE_MISMATCH }
 
 SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM src;
 SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM dst;

@@ -16,7 +16,6 @@ CREATE MATERIALIZED VIEW source_to_destination_mv TO destination AS
 SELECT some_data
 FROM source;
 
---set send_logs_level = 'test';
 INSERT INTO source VALUES('{"a": ["baz"]}');
 
 SELECT some_data, a_val FROM destination;

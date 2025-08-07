@@ -657,37 +657,9 @@ private:
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
-
-#define NEW_VERSION 1
-
-#if not NEW_VERSION
         bool insert_null_as_default = false;
 
-        auto adding_missing_defaults_dag = addMissingDefaults(
-            pipeline.getHeader(),
-            inner_metadata->getSampleBlock().getNamesAndTypesList(),
-            inner_metadata->getColumns(),
-            local_context,
-            insert_null_as_default);
-
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
-            pipeline.getHeader(),
-            adding_missing_defaults_dag.getRequiredColumnsNames(),
-            local_context);
-
-        auto merged_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
-
-        auto converting_types_dag = ActionsDAG::makeConvertingActions(
-            merged_dag.getResultColumns(),
-            inner_metadata->getSampleBlock().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
-
-        auto final_dag = ActionsDAG::merge(std::move(merged_dag), std::move(converting_types_dag));
-#else
-        bool insert_null_as_default = false;
-
-        // no adding_missing_defaults_dag
-        auto debugColumns = [] (const ColumnsWithTypeAndName & columns)
+        auto debug_columns = [] (const ColumnsWithTypeAndName & columns)
         {
             WriteBufferFromOwnString out;
             for (const auto & col : columns)
@@ -697,51 +669,41 @@ private:
 
         auto construct_columns_to_convert = [] (const ColumnsWithTypeAndName & src, const ColumnsWithTypeAndName & dst)
         {
-            NameToIndexMap name_to_index_map;
+            NameToIndexMap name_to_index_dst_map;
             for (size_t i = 0; i < dst.size(); ++i)
-                name_to_index_map[dst[i].name] = i;
+                name_to_index_dst_map[dst[i].name] = i;
 
             ColumnsWithTypeAndName result;
             for (const auto & column : src)
             {
-                if (name_to_index_map.contains(column.name))
-                    result.push_back(dst[name_to_index_map[column.name]]);
+                if (name_to_index_dst_map.contains(column.name))
+                    result.push_back(dst[name_to_index_dst_map[column.name]]);
                 else
                     result.push_back(column);
             }
             return result;
         };
 
-        auto build_convertation = [&] (const Block & input, StorageMetadataPtr result_metadata, String debug_str)
+        auto build_convertation = [&] (const Block & input, StorageMetadataPtr result_metadata)
         {
             auto to_convert = construct_columns_to_convert(input.getColumnsWithTypeAndName(), result_metadata->getSampleBlock().getColumnsWithTypeAndName());
 
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "makeConvertingActions view {} as {}\n"
-                "source: {}\n"
-                "result: {} but filtered: {}",
-                view_id.getTableName(), debug_str,
-                debugColumns(input.getColumnsWithTypeAndName()),
-                result_metadata->getSampleBlock().dumpStructure(), debugColumns(to_convert));
+            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "makeConvertingActions view {} source: {} result: {} but filtered: {}",
+                view_id.getTableName(),
+                debug_columns(input.getColumnsWithTypeAndName()),
+                result_metadata->getSampleBlock().dumpStructure(), debug_columns(to_convert));
 
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
                 ActionsDAG::MatchColumnsMode::Name);
 
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "converting_types_dag view {} as {}\n"
-                "dump DAG {}",
-                view_id.getTableName(), debug_str,
-                converting_types_dag.dumpDAG());
-
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "addMissingDefaults view {} as {}\n"
-                "source: {} but {}\n"
-                "result: {}",
-                view_id.getTableName(), debug_str,
-                debugColumns(converting_types_dag.getResultColumns()), debugColumns(to_convert),
-                debugColumns(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
+            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "addMissingDefaults view {} source: {} but {} result: {}",
+                view_id.getTableName(),
+                debug_columns(converting_types_dag.getResultColumns()), debug_columns(to_convert),
+                debug_columns(result_metadata->getSampleBlock().getColumnsWithTypeAndName()));
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -750,18 +712,10 @@ private:
                 local_context,
                 insert_null_as_default);
 
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "adding_missing_defaults_dag view {} as {}\n"
-                "dump DAG {}",
-                view_id.getTableName(), debug_str,
-                adding_missing_defaults_dag.dumpDAG());
-
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "createSubcolumnsExtractionActions view {} as {}\n"
-                "source: {} but {}\n"
-                "result names: {}",
-                view_id.getTableName(), debug_str,
-                debugColumns(converting_types_dag.getResultColumns()), debugColumns(to_convert),
+            LOG_TEST(getLogger("ExecutingInnerQueryFromViewTransform"),
+                "createSubcolumnsExtractionActions view {} source: {} but {} result names: {}",
+                view_id.getTableName(),
+                debug_columns(converting_types_dag.getResultColumns()), debug_columns(to_convert),
                 fmt::join(adding_missing_defaults_dag.getRequiredColumnsNames(), ", "));
 
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
@@ -769,29 +723,15 @@ private:
                 adding_missing_defaults_dag.getRequiredColumnsNames(),
                 local_context);
 
-            LOG_DEBUG(getLogger("ExecutingInnerQueryFromViewTransform"),
-                "extracting_subcolumns_dag view {} as {}\n"
-                "dump DAG {}",
-                view_id.getTableName(), debug_str,
-                extracting_subcolumns_dag.dumpDAG());
-
             return ActionsDAG::merge(
                 std::move(converting_types_dag),
                 ActionsDAG::merge(
                      std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
         };
 
-        ActionsDAG conversion_to_view_result = build_convertation(
+        auto final_dag = build_convertation(
             pipeline.getHeader(),
-            view_metadata,
-            "VIEW RESULT");
-        ActionsDAG conversion_to_inner_result = build_convertation(
-            view_metadata->getSampleBlock(),
-            inner_metadata,
-            "INNER RESULT");
-
-        auto final_dag = ActionsDAG::merge(std::move(conversion_to_view_result), std::move(conversion_to_inner_result));
-#endif
+            inner_metadata);
 
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
             pipeline.getSharedHeader(),
@@ -947,34 +887,41 @@ String InsertDependenciesBuilder::debugTree() const
 
 String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
 {
+    static const String tab = "    ";
     WriteBufferFromOwnString output_buffer;
-    output_buffer << "path " << path.debugInfo() << "\n";
+    output_buffer << "{\n";
+    output_buffer << tab << "path " << path.debugInfo() << "\n";
 
     const auto & current = path.current();
-    output_buffer << "is view: " << (isView(current) ? "True" : "it is not a view") << "\n";
 
     if (isView(current))
     {
-        output_buffer << "source table: " << (source_tables.contains(current) ? source_tables.at(current).getTableName() : "<not set>") << "\n";
-        output_buffer << "select query: " << select_queries.at(current)->formatForLogging() << "\n";
+        output_buffer << tab << "it is a view\n";
+        output_buffer << tab << "source table: " << (source_tables.contains(current) ? source_tables.at(current).getTableName() : "<not set>") << "\n";
+        output_buffer << tab << "select query: " << select_queries.at(current)->formatForLogging() << "\n";
 
         if (metadata_snapshots.contains(current))
         {
             auto view_metadata = metadata_snapshots.at(current);
-            output_buffer << "view table header: " << view_metadata->getSampleBlock().dumpStructure() << "\n";
+            output_buffer << tab << "view table header: " << view_metadata->getSampleBlock().dumpStructure() << "\n";
         }
 
         auto inner_id = inner_tables.at(current);
-        output_buffer << "inner table: " << inner_id.getTableName() << "\n";
+        output_buffer << tab << "inner table: " << inner_id.getTableName() << "\n";
         auto inner_metadata = metadata_snapshots.at(inner_id);
-        output_buffer << "inner table header: " << inner_metadata->getSampleBlock().dumpStructure() << "\n";
+        output_buffer << tab << "inner table header: " << inner_metadata->getSampleBlock().dumpStructure() << "\n";
 
 
-        output_buffer << "input header: " << input_headers.at(current)->dumpStructure() << "\n";
-        output_buffer << "output header: " << output_headers.at(current)->dumpStructure() << "\n";
+        output_buffer << tab << "input header: " << input_headers.at(current)->dumpStructure() << "\n";
+        output_buffer << tab << "output header: " << output_headers.at(current)->dumpStructure() << "\n";
+    }
+    else
+    {
+        output_buffer << tab << "it is a table\n";
+        output_buffer << tab << "related view: " << fmt::format("{}", path.parent(1)) << "\n";
     }
 
-    output_buffer << "\n";
+    output_buffer << "}\n";
     return output_buffer.str();
 }
 

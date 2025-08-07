@@ -40,21 +40,21 @@ FROM source;
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
---set send_logs_level='trace';
+--set send_logs_level='test';
 INSERT INTO source ("value")
 VALUES ('ENUM_VAL_1'),
        ('ENUM_VAL_2');
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
-SELECT *
-FROM destination
-ORDER BY type
+INSERT INTO source ("value")
+VALUES ('ENUMN_VAL_WRONG');
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
-INSERT INTO source ("value")
-VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT *
+FROM destination
+ORDER BY type
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
@@ -78,21 +78,22 @@ FROM middle;
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
--- set send_logs_level='trace';
+--set send_logs_level='test';
 INSERT INTO source ("value")
 VALUES ('ENUM_VAL_1'),
        ('ENUM_VAL_2');
+EOF
+
+
+${CLICKHOUSE_CLIENT} <<EOF
+INSERT INTO source ("value")
+VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SELECT *
 FROM destination
 ORDER BY type
-EOF
-
-${CLICKHOUSE_CLIENT} <<EOF
-INSERT INTO source ("value")
-VALUES ('ENUMN_VAL_WRONG'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
