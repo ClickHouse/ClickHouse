@@ -234,9 +234,7 @@ class ClickhouseIntegrationTestsRunner:
     def _pre_pull_images(self):
         image_cmd = self._get_runner_image_cmd()
 
-        cmd = (
-            f"{self.repo_path}/tests/integration/runner {self._get_runner_opts()} {image_cmd} --pre-pull --command ' echo Pre Pull finished ' "
-        )
+        cmd = f"{self.repo_path}/tests/integration/runner {self._get_runner_opts()} {image_cmd} --pre-pull --command ' echo Pre Pull finished ' "
         Shell.check(cmd, retries=3, verbose=True, strict=True)
 
     @staticmethod

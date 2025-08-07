@@ -256,6 +256,9 @@ def main():
 
     # Set executable bit and run it for self extraction
     os.chmod(binary_path, 0o755)
+    Shell.check(
+        f"{binary_path} --version", verbose=True, strict=True
+    )  # decompress in advance
     # Shell.check(f"{binary_path} local 'SELECT version()'", verbose=True, strict=True)
 
     my_env = get_env_for_runner(
@@ -290,7 +293,12 @@ def main():
         runner.run()
     except Exception as e:
         logging.error("Exception: %s", e)
-        state, description, test_results, additional_logs = Result.Status.ERROR, "infrastructure error", [], []
+        state, description, test_results, additional_logs = (
+            Result.Status.ERROR,
+            "infrastructure error",
+            [],
+            [],
+        )
     else:
         state, description, test_results, additional_logs = process_results(result_path)
 
