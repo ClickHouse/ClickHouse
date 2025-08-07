@@ -2079,6 +2079,7 @@ def test_cluster_table_function_with_partition_pruning(
 
     instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
 
+
 def test_time_travel_bug_fix_validation(started_cluster):
     instance = started_cluster.instances["node1"]
     TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
@@ -2102,6 +2103,7 @@ def test_time_travel_bug_fix_validation(started_cluster):
 
 
     assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
+
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_compressed_metadata(started_cluster, storage_type):
@@ -2449,8 +2451,6 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
-<<<<<<< HEAD
-=======
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
@@ -2509,27 +2509,49 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
 
-def test_time_travel_bug_fix_validation(started_cluster):
+def test_writes_create_table_with_empty_data(started_cluster):
     instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
+    TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + get_uuid_str()
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME} (c0 Int) ENGINE = IcebergLocal('/iceberg_data/default/{TABLE_NAME}/', 'CSV') AS (SELECT 1 OFFSET 1 ROW);",
+        settings={"allow_experimental_insert_into_iceberg": 1}
+    )
 
-    create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
 
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_writes_create_version_hint(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String, y Int64)", format_version, use_version_hint=True)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
     default_download_directory(
         started_cluster,
-        "local",
+        storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    first_snapshot = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    target_suffix = b'v1.metadata.json'
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
+        assert f.read()[-len(target_suffix):] == target_suffix
 
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL", ) == '123\t1\n'
 
-    instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"iceberg_snapshot_id": first_snapshot})
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
 
+    target_suffix = b'v2.metadata.json'
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
+        assert f.read()[-len(target_suffix):] == target_suffix
 
-    assert int((instance.query(f"SELECT count() FROM {TABLE_NAME}")).strip()) == 2
->>>>>>> f5dd2e0508d21226057474fecbe4ab10b50641c2
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 1
