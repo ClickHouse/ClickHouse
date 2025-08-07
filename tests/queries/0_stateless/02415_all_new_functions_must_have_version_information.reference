@@ -73,7 +73,6 @@ appendTrailingCharIfAbsent
 ascii
 asin
 asinh
-assumeNotNull
 atan
 atan2
 atanh
@@ -81,10 +80,6 @@ bar
 base58Decode
 base58Encode
 basename
-bin
-bitPositionsToArray
-bitmaskToArray
-bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
@@ -95,9 +90,7 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-char
 cityHash64
-coalesce
 compareSubstrings
 concat
 concatAssumeInjective
@@ -290,9 +283,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hex
-hilbertDecode
-hilbertEncode
 hiveHash
 hop
 hopEnd
@@ -300,7 +290,6 @@ hopStart
 hostName
 hypot
 identity
-ifNull
 ignore
 ilike
 in
@@ -321,13 +310,8 @@ isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isNotDistinctFrom
-isNotNull
-isNull
-isNullable
 isValidJSON
 isValidUTF8
-isZeroOrNull
 jaroSimilarity
 jaroWinklerSimilarity
 javaHash
@@ -364,8 +348,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-mortonDecode
-mortonEncode
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -428,7 +410,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-nullIf
 nullIn
 nullInIgnoreSet
 or
@@ -731,7 +712,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toNullable
 toString
 toStringCutToZero
 toTime
@@ -810,8 +790,6 @@ tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-unbin
-unhex
 upper
 uptime
 validateNestedArraySizes
