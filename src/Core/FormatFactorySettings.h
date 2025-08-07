@@ -887,7 +887,20 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-This setting determines the formatting of nested structures such as Tuples, Maps, and Arrays within the `data` array for improved readability.
+This setting determines how nested structures such as Tuples, Maps, and Arrays are displayed within the `data` array when using the JSON output format.
+
+For example, instead of output:
+
+```json
+"data":
+[
+	{
+		"tuple": {"a":1,"b":2,"c":3},
+		"array": [1,2,3],
+		"map": {"a":1,"b":2,"c":3}
+	}
+
+],
 
 Enabled by default.
 )", 0) \
