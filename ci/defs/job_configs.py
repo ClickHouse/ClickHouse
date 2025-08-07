@@ -299,8 +299,8 @@ class JobConfigs:
             "aarch64",
         ],
         runs_on=[
-            RunnerLabels.STYLE_CHECK_AMD,
-            RunnerLabels.STYLE_CHECK_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
             ["Build (amd_release)"],

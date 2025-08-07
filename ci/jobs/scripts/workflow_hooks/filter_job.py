@@ -1,3 +1,6 @@
+import re
+from functools import lru_cache
+
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
@@ -47,6 +50,15 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
 ]
 
 _info_cache = None
+
+
+@lru_cache
+def get_ci_exclude_tags(pr_body):
+    pattern = r"(#|- \[x\] +<!---ci_exclude_)([|\w]+)"
+    matches = []
+    for match in re.findall(pattern, pr_body):
+        matches.extend(match[-1].split("|"))
+    return matches
 
 
 def should_skip_job(job_name):
@@ -156,5 +168,10 @@ def should_skip_job(job_name):
         and "arm" in job_name
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
+
+    ci_exclude_tags = get_ci_exclude_tags(_info_cache.pr_body)
+    for tag in ci_exclude_tags:
+        if tag in job_name:
+            return True, f"Skipped, job name includes excluded tag '{tag}'"
 
     return False, ""

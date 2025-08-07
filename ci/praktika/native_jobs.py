@@ -1,4 +1,5 @@
 import platform
+import os
 import sys
 import traceback
 from typing import Dict
@@ -359,7 +360,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
+    pr_allows_cache = "[x] <!---no_ci_cache" not in Info().pr_body
+    if (
+        workflow.enable_job_filtering_by_changes
+        and results[-1].is_ok()
+        and pr_allows_cache
+    ):
         print("Filter not affected jobs")
 
         def check_affected_jobs():
@@ -440,6 +446,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache:
+        # We can't safely skip this code block entirely if enable_cache=True is set at the workflow level
+        # set DISABLE_CI_CACHE=1 to signal that the cache should be skipped
+        if not pr_allows_cache:
+            os.environ["DISABLE_CI_CACHE"] = "1"
+
         print("Cache Lookup")
         stop_watch = Utils.Stopwatch()
         info = ""
