@@ -702,6 +702,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     QueryPlan query_plan;
     std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping;
     std::set<std::string> used_row_policies;
+    UsefulSets useful_sets;
 
     if (table_node || table_function_node)
     {
@@ -929,7 +930,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
+                {
+                    appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     add_filter(*additional_filters_info, "additional filter");
+                }
 
                 if (!select_query_options.build_logical_plan)
                     from_stage = storage->getQueryProcessingStage(
@@ -1358,6 +1362,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         .query_plan = std::move(query_plan),
         .from_stage = from_stage,
         .used_row_policies = std::move(used_row_policies),
+        .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
     };
 }
