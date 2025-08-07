@@ -65,15 +65,17 @@ public:
             char * pos = begin;
 
             ColumnString::Offset current_in_offset = 0;
-
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * pos_in = reinterpret_cast<const char *>(&in_vec[current_in_offset]);
-                size_t current_size = strlen(pos_in);
+                current_in_offset = in_offsets[i];
+                const char * pos_end = reinterpret_cast<const char *>(&in_vec[current_in_offset]);
+
+                const char * new_end = find_first_symbols<'\0'>(pos_in, pos_end);
+                size_t current_size = new_end - pos_in;
                 memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
                 pos += current_size;
                 out_offsets[i] = pos - begin;
-                current_in_offset = in_offsets[i];
             }
             out_vec.resize(pos - begin);
 
