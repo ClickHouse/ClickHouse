@@ -75,7 +75,7 @@ struct HasTokenImpl
         {
             /// The found substring is a token
             if ((pos == begin || isTokenSeparator(pos[-1]))
-                && (pos + pattern_size == end || isTokenSeparator(pos[pattern_size])))
+                && (pos + pattern_size > end || isTokenSeparator(pos[pattern_size])))
             {
                 /// Let's determine which index it refers to.
                 while (begin + haystack_offsets[i] <= pos)
@@ -85,7 +85,7 @@ struct HasTokenImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + pattern.size() < begin + haystack_offsets[i])
+                if (pos + pattern_size <= begin + haystack_offsets[i])
                     res[i] = !negate;
                 else
                     res[i] = negate;
