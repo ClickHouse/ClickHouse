@@ -59,16 +59,31 @@ class IcebergKeysIterator : public IObjectIterator
 {
 public:
     IcebergKeysIterator(
-        ObjectStoragePtr object_storage_, Iceberg::IcebergTableStateSnapshotPtr snapshot_, IcebergDataSnapshot iceberg_data_snapshot, IDataLakeMetadata::FileProgressCallback callback_);
-
-    size_t estimatedKeysCount() override
+        ObjectStoragePtr object_storage_,
+        ActionsDAG * filter_dag_,
+        Iceberg::IcebergTableStateSnapshotPtr snapshot_,
+        IcebergDataSnapshot iceberg_data_snapshot,
+        IDataLakeMetadata::FileProgressCallback callback_)
+        : use_partition_pruning(
+              []()
+              {
+                  if (!local_context && filter_dag)
+                  {
+                      throw DB::Exception(
+                          DB::ErrorCodes::LOGICAL_ERROR,
+                          "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
+                  }
+                  return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
+              })
     {
-        return data_files.size();
     }
+
+    size_t estimatedKeysCount() override { return data_files.size(); }
 
     ObjectInfoPtr next(size_t) override;
 
-    void lazyInitialize() {
+    void lazyInitialize()
+    {
         if (initialized)
             return;
 
@@ -92,18 +107,16 @@ private:
     std::atomic<size_t> index = 0;
     IDataLakeMetadata::FileProgressCallback callback;
 
+    bool use_partition_pruning;
+
     std::shared_ptr<IcebergSchemaProcessor> schema_processor;
+    ContextPtr local_context;
 
     Iceberg::ManifestFilePtr
     getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
         TSA_REQUIRES_SHARED(mutex);
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
-
-    std::vector<ParsedDataFileInfo> getDataFiles(
-        const ActionsDAG * filter_dag,
-        ContextPtr local_context,
-        const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
     std::vector<Iceberg::ManifestFileEntry> getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     ManifestFilePtr getManifestFile(
@@ -117,15 +130,6 @@ std::vector<T> IcebergMetadata::getFilesImpl(
     ContextPtr local_context,
     std::function<T(const ManifestFileEntry &)> transform_function) const
 {
-    if (!local_context && filter_dag)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
-    }
-
-    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
-
     std::vector<T> files;
     {
         SharedLockGuard lock(mutex);
@@ -176,53 +180,12 @@ std::vector<T> IcebergMetadata::getFilesImpl(
     std::sort(files.begin(), files.end());
     return files;
 }
-
-
 };
 
 
 IcebergKeysIterator::IcebergKeysIterator(ObjectStoragePtr object_storage_, Iceberg::IcebergTableStateSnapshotPtr snapshot_, IDataLakeMetadata::FileProgressCallback callback_) {
 
 }
-
-ManifestFilePtr IcebergMetadata::getManifestFile(
-    ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
-{
-    auto configuration_ptr = configuration.lock();
-
-    auto create_fn = [&]()
-    {
-        ObjectInfo manifest_object_info(filename);
-
-        auto read_settings = local_context->getReadSettings();
-        /// Do not utilize filesystem cache if more precise cache enabled
-        if (iceberg_metadata_cache)
-            read_settings.enable_filesystem_cache = false;
-
-        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
-
-        return std::make_shared<ManifestFileContent>(
-            manifest_file_deserializer,
-            filename,
-            format_version,
-            configuration_ptr->getPathForRead().path,
-            schema_processor,
-            inherited_sequence_number,
-            inherited_snapshot_id,
-            table_location,
-            local_context);
-    };
-
-    if (iceberg_metadata_cache)
-    {
-        auto manifest_file
-            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
-        return manifest_file;
-    }
-    return create_fn();
-}
-
 
 
 

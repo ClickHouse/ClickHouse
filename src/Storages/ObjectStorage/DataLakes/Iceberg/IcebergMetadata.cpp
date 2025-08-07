@@ -91,7 +91,7 @@ IcebergMetadata::IcebergMetadata(
     IcebergMetadataFilesCachePtr cache_ptr)
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
-    , schema_processor(IcebergSchemaProcessor())
+    , schema_processor(std::make_shared<IcebergSchemaProcessor>())
     , iceberg_metadata_cache(cache_ptr)
     , log(getLogger("IcebergMetadata"))
     , format_version(format_version_)

@@ -10,9 +10,17 @@
 namespace Iceberg
 {
 
+struct ManifestListEntry
+{
+    DB::ManifestFileCacheKey manifest_file_cache_key;
+    ManifestFileContentType content_type;
+};
+
+using ManifestListEntries = std::vector<ManifestListEntry>;
+
 struct IcebergDataSnapshot
 {
-    DB::ManifestFileCacheKeys manifest_list_entries;
+    ManifestListEntries manifest_list_entries;
     Int64 snapshot_id;
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
