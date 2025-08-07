@@ -93,7 +93,6 @@ struct FunctionDocumentation
         Geo,
         Encoding,
         Encryption,
-        File,
         Financial,
         Hash,
         IPAddress,
