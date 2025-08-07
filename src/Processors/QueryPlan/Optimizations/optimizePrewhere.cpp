@@ -94,9 +94,9 @@ ActionsDAG splitAndFillPrewhereInfo(
     for (const auto * condition : prewhere_nodes_list)
         conditions.push_back(split_result.split_nodes_mapping.at(condition));
 
-    /// There is a chance prewhere_info was already populated (row policies are an example, see PlannerJoinTree)
-    /// We need to preserve it, hence the below merge
-    bool has_existing_prewhere = !prewhere_info->prewhere_column_name.empty();
+    /// Is it possible that prewhere_info->prewhere_actions was not empty?
+    /// Not sure, but just in case let's merge it
+    bool has_existing_prewhere = !prewhere_info->prewhere_actions.getOutputs().empty();
     
     if (has_existing_prewhere)
     {
