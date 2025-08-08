@@ -12,13 +12,15 @@ namespace DB
 {
 class BackupFactory;
 
-class StorageAzureConfiguration : public StorageObjectStorageConfiguration
+class StorageAzureConfiguration : public StorageObjectStorage::Configuration
 {
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;
     friend void registerBackupEngineAzureBlobStorage(BackupFactory & factory);
 
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     static constexpr auto type = ObjectStorageType::Azure;
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
@@ -63,7 +65,7 @@ public:
 
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
 

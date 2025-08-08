@@ -6,7 +6,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/MultiVersion.h>
-#include <Server/IServer.h>
+#include "IServer.h"
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>

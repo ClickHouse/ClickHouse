@@ -1,6 +1,6 @@
-#include <Functions/FunctionStringReplace.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/ReplaceStringImpl.h>
+#include "FunctionStringReplace.h"
+#include "FunctionFactory.h"
+#include "ReplaceStringImpl.h"
 
 
 namespace DB

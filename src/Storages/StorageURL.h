@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
@@ -147,7 +146,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -180,7 +179,7 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        FormatParserGroupPtr parser_group_,
+        size_t max_parsing_threads,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -190,9 +189,12 @@ public:
 
     String getName() const override { return name; }
 
-    Chunk generate() override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
+    {
+        setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
+    }
 
-    void onFinish() override { parser_group->finishStream(); }
+    Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -227,7 +229,6 @@ private:
     std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
-    FormatParserGroupPtr parser_group;
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;

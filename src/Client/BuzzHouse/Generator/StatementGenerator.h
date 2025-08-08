@@ -114,10 +114,10 @@ public:
     static const std::unordered_map<OutFormat, InFormat> outIn;
 
     FuzzConfig & fc;
-    uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();
+    uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 
 private:
-    std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
+    std::vector<TableEngineValues> likeEngs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -161,7 +161,6 @@ private:
     std::vector<std::reference_wrapper<const SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
-    std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
     std::unordered_map<uint32_t, QueryLevel> levels;
@@ -286,9 +285,10 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
-    String nextComment(RandomGenerator & rg) const;
+    String nextComment(RandomGenerator & rg);
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
@@ -312,6 +312,7 @@ private:
         bool modify,
         bool is_pk,
         ColumnSpecial special,
+        uint32_t col_tp_mask,
         SQLColumn & col,
         ColumnDef * cd);
     void addTableColumn(
@@ -341,10 +342,9 @@ private:
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
+    void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
-    void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
@@ -396,7 +396,7 @@ private:
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
-    void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, bool backup, Select * sel);
+    void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, Select * sel);
     /* Returns the number of from elements generated */
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
@@ -407,13 +407,12 @@ private:
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
-    std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint64_t allowed_types);
+    std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
     std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
-    std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint64_t allowed_types) const;
-    SQLType * randomTimeType(RandomGenerator & rg, uint64_t allowed_types, TimeTp * dt) const;
-    SQLType * randomDateTimeType(RandomGenerator & rg, uint64_t allowed_types, DateTimeTp * dt) const;
-    SQLType * randomDecimalType(RandomGenerator & rg, uint64_t allowed_types, BottomTypeName * tp) const;
-    SQLType * bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
+    std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
+    SQLType * randomTimeType(RandomGenerator & rg, uint32_t allowed_types, TimeTp * dt) const;
+    SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
+    SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname);
@@ -439,7 +438,7 @@ private:
     static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
 
 public:
-    SQLType * randomNextType(RandomGenerator & rg, uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isAttached(); };
@@ -452,7 +451,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
+            && t.teng != TableEngineValues::GenerateRandom;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
@@ -475,9 +474,6 @@ public:
     auto getQueryTableLambda();
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
-
-    void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
-    std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);
 
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);

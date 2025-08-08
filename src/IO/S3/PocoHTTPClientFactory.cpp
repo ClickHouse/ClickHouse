@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3/PocoHTTPClientFactory.h>
+#include "PocoHTTPClientFactory.h"
 
 #include <IO/S3/PocoHTTPClient.h>
 #include <aws/core/client/ClientConfiguration.h>

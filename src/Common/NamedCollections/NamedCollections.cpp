@@ -1,4 +1,4 @@
-#include <Common/NamedCollections/NamedCollections.h>
+#include "NamedCollections.h"
 
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>

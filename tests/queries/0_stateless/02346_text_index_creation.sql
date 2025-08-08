@@ -34,22 +34,13 @@ DROP TABLE tab;
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'split')
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-CREATE TABLE tab
-(
-    str String,
     INDEX idx str TYPE text(tokenizer = 'no_op')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- tokenizer must be default, ngram, split or no_op.';
+SELECT '-- tokenizer must be default, ngram or no_op.';
 
 CREATE TABLE tab
 (
@@ -88,43 +79,62 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test separators argument.';
+SELECT 'Test max_rows_per_postings_list argument.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'split', separators = ['\n', '\\'])
+    INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 4, max_rows_per_postings_list = 9999)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- separators must be array.';
+SELECT '-- max_rows_per_posting_list is set to unlimited rows.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'split', separators = '\n')
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 0)
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ORDER BY tuple();
+DROP TABLE tab;
 
-SELECT '-- separators must be an array of strings.';
+SELECT '-- max_rows_per_posting_list should be at least 8192.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'split', separators = [1, 2])
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8191)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8192)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
 
 SELECT 'Parameters are shuffled.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(ngram_size = 4, tokenizer = 'ngram')
+    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, ngram_size = 4, tokenizer = 'ngram')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -164,6 +174,22 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list = '9999')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 SELECT 'Same argument appears >1 times.';
 
 CREATE TABLE tab
@@ -182,6 +208,14 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 9999, max_rows_per_postings_list = 8888)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 SELECT 'Must be created on single column.';
 
 CREATE TABLE tab
@@ -193,58 +227,12 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY key; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
 
-SELECT 'A column must not have >1 text index';
-
-SELECT '-- CREATE TABLE';
-
-CREATE TABLE tab(
-    s String,
-    INDEX idx_1(s) TYPE text(tokenizer = 'default'),
-    INDEX idx_2(s) TYPE text(tokenizer = 'ngram', ngram_size = 3)
-)
-Engine = MergeTree()
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
-SELECT '-- ALTER TABLE';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx_1 (str) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-ALTER TABLE tab ADD INDEX idx_2(str) TYPE text(tokenizer = 'ngram', ngram_size = 3); -- { serverError BAD_ARGUMENTS }
-
--- It must still be possible to create a column on the same column with a different expression
-ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngram', ngram_size = 3);
-
-DROP TABLE tab;
-
-SELECT 'Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.';
+SELECT 'Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.';
 
 CREATE TABLE tab
 (
     key UInt64,
     str UInt64,
-    INDEX idx str TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    str Array(String),
-    INDEX idx str TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    str Array(FixedString(2)),
     INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree

@@ -125,7 +125,7 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), std::move(_file_function), __LINE__, _format_string, _format_string_args);                  \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
         _channel->log(_poco_message);                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \

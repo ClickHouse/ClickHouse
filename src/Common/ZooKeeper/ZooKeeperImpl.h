@@ -219,7 +219,6 @@ public:
 
 private:
     ACLs default_acls;
-    zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
     zkutil::ZooKeeperArgs args;
     std::atomic<int8_t> original_index{-1};

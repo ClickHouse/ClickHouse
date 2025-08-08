@@ -42,7 +42,7 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
-            StorageObjectStorageConfigurationPtr configuration_,
+            ConfigurationPtr configuration_,
             const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
@@ -75,7 +75,7 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const StorageObjectStorageConfigurationPtr configuration;
+        const ConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
@@ -149,12 +149,11 @@ public:
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        FormatParserGroupPtr parser_group_,
         const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
@@ -171,8 +170,6 @@ public:
     String getName() const override;
 
     Chunk generate() override;
-
-    void onFinish() override { parser_group->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -208,12 +205,11 @@ private:
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    FormatParserGroupPtr parser_group;
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;

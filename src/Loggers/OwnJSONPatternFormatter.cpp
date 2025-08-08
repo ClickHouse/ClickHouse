@@ -1,4 +1,4 @@
-#include <Loggers/OwnJSONPatternFormatter.h>
+#include "OwnJSONPatternFormatter.h"
 
 #include <functional>
 #include <IO/WriteBufferFromString.h>
@@ -66,7 +66,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     DB::FormatSettings settings;
     bool print_comma = false;
 
-    const Poco::Message & msg = *msg_ext.base;
+    const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
     if (!date_time_utc.empty())
@@ -192,7 +192,11 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        writeJSONString(msg.getSourceFile(), wb, settings);
+        const char * source_file_name = msg.getSourceFile();
+        if (source_file_name != nullptr)
+            writeJSONString(source_file_name, wb, settings);
+        else
+            writeJSONString("", wb, settings);
     }
 
     if (!source_line.empty())

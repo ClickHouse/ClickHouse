@@ -174,8 +174,6 @@ def main():
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
-                -DENABLE_LEXER_TEST=1 \
-                -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
             )
@@ -187,7 +185,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="ninja clickhouse-bundle clickhouse-stripped lexer_test",
+                command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
             )
         )

@@ -13,8 +13,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
-#include <Storages/ColumnsDescription.h>
-#include <Formats/FormatParserGroup.h>
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
 #include <string>
@@ -40,12 +39,14 @@ namespace DataLakeStorageSetting
 
 
 template <typename T>
-concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
+concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
 
 template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetadata>
-class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
+class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorage::Configuration>
 {
 public:
+    using Configuration = StorageObjectStorage::Configuration;
+
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
@@ -80,26 +81,6 @@ public:
                 "Please, retry the query.");
         }
         return true;
-    }
-
-    void create(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by,
-        bool if_not_exists) override
-    {
-        BaseStorageConfiguration::create(
-            object_storage, local_context, columns, partition_by, if_not_exists);
-
-        DataLakeMetadata::createInitial(
-            object_storage,
-            weak_from_this(),
-            local_context,
-            columns,
-            partition_by,
-            if_not_exists
-        );
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -185,11 +166,6 @@ public:
     {
         assertInitialized();
         current_metadata->modifyFormatSettings(settings_);
-    }
-
-    ColumnMapperPtr getColumnMapper() const override
-    {
-        return current_metadata->getColumnMapper();
     }
 
 private:

@@ -60,9 +60,33 @@ namespace ErrorCodes
 extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
+std::unique_ptr<S3ObjectStorageSettings> getSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    const std::string & endpoint,
+    bool validate_settings)
+{
+    const auto & settings = context->getSettingsRef();
+
+    auto auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
+    auto request_settings = S3::S3RequestSettings(config, settings, config_prefix, "s3_", validate_settings);
+
+    request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(S3::URI(endpoint).uri.getScheme()), config_prefix, config);
+
+    return std::make_unique<S3ObjectStorageSettings>(
+        request_settings,
+        auth_settings,
+        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+        config.getInt(config_prefix + ".list_object_keys_size", 1000),
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        config.getBool(config_prefix + ".readonly", false));
+}
+
 std::unique_ptr<S3::Client> getClient(
     const std::string & endpoint,
-    const S3Settings & settings,
+    const S3ObjectStorageSettings & settings,
     ContextPtr context,
     bool for_disk_s3)
 {
@@ -74,7 +98,7 @@ std::unique_ptr<S3::Client> getClient(
 
 std::unique_ptr<S3::Client> getClient(
     const S3::URI & url,
-    const S3Settings & settings,
+    const S3ObjectStorageSettings & settings,
     ContextPtr context,
     bool for_disk_s3)
 {

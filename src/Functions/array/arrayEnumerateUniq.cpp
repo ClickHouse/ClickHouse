@@ -1,4 +1,4 @@
-#include <Functions/array/arrayEnumerateExtended.h>
+#include "arrayEnumerateExtended.h"
 #include <Functions/FunctionFactory.h>
 
 
@@ -24,10 +24,10 @@ The function can take multiple arrays of the same size as arguments. In this cas
 )";
     FunctionDocumentation::Syntax syntax = "arrayEnumerateUniq(arr1[, arr2, ... , arrN])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1", "First array to process.", {"Array(T)"}},
-        {"arr2, ...", "Optional. Additional arrays of the same size for tuple uniqueness.", {"Array(UInt32)"}}
+        {"arr1", "First array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[arr2, ..., arrN]", "Optional. Additional arrays of the same size for tuple uniqueness. [`Array(UInt32)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array where each element is the position among elements with the same value or tuple.", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array where each element is the position among elements with the same value or tuple. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT arrayEnumerateUniq([10, 20, 10, 30]);", "[1, 1, 2, 1]"},
         {"Multiple arrays", "SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);", "[1,2,1,1,2,1]"},
