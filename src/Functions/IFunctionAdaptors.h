@@ -83,6 +83,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
+    bool isSuitableForPushDownBeforeFilter() const override { return function->isSuitableForPushDownBeforeFilter(); }
+
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
     bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }

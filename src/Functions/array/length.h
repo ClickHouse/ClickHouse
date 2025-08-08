@@ -61,6 +61,13 @@ struct NameLength
     static constexpr auto name = "length";
 };
 
-using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64, false>;
+class FunctionLength : public FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64, false>
+{
+public:
+    bool isSuitableForPushDownBeforeFilter() const override
+    {
+        return true;
+    }
+};
 
 }
