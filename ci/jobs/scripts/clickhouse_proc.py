@@ -712,7 +712,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for pid, files_in_group in grouped_profiles.items():
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
-        print(latest_profiles)
 
         # fetch jeprof
         if Shell.check(
