@@ -7047,7 +7047,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatDateTimeInJoda) are supported, except:
+All format specifiers listed in [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id
