@@ -16,6 +16,7 @@ import time
 import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
+from statistics import median
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import requests
@@ -917,6 +918,8 @@ class ClickhouseIntegrationTestsRunner:
         tests_execution_times = self.get_tests_execution_time()
         assert len(tests_execution_times) > 400, \
             f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        # use median exec time for tests with unknown execution time
+        median_time = median(list(tests_execution_times.values()))
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
@@ -954,7 +957,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_parallel_tests:
             total_time, group_index, files = heapq.heappop(parallel_heap)
             files.append(file)
-            heapq.heappush(parallel_heap, (total_time, group_index, files))
+            heapq.heappush(parallel_heap, (total_time + median_time, group_index, files))
 
         test_file_groups = [[] for _ in range(num_groups)]
         parallel_group_times = [0.0] * num_groups
@@ -979,7 +982,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_sequential_tests:
             total_time, group_index = heapq.heappop(sequential_heap)
             test_file_groups[group_index].append(file)
-            heapq.heappush(sequential_heap, (total_time, group_index))
+            heapq.heappush(sequential_heap, (total_time + median_time, group_index))
 
         # heap contains final total times
         total_group_times = [0.0] * num_groups
