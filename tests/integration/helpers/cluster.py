@@ -1109,6 +1109,9 @@ class ClickHouseCluster:
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
 
+        if instance.make_zoo3_slow:
+            env_variables["keeper_config3"] = "keeper_config3_slow.xml"
+
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
         self.base_zookeeper_cmd = self.compose_cmd(
@@ -1741,6 +1744,7 @@ class ClickHouseCluster:
         users_config_name="users.xml",
         copy_common_configs=True,
         config_root_name="clickhouse",
+        make_zoo3_slow=None,
         extra_configs=[],
         extra_args="",
         randomize_settings=True,
@@ -1872,6 +1876,7 @@ class ClickHouseCluster:
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
             config_root_name=config_root_name,
+            make_zoo3_slow=make_zoo3_slow,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
@@ -1955,7 +1960,7 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
-        
+
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
@@ -2022,7 +2027,7 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
             )
-            
+
         if with_arrowflight and not self.with_arrowflight:
             cmds.append(
                 self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2983,10 +2988,10 @@ class ClickHouseCluster:
         self.wait_for_url(
             f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
         )
-        
+
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
-        
+
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3033,110 +3038,550 @@ class ClickHouseCluster:
 
             retry(log_function=logging_pulling_images)(run_and_check, images_pull_cmd)
 
+            tasks = []
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
-                logging.debug("Setup ZooKeeper Secure")
-                logging.debug(
-                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
-                )
-                for i in range(1, 3):
-                    if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
-                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
-                for dir in self.zookeeper_dirs_to_create:
-                    os.makedirs(dir)
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
-                self.up_called = True
 
-                self.wait_zookeeper_secure_to_start()
-                for command in self.pre_zookeeper_commands:
-                    self.run_kazoo_commands_with_retries(command, repeats=5)
-
-            if self.with_zookeeper and self.base_zookeeper_cmd:
-                logging.debug("Setup ZooKeeper")
-                logging.debug(
-                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
-                )
-                if self.use_keeper:
-                    for i in range(1, 4):
-                        if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
-                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}")
-                else:
+                def run_zk_secure():
+                    logging.debug("Setup ZooKeeper Secure")
+                    logging.debug(
+                        f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                    )
                     for i in range(1, 3):
                         if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
                             shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                    for dir in self.zookeeper_dirs_to_create:
+                        os.makedirs(dir)
+                    run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                    self.up_called = True
 
-                for dir in self.zookeeper_dirs_to_create:
-                    os.makedirs(dir)
+                    self.wait_zookeeper_secure_to_start()
+                    for command in self.pre_zookeeper_commands:
+                        self.run_kazoo_commands_with_retries(command, repeats=5)
 
-                if self.use_keeper:  # TODO: remove hardcoded paths from here
-                    for i in range(1, 4):
-                        current_keeper_config_dir = os.path.join(
-                            f"{self.keeper_instance_dir_prefix}{i}", "config"
+                tasks.append(run_zk_secure)
+
+            if self.with_zookeeper and self.base_zookeeper_cmd:
+
+                def run_zk():
+                    logging.debug("Setup ZooKeeper")
+                    logging.debug(
+                        f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                    )
+                    if self.use_keeper:
+                        for i in range(1, 4):
+                            if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
+                                shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}")
+                    else:
+                        for i in range(1, 3):
+                            if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
+                                shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+
+                    for dir in self.zookeeper_dirs_to_create:
+                        os.makedirs(dir)
+
+                    if self.use_keeper:  # TODO: remove hardcoded paths from here
+                        for i in range(1, 4):
+                            current_keeper_config_dir = os.path.join(
+                                f"{self.keeper_instance_dir_prefix}{i}", "config"
+                            )
+                            if self.custom_keeper_configs_paths is None:
+                                shutil.copy(
+                                    os.path.join(
+                                        self.keeper_config_dir, f"keeper_config{i}.xml"
+                                    ),
+                                    current_keeper_config_dir,
+                                )
+
+                                extra_configs_dir = os.path.join(
+                                    current_keeper_config_dir, f"keeper_config{i}.d"
+                                )
+                                os.mkdir(extra_configs_dir)
+                                feature_flags_config = os.path.join(
+                                    extra_configs_dir, "feature_flags.yaml"
+                                )
+
+                                indentation = 4 * " "
+
+                                def get_feature_flag_value(feature_flag):
+                                    if not self.keeper_randomize_feature_flags:
+                                        return 1
+
+                                    if feature_flag in self.keeper_required_feature_flags:
+                                        return 1
+
+                                    return random.randint(0, 1)
+
+                                with open(feature_flags_config, "w") as ff_config:
+                                    ff_config.write("keeper_server:\n")
+                                    ff_config.write(f"{indentation}feature_flags:\n")
+                                    indentation *= 2
+
+                                    for feature_flag in [
+                                        "filtered_list",
+                                        "multi_read",
+                                        "check_not_exists",
+                                        "create_if_not_exists",
+                                        "remove_recursive",
+                                    ]:
+                                        ff_config.write(
+                                            f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                        )
+                            else:
+                                basename = os.path.basename(
+                                    self.custom_keeper_configs_paths[i - 1]
+                                )
+                                shutil.copy(
+                                    self.custom_keeper_configs_paths[i - 1],
+                                    current_keeper_config_dir,
+                                )
+                                os.rename(
+                                    os.path.join(current_keeper_config_dir, basename),
+                                    os.path.join(
+                                        current_keeper_config_dir, f"keeper_config{i}.xml"
+                                    ),
+                                )
+
+                    run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                    self.up_called = True
+
+                    self.wait_zookeeper_to_start()
+                    for command in self.pre_zookeeper_commands:
+                        self.run_kazoo_commands_with_retries(command, repeats=5)
+
+                tasks.append(run_zk)
+
+            if self.with_mysql_client and self.base_mysql_client_cmd:
+                def run_mysql_client():
+                    logging.debug("Setup MySQL Client")
+                    subprocess_check_call(self.base_mysql_client_cmd + common_opts)
+                    self.wait_mysql_client_to_start()
+
+                tasks.append(run_mysql_client)
+
+            if self.with_mysql57 and self.base_mysql57_cmd:
+
+                def run_mysql57():
+                    logging.debug("Setup MySQL")
+                    if os.path.exists(self.mysql57_dir):
+                        shutil.rmtree(self.mysql57_dir)
+                    os.makedirs(self.mysql57_logs_dir)
+                    os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    subprocess_check_call(self.base_mysql57_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_mysql57_to_start()
+
+                tasks.append(run_mysql57)
+
+            if self.with_mysql8 and self.base_mysql8_cmd:
+
+                def run_mysql8():
+                    logging.debug("Setup MySQL 8")
+                    if os.path.exists(self.mysql8_dir):
+                        shutil.rmtree(self.mysql8_dir)
+                    os.makedirs(self.mysql8_logs_dir)
+                    os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                    self.wait_mysql8_to_start()
+
+                tasks.append(run_mysql8)
+
+            if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
+
+                def run_mysql_cluster():
+                    print("Setup MySQL")
+                    if os.path.exists(self.mysql_cluster_dir):
+                        shutil.rmtree(self.mysql_cluster_dir)
+                    os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
+                    os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_mysql_cluster_to_start()
+
+                tasks.append(run_mysql_cluster)
+
+            if self.with_postgres and self.base_postgres_cmd:
+
+                def run_postgres():
+                    logging.debug("Setup Postgres")
+                    if os.path.exists(self.postgres_dir):
+                        shutil.rmtree(self.postgres_dir)
+                    os.makedirs(self.postgres_logs_dir)
+                    os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    subprocess_check_call(self.base_postgres_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_postgres_to_start()
+
+                tasks.append(run_postgres)
+
+            if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
+                def run_postgres_cluster():
+                    logging.debug("Setup Postgres")
+                    os.makedirs(self.postgres2_logs_dir)
+                    os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    os.makedirs(self.postgres3_logs_dir)
+                    os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    os.makedirs(self.postgres4_logs_dir)
+                    os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_postgres_cluster_to_start()
+
+                tasks.append(run_postgres_cluster)
+
+            if (
+                self.with_postgresql_java_client
+                and self.base_postgresql_java_client_cmd
+            ):
+                def run_postgres_java_client():
+                    logging.debug("Setup Postgres Java Client")
+                    subprocess_check_call(
+                        self.base_postgresql_java_client_cmd + common_opts
+                    )
+                    self.up_called = True
+                    self.wait_postgresql_java_client()
+
+                tasks.append(run_postgres_java_client)
+
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                def run_mysql_dotnet_client():
+                    logging.debug("Setup MySQL C# Client")
+                    subprocess_check_call(
+                        self.base_mysql_dotnet_client_cmd + common_opts
+                    )
+                    self.up_called = True
+                    self.wait_mysql_dotnet_client()
+
+                tasks.append(run_mysql_dotnet_client)
+
+
+            if self.with_kafka and self.base_kafka_cmd:
+                def run_kafka():
+                    logging.debug("Setup Kafka")
+                    os.mkdir(self.kafka_dir)
+                    subprocess_check_call(
+                        self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
+                    self.wait_schema_registry_to_start()
+
+                tasks.append(run_kafka)
+
+            if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
+                def run_kafka_sasl():
+                    logging.debug("Setup Kafka with SASL")
+                    os.mkdir(self.kafka_sasl_dir)
+                    subprocess_check_call(
+                        self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+
+                tasks.append(run_kafka_sasl)
+
+            if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
+                def run_kerberized_kafka():
+                    logging.debug("Setup kerberized kafka")
+                    os.mkdir(self.kafka_dir)
+                    run_and_check(
+                        self.base_kerberized_kafka_cmd
+                        + common_opts
+                        + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.wait_kafka_is_available(
+                        self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100
+                    )
+
+                tasks.append(run_kerberized_kafka)
+
+            if self.with_kerberos_kdc and self.base_kerberos_kdc_cmd:
+                def run_kerberos():
+                    logging.debug("Setup Kerberos KDC")
+                    run_and_check(
+                        self.base_kerberos_kdc_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
+
+                tasks.append(run_kerberos)
+
+            if self.with_rabbitmq and self.base_rabbitmq_cmd:
+                def run_rabbitmq():
+                    logging.debug("Setup RabbitMQ")
+                    os.makedirs(self.rabbitmq_logs_dir)
+                    os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    with open(self.rabbitmq_cookie_file, "w") as f:
+                        f.write(self.rabbitmq_cookie)
+                    os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
+
+                    subprocess_check_call(
+                        self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+                    time.sleep(2)
+                    logging.debug(f"RabbitMQ checking container try")
+                    self.wait_rabbitmq_to_start()
+
+                tasks.append(run_rabbitmq)
+
+            if self.with_nats and self.base_nats_cmd:
+                def run_nats():
+                    logging.debug("Setup NATS")
+                    os.makedirs(self.nats_cert_dir)
+                    env = os.environ.copy()
+                    env["NATS_CERT_DIR"] = self.nats_cert_dir
+                    run_and_check(
+                        p.join(self.base_dir, "nats_certs.sh"),
+                        env=env,
+                        detach=False,
+                        nothrow=False,
+                    )
+
+                    self.nats_ssl_context = ssl.create_default_context()
+                    self.nats_ssl_context.load_verify_locations(
+                        p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
+                    )
+                    subprocess_check_call(self.base_nats_cmd + common_opts)
+                    self.nats_docker_id = self.get_instance_docker_id("nats1")
+                    self.up_called = True
+                    self.wait_nats_is_available()
+
+                tasks.append(run_nats)
+
+            if self.with_nginx and self.base_nginx_cmd:
+                def run_nginx():
+                    logging.debug("Setup nginx")
+                    subprocess_check_call(
+                        self.base_nginx_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.nginx_docker_id = self.get_instance_docker_id("nginx")
+
+                tasks.append(run_nginx)
+
+            if self.with_mongo and self.base_mongo_cmd:
+                def run_mongo():
+                    logging.debug("Setup Mongo")
+                    run_and_check(self.base_mongo_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_mongo_to_start(30)
+
+                tasks.append(run_mongo)
+
+            if self.with_coredns and self.base_coredns_cmd:
+                def run_coredns():
+                    logging.debug("Setup coredns")
+                    run_and_check(self.base_coredns_cmd + common_opts)
+                    self.up_called = True
+                    time.sleep(10)
+
+                tasks.append(run_coredns)
+
+            if self.with_redis and self.base_redis_cmd:
+                def run_redis():
+                    logging.debug("Setup Redis")
+                    subprocess_check_call(self.base_redis_cmd + common_opts)
+                    self.up_called = True
+                    time.sleep(10)
+
+                tasks.append(run_redis)
+
+            if self.with_hive and self.base_hive_cmd:
+                def run_hive():
+                    logging.debug("Setup hive")
+                    subprocess_check_call(self.base_hive_cmd + common_opts)
+                    self.up_called = True
+                    time.sleep(30)
+
+                tasks.append(run_hive)
+
+            if self.with_minio and self.base_minio_cmd:
+
+                def run_minio():
+                    # Copy minio certificates to minio/certs
+                    os.mkdir(self.minio_dir)
+                    if self.minio_certs_dir is None:
+                        os.mkdir(os.path.join(self.minio_dir, "certs"))
+                        os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
+                    else:
+                        shutil.copytree(
+                            os.path.join(self.base_dir, self.minio_certs_dir),
+                            os.path.join(self.minio_dir, "certs"),
                         )
-                        if self.custom_keeper_configs_paths is None:
-                            shutil.copy(
-                                os.path.join(
-                                    self.keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                                current_keeper_config_dir,
+                    os.mkdir(self.minio_data_dir)
+                    os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    os.makedirs(self.resolver_logs_dir)
+                    os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    minio_start_cmd = self.base_minio_cmd + common_opts
+
+                    logging.info(
+                        "Trying to create Minio instance by command %s",
+                        " ".join(map(str, minio_start_cmd)),
+                    )
+                    run_and_check(minio_start_cmd)
+                    self.up_called = True
+                    logging.info("Trying to connect to Minio...")
+                    self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+
+                tasks.append(run_minio)
+
+            if self.with_glue_catalog and self.base_glue_catalog_cmd:
+                def run_glue():
+                    logging.info("Trying to connect to Minio for glue catalog...")
+                    subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
+
+                tasks.append(run_glue)
+
+            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
+                def run_hms():
+                    logging.info("Trying to connect to Minio for hms catalog...")
+                    subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
+
+                tasks.append(run_hms)
+
+            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
+                def run_iceberg():
+                    logging.info("Trying to connect to Minio for Iceberg catalog...")
+                    subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
+                    self.up_called = True
+                    self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
+
+                tasks.append(run_iceberg)
+
+            if self.with_azurite and self.base_azurite_cmd:
+                def run_azurite():
+                    azurite_start_cmd = self.base_azurite_cmd + common_opts
+                    logging.info(
+                        "Trying to create Azurite instance by command %s",
+                        " ".join(map(str, azurite_start_cmd)),
+                    )
+
+                    def logging_azurite_initialization(exception, retry_number, sleep_time):
+                        logging.info(
+                            f"Azurite initialization failed with error: {exception}"
+                        )
+
+                    retry(
+                        log_function=logging_azurite_initialization,
+                    )(run_and_check, azurite_start_cmd)
+                    self.up_called = True
+                    logging.info("Trying to connect to Azurite")
+                    self.wait_azurite_to_start()
+
+                tasks.append(run_azurite)
+
+            if self.with_cassandra and self.base_cassandra_cmd:
+                def run_cassandra():
+                    subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
+                    self.up_called = True
+                    self.wait_cassandra_to_start()
+
+                tasks.append(run_cassandra)
+
+            if self.with_ldap and self.base_ldap_cmd:
+                def run_ldap():
+                    ldap_start_cmd = self.base_ldap_cmd + common_opts
+                    subprocess_check_call(ldap_start_cmd)
+                    self.up_called = True
+                    self.wait_ldap_to_start()
+
+                tasks.append(run_ldap)
+
+            if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
+                def run_jdbc_bridge():
+                    os.makedirs(self.jdbc_driver_logs_dir)
+                    os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    subprocess_check_call(self.base_jdbc_bridge_cmd + ["up", "-d"])
+                    self.up_called = True
+                    self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
+                    self.wait_for_url(
+                        f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
+                    )
+
+                tasks.append(run_jdbc_bridge)
+
+            if self.with_prometheus and self.base_prometheus_cmd:
+                def run_prometheus():
+                    os.makedirs(self.prometheus_writer_logs_dir)
+                    os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                    os.makedirs(self.prometheus_reader_logs_dir)
+                    os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                    prometheus_start_cmd = self.base_prometheus_cmd + common_opts
+
+                    logging.info(
+                        "Trying to create Prometheus instances by command %s",
+                        " ".join(map(str, prometheus_start_cmd)),
+                    )
+                    run_and_check(prometheus_start_cmd)
+                    self.up_called = True
+                    logging.info("Trying to connect to Prometheus...")
+                    self.wait_prometheus_to_start()
+                tasks.append(run_prometheus)
+
+            if self.with_arrowflight and self.base_arrowflight_cmd:
+                def run_arrowflight():
+                    arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
+
+                    logging.info(
+                        "Trying to create Arrowflight instance by command %s",
+                        " ".join(map(str, arrowflight_start_cmd)),
+                    )
+                    run_and_check(arrowflight_start_cmd)
+
+                    logging.error(f'Trying to connect to Arrowflight...')
+                    self.wait_arrowflight_to_start()
+                tasks.append(run_arrowflight)
+
+            logging.info("Start executing tasks")
+            logging.info(str(tasks))
+
+            if tasks:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(tasks)
+                ) as executor:
+                    futures = {executor.submit(task): task for task in tasks}
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as ex:
+                            task_name = futures[future]
+                            logging.error(
+                                f"Task {task_name} generated an exception: {ex}"
                             )
+                            # see the full traceback
+                            logging.error(traceback.format_exc())
+                            self.shutdown(kill=True)
+                            raise ex
 
-                            extra_configs_dir = os.path.join(
-                                current_keeper_config_dir, f"keeper_config{i}.d"
-                            )
-                            os.mkdir(extra_configs_dir)
-                            feature_flags_config = os.path.join(
-                                extra_configs_dir, "feature_flags.yaml"
-                            )
+            clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
+            logging.debug(
+                (
+                    "Trying to create ClickHouse instance by command %s",
+                    " ".join(map(str, clickhouse_start_cmd)),
+                )
+            )
+            self.up_called = True
+            run_and_check(clickhouse_start_cmd)
+            logging.debug("ClickHouse instance created")
 
-                            indentation = 4 * " "
-
-                            def get_feature_flag_value(feature_flag):
-                                if not self.keeper_randomize_feature_flags:
-                                    return 1
-
-                                if feature_flag in self.keeper_required_feature_flags:
-                                    return 1
-
-                                return random.randint(0, 1)
-
-                            with open(feature_flags_config, "w") as ff_config:
-                                ff_config.write("keeper_server:\n")
-                                ff_config.write(f"{indentation}feature_flags:\n")
-                                indentation *= 2
-
-                                for feature_flag in [
-                                    "filtered_list",
-                                    "multi_read",
-                                    "check_not_exists",
-                                    "create_if_not_exists",
-                                    "remove_recursive",
-                                ]:
-                                    ff_config.write(
-                                        f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
-                                    )
-                        else:
-                            basename = os.path.basename(
-                                self.custom_keeper_configs_paths[i - 1]
-                            )
-                            shutil.copy(
-                                self.custom_keeper_configs_paths[i - 1],
-                                current_keeper_config_dir,
-                            )
-                            os.rename(
-                                os.path.join(current_keeper_config_dir, basename),
-                                os.path.join(
-                                    current_keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                            )
-
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
-                self.up_called = True
-
-                self.wait_zookeeper_to_start()
-                for command in self.pre_zookeeper_commands:
-                    self.run_kazoo_commands_with_retries(command, repeats=5)
-
-            for instance in list(self.instances.values()):
+            start_timeout = 300.0  # seconds
+            for instance in self.instances.values():
                 if instance.with_remote_database_disk:
                     logging.debug(
                         f"Setup with_remote_database_disk, instance {instance.name}"
@@ -3162,325 +3607,6 @@ class ClickHouseCluster:
                     with open(target_config_file_path, "w") as config_target_file:
                         config_target_file.write(data)
 
-            if self.with_mysql_client and self.base_mysql_client_cmd:
-                logging.debug("Setup MySQL Client")
-                subprocess_check_call(self.base_mysql_client_cmd + common_opts)
-                self.wait_mysql_client_to_start()
-
-            if self.with_mysql57 and self.base_mysql57_cmd:
-                logging.debug("Setup MySQL")
-                if os.path.exists(self.mysql57_dir):
-                    shutil.rmtree(self.mysql57_dir)
-                os.makedirs(self.mysql57_logs_dir)
-                os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql57_cmd + common_opts)
-                self.up_called = True
-                self.wait_mysql57_to_start()
-
-            if self.with_mysql8 and self.base_mysql8_cmd:
-                logging.debug("Setup MySQL 8")
-                if os.path.exists(self.mysql8_dir):
-                    shutil.rmtree(self.mysql8_dir)
-                os.makedirs(self.mysql8_logs_dir)
-                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql8_cmd + common_opts)
-                self.wait_mysql8_to_start()
-
-            if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
-                print("Setup MySQL")
-                if os.path.exists(self.mysql_cluster_dir):
-                    shutil.rmtree(self.mysql_cluster_dir)
-                os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
-                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
-                self.up_called = True
-                self.wait_mysql_cluster_to_start()
-
-            if self.with_postgres and self.base_postgres_cmd:
-                logging.debug("Setup Postgres")
-                if os.path.exists(self.postgres_dir):
-                    shutil.rmtree(self.postgres_dir)
-                os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                subprocess_check_call(self.base_postgres_cmd + common_opts)
-                self.up_called = True
-                self.wait_postgres_to_start()
-
-            if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
-                logging.debug("Setup Postgres")
-                os.makedirs(self.postgres2_logs_dir)
-                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                os.makedirs(self.postgres3_logs_dir)
-                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                os.makedirs(self.postgres4_logs_dir)
-                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
-                self.up_called = True
-                self.wait_postgres_cluster_to_start()
-
-            if (
-                self.with_postgresql_java_client
-                and self.base_postgresql_java_client_cmd
-            ):
-                logging.debug("Setup Postgres Java Client")
-                subprocess_check_call(
-                    self.base_postgresql_java_client_cmd + common_opts
-                )
-                self.up_called = True
-                self.wait_postgresql_java_client()
-
-            if (
-                self.with_mysql_dotnet_client
-                and self.base_mysql_dotnet_client_cmd
-            ):
-                logging.debug("Setup MySQL C# Client")
-                subprocess_check_call(
-                    self.base_mysql_dotnet_client_cmd + common_opts
-                )
-                self.up_called = True
-                self.wait_mysql_dotnet_client()
-
-            if self.with_kafka and self.base_kafka_cmd:
-                logging.debug("Setup Kafka")
-                os.mkdir(self.kafka_dir)
-                subprocess_check_call(
-                    self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
-                self.wait_schema_registry_to_start()
-
-            if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
-                logging.debug("Setup Kafka with SASL")
-                os.mkdir(self.kafka_sasl_dir)
-                subprocess_check_call(
-                    self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-
-            if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
-                logging.debug("Setup kerberized kafka")
-                os.mkdir(self.kafka_dir)
-                run_and_check(
-                    self.base_kerberized_kafka_cmd
-                    + common_opts
-                    + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.wait_kafka_is_available(
-                    self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100
-                )
-
-            if self.with_kerberos_kdc and self.base_kerberos_kdc_cmd:
-                logging.debug("Setup Kerberos KDC")
-                run_and_check(
-                    self.base_kerberos_kdc_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
-
-            if self.with_rabbitmq and self.base_rabbitmq_cmd:
-                logging.debug("Setup RabbitMQ")
-                os.makedirs(self.rabbitmq_logs_dir)
-                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                with open(self.rabbitmq_cookie_file, "w") as f:
-                    f.write(self.rabbitmq_cookie)
-                os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
-
-                subprocess_check_call(
-                    self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
-                time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
-                self.wait_rabbitmq_to_start()
-
-            if self.with_nats and self.base_nats_cmd:
-                logging.debug("Setup NATS")
-                os.makedirs(self.nats_cert_dir)
-                env = os.environ.copy()
-                env["NATS_CERT_DIR"] = self.nats_cert_dir
-                run_and_check(
-                    p.join(self.base_dir, "nats_certs.sh"),
-                    env=env,
-                    detach=False,
-                    nothrow=False,
-                )
-
-                self.nats_ssl_context = ssl.create_default_context()
-                self.nats_ssl_context.load_verify_locations(
-                    p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
-                )
-                subprocess_check_call(self.base_nats_cmd + common_opts)
-                self.nats_docker_id = self.get_instance_docker_id("nats1")
-                self.up_called = True
-                self.wait_nats_is_available()
-
-            if self.with_nginx and self.base_nginx_cmd:
-                logging.debug("Setup nginx")
-                subprocess_check_call(
-                    self.base_nginx_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.nginx_docker_id = self.get_instance_docker_id("nginx")
-
-            if self.with_mongo and self.base_mongo_cmd:
-                logging.debug("Setup Mongo")
-                run_and_check(self.base_mongo_cmd + common_opts)
-                self.up_called = True
-                self.wait_mongo_to_start(30)
-
-            if self.with_coredns and self.base_coredns_cmd:
-                logging.debug("Setup coredns")
-                run_and_check(self.base_coredns_cmd + common_opts)
-                self.up_called = True
-                time.sleep(10)
-
-            if self.with_redis and self.base_redis_cmd:
-                logging.debug("Setup Redis")
-                subprocess_check_call(self.base_redis_cmd + common_opts)
-                self.up_called = True
-                time.sleep(10)
-
-            if self.with_hive and self.base_hive_cmd:
-                logging.debug("Setup hive")
-                subprocess_check_call(self.base_hive_cmd + common_opts)
-                self.up_called = True
-                time.sleep(30)
-
-            if self.with_minio and self.base_minio_cmd:
-                # Copy minio certificates to minio/certs
-                os.mkdir(self.minio_dir)
-                if self.minio_certs_dir is None:
-                    os.mkdir(os.path.join(self.minio_dir, "certs"))
-                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
-                else:
-                    shutil.copytree(
-                        os.path.join(self.base_dir, self.minio_certs_dir),
-                        os.path.join(self.minio_dir, "certs"),
-                    )
-                os.mkdir(self.minio_data_dir)
-                os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                os.makedirs(self.resolver_logs_dir)
-                os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                minio_start_cmd = self.base_minio_cmd + common_opts
-
-                logging.info(
-                    "Trying to create Minio instance by command %s",
-                    " ".join(map(str, minio_start_cmd)),
-                )
-                run_and_check(minio_start_cmd)
-                self.up_called = True
-                logging.info("Trying to connect to Minio...")
-                self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
-
-            if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
-                subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
-                self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
-
-            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
-                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
-                self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
-
-            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
-                subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
-                self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
-
-            if self.with_azurite and self.base_azurite_cmd:
-                azurite_start_cmd = self.base_azurite_cmd + common_opts
-                logging.info(
-                    "Trying to create Azurite instance by command %s",
-                    " ".join(map(str, azurite_start_cmd)),
-                )
-
-                def logging_azurite_initialization(exception, retry_number, sleep_time):
-                    logging.info(
-                        f"Azurite initialization failed with error: {exception}"
-                    )
-
-                retry(
-                    log_function=logging_azurite_initialization,
-                )(run_and_check, azurite_start_cmd)
-                self.up_called = True
-                logging.info("Trying to connect to Azurite")
-                self.wait_azurite_to_start()
-
-            if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
-                self.up_called = True
-                self.wait_cassandra_to_start()
-
-            if self.with_ldap and self.base_ldap_cmd:
-                ldap_start_cmd = self.base_ldap_cmd + common_opts
-                subprocess_check_call(ldap_start_cmd)
-                self.up_called = True
-                self.wait_ldap_to_start()
-
-            if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
-                os.makedirs(self.jdbc_driver_logs_dir)
-                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                subprocess_check_call(self.base_jdbc_bridge_cmd + ["up", "-d"])
-                self.up_called = True
-                self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
-                self.wait_for_url(
-                    f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
-                )
-
-            if self.with_prometheus and self.base_prometheus_cmd:
-                os.makedirs(self.prometheus_writer_logs_dir)
-                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                os.makedirs(self.prometheus_reader_logs_dir)
-                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
-                prometheus_start_cmd = self.base_prometheus_cmd + common_opts
-
-                logging.info(
-                    "Trying to create Prometheus instances by command %s",
-                    " ".join(map(str, prometheus_start_cmd)),
-                )
-                run_and_check(prometheus_start_cmd)
-                self.up_called = True
-                logging.info("Trying to connect to Prometheus...")
-                self.wait_prometheus_to_start()
-
-            if self.with_arrowflight and self.base_arrowflight_cmd:
-                arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
-
-                logging.info(
-                    "Trying to create Arrowflight instance by command %s",
-                    " ".join(map(str, arrowflight_start_cmd)),
-                )
-                run_and_check(arrowflight_start_cmd)
-
-                logging.error(f'Trying to connect to Arrowflight...')
-                self.wait_arrowflight_to_start()
-
-            clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
-            logging.debug(
-                (
-                    "Trying to create ClickHouse instance by command %s",
-                    " ".join(map(str, clickhouse_start_cmd)),
-                )
-            )
-            self.up_called = True
-            run_and_check(clickhouse_start_cmd)
-            logging.debug("ClickHouse instance created")
-
-            start_timeout = 300.0  # seconds
-            for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
                 instance.ipv6_address = self.get_instance_global_ipv6(instance.name)
@@ -3834,6 +3960,7 @@ class ClickHouseInstance:
         tmpfs=None,
         mem_limit=None,
         config_root_name="clickhouse",
+        make_zoo3_slow=None,
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
@@ -3972,6 +4099,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.make_zoo3_slow = make_zoo3_slow
         self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
@@ -5119,6 +5247,12 @@ class ClickHouseInstance:
             macros_config.write(self.dict_to_xml({"macros": macros}))
 
         # Put ZooKeeper config
+        if self.make_zoo3_slow is not None:
+            assert not self.with_zookeeper
+            if self.make_zoo3_slow:
+                write_embedded_config("1_common_slow_keeper.xml", self.config_d_dir)
+            else:
+                write_embedded_config("1_common_fast_keeper.xml", self.config_d_dir)
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
@@ -5232,7 +5366,7 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
-            
+
         if self.with_arrowflight:
             depends_on.append("arrowflight1")
 
