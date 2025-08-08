@@ -1,5 +1,13 @@
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BUZZHOUSE;
+}
+}
+
 namespace BuzzHouse
 {
 
@@ -14,8 +22,40 @@ static const auto setSetting = CHSetting(
     {},
     false);
 
-std::unordered_map<String, CHSetting> hotSettings
-    = {{"join_algorithm",
+std::unordered_map<String, CHSetting> hotSettings;
+
+std::unordered_map<String, CHSetting> performanceSettings
+    = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
+       {"allow_execute_multiif_columnar", trueOrFalseSetting},
+       {"allow_experimental_query_deduplication", trueOrFalseSetting},
+       {"allow_general_join_planning", trueOrFalseSetting},
+       {"allow_hyperscan", trueOrFalseSetting},
+       {"allow_prefetched_read_pool_for_local_filesystem", trueOrFalseSetting},
+       {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalseSetting},
+       {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
+       {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
+       {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
+       {"allow_simdjson", trueOrFalseSetting},
+       {"allow_statistics_optimize", trueOrFalseSetting},
+       {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
+       {"compile_aggregate_expressions", trueOrFalseSetting},
+       {"compile_expressions", trueOrFalseSetting},
+       {"compile_sort_description", trueOrFalseSetting},
+       {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
+       {"count_distinct_implementation",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
+            false)},
+       {"count_distinct_optimization", trueOrFalseSetting},
+       {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
+       {"enable_optimize_predicate_expression", trueOrFalseSetting},
+       {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
+       {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -62,39 +102,6 @@ std::unordered_map<String, CHSetting> hotSettings
              "'full_sorting_merge'",
              "'prefer_partial_merge'"},
             false)},
-       {"query_plan_optimize_lazy_materialization", trueOrFalseSetting}};
-
-std::unordered_map<String, CHSetting> performanceSettings
-    = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
-       {"allow_execute_multiif_columnar", trueOrFalseSetting},
-       {"allow_experimental_query_deduplication", trueOrFalseSetting},
-       {"allow_general_join_planning", trueOrFalseSetting},
-       {"allow_hyperscan", trueOrFalseSetting},
-       {"allow_prefetched_read_pool_for_local_filesystem", trueOrFalseSetting},
-       {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalseSetting},
-       {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
-       {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
-       {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
-       {"allow_simdjson", trueOrFalseSetting},
-       {"allow_statistics_optimize", trueOrFalseSetting},
-       {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
-       {"compile_aggregate_expressions", trueOrFalseSetting},
-       {"compile_expressions", trueOrFalseSetting},
-       {"compile_sort_description", trueOrFalseSetting},
-       {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
-       {"count_distinct_implementation",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
-                return rg.pickRandomly(choices);
-            },
-            {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
-            false)},
-       {"count_distinct_optimization", trueOrFalseSetting},
-       {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
-       {"enable_optimize_predicate_expression", trueOrFalseSetting},
-       {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
        {"join_any_take_last_row", trueOrFalseSetting},
        {"low_cardinality_use_single_dictionary_for_part", trueOrFalseSetting},
        {"max_bytes_ratio_before_external_group_by", probRangeNoZeroSetting},
@@ -178,6 +185,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_merge_expressions", trueOrFalseSetting},
        {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
        {"query_plan_merge_filters", trueOrFalseSetting},
+       {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
        {"query_plan_optimize_prewhere", trueOrFalseSetting},
        {"query_plan_push_down_limit", trueOrFalseSetting},
        {"query_plan_read_in_order", trueOrFalseSetting},
@@ -1033,16 +1041,12 @@ std::unordered_map<String, CHSetting> formatSettings;
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
-    if (fc.disable_new_analyzer)
+    if (fc.enable_parallel_replicas && !fc.clusters.empty())
     {
-        hotSettings.insert({{"enable_analyzer", trueOrFalseSetting}});
-    }
-    if (!fc.clusters.empty())
-    {
-        hotSettings.insert({{"enable_parallel_replicas", trueOrFalseSetting}});
         serverSettings.insert(
             {{"cluster_for_parallel_replicas",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)},
+             {"enable_parallel_replicas", trueOrFalseSetting}});
     }
     if (!fc.caches.empty())
     {
@@ -1050,10 +1054,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             {{"filesystem_cache_name",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.caches) + "'"; }, {}, false)}});
     }
-    for (const auto & [key, value] : hotSettings)
+    if (fc.disable_new_analyzer)
     {
-        chassert(!value.oracle_values.empty());
-        performanceSettings.insert({{key, value}});
+        performanceSettings.insert({{"enable_analyzer", trueOrFalseSetting}});
     }
     for (const auto & setting : performanceSettings)
     {
@@ -1212,6 +1215,23 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"force_primary_key", trueOrFalseSettingNoOracle}});
     }
 
+    /// Set hot settings
+    if (!fc.hot_settings.empty())
+    {
+        for (const auto & entry : fc.hot_settings)
+        {
+            if (serverSettings.find(entry) == serverSettings.end())
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
+            }
+            const auto & next = serverSettings.at(entry);
+            if (next.oracle_values.empty())
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Server setting {} can't be set as hot", entry);
+            }
+            hotSettings.insert({entry, next});
+        }
+    }
     for (const auto & [key, value] : serverSettings)
     {
         if (!value.oracle_values.empty())
