@@ -124,7 +124,7 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContentType content_type) const
+const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFiles(FileContentType content_type) const
 {
     if (content_type == FileContentType::DATA)
         return data_files;
@@ -367,7 +367,7 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files.emplace_back(
+                this->data_files.emplace_back(std::make_shared<const ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     status,
@@ -375,7 +375,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    /*reference_data_file = */ std::nullopt);
+                    /*reference_data_file = */ std::nullopt));
                 break;
             case FileContentType::POSITION_DELETE: {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
@@ -386,7 +386,7 @@ ManifestFileContent::ManifestFileContent(
                         = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
                               .safeGet<String>();
                 }
-                this->position_deletes_files.emplace_back(
+                this->position_deletes_files.emplace_back(std::make_shared<const ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     status,
@@ -394,7 +394,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    reference_file_path);
+                    reference_file_path));
                 break;
             }
             default:
@@ -406,7 +406,7 @@ ManifestFileContent::ManifestFileContent(
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files)
+void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
 {
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -416,14 +416,14 @@ void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFile
         indices.end(),
         [&](size_t i, size_t j)
         {
-            if (files[i].schema_id != files[j].schema_id)
+            if (files[i]->schema_id != files[j]->schema_id)
             {
-                return files[i].schema_id < files[j].schema_id;
+                return files[i]->schema_id < files[j]->schema_id;
             }
             return i < j;
         });
 
-    std::vector<ManifestFileEntry> sorted_files;
+    std::vector<ManifestFileEntryPtr> sorted_files;
     sorted_files.reserve(files.size());
     for (const auto & index : indices)
     {
@@ -473,11 +473,11 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
-                if (file.status != ManifestEntryStatus::DELETED)
+                if (file->status != ManifestEntryStatus::DELETED)
                     result += *column_info.rows_count;
                 found = true;
                 break;
@@ -497,7 +497,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
@@ -513,35 +513,19 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
     return result;
 }
 
-std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
-{
-    return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
-        <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
-}
-
-template <typename A>
-bool less(const std::vector<A> & lhs, const std::vector<A> & rhs)
+bool operator==(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
 {
     if (lhs.size() != rhs.size())
-        return lhs.size() < rhs.size();
-    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](const A & a, const A & b) { return a < b; });
+        return false;
+    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+        [](const PartitionSpecsEntry & a, const PartitionSpecsEntry & b)
+        {
+            return std::tie(a.source_id, a.transform_name, a.partition_name)
+                == std::tie(b.source_id, b.transform_name, b.partition_name);
+        }
+    );
 }
 
-bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
-{
-    return less(lhs, rhs);
-}
-
-bool operator<(const DB::Row & lhs, const DB::Row & rhs)
-{
-    return less(lhs, rhs);
-}
-
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
-{
-    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
-        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
-}
 }
 
 #endif

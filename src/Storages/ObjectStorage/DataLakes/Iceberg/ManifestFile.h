@@ -69,6 +69,8 @@ struct ManifestFileEntry
     std::optional<String> reference_data_file_path; // For position delete files only.
 };
 
+using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
+
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
  *
@@ -109,7 +111,7 @@ public:
         const std::string & table_location,
         DB::ContextPtr context);
 
-    const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
+    const std::vector<ManifestFileEntryPtr> & getFiles(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -131,13 +133,13 @@ public:
 private:
 
     PartitionSpecification common_partition_specification;
-    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files);
+    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files);
 
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> data_files;
+    std::vector<ManifestFileEntryPtr> data_files;
     // Partition level deletes files
-    std::vector<ManifestFileEntry> position_deletes_files;
+    std::vector<ManifestFileEntryPtr> position_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
 
@@ -145,11 +147,7 @@ private:
 
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
-bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
-bool operator<(const DB::Row & lhs, const DB::Row & rhs);
-
-
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
+bool operator==(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 }
 
 #endif
