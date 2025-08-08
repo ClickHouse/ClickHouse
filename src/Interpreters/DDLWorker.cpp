@@ -182,7 +182,7 @@ ZooKeeperWithFaultInjectionPtr DDLWorker::getZooKeeper() const
         settings[Setting::keeper_fault_injection_probability],
         settings[Setting::keeper_fault_injection_seed],
         current_zookeeper,
-        "DatabaseReplicated::dropReplica",
+        "DDLWorker",
         nullptr);
 }
 
@@ -198,7 +198,7 @@ ZooKeeperWithFaultInjectionPtr DDLWorker::getAndSetZooKeeper()
         settings[Setting::keeper_fault_injection_probability],
         settings[Setting::keeper_fault_injection_seed],
         current_zookeeper,
-        "DatabaseReplicated::dropReplica",
+        "DDLWorker",
         nullptr);
 }
 

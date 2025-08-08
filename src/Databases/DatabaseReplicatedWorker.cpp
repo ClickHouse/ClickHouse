@@ -11,6 +11,7 @@
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/thread_local_rng.h>
 
@@ -21,6 +22,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
 }
 
 namespace DatabaseReplicatedSetting
@@ -148,44 +152,69 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
 
-    LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
+    LOG_TRACE(log, "Trying to delete ephemeral active node: active_path={}, active_id={}", active_path, active_id);
 
-    zookeeper->deleteEphemeralNodeIfContentMatches(
-        active_path,
-        [&active_id](const std::string & actual_content)
-        {
-            if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
-                return active_id == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
-            return active_id == actual_content;
-        });
-    bool first_initialization = active_node_holder == nullptr;
-    if (active_node_holder)
-        active_node_holder->setAlreadyRemoved();
-    active_node_holder.reset();
+    const auto & settings = context->getSettingsRef();
+    ZooKeeperRetriesControl retries_ctl(
+        "initializeReplication",
+        log,
+        {settings[Setting::keeper_max_retries],
+         settings[Setting::keeper_retry_initial_backoff_ms],
+         settings[Setting::keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
 
-    String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
-    UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-    logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-
+    String log_ptr_str;
+    UInt32 our_log_ptr;
+    UInt32 max_log_ptr;
     UInt64 digest;
     String digest_str;
     UInt64 local_digest;
-    if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
-    {
-        digest = parse<UInt64>(digest_str);
-        std::lock_guard lock{database->metadata_mutex};
-        local_digest = database->tables_metadata_digest;
-    }
-    else
-    {
-        LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
-        /// Database was created by old ClickHouse versions, let's create the node
-        std::lock_guard lock{database->metadata_mutex};
-        digest = local_digest = database->tables_metadata_digest;
-        digest_str = toString(digest);
-        zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
-    }
+    bool first_initialization;
+
+
+    retries_ctl.retryLoop(
+        [&]()
+        {
+            if (zookeeper->expired())
+                zookeeper->setKeeper(context->getZooKeeper());
+
+            zookeeper->deleteEphemeralNodeIfContentMatches(
+                active_path,
+                [&active_id](const std::string & actual_content)
+                {
+                    if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+                        return active_id
+                            == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
+                    return active_id == actual_content;
+                });
+
+            first_initialization = active_node_holder == nullptr;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            active_node_holder.reset();
+
+            log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
+            our_log_ptr = parse<UInt32>(log_ptr_str);
+            max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+            logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+
+            if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
+            {
+                digest = parse<UInt64>(digest_str);
+                std::lock_guard lock{database->metadata_mutex};
+                local_digest = database->tables_metadata_digest;
+            }
+            else
+            {
+                LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
+                /// Database was created by old ClickHouse versions, let's create the node
+                std::lock_guard lock{database->metadata_mutex};
+                digest = local_digest = database->tables_metadata_digest;
+                digest_str = toString(digest);
+                zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
+            }
+        });
+
 
     LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
               our_log_ptr, max_log_ptr, local_digest, digest);
@@ -247,9 +276,15 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
-    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-    active_node_holder_zookeeper = zookeeper->getKeeper();
-    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+    retries_ctl.retryLoop(
+        [&]()
+        {
+            if (zookeeper->expired())
+                zookeeper->setKeeper(context->getZooKeeper());
+            zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+            active_node_holder_zookeeper = zookeeper->getKeeper();
+            active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+        });
 }
 
 void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
