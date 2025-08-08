@@ -12,9 +12,9 @@ namespace DB
 REGISTER_FUNCTION(HashingInt)
 {
     FunctionDocumentation::Description intHash32_description = R"(
-Calculates a 32-bit hash code from any type of integer.
+Calculates a 32-bit hash of an integer.
 
-This is a relatively fast non-cryptographic hash function of average quality for numbers.
+The hash function is relatively fast but not cryptographic hash function.
 )";
     FunctionDocumentation::Syntax intHash32_syntax = "intHash32(arg)";
     FunctionDocumentation::Arguments intHash32_arguments = {
@@ -38,10 +38,9 @@ This is a relatively fast non-cryptographic hash function of average quality for
     factory.registerFunction<FunctionIntHash32>(intHash32_documentation);
 
     FunctionDocumentation::Description intHash64_description = R"(
-Calculates a 64-bit hash code from any type of integer.
+Calculates a 64-bit hash of an integer.
 
-This is a relatively fast non-cryptographic hash function of average quality for numbers.
-It works faster than [`intHash32`](#inthash32).
+The hash function is relatively fast (even faster than [`intHash32`](#inthash32)) but not a cryptographic hash function.
 )";
     FunctionDocumentation::Syntax intHash64_syntax = "intHash64(int)";
     FunctionDocumentation::Arguments intHash64_arguments = {
