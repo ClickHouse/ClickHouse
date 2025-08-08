@@ -234,7 +234,7 @@ public:
                     input_rows_count,
                     result_column_size);
 
-                return result_column;
+            return result_column;
         }
         catch (const Exception & e)
         {
