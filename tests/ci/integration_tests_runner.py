@@ -32,6 +32,7 @@ CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.c
 CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
 CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
 CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
+CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -840,7 +841,6 @@ class ClickhouseIntegrationTestsRunner:
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
                     AND (check_start_time <= ({start_time_filter}))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
-                    AND (test_status != 'SKIPPED')
                     AND (test_name != '')
                 GROUP BY test_name
             )
@@ -853,7 +853,6 @@ class ClickhouseIntegrationTestsRunner:
         max_retries = 3
         retry_delay_seconds = 5
 
-        url = f"https://{CLICKHOUSE_PLAY_HOST}/"
         params = {
             "database": CLICKHOUSE_PLAY_DB,
             "user": CLICKHOUSE_PLAY_USER,
@@ -867,7 +866,7 @@ class ClickhouseIntegrationTestsRunner:
                     attempt + 1, max_retries
                 )
 
-                response = requests.post(url, params=params, data=query, timeout=120)
+                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
