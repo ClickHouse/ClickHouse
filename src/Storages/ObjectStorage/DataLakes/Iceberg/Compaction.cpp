@@ -8,16 +8,24 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <fmt/format.h>
 #include <Poco/JSON/Object.h>
-#include "Common/Logger.h"
-#include "Columns/IColumn.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Interpreters/Cache/FileSegment.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/ObjectStorage/DataLakes/Common.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
-#include "Storages/ObjectStorage/StorageObjectStorageSource.h"
+#include <Poco/JSON/Stringifier.h>
+#include <Common/Logger.h>
+#include "Core/Settings.h"
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+
+namespace DB::Setting
+{
+    extern const SettingsMilliseconds iceberg_compaction_backoff_time;
+}
 
 namespace Iceberg
 {
@@ -264,9 +272,11 @@ String writeMetadataFiles(
 
     for (const auto & history_record : plan.history)
     {
-        if (history_record.added_records == 0)
+        if (history_record.added_files == 0)
+        {
+            new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
-
+        }
         Int32 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
@@ -278,11 +288,14 @@ String writeMetadataFiles(
             history_record.added_files,
             total_records_count,
             history_record.added_files_size,
-            history_record.num_partitions);
+            history_record.num_partitions,
+            history_record.snapshot_id,
+            history_record.made_current_at.value);
 
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
+
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, configuration, nullptr, context, log, compression_method);
     std::unordered_map<String, String> manifest_file_renamings;
@@ -360,7 +373,7 @@ String writeMetadataFiles(
     std::unordered_map<String, String> manifest_list_renamings;
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_records == 0)
+        if (plan.history[i].added_files == 0)
             continue;
 
         manifest_list_renamings[plan.history[i].manifest_list_path] = new_snapshots[i].metadata_path;
@@ -368,7 +381,7 @@ String writeMetadataFiles(
 
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_records == 0)
+        if (plan.history[i].added_files == 0)
             continue;
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
@@ -379,12 +392,14 @@ String writeMetadataFiles(
         for (const auto & initial_manifest_entry : initial_manifest_entries)
         {
             auto renamed_manifest_entry = manifest_file_renamings[initial_manifest_entry];
-            renamed_manifest_entries.push_back(renamed_manifest_entry);
-            total_manifest_file_sizes += manifest_file_sizes[renamed_manifest_entry];
+            if (!renamed_manifest_entry.empty())
+            {
+                renamed_manifest_entries.push_back(renamed_manifest_entry);
+                total_manifest_file_sizes += manifest_file_sizes[renamed_manifest_entry];
+            }
         }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(renamed_manifest_list), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-
         generateManifestList(
             generator,
             metadata_object,
@@ -453,20 +468,53 @@ void clearOldFiles(
     }
 }
 
+bool tryGetLock(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration)
+{
+    auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+    if (object_storage->exists(key))
+        return false;
+    object_storage->writeObject(key, WriteMode::Rewrite);
+    return true;
+}
+
+void unlock(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration)
+{
+    auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+    object_storage->removeObjectIfExists(key);
+}
+
 void compactIcebergTable(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool wait_concurrent_compaction)
 {
     FileNamesGenerator generator(configuration_->getRawPath().path, configuration_->getRawPath().path, false);
     auto plan = getPlan(object_storage_, configuration_, context_, generator);
     if (plan.need_optimize)
     {
-        writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-        auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
-        clearOldFiles(object_storage_, configuration_, metadata_file, context_, plan);
+        bool need_merge = true;
+        while (!tryGetLock(object_storage_, configuration_))
+        {
+            if (!wait_concurrent_compaction)
+                return;
+            need_merge = false;
+            auto backoff_time_ms = context_->getSettingsRef()[Setting::iceberg_compaction_backoff_time];
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_time_ms));
+        }
+        if (need_merge)
+        {
+            writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
+            auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
+            clearOldFiles(object_storage_, configuration_, metadata_file, context_, plan);
+            unlock(object_storage_, configuration_);
+        }
     }
 }
 

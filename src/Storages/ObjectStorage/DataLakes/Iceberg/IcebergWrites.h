@@ -103,7 +103,7 @@ public:
 
     struct NextMetadataResult
     {
-        Poco::JSON::Object::Ptr snapshot;
+        Poco::JSON::Object::Ptr snapshot = nullptr;
         String metadata_path;
         String storage_metadata_path;
     };
@@ -116,7 +116,8 @@ public:
         Int32 added_records,
         Int32 added_files_size,
         Int32 num_partitions,
-        std::optional<Int32> user_defined_snapshot_id = std::nullopt);
+        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+        std::optional<Int64> user_defined_timestamp = std::nullopt);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;

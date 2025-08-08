@@ -46,6 +46,8 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool allow_experimental_insert_into_iceberg;
     extern const SettingsMilliseconds iceberg_period_compaction;
+    extern const SettingsBool allow_experimental_iceberg_compaction;
+    extern const SettingsBool allow_experimental_iceberg_background_compaction;
 }
 
 namespace ErrorCodes
@@ -68,10 +70,8 @@ void scheduleCompactionJob(
     ContextPtr context)
 {
     auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
-    std::cerr << "wait " << std::chrono::milliseconds(compaction_period).count() << '\n';
     std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
     context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
-        std::cerr << "background check\n";
         Iceberg::compactIcebergTable(
             object_storage,
             configuration,
@@ -306,7 +306,7 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
-    if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites())
+    if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites() && context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
     {
         const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
         context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_, format_settings_, sample_block]
@@ -560,9 +560,16 @@ bool StorageObjectStorage::optimize(
 {
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        Iceberg::compactIcebergTable(object_storage, configuration, format_settings, sample_block, context);
-        return true;
+        if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+        {
+            const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+            Iceberg::compactIcebergTable(object_storage, configuration, format_settings, sample_block, context, true);
+            return true;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enalble 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+        }
     }
     return false;
 }

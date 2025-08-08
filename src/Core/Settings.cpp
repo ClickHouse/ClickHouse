@@ -6927,7 +6927,16 @@ Allow experimental delta-kernel-rs implementation.
 Allow to execute `insert` queries into iceberg.
 )", EXPERIMENTAL) \
     DECLARE(Milliseconds, iceberg_period_compaction, 5000, R"(
-Period of compaction in iceberg
+Period of compaction in iceberg.
+)", EXPERIMENTAL) \
+    DECLARE(Milliseconds, iceberg_compaction_backoff_time, 5000, R"(
+Backoff time wait in iceberg compaction.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_background_compaction, false, R"(
+Allow to optimize iceberg tables in background threads.
 )", EXPERIMENTAL) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.

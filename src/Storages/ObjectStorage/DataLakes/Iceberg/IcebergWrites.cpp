@@ -222,9 +222,6 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf)
 {
-    std::cerr << "generateManifestFile bp1\n";
-    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
-
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -253,12 +250,8 @@ void generateManifestFile(
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
-    std::cerr << "generateManifestFile bp2\n";
     for (const auto & data_file_name : data_file_names)
     {
-        std::cerr << "generateManifestFile bp3\n";
-        Poco::JSON::Stringifier::stringify(new_snapshot, std::cerr, 4);
-        std::cerr << "generateManifestFile bp4\n";
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
@@ -287,7 +280,6 @@ void generateManifestFile(
         };
         set_versioned_field(snapshot_id, Iceberg::f_snapshot_id);
 
-        std::cerr << "generateManifestFile bp4\n";
         if (version > 1)
         {
             Int64 sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
@@ -295,21 +287,18 @@ void generateManifestFile(
             set_versioned_field(sequence_number, Iceberg::f_sequence_number);
             set_versioned_field(sequence_number, Iceberg::f_file_sequence_number);
         }
-        std::cerr << "generateManifestFile bp5\n";
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
             data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
         data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name);
         data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
-        std::cerr << "generateManifestFile bp6\n";
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_records);
         Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
 
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
-        std::cerr << "generateManifestFile bp7\n";
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
@@ -318,7 +307,6 @@ void generateManifestFile(
             else if (partition_values[i].getType() == Field::Types::String)
                 partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
         }
-        std::cerr << "generateManifestFile bp8\n";
         writer.write(manifest_datum);
     }
     writer.close();
@@ -356,7 +344,6 @@ void generateManifestList(
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
         entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int32>(Iceberg::f_default_spec_id);
-
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = 0;
@@ -385,7 +372,6 @@ void generateManifestList(
             }
         };
         set_versioned_field(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id), Iceberg::f_added_snapshot_id);
-
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_data_files_count);
@@ -485,7 +471,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int32 added_records,
     Int32 added_files_size,
     Int32 num_partitions,
-    std::optional<Int32> user_defined_snapshot_id)
+    std::optional<Int64> user_defined_snapshot_id,
+    std::optional<Int64> user_defined_timestamp)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -495,7 +482,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot->set(Iceberg::f_metadata_sequence_number, getMaxSequenceNumber() + 1);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int32 snapshot_id = user_defined_snapshot_id.value_or(dis(gen));
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
 
     auto [manifest_list_name, storage_manifest_list_name] = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -503,7 +490,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    new_snapshot->set(Iceberg::f_timestamp_ms, ms.count());
+    Int64 timestamp = user_defined_timestamp.value_or(ms.count());
+    new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
@@ -550,13 +538,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     {
         Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
         new_metadata_item->set(Iceberg::f_metadata_file, metadata_filename);
-        new_metadata_item->set(Iceberg::f_timestamp_ms, ms.count());
+        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
-        new_snapshot_item->set(Iceberg::f_timestamp_ms, ms.count());
+        new_snapshot_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
     }
     return {new_snapshot, manifest_list_name, storage_manifest_list_name};

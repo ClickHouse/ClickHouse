@@ -321,8 +321,12 @@ def create_iceberg_table(
     format="Parquet",
     **kwargs,
 ):
+    additional_settings = {}
+    if "allow_experimental_iceberg_background_compaction" in kwargs:
+        additional_settings["allow_experimental_iceberg_background_compaction"] = 1
     node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, format, **kwargs)
+        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, format, **kwargs),
+        settings=additional_settings
     )
 
 
