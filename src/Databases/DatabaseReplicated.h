@@ -20,7 +20,8 @@ namespace DB
 {
 
 class DatabaseReplicatedDDLWorker;
-using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -117,9 +118,9 @@ public:
     friend class DatabaseReplicatedDDLWorker;
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
-    bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
-    static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
-    void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    bool createDatabaseNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
+    static bool looksLikeReplicatedDatabasePath(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, const String & path);
+    void createReplicaNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
     /// For Replicated database will return ATTACH for MVs with inner table
     ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
@@ -137,11 +138,11 @@ private:
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+    void recoverLostReplica(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
 
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperWithFaultInjectionPtr & zookeeper, UInt32 & max_log_ptr) const;
 
-    std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
+    std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperWithFaultInjectionPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
     ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
@@ -152,7 +153,7 @@ private:
     ClusterPtr getClusterImpl(bool all_groups = false) const;
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
-    void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
+    void createEmptyLogEntry(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
 
     bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
     {
@@ -191,7 +192,7 @@ private:
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
-    ZooKeeperPtr getZooKeeper() const;
+    ZooKeeperWithFaultInjectionPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

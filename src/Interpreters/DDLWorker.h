@@ -46,6 +46,8 @@ struct DDLLogEntry;
 struct DDLTaskBase;
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 class AccessRightsElements;
 struct ZooKeeperRetriesInfo;
 class QueryStatus;
@@ -90,10 +92,10 @@ public:
 
 
     /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr getZooKeeper() const;
+    ZooKeeperWithFaultInjectionPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
-    ZooKeeperPtr getAndSetZooKeeper();
+    ZooKeeperWithFaultInjectionPtr getAndSetZooKeeper();
 
 protected:
 
@@ -134,9 +136,9 @@ protected:
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
     /// If dry_run = false, the task will be processed right after this call.
-    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool dry_run);
 
-    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query);
+    void processTask(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal_query);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
@@ -151,23 +153,23 @@ protected:
         DDLTaskBase & task,
         StoragePtr storage,
         const String & node_path,
-        const ZooKeeperPtr & zookeeper,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal);
 
     /// Checks and cleanups queue's nodes
-    void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
+    void cleanupQueue(Int64 current_time_seconds, const ZooKeeperWithFaultInjectionPtr & zookeeper);
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
-    void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
+    void createStatusDirs(const std::string & node_path, const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Return false if the worker was stopped (stop_flag = true)
     virtual bool initializeMainThread();
     virtual void initializeReplication();
 
-    virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
+    virtual void createReplicaDirs(const ZooKeeperWithFaultInjectionPtr & zookeeper, const NameSet & host_ids);
     virtual void markReplicasActive(bool reinitialized);
 
     void runMainThread();

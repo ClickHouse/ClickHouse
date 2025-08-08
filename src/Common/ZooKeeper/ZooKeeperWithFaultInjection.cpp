@@ -420,6 +420,12 @@ void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(
         __func__, path, [&]() { keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
 }
 
+void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition)
+{
+    executeWithFaultSync(
+        __func__, path, [&]() { keeper->deleteEphemeralNodeIfContentMatches(path, condition); });
+}
+
 Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
 {
     return executeWithFaultSync(

@@ -4,6 +4,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -260,7 +261,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
@@ -561,7 +562,7 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
     return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
-void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     assert(!completely_processed);
     if (!entry.settings)

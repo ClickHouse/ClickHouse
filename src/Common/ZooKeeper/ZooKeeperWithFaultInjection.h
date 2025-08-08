@@ -240,6 +240,7 @@ public:
     void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
 
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 

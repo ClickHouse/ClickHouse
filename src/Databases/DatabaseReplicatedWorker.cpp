@@ -11,6 +11,7 @@
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/thread_local_rng.h>
 
 namespace fs = std::filesystem;
@@ -247,7 +248,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-    active_node_holder_zookeeper = zookeeper;
+    active_node_holder_zookeeper = zookeeper->getKeeper();
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
@@ -281,15 +282,14 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-        active_node_holder_zookeeper = zookeeper;
+        active_node_holder_zookeeper = zookeeper->getKeeper();
         active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
     }
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = context->getZooKeeper();
-    return enqueueQueryImpl(zookeeper, entry, database);
+    return enqueueQueryImpl(getZooKeeper(), entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
@@ -333,7 +333,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
 }
 
 
-String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperWithFaultInjectionPtr & zookeeper, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed, Coordination::Requests additional_checks)
 {
     const String query_path_prefix = database->zookeeper_path + "/log/query-";
@@ -403,7 +403,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
@@ -413,7 +413,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
     String entry_path = enqueueQueryImpl(zookeeper, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
-    auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper);
+    auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper->getKeeper());
     String entry_name = entry_path.substr(entry_path.rfind('/') + 1);
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
     task->entry = entry;
@@ -473,7 +473,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     return entry_path;
 }
 
-DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run)
+DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool dry_run)
 {
     if (!dry_run)
     {
