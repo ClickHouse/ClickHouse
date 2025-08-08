@@ -64,7 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
-
+            {"delta_lake_snapshot_version", -1, -1, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

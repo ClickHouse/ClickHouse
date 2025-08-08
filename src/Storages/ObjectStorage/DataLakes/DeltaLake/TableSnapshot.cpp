@@ -34,6 +34,7 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Setting
@@ -389,7 +390,12 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
 
     if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+    {
+        if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
+
         snapshot_version_to_read = settings[DB::Setting::delta_lake_snapshot_version];
+    }
 }
 
 bool TableSnapshot::update(const DB::ContextPtr & context)
