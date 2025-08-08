@@ -1336,9 +1336,13 @@ For the IPv4 version see [`isIPv4String`](#isIPv4String).
     };
     FunctionDocumentation::ReturnedValue returned_value_isipv6 = {"Returns `1` if `string` is IPv6 address, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples_isipv6 = {
-        {"Usage example", R"(
-SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr;
-        )", R"(
+        {
+            "Usage example", 
+            R"(
+SELECT addr, isIPv6String(addr) 
+FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) 
+ARRAY JOIN addr;
+            )", R"(
 ┌─addr─────────────┬─isIPv6String(addr)─┐
 │ ::               │                  1 │
 │ 1111::ffff       │                  1 │
@@ -1385,7 +1389,7 @@ similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the 
     FunctionDocumentation::Arguments arguments_ipv4numtostringclassc = {{"num", "IPv4 address as UInt32 number.", {"UInt32"}}};
     FunctionDocumentation::ReturnedValue returned_value_ipv4numtostringclassc = {"Returns the IPv4 address string with xxx replacing the last octet.", {"String"}};
     FunctionDocumentation::Examples examples_ipv4numtostringclassc = {
-    {
+        {
         "Basic example with aggregation",
         R"(
 SELECT
