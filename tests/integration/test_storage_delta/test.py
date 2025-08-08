@@ -7,6 +7,7 @@ import string
 import time
 import uuid
 from datetime import datetime
+from multiprocessing.dummy import Pool
 
 import delta
 import pyarrow as pa
@@ -2091,7 +2092,8 @@ def test_partition_columns_3(started_cluster):
     )
 
 
-def test_filtering_by_virtual_columns(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -2126,9 +2128,13 @@ def test_filtering_by_virtual_columns(started_cluster):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs=0)"
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    result = int(
+        instance.query(
+            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+        )
+    )
     assert result == num_rows
 
     assert (
@@ -2142,13 +2148,15 @@ def test_filtering_by_virtual_columns(started_cluster):
         "7\tname_7\t32\tUS\t2027\n"
         "8\tname_8\t32\tUS\t2028\n"
         "9\tname_9\t32\tUS\t2029"
-        == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY all SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+        ).strip()
     )
 
     query_id = f"query_{TABLE_NAME}_1"
     result = int(
         instance.query(
-            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%'",
+            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%' SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}",
             query_id=query_id,
         )
     )
@@ -2159,6 +2167,21 @@ def test_filtering_by_virtual_columns(started_cluster):
             f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+    if use_delta_kernel == "0":
+        assert 1 < int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
+        )
+    elif use_delta_kernel == "1":
+        assert 0 == int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
+        )
+    else:
+        assert False
 
 
 def test_column_pruning(started_cluster):
@@ -2234,3 +2257,57 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+
+def test_concurrent_queries(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_concurrent_queries")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = []
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 500000
+    now = datetime.now()
+    data = [
+        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
+        for i in range(num_rows)
+    ]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    instance.query(
+        f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+
+    def select(_):
+        instance.query(
+            f"SELECT * FROM {TABLE_NAME} SETTINGS max_read_buffer_size_remote_fs=100",
+        )
+
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(select, range(10))
+    p.wait()
+
+    select(0)

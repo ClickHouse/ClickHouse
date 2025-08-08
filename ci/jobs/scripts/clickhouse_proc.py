@@ -938,7 +938,6 @@ quit
             "error_log",
             "query_metric_log",
             "part_log",
-            "latency_log",
             "minio_audit_logs",
             "minio_server_logs",
         ]
