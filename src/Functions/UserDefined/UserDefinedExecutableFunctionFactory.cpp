@@ -271,6 +271,7 @@ public:
         }
         UNREACHABLE();
     }
+
 private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
