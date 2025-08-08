@@ -809,7 +809,12 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
-        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
+        /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
+        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
+        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
+        SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
+
+        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
@@ -838,30 +843,17 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+        std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
 
-        std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
         scope_guard delete_dictionaries_xmls;
         scope_guard delete_user_defined_executable_functions_xmls;
-
-        /// Delete DDLWorker before zookeeper.
-        /// Cause it can call Context::getZooKeeper and resurrect it.
-
-        {
-            std::lock_guard lock(mutex);
-            delete_ddl_worker = std::move(ddl_worker);
-        }
-
-        /// DDLWorker should be deleted without lock, cause its internal thread can
-        /// take it as well, which will cause deadlock.
-        LOG_TRACE(log, "Shutting down DDLWorker");
-        delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
@@ -930,6 +922,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
+            delete_ddl_worker = std::move(ddl_worker);
 
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
@@ -3370,6 +3363,12 @@ void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
+}
+
+void Context::cancelAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->cancelAll();
 }
 
 BackupsInMemoryHolder & Context::getBackupsInMemory()
