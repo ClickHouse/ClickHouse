@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool query_plan_convert_join_to_in;
+    extern const SettingsBool query_plan_push_down_volume_reducing_functions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsDouble query_condition_cache_selectivity_threshold;
@@ -125,6 +126,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
 
+    push_down_volume_reducing_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
