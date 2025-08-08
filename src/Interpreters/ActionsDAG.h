@@ -26,6 +26,10 @@ class FunctionNode;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+namespace QueryPlanOptimizations {
+    class FunctionReplacerDAG;
+}
+
 namespace JSONBuilder
 {
     class JSONMap;
@@ -458,6 +462,8 @@ public:
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
+
+    friend class QueryPlanOptimizations::FunctionReplacerDAG;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
