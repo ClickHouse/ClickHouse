@@ -933,12 +933,22 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && b.isReplicatedMergeTree())
+    if (te->has_engine() && (b.isReplicatedMergeTree() || b.isSharedMergeTree()) && rg.nextSmallNumber() < 8)
     {
-        /// Replicated table params, must come first
-        chassert(te->params_size() == 0);
-        te->add_params()->set_svalue("/clickhouse/path/{shard}/t" + std::to_string(b.tname));
+        /// Replicated table params must come first when set
+        std::vector<TableEngineParam> temp_params;
+
+        for (const auto & item : te->params())
+        {
+            temp_params.emplace_back(item);
+        }
+        te->clear_params();
+        te->add_params()->set_svalue("/clickhouse/tables/{shard}/{database}/{table}");
         te->add_params()->set_svalue("{replica}");
+        for (const auto & item : temp_params)
+        {
+            *te->add_params() = item;
+        }
     }
     if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
     {
@@ -956,8 +966,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
-    /// Replicated MergeTree are to be used with cluster
-    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && !b.isSharedMergeTree()
+    /// ReplicatedMergeTrees are to be used with cluster, but not SharedMergeTrees
+    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && !b.isSharedMergeTree() && (b.db || !supports_cloud_features)
         && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
@@ -1864,6 +1874,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(KeeperMap);
     }
+    if (!fc.arrow_flight_servers.empty() && (fc.engine_mask & allow_arrowflight) != 0)
+    {
+        this->ids.emplace_back(ArrowFlight);
+    }
     if (has_tables || has_views || has_dictionaries)
     {
         if ((fc.engine_mask & allow_buffer) != 0)
@@ -1960,10 +1974,6 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)
         {
             this->ids.emplace_back(URL);
-        }
-        if (!fc.arrow_flight_servers.empty() && (fc.engine_mask & allow_arrowflight) != 0)
-        {
-            this->ids.emplace_back(ArrowFlight);
         }
         if (allow_mysql_tbl || allow_postgresql_tbl)
         {
