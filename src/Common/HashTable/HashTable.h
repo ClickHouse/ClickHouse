@@ -720,7 +720,7 @@ protected:
             if (prefetch_buffer.size() <  prefetch_ahead && next_ptr < buf_end) [[likely]]
             {
                 if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
-                    prefetch_ahead = std::min(prefetch_buffer.capacity(), prefetching.calcPrefetchLookAhead() + 1);
+                    prefetch_ahead = std::min(prefetch_buffer.capacity(), prefetching.calcPrefetchLookAhead());
 
                 auto n = prefetch_ahead - prefetch_buffer.size();
                 cell_type * last_ptr = nullptr;
