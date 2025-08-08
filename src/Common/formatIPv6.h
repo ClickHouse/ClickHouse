@@ -267,7 +267,7 @@ inline const char * parseIPv6(const char * src, const char * end, unsigned char 
 }
 
 /// returns true if whole buffer was parsed successfully
-inline bool parseIPv6whole(const char * src, const char * end, unsigned char * dst)
+inline bool parseIPv6Whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv6(src, end, dst) == end;
 }
