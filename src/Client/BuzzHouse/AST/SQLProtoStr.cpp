@@ -2411,7 +2411,7 @@ CONV_FN(TableFunction, tf)
             MergeTreeProjectionFuncToString(ret, tf.mtproj());
             break;
         case TableFunctionType::kNullf:
-            ret += "null(";
+            ret += "`null`(";
             ExprToString(ret, tf.nullf());
             ret += ")";
             break;
