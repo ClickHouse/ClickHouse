@@ -220,7 +220,6 @@ extractURLParameters
 factorial
 farmFingerprint64
 farmHash64
-file
 filesystemAvailable
 filesystemCapacity
 filesystemUnreserved
