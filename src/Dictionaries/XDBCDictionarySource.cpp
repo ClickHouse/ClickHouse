@@ -127,10 +127,12 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 }
 
 
-QueryPipeline XDBCDictionarySource::loadAll()
+BlockIO XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadFromQuery(bridge_url, sample_block, load_all_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(bridge_url, sample_block, load_all_query);
+    return io;
 }
 
 

@@ -1,3 +1,4 @@
+#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -7,8 +8,10 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Core/BlockInfo.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
+
 
 #include <Poco/URI.h>
 
@@ -137,9 +140,11 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-QueryPipeline MongoDBDictionarySource::loadAll()
+BlockIO MongoDBDictionarySource::loadAll()
 {
-    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
+    return io;
 }
 
 QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
