@@ -415,7 +415,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn toIPv4OrDefault_introduced_in = {22, 3};
-    FunctionDocumentation::Category toIPv4OrDefault_category = FunctionDocumentation::Category::IPAddresses;
+    FunctionDocumentation::Category toIPv4OrDefault_category = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation toIPv4OrDefault_documentation = {toIPv4OrDefault_description, toIPv4OrDefault_syntax, toIPv4OrDefault_arguments, toIPv4OrDefault_returned_value, toIPv4OrDefault_examples, toIPv4OrDefault_introduced_in, toIPv4OrDefault_category};
 
     factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)

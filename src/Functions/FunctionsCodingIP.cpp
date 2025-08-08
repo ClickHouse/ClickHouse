@@ -1305,15 +1305,19 @@ For the IPv6 version see [`isIPv6String`](#isIPv6String).
     };
     FunctionDocumentation::ReturnedValue returned_value_isipv4 = {"Returns `1` if `string` is IPv4 address, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples_isipv4 = {
-        {"Usage example", R"(
+    {
+        "Usage example",
+        R"(
 SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr;
-        )", R"(
+        )",
+        R"(
 ┌─addr─────────────┬─isIPv4String(addr)─┐
 │ 0.0.0.0          │                  1 │
 │ 127.0.0.1        │                  1 │
 │ ::ffff:127.0.0.1 │                  0 │
 └──────────────────┴────────────────────┘
-        )"}
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_isipv4  = {21, 1};
     FunctionDocumentation::Category category_isipv4 = FunctionDocumentation::Category::IPAddress;
@@ -1363,7 +1367,7 @@ Interprets the input using big-endian byte ordering.
     {
         "Usage example",
         "IPv4NumToString(3232235521)",
-        "192.168.0.1"    
+        "192.168.0.1"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4numtostring  = {1, 1};
@@ -1372,15 +1376,13 @@ Interprets the input using big-endian byte ordering.
 
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>(documentation_ipv4numtostring);
 
-    // IPv4NumToStringClassC function  
+    // IPv4NumToStringClassC function
     FunctionDocumentation::Description description_ipv4numtostringclassc = R"(
-Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format), 
+Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format),
 similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the last octet.
     )";
     FunctionDocumentation::Syntax syntax_ipv4numtostringclassc = "IPv4NumToStringClassC(num)";
-    FunctionDocumentation::Arguments arguments_ipv4numtostringclassc = {
-        {"num", "IPv4 address as UInt32 number.", {"UInt32"}}
-    };
+    FunctionDocumentation::Arguments arguments_ipv4numtostringclassc = {{"num", "IPv4 address as UInt32 number.", {"UInt32"}}};
     FunctionDocumentation::ReturnedValue returned_value_ipv4numtostringclassc = {"Returns the IPv4 address string with xxx replacing the last octet.", {"String"}};
     FunctionDocumentation::Examples examples_ipv4numtostringclassc = {
     {
@@ -1450,7 +1452,7 @@ Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to i
     FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonumordefault = {"IPv4 address as UInt32 number, or `0` if invalid.", {"UInt32"}};
     FunctionDocumentation::Examples examples_ipv4stringtonumordefault = {
         {"Basic example with invalid address", R"(
-SELECT 
+SELECT
     IPv4StringToNumOrDefault('127.0.0.1') AS valid,
     IPv4StringToNumOrDefault('invalid') AS invalid;
         )", R"(
@@ -1479,7 +1481,7 @@ Converts a 32-bit integer to its IPv4 address string representation in dotted de
     {
         "Example with an invalid address",
         R"(
-SELECT 
+SELECT
 IPv4StringToNumOrNull('127.0.0.1') AS valid,
 IPv4StringToNumOrNull('invalid') AS invalid;
         )",
@@ -1627,7 +1629,7 @@ If the IPv6 address has an invalid format, it returns the default value `::`.
     FunctionDocumentation::ReturnedValue returned_value_ipv6stringtonumordefault = {"IPv6 address in binary format, or zero-filled FixedString(16) if invalid.", {"FixedString(16)"}};
     FunctionDocumentation::Examples examples_ipv6stringtonumordefault = {
         {"Basic example with invalid address", R"(
-SELECT 
+SELECT
     IPv6NumToString(IPv6StringToNumOrDefault('2001:db8::1')) AS valid,
     IPv6NumToString(IPv6StringToNumOrDefault('invalid')) AS invalid;
         )", R"(
@@ -1657,7 +1659,7 @@ If the IPv6 address has an invalid format, it returns `NULL`.
     {
         "Basic example with invalid address",
         R"(
-SELECT 
+SELECT
     IPv6NumToString(IPv6StringToNumOrNull('2001:db8::1')) AS valid,
     IPv6StringToNumOrNull('invalid') AS invalid;
         )",
@@ -1669,7 +1671,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumornull = {22, 3};
-    FunctionDocumentation::Category category_ipv6stringtonumornull = FunctionDocumentation::Category::IPAddresse;
+    FunctionDocumentation::Category category_ipv6stringtonumornull = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv6stringtonumornull);
