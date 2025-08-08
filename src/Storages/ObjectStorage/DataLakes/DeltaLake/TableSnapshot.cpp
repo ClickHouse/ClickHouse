@@ -39,6 +39,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
+    extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
 namespace ProfileEvents
@@ -362,6 +363,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
+static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
@@ -371,8 +373,8 @@ TableSnapshot::TableSnapshot(
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
-    , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
 {
+    updateSettings(context_);
 }
 
 size_t TableSnapshot::getVersion() const
@@ -381,8 +383,18 @@ size_t TableSnapshot::getVersion() const
     return kernel_snapshot_state->snapshot_version;
 }
 
-bool TableSnapshot::update()
+void TableSnapshot::updateSettings(const DB::ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+    enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+        snapshot_version_to_read = settings[DB::Setting::delta_lake_snapshot_version];
+}
+
+bool TableSnapshot::update(const DB::ContextPtr & context)
+{
+    updateSettings(context);
     if (!kernel_snapshot_state)
     {
         /// Snapshot is not yet created,
@@ -400,12 +412,27 @@ void TableSnapshot::initSnapshot() const
     initSnapshotImpl();
 }
 
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_)
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
 {
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot(KernelUtils::toDeltaString(helper_.getTableLocation()), engine.get()), "snapshot");
+    if (snapshot_version_.has_value())
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot_at_version(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get(),
+                snapshot_version_.value()),
+            "snapshot");
+    }
+    else
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get()),
+            "snapshot");
+    }
     snapshot_version = ffi::version(snapshot.get());
     scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
@@ -414,7 +441,7 @@ void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper);
+    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
 
     LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
 

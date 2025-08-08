@@ -2311,3 +2311,103 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     select(0)
+
+
+def test_snapshot_version(started_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_snapshot_version")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+    column_mapping = "name"
+
+    df = spark.createDataFrame([("alice", 47), ("anora", 23), ("aelin", 51)]).toDF(
+        "first_name", "age"
+    )
+
+    df.write.format("delta").partitionBy("age").option(
+        "delta.minReaderVersion", "2"
+    ).option("delta.minWriterVersion", "5").option(
+        "delta.columnMapping.mode", column_mapping
+    ).save(
+        path
+    )
+
+    upload_directory(minio_client, bucket, path, "")
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    def check_schema(expected, version):
+        assert (
+            expected
+            == node.query(
+                f"DESCRIBE TABLE {delta_function} SETTINGS delta_lake_snapshot_version = {version}"
+            ).strip()
+        )
+
+    def check_data(expected, version):
+        assert (
+            expected
+            == node.query(
+                f"SELECT * FROM {delta_function} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
+            ).strip()
+        )
+
+    def append_data(df):
+        df.write.option("mergeSchema", "true").mode("append").format(
+            "delta"
+        ).partitionBy("age").save(path)
+        upload_directory(minio_client, bucket, path, "")
+
+    check_schema("first_name\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 0)
+    check_data("aelin\t51\n" "alice\t47\n" "anora\t23", 0)
+
+    spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '{path}'")
+    spark.sql(f"ALTER TABLE {table_name} RENAME COLUMN first_name TO naam")
+
+    df = spark.createDataFrame([("bob", 12), ("bill", 33), ("bober", 49)]).toDF(
+        "naam", "age"
+    )
+    append_data(df)
+
+    check_schema("first_name\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 0)
+    check_data("aelin\t51\n" "alice\t47\n" "anora\t23", 0)
+
+    check_schema("naam\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 2)
+    check_data("aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49", 2)
+
+    assert "Unknown expression identifier `first_name`" in node.query_and_get_error(
+        f"SELECT first_name FROM {delta_function} WHERE age = 51"
+    )
+
+    assert "Unknown expression identifier `first_name`" in node.query_and_get_error(
+        f"SELECT first_name FROM {delta_function} WHERE age = 51",
+        settings={"delta_lake_snapshot_version": 2},
+    )
+
+    assert (
+        "aelin"
+        in node.query(
+            f"SELECT first_name FROM {delta_function} WHERE age = 51",
+            settings={"delta_lake_snapshot_version": 0},
+        ).strip()
+    )
+
+    assert "Unknown expression identifier `naam`" in node.query_and_get_error(
+        f"SELECT naam FROM {delta_function} WHERE age = 51",
+        settings={"delta_lake_snapshot_version": 0},
+    )
+
+    assert (
+        "aelin"
+        in node.query(
+            f"SELECT naam FROM {delta_function} WHERE age = 51",
+            settings={"delta_lake_snapshot_version": 2},
+        ).strip()
+    )
