@@ -164,7 +164,10 @@ namespace detail
                 memset(res_value, 0, 10);
                 res_value[10] = 0xFF;
                 res_value[11] = 0xFF;
-                memcpy(&res_value[12], &ipv4, 4);
+                if constexpr (std::endian::native == std::endian::little)
+                    reverseMemcpy(&res_value[12], &ipv4, 4);
+                else
+                    memcpy(&res_value[12], &ipv4, 4);
                 parsed = true;
             }
             else
