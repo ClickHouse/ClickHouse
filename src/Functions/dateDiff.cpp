@@ -550,7 +550,7 @@ The difference is calculated using a precision of 1 nanosecond.
 For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
 0 months for the month unit, and 0 years for the year unit.
 
-For an alternative to age, see function [`date_diff`](#date_diff).
+For an alternative to age, see function [`timeDiff`](#timeDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 age('unit', startdate, enddate, [timezone])
