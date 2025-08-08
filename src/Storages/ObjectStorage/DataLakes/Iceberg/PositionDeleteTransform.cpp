@@ -35,20 +35,20 @@ extern const int LOGICAL_ERROR;
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : iceberg_object_info->parsed_data_file_info.position_deletes_objects)
+    for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
-        if (position_deletes_object.reference_data_file_path.has_value()
-            && position_deletes_object.reference_data_file_path != iceberg_data_path)
+        if (position_deletes_object->reference_data_file_path.has_value()
+            && position_deletes_object->reference_data_file_path != iceberg_data_path)
             continue;
 
-        auto object_path = position_deletes_object.file_path;
+        auto object_path = position_deletes_object->file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 

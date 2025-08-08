@@ -8,6 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -28,23 +29,9 @@ namespace DB
 
 class IcebergMetadata;
 
-struct ParsedDataFileInfo
-{
-    ParsedDataFileInfo(
-        StorageObjectStorageConfigurationPtr configuration_,
-        Iceberg::ManifestFileEntry data_object_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
-    String data_object_file_path_key;
-    String data_object_file_path; // Full path to the data object file
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-
-    bool operator<(const ParsedDataFileInfo & other) const
-    {
-        return std::tie(data_object_file_path_key) < std::tie(other.data_object_file_path_key);
-    }
-};
 class IcebergMetadata : public IDataLakeMetadata
 {
+    friend class IcebergKeysIterator;
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
@@ -138,69 +125,84 @@ private:
     mutable std::atomic_bool schema_id_by_data_files_initialized = false;
 
     Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
-    std::optional<Iceberg::IcebergSnapshot> relevant_snapshot TSA_GUARDED_BY(mutex);
+    std::shared_ptr<Iceberg::IcebergSnapshot> relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     const String table_location;
 
     ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
-    std::vector<ParsedDataFileInfo> getDataFiles(
-        const ActionsDAG * filter_dag,
-        ContextPtr local_context,
-        const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
-    std::vector<Iceberg::ManifestFileEntry> getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
-    void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
+    void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list) const TSA_REQUIRES(mutex);
     Iceberg::ManifestFilePtr
     getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
         TSA_REQUIRES_SHARED(mutex);
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 
-    template <typename T>
-    std::vector<T> getFilesImpl(
-        const ActionsDAG * filter_dag,
-        Iceberg::FileContentType file_content_type,
-        ContextPtr local_context,
-        std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
 };
 
 struct IcebergDataObjectInfo : public RelativePathWithMetadata
 {
-    IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_);
+    IcebergDataObjectInfo(
+        StorageObjectStorageConfigurationPtr configuration_
+        , std::optional<ObjectMetadata> metadata_
+        , Iceberg::ManifestFileEntryPtr current_data_file
+        , const std::vector<Iceberg::ManifestFileEntryPtr> & position_deletes_objects_);
 
-    ParsedDataFileInfo parsed_data_file_info;
+    String data_object_file_path_key;
+    std::vector<Iceberg::ManifestFileEntryPtr> position_deletes_objects;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
-
-class IcebergKeysIterator : public IObjectIterator
+class IcebergKeysIterator : public IObjectIterator, public WithContext
 {
 public:
     IcebergKeysIterator(
-        std::vector<ParsedDataFileInfo> && data_files_,
-        std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> && position_deletes_files_,
+        const IcebergMetadata & iceberg_metadata_,
+        Int32 relevant_snapshot_schema_id_,
+        std::shared_ptr<Iceberg::IcebergSnapshot> snapshot_,
+        const ActionsDAG * filter_dag_,
         ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_);
+        IDataLakeMetadata::FileProgressCallback callback_,
+        ContextPtr context_);
+
+    ~IcebergKeysIterator() override;
 
     size_t estimatedKeysCount() override
     {
-        return data_files.size();
+        return snapshot->manifest_list_entries.size();
     }
 
     ObjectInfoPtr next(size_t) override;
 
 private:
-    std::vector<ParsedDataFileInfo> data_files;
-    std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> position_deletes_files;
+    void work();
+    void workImpl();
+
+    std::mutex iterator_mutex;
+
+    const IcebergMetadata & iceberg_metadata;
+    Int32 relevant_snapshot_schema_id;
+    std::shared_ptr<const Iceberg::IcebergSnapshot> snapshot;
+    std::optional<ActionsDAG> filter_dag;
+    /// the overall deletes_files we have collected right now
+    std::vector<Iceberg::ManifestFileEntryPtr> position_deletes_files;
+    /// a queue storing current data files, the size will be always < 100.
+    std::queue<Iceberg::ManifestFileEntryPtr> current_data_files;
     ObjectStoragePtr object_storage;
-    std::atomic<size_t> index = 0;
+    size_t index;
+
+    std::atomic<bool> finished = false;
+    std::condition_variable consumer_cv;
+    BackgroundSchedulePool::TaskHolder producer_task;
+
     IDataLakeMetadata::FileProgressCallback callback;
+    LoggerPtr log;
 };
 
 }

@@ -323,10 +323,10 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             }
 #endif
 
-            relevant_snapshot = IcebergSnapshot{
+            relevant_snapshot = std::make_shared<IcebergSnapshot>(
                 getManifestList(local_context, getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, table_location)),
-                relevant_snapshot_id, total_rows, total_bytes, total_position_deletes};
+                relevant_snapshot_id, total_rows, total_bytes, total_position_deletes);
 
             if (!snapshot->has(f_schema_id))
                 throw Exception(
@@ -516,11 +516,11 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr);
 }
 
-void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const
+void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list) const
 {
     schema_id_by_data_file.clear();
 
-    for (const auto & manifest_list_entry : manifest_list_ptr)
+    for (const auto & manifest_list_entry : manifest_list)
     {
         auto manifest_file_ptr = getManifestFile(
             local_context,
@@ -529,7 +529,7 @@ void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context
             manifest_list_entry.added_snapshot_id);
         for (const auto & manifest_file_entry : manifest_file_ptr->getFiles(Iceberg::FileContentType::DATA))
         {
-            schema_id_by_data_file.emplace(manifest_file_entry.file_path, manifest_file_entry.schema_id);
+            schema_id_by_data_file.emplace(manifest_file_entry->file_path, manifest_file_entry->schema_id);
         }
     }
 }
@@ -715,97 +715,6 @@ ManifestFilePtr IcebergMetadata::getManifestFile(
     return create_fn();
 }
 
-
-// We need to pass transform function here not to store ManifestFileEntry for data files explicitly in RAM
-template <typename T>
-std::vector<T> IcebergMetadata::getFilesImpl(
-    const ActionsDAG * filter_dag,
-    FileContentType file_content_type,
-    ContextPtr local_context,
-    std::function<T(const ManifestFileEntry &)> transform_function) const
-{
-    if (!local_context && filter_dag)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
-    }
-
-    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
-
-    std::vector<T> files;
-    {
-        SharedLockGuard lock(mutex);
-
-        if (!relevant_snapshot)
-            return {};
-
-
-        for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
-        {
-            Int64 previous_entry_schema = -1;
-            std::optional<ManifestFilesPruner> pruner;
-            auto manifest_file_ptr = getManifestFile(
-                local_context,
-                manifest_list_entry.manifest_file_path,
-                manifest_list_entry.added_sequence_number,
-                manifest_list_entry.added_snapshot_id);
-            const auto & data_files_in_manifest = manifest_file_ptr->getFiles(file_content_type);
-            for (const auto & manifest_file_entry : data_files_in_manifest)
-            {
-                // Trying to reuse already initialized pruner
-                if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
-                {
-                    previous_entry_schema = manifest_file_entry.schema_id;
-                    if (previous_entry_schema > manifest_file_entry.schema_id)
-                    {
-                        LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
-                    }
-                    pruner.emplace(
-                        schema_processor,
-                        relevant_snapshot_schema_id,
-                        manifest_file_entry.schema_id,
-                        filter_dag ? filter_dag : nullptr,
-                        *manifest_file_ptr,
-                        local_context);
-                }
-
-                if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
-                {
-                    if (!use_partition_pruning || !pruner->canBePruned(manifest_file_entry))
-                    {
-                        files.push_back(transform_function(manifest_file_entry));
-                    }
-                }
-            }
-        }
-    }
-    std::sort(files.begin(), files.end());
-    return files;
-}
-
-std::vector<ParsedDataFileInfo> IcebergMetadata::getDataFiles(
-    const ActionsDAG * filter_dag, ContextPtr local_context, const std::vector<ManifestFileEntry> & position_delete_files) const
-{
-    return getFilesImpl<ParsedDataFileInfo>(
-        filter_dag,
-        FileContentType::DATA,
-        local_context,
-        [this, &position_delete_files](const ManifestFileEntry & entry)
-        { return ParsedDataFileInfo{this->configuration.lock(), entry, position_delete_files}; });
-}
-
-std::vector<Iceberg::ManifestFileEntry>
-IcebergMetadata::getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
-{
-    return getFilesImpl<ManifestFileEntry>(
-        filter_dag,
-        FileContentType::POSITION_DELETE,
-        local_context,
-        // In the current design we can't avoid storing ManifestFileEntry in RAM explicitly for position deletes
-        [](const ManifestFileEntry & entry) { return entry; });
-}
-
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto configuration_ptr = configuration.lock();
@@ -886,10 +795,13 @@ ObjectIterator IcebergMetadata::iterate(
      ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
-    auto position_deletes_files
-        = std::make_unique<std::vector<Iceberg::ManifestFileEntry>>(getPositionDeleteFiles(filter_dag, local_context));
-    auto data_files = getDataFiles(filter_dag, local_context, *position_deletes_files);
-    return std::make_shared<IcebergKeysIterator>(std::move(data_files), std::move(position_deletes_files), object_storage, callback);
+    return std::make_shared<IcebergKeysIterator>(*this
+        , relevant_snapshot_schema_id
+        , relevant_snapshot
+        , filter_dag
+        , object_storage
+        , callback
+        , local_context);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
@@ -910,7 +822,7 @@ bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_
     if (!iceberg_object_info)
         return false;
 
-    return !iceberg_object_info->parsed_data_file_info.position_deletes_objects.empty();
+    return !iceberg_object_info->position_deletes_objects.empty();
 }
 
 std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
@@ -936,12 +848,13 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
         header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
-ParsedDataFileInfo::ParsedDataFileInfo(
+IcebergDataObjectInfo::IcebergDataObjectInfo(
     StorageObjectStorageConfigurationPtr configuration_,
-    Iceberg::ManifestFileEntry data_object_,
-    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
-    : data_object_file_path_key(data_object_.file_path_key)
-    , data_object_file_path(data_object_.file_path)
+    std::optional<ObjectMetadata> metadata_,
+    Iceberg::ManifestFileEntryPtr data_object_,
+    const std::vector<Iceberg::ManifestFileEntryPtr> & position_deletes_objects_)
+    : RelativePathWithMetadata(data_object_->file_path, std::move(metadata_))
+    , data_object_file_path_key(data_object_->file_path_key)
 {
     ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -949,27 +862,15 @@ ParsedDataFileInfo::ParsedDataFileInfo(
     /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
     /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
     /// ManifestFileEntry has comparator by default which helps to do that.
-    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
-    auto end_it = std::upper_bound(
-        position_deletes_objects_.begin(),
-        position_deletes_objects_.end(),
-        data_object_,
-        [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
-        {
-            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
-                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
-        });
-    if (beg_it - position_deletes_objects_.begin() > end_it - position_deletes_objects_.begin())
+    for (auto delete_entry : position_deletes_objects_)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
-            "beginning: {}, end: {}, position_deletes_objects size: {}",
-            beg_it - position_deletes_objects_.begin(),
-            end_it - position_deletes_objects_.begin(),
-            position_deletes_objects_.size());
+        if (data_object_->common_partition_specification == delete_entry->common_partition_specification
+            && data_object_->partition_key_value == delete_entry->partition_key_value
+            && data_object_->added_sequence_number <= delete_entry->added_sequence_number)
+        {
+            position_deletes_objects.push_back(delete_entry);
+        }
     }
-    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
     if (!position_deletes_objects.empty() && configuration_->format != "Parquet")
     {
         throw Exception(
@@ -979,45 +880,146 @@ ParsedDataFileInfo::ParsedDataFileInfo(
     }
 }
 
-
-IcebergDataObjectInfo::IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_)
-    : RelativePathWithMetadata(parsed_data_file_info_.data_object_file_path, std::move(metadata_))
-    , parsed_data_file_info(std::move(parsed_data_file_info_))
-{
-}
-
 IcebergKeysIterator::IcebergKeysIterator(
-    std::vector<ParsedDataFileInfo> && data_files_,
-    std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> && position_deletes_files_,
+    const IcebergMetadata & iceberg_metadata_,
+    Int32 relevant_snapshot_schema_id_,
+    std::shared_ptr<Iceberg::IcebergSnapshot> snapshot_,
+    const ActionsDAG * filter_dag_,
     ObjectStoragePtr object_storage_,
-    IDataLakeMetadata::FileProgressCallback callback_)
-    : data_files(std::move(data_files_))
-    , position_deletes_files(std::move(position_deletes_files_))
+    IDataLakeMetadata::FileProgressCallback callback_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , iceberg_metadata(iceberg_metadata_)
+    , relevant_snapshot_schema_id(relevant_snapshot_schema_id_)
+    , snapshot(snapshot_)
+    , filter_dag(std::nullopt)
     , object_storage(object_storage_)
+    , index(0)
     , callback(callback_)
+    , log(getLogger("IcebergKeysIterator"))
 {
+    if (filter_dag_ != nullptr)
+        filter_dag = filter_dag_->clone();
+    producer_task = context_->getSchedulePool().createTask("IcebergMetaReaderThread", [this]{ work(); });
+    producer_task->activateAndSchedule();
 }
 
+IcebergKeysIterator::~IcebergKeysIterator()
+{
+    finished = true;
+    producer_task->deactivate();
+}
+
+void IcebergKeysIterator::work()
+{
+    if (finished)
+        return;
+    workImpl();
+    if (finished)
+        return;
+    std::unique_lock<std::mutex> lock(iterator_mutex);
+    if (current_data_files.size() < 100)
+        producer_task->schedule();
+    else
+    {
+        LOG_DEBUG(log, "the number of current data files is {}, will sleep 100ms.", current_data_files.size());
+        producer_task->scheduleAfter(100);
+    }
+}
+
+void IcebergKeysIterator::workImpl()
+{
+    /// this function will continue to get manifest file as long as the cached data file is less than 100.
+    /// each loop will read a manifest file, and each manifest file contains many data files and delete files.
+    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
+    std::unique_lock<std::mutex> lock(iterator_mutex);
+    while(current_data_files.size() < 100)
+    {
+        lock.unlock();
+        if (index >= snapshot->manifest_list_entries.size())
+        {
+            finished = true;
+            return;
+        }
+        DB::ManifestFileCacheKey manifest_list_entry = snapshot->manifest_list_entries[index];
+        LOG_DEBUG(log, "Start reading manifest file {}", manifest_list_entry.manifest_file_path);
+        Int64 previous_entry_schema = -1;
+        std::optional<ManifestFilesPruner> pruner;
+        ManifestFilePtr manifest_file_ptr;
+        {
+            SharedLockGuard lock_for_metadata(iceberg_metadata.mutex);
+            manifest_file_ptr = iceberg_metadata.getManifestFile(
+                getContext(),
+                manifest_list_entry.manifest_file_path,
+                manifest_list_entry.added_sequence_number,
+                manifest_list_entry.added_snapshot_id);
+        }
+
+        const auto & new_position_deletes_files = manifest_file_ptr->getFiles(FileContentType::DATA);
+        position_deletes_files.insert(position_deletes_files.end(), new_position_deletes_files.begin(), new_position_deletes_files.end());
+
+        const auto & data_files_in_manifest = manifest_file_ptr->getFiles(FileContentType::DATA);
+        for (const auto & manifest_file_entry : data_files_in_manifest)
+        {
+            // Trying to reuse already initialized pruner
+            if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
+            {
+                previous_entry_schema = manifest_file_entry->schema_id;
+                if (previous_entry_schema > manifest_file_entry->schema_id)
+                {
+                    LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
+                }
+                pruner.emplace(
+                    iceberg_metadata.schema_processor,
+                    relevant_snapshot_schema_id,
+                    manifest_file_entry->schema_id,
+                    filter_dag.has_value() ? &filter_dag.value() : nullptr,
+                    *manifest_file_ptr,
+                    getContext());
+            }
+
+            if (manifest_file_entry->status != ManifestEntryStatus::DELETED)
+            {
+                lock.lock();
+                current_data_files.push(manifest_file_entry);
+                lock.unlock();
+            }
+        }
+        consumer_cv.notify_all();
+        index++;
+        lock.lock();
+    }
+}
 
 ObjectInfoPtr IcebergKeysIterator::next(size_t)
 {
-    while (true)
+    ManifestFileEntryPtr current_data_file;
+    /// try to get next data file
     {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= data_files.size())
-            return nullptr;
-
-        ParsedDataFileInfo & info = data_files[current_index];
-
-        auto key = info.data_object_file_path;
-        auto object_metadata = object_storage->getObjectMetadata(key);
-
-        if (callback)
-            callback(FileProgress(0, object_metadata.size_bytes));
-
-        return std::make_shared<IcebergDataObjectInfo>(std::move(object_metadata), std::move(info));
+        std::unique_lock<std::mutex> lock(iterator_mutex);
+        while (current_data_files.empty())
+        {
+            if (finished)
+                return nullptr;
+            LOG_DEBUG(log, "Current data file list is empty, will wait for a while.");
+            /// oops, the producer is busy reading the next data files, we have to wait here.
+            consumer_cv.wait(lock, [this]{ return finished || !current_data_files.empty(); });
+            /// Now I am waken, see if there are any data file in the queue.
+            /// It's possible that the data files is consumed by others, so I have to notify producer again.
+        }
+        current_data_file = current_data_files.front();
+        current_data_files.pop();
     }
+    auto current_file_path = current_data_file->file_path;
+    auto object_metadata = object_storage->getObjectMetadata(current_file_path);
+
+    if (callback)
+        callback(FileProgress(0, object_metadata.size_bytes));
+
+    std::unique_lock<std::mutex> lock(iterator_mutex);
+    return std::make_shared<IcebergDataObjectInfo>(iceberg_metadata.configuration.lock(), std::move(object_metadata), current_data_file, position_deletes_files);
 }
+
 }
 
 #endif
