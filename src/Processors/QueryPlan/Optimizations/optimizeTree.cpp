@@ -192,6 +192,8 @@ void optimizeTreeSecondPass(
 
         auto & frame = stack.back();
 
+        pushDownVolumeReducingFunctions(frame.node, &root, optimization_settings);
+
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
