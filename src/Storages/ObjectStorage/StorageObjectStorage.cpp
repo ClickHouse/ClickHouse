@@ -63,6 +63,8 @@ namespace ErrorCodes
 namespace
 {
 
+#if USE_AVRO
+
 void scheduleCompactionJob(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
@@ -94,6 +96,8 @@ void scheduleCompactionJob(
         );
     });
 }
+
+#endif
 
 }
 
@@ -310,6 +314,7 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
+#if USE_AVRO
     if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites() && context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
     {
         const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
@@ -318,6 +323,7 @@ StorageObjectStorage::StorageObjectStorage(
             scheduleCompactionJob(object_storage_, configuration_, format_settings_, sample_block, context);
         });
     }
+#endif
 }
 
 String StorageObjectStorage::getName() const

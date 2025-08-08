@@ -508,7 +508,7 @@ void compactIcebergTable(
         bool need_merge = true;
         while (!tryGetLock(object_storage_, configuration_))
         {
-            /// In this case we will wait untill another thread will optimize our table.
+            /// In this case we will wait until another thread will optimize our table.
             if (!wait_concurrent_compaction)
                 return;
             need_merge = false;
