@@ -83,10 +83,24 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
 
+class FunctionsStringSearchBase : public IFunction
+{
+protected:
+    ContextPtr context;
+
+public:
+    ContextPtr getContext() const { return context; }
+
+    explicit FunctionsStringSearchBase(ContextPtr _context)
+        : context(_context)
+    {}
+
+};
+
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
          HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
-class FunctionsStringSearch : public IFunction
+class FunctionsStringSearch : public FunctionsStringSearchBase
 {
 private:
     enum class ArgumentOrder : uint8_t
@@ -100,9 +114,10 @@ private:
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionsStringSearch>(context); }
+    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionsStringSearch>(_context); }
 
-    explicit FunctionsStringSearch([[maybe_unused]] ContextPtr context)
+    explicit FunctionsStringSearch(ContextPtr _context)
+        : FunctionsStringSearchBase(_context)
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {
