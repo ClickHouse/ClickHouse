@@ -124,10 +124,13 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
     /// This is used to identify configurations created by us.
     userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
-    if (retry_strategy.initial_delay_ms >= retry_strategy.max_delay_ms)
+    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
     if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Jitter factor for the retry strategy must be within the [0, 1]");
+    {
+        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
+        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
+    }
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
