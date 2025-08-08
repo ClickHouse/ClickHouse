@@ -115,6 +115,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -808,6 +809,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
