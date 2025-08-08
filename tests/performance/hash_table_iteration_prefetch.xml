@@ -1,6 +1,6 @@
 <test>
     <settings>
-        <max_threads>4</max_threads>
+        <max_threads>1</max_threads>
     </settings>
     <create_query>
         create table ht_prefetch (a String, b String, c UInt64) engine=Memory
@@ -11,7 +11,7 @@
     </fill_query>
 
     <query>
-        select a, b , avg(c) from ht_prefetch group by a, b  format Null
+        select a, b , avg(c) from ht_prefetch group by a, b format Null
     </query>
 
     <drop_query>
