@@ -1,4 +1,4 @@
-#include <Interpreters/ProfileEventsExt.h>
+#include "ProfileEventsExt.h"
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>

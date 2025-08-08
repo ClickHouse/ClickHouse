@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionTimeseriesInstantValue.h>
 #include <AggregateFunctions/AggregateFunctionTimeseriesExtrapolatedValue.h>
 #include <AggregateFunctions/AggregateFunctionTimeseriesToGridSparse.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -68,7 +67,7 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     }
 }
 
-UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+UInt64 extractIntParamater(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
     {
@@ -79,38 +78,6 @@ UInt64 extractIntParameter(const std::string & function_name, const std::string 
         UInt64 value{};
         ReadBufferFromString buf(string_value);
         if (tryReadIntText(value, buf))
-            return value;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of {} parameter for aggregate function {}",
-            parameter_field.getTypeName(), parameter_name, function_name);
-    }
-}
-
-Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
-{
-    if (Float64 float_value = 0; parameter_field.tryGet(float_value))
-    {
-        return float_value;
-    }
-    else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
-    {
-        return static_cast<Float64>(int_value);
-    }
-    else if (UInt64 uint_value = 0; parameter_field.tryGet(uint_value))
-    {
-        return static_cast<Float64>(uint_value);
-    }
-    else if (String string_value; parameter_field.tryGet(string_value))
-    {
-        Float64 value{};
-        ReadBufferFromString buf(string_value);
-        if (tryReadFloatText(value, buf))
             return value;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -135,7 +102,6 @@ namespace
 
 template <
     bool is_rate,
-    bool is_predict,
     bool array_arguments,
     typename ValueType,
     template <bool, typename, typename, typename, bool> class FunctionTraits,
@@ -145,19 +111,14 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 {
     const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
 
-    if (!is_predict && parameters.size() != 4)
+    if (parameters.size() != 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Aggregate function {} requires 4 parameters: start_timestamp, end_timestamp, step, window", name);
-
-    if (is_predict && parameters.size() != 5)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, predict_offset", name);
 
     const Field & start_timestamp_param = parameters[0];
     const Field & end_timestamp_param = parameters[1];
     const Field & step_param = parameters[2];
     const Field & window_param = parameters[3];
-    const Field & predict_offset_param = is_predict ? parameters[4] : Field();
 
     AggregateFunctionPtr res;
     if (isDateTime64(timestamp_type))
@@ -171,36 +132,18 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
         DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
 
-        if constexpr (is_predict)
-        {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * DecimalUtils::scaleMultiplier<Int64>(target_scale);
-            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
-        }
-        else
-        {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
-        }
+        res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
+            (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
     {
-        UInt64 start_timestamp = extractIntParameter(name, "start", start_timestamp_param);
-        UInt64 end_timestamp = extractIntParameter(name, "end", end_timestamp_param);
-        Int64 step = extractIntParameter(name, "step", step_param);
-        Int64 window = extractIntParameter(name, "window", window_param);
+        UInt64 start_timestamp = extractIntParamater(name, "start", start_timestamp_param);
+        UInt64 end_timestamp = extractIntParamater(name, "end", end_timestamp_param);
+        Int64 step = extractIntParamater(name, "step", step_param);
+        Int64 window = extractIntParamater(name, "window", window_param);
 
-        if constexpr (is_predict)
-        {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
-            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
-        }
-        else
-        {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate>>>
+        res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, 0);
-        }
     }
 
     if (!res)
@@ -212,7 +155,6 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 
 template <
     bool is_rate,
-    bool is_predict,
     template <bool, typename, typename, typename, bool> class FunctionTraits,
     template <typename> class Function
 >
@@ -238,16 +180,16 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
     if (value_type->getTypeId() == TypeIndex::Float64)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else if (value_type->getTypeId() == TypeIndex::Float32)
     {
         if (array_arguments)
-            res = createWithValueType<is_rate, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
         else
-            res = createWithValueType<is_rate, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+            res = createWithValueType<is_rate, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
     }
     else
     {
@@ -263,22 +205,17 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("timeSeriesRateToGrid",
-        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
+        createAggregateFunctionTimeseries<true, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
     factory.registerFunction("timeSeriesDeltaToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
+        createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
 
     factory.registerFunction("timeSeriesInstantRateToGrid",
-        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
+        createAggregateFunctionTimeseries<true, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
     factory.registerFunction("timeSeriesInstantDeltaToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
-
-    factory.registerFunction("timeSeriesDerivToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
-    factory.registerFunction("timeSeriesPredictLinearToGrid",
-        createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
+        createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
+        createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
 }
 
 }

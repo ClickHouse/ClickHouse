@@ -1,8 +1,8 @@
-#include <Common/Config/ConfigReloader.h>
+#include "ConfigReloader.h"
 
 #include <filesystem>
 #include <memory>
-#include <Common/Config/ConfigProcessor.h>
+#include "ConfigProcessor.h"
 #include <Common/Exception.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>

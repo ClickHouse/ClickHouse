@@ -41,7 +41,7 @@ Consider table `numbers`:
 Query with column name as argument:
 
 ```sql
-SELECT groupArrayIntersect(a) AS intersection FROM numbers;
+SELECT groupArrayIntersect(a) as intersection FROM numbers;
 ```
 
 Result:

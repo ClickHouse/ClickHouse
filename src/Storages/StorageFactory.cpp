@@ -262,11 +262,11 @@ StorageFactory & StorageFactory::instance()
 }
 
 
-std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
+AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
 {
     auto it = storages.find(table_engine);
     if (it == storages.end())
-        return std::nullopt;
+        return AccessType::NONE;
     return it->second.features.source_access_type;
 }
 

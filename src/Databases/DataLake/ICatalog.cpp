@@ -182,25 +182,4 @@ bool TableMetadata::hasStorageCredentials() const
     return storage_credentials != nullptr;
 }
 
-DB::SettingsChanges CatalogSettings::allChanged() const
-{
-    DB::SettingsChanges changes;
-    changes.emplace_back("storage_endpoint", storage_endpoint);
-    changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
-    changes.emplace_back("region", region);
-
-    return changes;
-}
-
-void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
-}
-
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
-}
-
 }

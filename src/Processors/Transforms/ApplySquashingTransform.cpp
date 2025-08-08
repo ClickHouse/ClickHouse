@@ -1,9 +1,9 @@
-#include <Processors/Transforms/ApplySquashingTransform.h>
+#include "ApplySquashingTransform.h"
 
 namespace DB
 {
 
-ApplySquashingTransform::ApplySquashingTransform(SharedHeader header)
+ApplySquashingTransform::ApplySquashingTransform(const Block & header)
 : ExceptionKeepingTransform(header, header, false)
 {
 }
