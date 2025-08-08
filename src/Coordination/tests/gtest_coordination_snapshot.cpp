@@ -17,6 +17,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
+    IntNode copyFromSnapshotNode() { return *this; }
     [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
