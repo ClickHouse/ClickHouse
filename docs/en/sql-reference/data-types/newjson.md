@@ -11,7 +11,7 @@ title: 'JSON Data Type'
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
 import Link from '@docusaurus/Link'
 
-<Link to="/docs/best-practices/use-json-where-appropriate" style={{textDecoration: 'none', width: '100%'}}>
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
 <CardSecondary
   badgeState="success"
   badgeText=""
@@ -35,7 +35,6 @@ SET enable_json_type = 1
 :::note
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
 :::
-
 
 To declare a column of `JSON` type, you can use the following syntax:
 
@@ -730,7 +729,6 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json))
 FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
-
 
 ```text
 ┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐

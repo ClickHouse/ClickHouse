@@ -33,6 +33,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
+}
+
+
 namespace
 {
     void moveSnapshotBetweenDisks(
@@ -393,6 +399,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
+    auto batch_load_size = keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size];
+    if constexpr (use_rocksdb)
+        storage.container.startLoading(batch_load_size);
+
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         size_t path_size = 0;
@@ -467,17 +477,23 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
-    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
+    if constexpr (use_rocksdb)
+    {
+        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");
+        storage.container.finishLoading();
+    }
 
     if constexpr (!use_rocksdb)
     {
+        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
+
         for (const auto & itr : storage.container)
         {
             if (itr.key != "/")
             {
-                auto parent_path = parentNodePath(itr.key);
+                auto parent_path = Coordination::parentNodePath(itr.key);
                 storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
             }
         }
 

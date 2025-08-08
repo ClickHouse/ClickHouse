@@ -186,7 +186,7 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
     materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
@@ -198,7 +198,7 @@ void StorageView::read(
     const auto & header = query_plan.getCurrentHeader();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
-    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
+    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(*header, expected_header))
     {
         throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                             "Query from view {} returned Nullable column having not Nullable type in structure. "
@@ -208,7 +208,7 @@ void StorageView::read(
     }
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            header.getColumnsWithTypeAndName(),
+            header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 

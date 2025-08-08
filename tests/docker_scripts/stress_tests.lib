@@ -195,8 +195,8 @@ EOL
 
 function stop_server()
 {
-    local max_tries=300
-    local check_hang=true
+    local max_tries=${1:-300}
+    local check_hang=${2:-true}
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
@@ -242,7 +242,7 @@ function stop_server()
 function start_server()
 {
     counter=0
-    max_attempt=120
+    max_attempt=${1:-120}
     until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]

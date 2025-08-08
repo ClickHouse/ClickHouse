@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitByStep::LimitByStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     size_t group_length_, size_t group_offset_, Names columns_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
@@ -39,7 +39,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;

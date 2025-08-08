@@ -1897,6 +1897,14 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
+## mysql_require_secure_transport {#mysql_require_secure_transport}
+
+If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
+
+## postgresql_require_secure_transport {#postgresql_require_secure_transport}
+
+If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
+
 ## tmp_path {#tmp_path}
 
 Path on the local filesystem to store temporary data for processing large queries.
@@ -2024,6 +2032,23 @@ The default settings are:
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </s3queue_log>
+```
+
+## dead_letter_queue {#dead_letter_queue}
+
+Setting for the 'dead_letter_queue' system table.
+
+<SystemLogParameters/>
+
+The default settings are:
+
+```xml
+<dead_letter_queue>
+    <database>system</database>
+    <table>dead_letter</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</dead_letter_queue>
 ```
 
 ## zookeeper {#zookeeper}
@@ -2332,7 +2357,6 @@ Select a parent field in the tabs below to view their children:
 
   </TabItem>
   <TabItem value="http_https" label="<http> and <https>">
-
 
 | Field   | Description          |
 |---------|----------------------|

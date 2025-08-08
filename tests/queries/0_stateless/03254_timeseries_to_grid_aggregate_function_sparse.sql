@@ -118,12 +118,12 @@ CREATE TABLE ts_data_agg(k UInt64, agg AggregateFunction(timeSeriesResampleToGri
 -- Insert the data splitting it into several pieces
 INSERT INTO ts_data_agg SELECT toUnixTimestamp(timestamp)%3, initializeAggregation('timeSeriesResampleToGridWithStalenessState(100, 200, 10, 15)', timestamp, value) FROM ts_data;
 
-SELECT k, finalizeAggregation(agg) FROM ts_data_agg ORDER BY k;
+SELECT k, finalizeAggregation(agg) FROM ts_data_agg FINAL ORDER BY k;
 
 -- Reload table and check that the data is the same (i.e. serialize-deserialize worked correctly)
 DETACH TABLE ts_data_agg;
 ATTACH TABLE ts_data_agg;
-SELECT k, finalizeAggregation(agg) FROM ts_data_agg ORDER BY k;
+SELECT k, finalizeAggregation(agg) FROM ts_data_agg FINAL ORDER BY k;
 
 -- Check that -Merge returns the same result as the result form original table
 SELECT timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) FROM ts_data;

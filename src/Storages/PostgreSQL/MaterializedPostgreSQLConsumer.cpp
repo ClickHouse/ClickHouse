@@ -708,7 +708,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                         /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
-                        result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
+                        std::make_shared<const Block>(result_rows.cloneEmpty()), Chunk(result_rows.getColumns(), result_rows.rows()));
 
                     assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
                     io.pipeline.complete(Pipe(std::move(input)));
