@@ -1,0 +1,10 @@
+-- {echoOn}
+SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
+1
+1
+0
+SELECT number IN (SELECT number FROM numbers(2)) FROM numbers(3);
+1
+1
+0
+SELECT number IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS}
