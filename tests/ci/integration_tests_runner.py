@@ -852,14 +852,13 @@ class ClickhouseIntegrationTestsRunner:
         """
         logging.info(query)
 
+        url = (
+            f"{CLICKHOUSE_PLAY_URL}/?user={CLICKHOUSE_PLAY_USER}"
+            f"&password={requests.compat.quote(CLICKHOUSE_PLAY_PASSWORD)}"
+            f"&query={requests.compat.quote(query)}"
+        )
         max_retries = 3
         retry_delay_seconds = 5
-
-        params = {
-            "database": CLICKHOUSE_PLAY_DB,
-            "user": CLICKHOUSE_PLAY_USER,
-            "password": CLICKHOUSE_PLAY_PASSWORD,
-        }
 
         for attempt in range(max_retries):
             try:
@@ -868,7 +867,7 @@ class ClickhouseIntegrationTestsRunner:
                     attempt + 1, max_retries
                 )
 
-                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
+                response = requests.get(url, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
