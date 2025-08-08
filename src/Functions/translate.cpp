@@ -94,7 +94,6 @@ struct TranslateImpl
                 ++src;
             }
 
-            ++data_size;
             res_offsets[i] = data_size;
         }
 
