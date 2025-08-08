@@ -3,9 +3,16 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int UNKNOWN_SETTING;
+}
 
 #define LIST_OF_DATABASE_REPLICATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Float,  max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
@@ -63,4 +70,29 @@ void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def)
     storage_def.set(storage_def.settings, settings_ast);
 }
 
+void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has(config_elem))
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_elem, config_keys);
+
+    try
+    {
+        for (const String & key : config_keys)
+            impl->set(key, config.getString(config_elem + "." + key));
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+            e.addMessage("in DatabaseReplicated config");
+        throw;
+    }
+}
+
+String DatabaseReplicatedSettings::toString() const
+{
+    return impl->toString();
+}
 }
