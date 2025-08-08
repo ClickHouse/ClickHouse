@@ -3,9 +3,9 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
 
 namespace DB
 {
@@ -27,7 +27,7 @@ public:
         const DB::NameToNameMap & physical_names_map_,
         DB::ContextPtr context);
 
-    bool canBePruned(const DB::ObjectInfo & object_info) const;
+    bool canBePruned(const DB::ObjectInfoBase & object_info) const;
 
 private:
     std::optional<DB::KeyCondition> key_condition;

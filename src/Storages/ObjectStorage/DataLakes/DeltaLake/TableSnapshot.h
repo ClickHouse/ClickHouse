@@ -4,16 +4,16 @@
 
 #if USE_DELTA_KERNEL_RS
 
-#include <Core/Types.h>
-#include <IO/S3/URI.h>
-#include <Common/Logger.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <boost/noncopyable.hpp>
-#include "delta_kernel_ffi.hpp"
+#    include <Core/Types.h>
+#    include <IO/S3/URI.h>
+#    include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#    include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#    include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <boost/noncopyable.hpp>
+#    include <Common/Logger.h>
+#    include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
 {

@@ -17,22 +17,23 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Interpreters/StorageID.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#include <Storages/ObjectStorage/Iterators/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Interpreters/StorageID.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/HivePartitioningUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Poco/Logger.h>
 

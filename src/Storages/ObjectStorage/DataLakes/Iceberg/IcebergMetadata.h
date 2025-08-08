@@ -19,30 +19,17 @@
 #include <optional>
 #include <base/defines.h>
 
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergObjectInfo.h>
+#    include <Storages/ObjectStorage/Iterators/IObjectIterator.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 
 class IcebergMetadata;
 
-struct ParsedDataFileInfo
-{
-    ParsedDataFileInfo(
-        StorageObjectStorageConfigurationPtr configuration_,
-        Iceberg::ManifestFileEntry data_object_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
-    String data_object_file_path_key;
-    String data_object_file_path; // Full path to the data object file
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-
-    bool operator<(const ParsedDataFileInfo & other) const
-    {
-        return std::tie(data_object_file_path_key) < std::tie(other.data_object_file_path_key);
-    }
-};
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
@@ -168,16 +155,6 @@ private:
         ContextPtr local_context,
         std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
 };
-
-struct IcebergDataObjectInfo : public RelativePathWithMetadata
-{
-    IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_);
-
-    ParsedDataFileInfo parsed_data_file_info;
-};
-
-using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
-
 
 class IcebergKeysIterator : public IObjectIterator
 {

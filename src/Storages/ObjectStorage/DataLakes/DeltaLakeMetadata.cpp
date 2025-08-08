@@ -45,6 +45,8 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#    include <Storages/ObjectStorage/Utils.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -238,8 +240,8 @@ struct DeltaLakeMetadataImpl
         std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        RelativePathWithMetadata object_info(metadata_file_path);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
         while (!buf->eof())
@@ -408,8 +410,8 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(last_checkpoint_file);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        RelativePathWithMetadata object_info(last_checkpoint_file);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
         const JSON json(json_str);
@@ -478,8 +480,8 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(checkpoint_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        RelativePathWithMetadata object_info(checkpoint_path);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
