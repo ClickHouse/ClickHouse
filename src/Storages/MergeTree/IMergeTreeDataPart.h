@@ -756,7 +756,7 @@ private:
     void loadSourcePartsSet();
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
-    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
+    void writeVersionMetadata(const VersionMetadata & version_, bool fsync) const;
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
