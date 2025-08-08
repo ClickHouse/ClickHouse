@@ -123,7 +123,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    ColumnString::Offset prev_string_offset = 0;
+    ColumnString::Offset prev_string_offset = offsets[offset - 1];
     for (size_t i = offset; i < end; ++i)
     {
         ColumnString::Offset next_string_offset = offsets[i];
