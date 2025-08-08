@@ -223,7 +223,7 @@ void DiskBackup::createHardLink(const String &, const String &)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support createHardLink method");
 }
 
-void DiskBackup::truncateFile(const String &, size_t)
+void DiskBackup::truncateFile(const String &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support truncateFile method");
 }

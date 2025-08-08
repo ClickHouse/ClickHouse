@@ -124,7 +124,7 @@ public:
 
     bool equivalentNoThrow(const String & p1, const String & p2) const override;
 
-    void truncateFile(const String & path, size_t size) override;
+    void truncateFile(const String & path) override;
 
     DataSourceDescription getDataSourceDescription() const override;
     static DataSourceDescription getLocalDataSourceDescription(const String & path);

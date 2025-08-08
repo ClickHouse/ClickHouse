@@ -168,7 +168,7 @@ public:
         return nullptr;
     }
 
-    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* target_size */)
+    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */)
     {
         throwNotImplemented();
     }

@@ -466,10 +466,10 @@ size_t DiskEncrypted::getEncryptedFileSize(size_t unencrypted_size) const
     return 0;
 }
 
-void DiskEncrypted::truncateFile(const String & path, size_t size)
+void DiskEncrypted::truncateFile(const String & path)
 {
     auto wrapped_path = wrappedPath(path);
-    delegate->truncateFile(wrapped_path, size ? (size + FileEncryption::Header::kSize) : 0);
+    delegate->truncateFile(wrapped_path);
 }
 
 SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const

@@ -240,11 +240,11 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
-void DiskObjectStorage::truncateFile(const String & path, size_t size)
+void DiskObjectStorage::truncateFile(const String & path)
 {
-    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    LOG_TEST(log, "Truncate file operation {}", path);
     auto transaction = createObjectStorageTransaction();
-    transaction->truncateFile(path, size);
+    transaction->truncateFile(path);
     transaction->commit();
 }
 

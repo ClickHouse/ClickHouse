@@ -424,7 +424,7 @@ public:
     }
 
     /// Truncate file to specified size.
-    virtual void truncateFile(const String & path, size_t size);
+    virtual void truncateFile(const String & path);
 
     /// Return data source description
     virtual DataSourceDescription getDataSourceDescription() const = 0;
@@ -574,8 +574,6 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
-
     const String name;
 
     /// Base implementation of the function copy().

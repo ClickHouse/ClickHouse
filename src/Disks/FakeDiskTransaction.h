@@ -2,6 +2,7 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -20,7 +21,9 @@ struct FakeDiskTransaction final : public IDiskTransaction
 public:
     explicit FakeDiskTransaction(IDisk & disk_)
         : disk(disk_)
-    {}
+    {
+        LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
+    }
 
     void commit(const TransactionCommitOptionsVariant &) override {}
     void undo() override {}
@@ -148,7 +151,7 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
-    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
+    void truncateFile(const std::string & /* src_path */) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }
