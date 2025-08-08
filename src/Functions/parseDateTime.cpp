@@ -677,11 +677,15 @@ namespace
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
             if constexpr (return_type == ReturnType::DateTime)
+            {
                 data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            }
             else
             {
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
+                {
                     data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
+                }
                 else
                 {
                     /// The precision of the return type is the number of 'S' placeholders.
@@ -1836,7 +1840,7 @@ namespace
             static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 String read_time_zone;
-                while (cur <= end)
+                while (cur < end)
                 {
                     read_time_zone += *cur;
                     ++cur;
