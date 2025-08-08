@@ -1308,7 +1308,11 @@ For the IPv6 version see [`isIPv6String`](#isIPv6String).
     {
         "Usage example",
         R"(
-SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr;
+SELECT addr, isIPv4String(addr)
+FROM(
+SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr
+)
+ARRAY JOIN addr;
         )",
         R"(
 ┌─addr─────────────┬─isIPv4String(addr)─┐
@@ -1336,20 +1340,22 @@ For the IPv4 version see [`isIPv4String`](#isIPv4String).
     };
     FunctionDocumentation::ReturnedValue returned_value_isipv6 = {"Returns `1` if `string` is IPv6 address, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples_isipv6 = {
-        {
-            "Usage example", 
-            R"(
-SELECT addr, isIPv6String(addr) 
-FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) 
+    {
+        "Usage example",
+        R"(
+SELECT addr, isIPv6String(addr)
+FROM(SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr)
 ARRAY JOIN addr;
-            )", R"(
+        )",
+        R"(
 ┌─addr─────────────┬─isIPv6String(addr)─┐
 │ ::               │                  1 │
 │ 1111::ffff       │                  1 │
 │ ::ffff:127.0.0.1 │                  1 │
 │ 127.0.0.1        │                  0 │
 └──────────────────┴────────────────────┘
-        )"}
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_isipv6  = {21, 1};
     FunctionDocumentation::Category category_isipv6 = FunctionDocumentation::Category::IPAddress;
@@ -1388,9 +1394,7 @@ similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the 
     FunctionDocumentation::Syntax syntax_ipv4numtostringclassc = "IPv4NumToStringClassC(num)";
     FunctionDocumentation::Arguments arguments_ipv4numtostringclassc = {{"num", "IPv4 address as UInt32 number.", {"UInt32"}}};
     FunctionDocumentation::ReturnedValue returned_value_ipv4numtostringclassc = {"Returns the IPv4 address string with xxx replacing the last octet.", {"String"}};
-    FunctionDocumentation::Examples examples_ipv4numtostringclassc = {
-        {
-        "Basic example with aggregation",
+    FunctionDocumentation::Examples examples_ipv4numtostringclassc = {{"Basic example with aggregation",
         R"(
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
