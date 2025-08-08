@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeTime.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -15,15 +16,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 namespace
 {
 
-inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline void
+readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     switch (settings.date_time_input_format)
     {
@@ -41,20 +41,16 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
     x = std::max<time_t>(0, x);
 }
 
-inline void readTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline void readTimeText(
+    time_t & x,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & time_zone,
+    const DateLUTImpl & /*utc_time_zone*/)
 {
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            readTimeTextImpl<>(x, istr, time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseTimeBestEffort(x, istr, time_zone, utc_time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
-            break;
-    }
+    readTimeTextImpl<>(x, istr, time_zone);
+
+    x = std::max<time_t>(0, x);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
@@ -63,7 +59,8 @@ inline void readAsIntText(time_t & x, ReadBuffer & istr)
     x = std::max<time_t>(0, x);
 }
 
-inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline bool tryReadText(
+    time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     bool res;
     switch (settings.date_time_input_format)
@@ -83,21 +80,15 @@ inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & se
     return res;
 }
 
-inline bool tryReadTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline bool tryReadTimeText(
+    time_t & x,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & time_zone,
+    const DateLUTImpl & /*utc_time_zone*/)
 {
     bool res;
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadTimeText(x, istr, time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseTimeBestEffort(x, istr, time_zone, utc_time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
-            break;
-    }
+    res = tryReadTimeText(x, istr, time_zone);
 
     x = std::max<time_t>(0, x);
     return res;
@@ -135,7 +126,8 @@ void SerializationDateTime::serializeText(const IColumn & column, size_t row_num
     }
 }
 
-void SerializationDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
 }
@@ -173,7 +165,8 @@ bool SerializationDateTime::tryDeserializeTextEscaped(IColumn & column, ReadBuff
     return true;
 }
 
-void SerializationDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextQuoted(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -216,7 +209,8 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     return true;
 }
 
-void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextJSON(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -257,7 +251,8 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     return true;
 }
 
-void SerializationDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextCSV(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -343,8 +338,7 @@ bool SerializationDateTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer &
     return true;
 }
 
-SerializationTime::SerializationTime(const TimezoneMixin & time_zone_)
-    : TimezoneMixin(time_zone_)
+SerializationTime::SerializationTime(const DataTypeTime & /*time_type*/)
 {
 }
 
@@ -354,18 +348,19 @@ void SerializationTime::serializeText(const IColumn & column, size_t row_num, Wr
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            writeTimeText(value, ostr, time_zone);
+            writeTimeText(value, ostr);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeIntText(value, ostr);
             return;
         case FormatSettings::DateTimeOutputFormat::ISO:
-            writeTimeTextISO(value, ostr, utc_time_zone);
+            writeTimeTextISO(value, ostr, DateLUT::instance());
             return;
     }
 }
 
-void SerializationTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
 }
@@ -380,7 +375,7 @@ void SerializationTime::deserializeWholeText(IColumn & column, ReadBuffer & istr
 bool SerializationTime::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-    if (!tryReadTimeText(x, istr, settings, time_zone, utc_time_zone) || !istr.eof())
+    if (!tryReadTimeText(x, istr, settings, DateLUT::instance(), DateLUT::instance()) || !istr.eof())
         return false;
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -390,71 +385,49 @@ bool SerializationTime::tryDeserializeWholeText(IColumn & column, ReadBuffer & i
 void SerializationTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-    readTimeText(x, istr, settings, time_zone, utc_time_zone);
+    readTimeText(x, istr, settings, DateLUT::instance(), DateLUT::instance());
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
 bool SerializationTime::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-    if (!tryReadTimeText(x, istr, settings, time_zone, utc_time_zone))
+    if (!tryReadTimeText(x, istr, settings, DateLUT::instance(), DateLUT::instance()))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 
-void SerializationTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime::serializeTextQuoted(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr, settings);
     writeChar('\'', ostr);
 }
 
-void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '493808'
     {
-        try
-        {
-            readTimeText(x, istr, settings, time_zone, utc_time_zone);
-            assertChar('\'', istr);
-        }
-        catch (const Exception &)
-        {
-            throw;
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time value");
-        }
+        readTimeText(x, istr);
+        assertChar('\'', istr);
     }
-    else
+    else /// Just 493808 or 0493808
     {
-        try
-        {
-            readAsIntText(x, istr);
-        }
-        catch (const Exception &)
-        {
-            throw;
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse Time value as number");
-        }
+        readAsIntText(x, istr);
     }
-
     /// It's important to do this at the end - for exception safety.
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
-bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '123808'
     {
-        if (!tryReadTimeText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
+        if (!tryReadTimeText(x, istr, DateLUT::instance()) || !checkChar('\'', istr))
             return false;
     }
     else
@@ -475,12 +448,12 @@ void SerializationTime::serializeTextJSON(const IColumn & column, size_t row_num
     writeChar('"', ostr);
 }
 
-void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
     if (checkChar('"', istr))
     {
-        readTimeText(x, istr, settings, time_zone, utc_time_zone);
+        readTimeText(x, istr);
         assertChar('"', istr);
     }
     else
@@ -491,12 +464,12 @@ void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
-bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     time_t x = 0;
     if (checkChar('"', istr))
     {
-        if (!tryReadTimeText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
+        if (!tryReadTimeText(x, istr) || !checkChar('"', istr))
             return false;
     }
     else
@@ -528,7 +501,7 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     if (maybe_quote == '\'' || maybe_quote == '\"')
     {
         ++istr.position();
-        readTimeText(x, istr, settings, time_zone, utc_time_zone);
+        readTimeText(x, istr);
         assertChar(maybe_quote, istr);
     }
     else
@@ -536,7 +509,7 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
         String time_str;
         readCSVString(time_str, istr, settings.csv);
         ReadBufferFromString buf(time_str);
-        readTimeText(x, buf, settings, time_zone, utc_time_zone);
+        readTimeText(x, buf);
         if (!buf.eof())
             throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
     }
@@ -556,7 +529,7 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
     if (maybe_quote == '\'' || maybe_quote == '\"')
     {
         ++istr.position();
-        if (!tryReadTimeText(x, istr, settings, time_zone, utc_time_zone) || !checkChar(maybe_quote, istr))
+        if (!tryReadTimeText(x, istr) || !checkChar(maybe_quote, istr))
             return false;
     }
     else
@@ -564,7 +537,7 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
         String time_str;
         readCSVString(time_str, istr, settings.csv);
         ReadBufferFromString buf(time_str);
-        if (!tryReadTimeText(x, buf, settings, time_zone, utc_time_zone) || !buf.eof())
+        if (!tryReadTimeText(x, buf) || !buf.eof())
             return false;
     }
 
