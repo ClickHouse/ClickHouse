@@ -43,6 +43,7 @@
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+#include "Common/ZooKeeper/WithRetries.h"
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -1286,7 +1287,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
     waitDatabaseStarted();
 
@@ -1304,7 +1305,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperWithFaultInjectionPtr
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
-    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+    std::map<String, String> table_name_to_metadata;
+    {
+        auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::tryGetConsistentMetadataSnapshot");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper);
+            table_name_to_metadata = tryGetConsistentMetadataSnapshot(zookeeper, max_log_ptr);
+        });
+    }
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
@@ -1373,7 +1382,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperWithFaultInjectionPtr
         }
     }
 
-    auto make_query_context = [this, current_zookeeper]()
+    auto make_query_context = [this, & with_retries]()
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -1396,8 +1405,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperWithFaultInjectionPtr
         query_context->setSetting("flatten_nested", false);
         query_context->setSetting("data_type_default_nullable", false);
 
-        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper->getKeeper(), zookeeper_path, false, "");
-        query_context->initZooKeeperMetadataTransaction(txn);
+        auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::make_query_context");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
+            query_context->initZooKeeperMetadataTransaction(txn);
+        });
         return query_context;
     };
 
@@ -1632,18 +1645,31 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperWithFaultInjectionPtr
             auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
 
             auto status = ExecutionStatus(0).serializeText();
-            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
-            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
-            if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
-                LOG_INFO(log, "Marked recovered {} as finished", entry_name);
-            else
-                LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
+            auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::mark_finished");
+            holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+            {
+                with_retries.renewZooKeeper(zookeeper);
+
+                auto res_finished = zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
+                auto res_synced = zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+                if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
+                    LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+                else
+                    LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
+            });
         }
     }
 
-    std::lock_guard lock{metadata_mutex};
-    assertDigest(getContext());
-    current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
+    auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::set_digest");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+
+        std::lock_guard lock{metadata_mutex};
+        assertDigest(getContext());
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
+        zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
+    });
 }
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperWithFaultInjectionPtr & zookeeper, UInt32 & max_log_ptr) const

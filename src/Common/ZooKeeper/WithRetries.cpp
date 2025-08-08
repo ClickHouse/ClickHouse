@@ -38,6 +38,7 @@ WithRetries::WithRetries(
 {
 }
 
+WithRetries::~WithRetries() = default;
 
 WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * parent, const String & name)
     : retries_ctl(name, parent->log, *parent->info)

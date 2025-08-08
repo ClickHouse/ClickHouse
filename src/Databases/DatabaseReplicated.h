@@ -20,6 +20,7 @@ namespace DB
 {
 
 class DatabaseReplicatedDDLWorker;
+class WithRetries;
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
@@ -138,7 +139,7 @@ private:
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    void recoverLostReplica(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+    void recoverLostReplica(WithRetries & with_retries, UInt32 our_log_ptr, UInt32 & max_log_ptr);
 
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperWithFaultInjectionPtr & zookeeper, UInt32 & max_log_ptr) const;
 

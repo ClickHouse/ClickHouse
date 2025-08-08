@@ -63,6 +63,8 @@ public:
         UInt64 fault_injection_seed_,
         RenewerCallback callback = {});
 
+    ~WithRetries();
+
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
 
