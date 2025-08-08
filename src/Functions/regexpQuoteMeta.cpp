@@ -82,7 +82,7 @@ public:
             /// NOTE This implementation slightly differs from re2::RE2::QuoteMeta.
             /// It escapes zero byte as \0 instead of \x00
             ///  and it escapes only required characters.
-            /// This is Ok. Look at comments in re2.cc
+            /// This is Ok. Look at the comments in re2.cc
 
             const char * src_end = src_begin + src_offsets[row_idx];
 
@@ -94,7 +94,7 @@ public:
                 size_t old_dst_size = dst_data.size();
                 dst_data.resize(old_dst_size + bytes_to_copy);
                 memcpySmallAllowReadWriteOverflow15(dst_data.data() + old_dst_size, src_pos, bytes_to_copy);
-                src_pos = next_src_pos + 1;
+                src_pos = next_src_pos;
 
                 if (next_src_pos == src_end)
                     break;
