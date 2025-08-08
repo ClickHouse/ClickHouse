@@ -55,9 +55,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -119,7 +116,6 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
-demangle
 dotProduct
 dumpColumnStructure
 e
@@ -241,7 +237,6 @@ log
 log10
 log1p
 log2
-logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
@@ -479,7 +474,6 @@ tanh
 tcpPort
 tgamma
 throwIf
-tid
 toBool
 toColumnTypeName
 toDate
