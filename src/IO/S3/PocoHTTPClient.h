@@ -7,7 +7,7 @@
 
 #if USE_AWS_S3
 
-#include <Common/LatencyBuckets.h>
+#include <Common/Histogram.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
@@ -20,6 +20,8 @@
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
+
+#include <base/types.h>
 
 
 namespace Aws::Http::Standard
@@ -55,6 +57,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     unsigned int s3_max_redirects;
     RetryStrategy retry_strategy;
     bool s3_slow_all_threads_after_network_error;
+    bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
@@ -87,6 +90,7 @@ private:
         unsigned int s3_max_redirects_,
         RetryStrategy retry_strategy_,
         bool s3_slow_all_threads_after_network_error_,
+        bool s3_slow_all_threads_after_retryable_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
@@ -201,7 +205,7 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount = 1) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;

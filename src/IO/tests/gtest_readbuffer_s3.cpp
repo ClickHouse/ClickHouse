@@ -59,6 +59,7 @@ struct ClientFake : DB::S3::Client
                   DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
                   true,
                   true,
+                  true,
                   false,
                   {},
                   {},

@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -66,6 +67,7 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 namespace DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -73,13 +75,14 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_)
+FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
     , metadata_dir(table_dir + "metadata/")
     , storage_data_dir(storage_dir + "data/")
     , storage_metadata_dir(storage_dir + "metadata/")
+    , use_uuid_in_metadata(use_uuid_in_metadata_)
 {
 }
 
@@ -96,6 +99,8 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
+    use_uuid_in_metadata = other.use_uuid_in_metadata;
+
     return *this;
 }
 
@@ -131,9 +136,29 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
+    if (!use_uuid_in_metadata)
+    {
+        return Result{
+            .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
+            .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+        };
+    }
+    else
+    {
+        auto uuid_str = uuid_generator.createRandom().toString();
+        return Result{
+            .path_in_metadata = fmt::format("{}v{}-{}.metadata.json", metadata_dir, initial_version, uuid_str),
+            .path_in_storage = fmt::format("{}v{}-{}.metadata.json", storage_metadata_dir, initial_version, uuid_str),
+        };
+
+    }
+}
+
+FileNamesGenerator::Result FileNamesGenerator::generateVersionHint()
+{
     return Result{
-        .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
-        .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+        .path_in_metadata = fmt::format("{}version-hint.text", metadata_dir),
+        .path_in_storage = fmt::format("{}version-hint.text", storage_metadata_dir),
     };
 }
 
@@ -672,14 +697,14 @@ IcebergStorageSink::IcebergStorageSink(
         config_path += "/";
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()));
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()));
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -777,6 +802,9 @@ void IcebergStorageSink::finalizeBuffers()
         total_chunks_size += write_buffers[partition_key]->count();
     }
 
+    if (data_filenames.empty())
+        return;
+
     while (!initializeMetadata())
     {
     }
@@ -842,15 +870,26 @@ bool IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        if (object_storage->exists(StoredObject(storage_metadata_name)))
+        auto cleanup = [&] ()
         {
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        };
+
+        if (object_storage->exists(StoredObject(storage_metadata_name)))
+        {
+            cleanup();
             return false;
         }
 
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
+        if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        {
+            auto filename_version_hint = filename_generator.generateVersionHint();
+            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
+        }
         if (catalog)
         {
             String catalog_filename = metadata_name;
@@ -858,13 +897,13 @@ bool IcebergStorageSink::initializeMetadata()
                 catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
 
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            catalog->updateMetadata(namespace_name, table_name, catalog_filename);
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            {
+                cleanup();
+                object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                return false;
+            }
         }
-
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(storage_metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
     }
     return true;
 }

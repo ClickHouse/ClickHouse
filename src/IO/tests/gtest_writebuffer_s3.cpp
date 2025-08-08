@@ -246,6 +246,7 @@ struct Client : DB::S3::Client
             /* s3_max_redirects = */ 100,
             DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
             /* s3_slow_all_threads_after_network_error = */ true,
+            /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},

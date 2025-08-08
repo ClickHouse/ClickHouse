@@ -105,6 +105,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         static constexpr size_t s3_max_redirects = 10;
         static constexpr size_t s3_retry_attempts = 10;
         static constexpr bool s3_slow_all_threads_after_network_error = true;
+        static constexpr bool s3_slow_all_threads_after_retryable_error = false;
         static constexpr bool enable_s3_requests_logging = false;
 
         if (!new_uri.key.empty())
@@ -119,6 +120,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             s3_max_redirects,
             S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
             s3_slow_all_threads_after_network_error,
+            s3_slow_all_threads_after_retryable_error,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},

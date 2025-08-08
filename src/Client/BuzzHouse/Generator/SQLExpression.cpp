@@ -315,8 +315,14 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     {
         SpecialVal * val = lv->mutable_special_val();
         std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+        const SpecialVal_SpecialValEnum sval = static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator));
 
-        val->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+        /// Can't use `*` on query oracles
+        val->set_val(
+            (sval != SpecialVal_SpecialValEnum_VAL_STAR || this->allow_not_deterministic
+             || this->levels[this->current_level].inside_aggregate)
+                ? sval
+                : SpecialVal_SpecialValEnum_VAL_NULL);
         val->set_paren(complex && rg.nextBool());
         nested_prob = 3;
     }
@@ -426,7 +432,13 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             }
         }
         this->generateSelect(
-            rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
+            rg,
+            true,
+            false,
+            1,
+            std::numeric_limits<uint32_t>::max(),
+            std::nullopt,
+            eq->mutable_inner_query()->mutable_select()->mutable_sel());
         this->current_level--;
     }
 }

@@ -109,6 +109,7 @@ GlueCatalog::GlueCatalog(
     int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
     int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
+    bool s3_slow_all_threads_after_retryable_error = false;
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -117,6 +118,7 @@ GlueCatalog::GlueCatalog(
         s3_max_redirects,
         DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         false,
         nullptr,
@@ -492,7 +494,7 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     glue_client->CreateDatabase(create_request);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     createNamespaceIfNotExists(namespace_name);
 
@@ -527,7 +529,7 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
 }
 
-void GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const
+bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     Aws::Glue::Model::UpdateTableRequest request;
     request.SetDatabaseName(namespace_name);
@@ -560,6 +562,8 @@ void GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     if (!response.IsSuccess())
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+
+    return true;
 }
 
 }
