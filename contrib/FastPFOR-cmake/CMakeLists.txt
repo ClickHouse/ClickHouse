@@ -18,6 +18,8 @@ target_include_directories(_fastpfor SYSTEM BEFORE PUBLIC "${FASTPFOR_LIBRARY_DI
 
 if (ARCH_AARCH64)
     target_link_libraries(_fastpfor PRIVATE _simde)
+    set(SIMDE_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/simde)
+    target_include_directories(_fastpfor SYSTEM BEFORE PUBLIC ${SIMDE_LIBRARY_DIR})
 endif()
 
 add_library(ch_contrib::fastpfor ALIAS _fastpfor)
