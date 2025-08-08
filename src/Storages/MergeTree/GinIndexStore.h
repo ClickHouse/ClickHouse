@@ -5,7 +5,6 @@
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <roaring.hh>
@@ -37,6 +36,7 @@
 
 namespace DB
 {
+
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
@@ -90,52 +90,15 @@ struct GinIndexSegment
     /// Start row ID for this segment
     UInt32 next_row_id = 1;
 
-    /// .gin_bflt file offset of this segment's bloom filter
-    UInt64 bloom_filter_start_offset = 0;
+    /// .gin_post file offset of this segment's postings lists
+    UInt64 postings_start_offset = 0;
 
     /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset = 0;
-
-    /// .gin_post file offset of this segment's postings lists
-    UInt64 postings_start_offset = 0;
-};
-
-/// This class encapsulates an instance of `BloomFilter` class.
-/// The main responsibility is handling the serialization.
-class GinSegmentDictionaryBloomFilter
-{
-public:
-    GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_);
-
-    /// Adds token to bloom filter
-    void add(std::string_view token);
-
-    /// Does the token exist according to the bloom filter?
-    bool contains(std::string_view token);
-
-    /// Serialize into WriteBuffer
-    UInt64 serialize(WriteBuffer & write_buffer);
-    /// Deserialize from ReadBuffer
-
-    static std::unique_ptr<GinSegmentDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
-
-private:
-    /// Estimated number of entries
-    const UInt64 unique_count;
-    /// Bit size of the bloom filter
-    const UInt64 bits_per_row;
-    /// Number of hash functions used by the bloom filter
-    const UInt64 num_hashes;
-
-    /// Encapsulated BloomFilter instance
-    BloomFilter bloom_filter;
 };
 
 struct GinSegmentDictionary
 {
-    /// .gin_bflt file offset of this segment's bloom filter
-    UInt64 bloom_filter_start_offset;
-
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
 
@@ -144,10 +107,7 @@ struct GinSegmentDictionary
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
-    std::unique_ptr<FST::FiniteStateTransducer> fst;
-
-    /// Bloom filter created from the segment's dictionary
-    std::unique_ptr<GinSegmentDictionaryBloomFilter> bloom_filter;
+    FST::FiniteStateTransducer offsets;
 };
 
 using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
@@ -156,12 +116,6 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
-    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-    static constexpr auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
-    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-
     enum class Format : uint8_t
     {
         v1 = 1, /// Initial version, supports adaptive compression
@@ -175,8 +129,7 @@ public:
         const String & name_,
         DataPartStoragePtr storage_,
         MutableDataPartStoragePtr data_part_storage_builder_,
-        UInt64 segment_digestion_threshold_bytes_,
-        double bloom_filter_false_positive_rate_);
+        UInt64 segment_digestion_threshold_bytes_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -260,13 +213,16 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
     const UInt64 segment_digestion_threshold_bytes = 0;
-    const double bloom_filter_false_positive_rate = 0.0;
 
-    /// File streams for segment, bloom filter, dictionaries and postings lists
+    /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
-    std::unique_ptr<WriteBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
+
+    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
+    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
+    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -287,14 +243,11 @@ public:
     /// Read segment information from .gin_seg files
     void readSegments();
 
-    /// Prepare segments for reading
-    void prepareSegmentsForReading();
+    /// Read all dictionaries from .gin_dict files
+    void readSegmentDictionaries();
 
-    /// Prepare segment for given segment id
-    void prepareSegmentForReading(UInt32 segment_id);
-
-    /// Read FST for given segment dictionary from .gin_dict files
-    void readSegmentFST(GinSegmentDictionaryPtr segment_dictionary);
+    /// Read dictionary for given segment id
+    void readSegmentDictionary(UInt32 segment_id);
 
     /// Read postings lists for the term
     GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
@@ -311,7 +264,6 @@ private:
 
     /// File streams for reading Gin Index
     std::unique_ptr<ReadBufferFromFileBase> metadata_file_stream;
-    std::unique_ptr<ReadBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
 
@@ -357,4 +309,5 @@ private:
 };
 
 bool isGinFile(const String & file_name);
+
 }
