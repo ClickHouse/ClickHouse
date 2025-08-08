@@ -1110,6 +1110,18 @@ The server successfully detected this situation and will download merged part fr
     M(RefreshableViewSyncReplicaSuccess, "How many times a SELECT from refreshable materialized view did an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    \
+    M(AsyncLoggingConsoleTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the console log", ValueType::Number) \
+    M(AsyncLoggingFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the file log", ValueType::Number) \
+    M(AsyncLoggingErrorFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the error file log", ValueType::Number) \
+    M(AsyncLoggingSyslogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the syslog", ValueType::Number) \
+    M(AsyncLoggingTextLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the text_log", ValueType::Number) \
+    \
+    M(AsyncLoggingConsoleDroppedMessages, "How many messages have been dropped from the console log due to the async log queue being full", ValueType::Number) \
+    M(AsyncLoggingFileLogDroppedMessages, "How many messages have been dropped from the file log due to the async log queue being full", ValueType::Number) \
+    M(AsyncLoggingErrorFileLogDroppedMessages, "How many messages have been dropped from error file log due to the async log queue being full", ValueType::Number) \
+    M(AsyncLoggingSyslogDroppedMessages, "How many messages have been dropped from the syslog due to the async log queue being full", ValueType::Number) \
+    M(AsyncLoggingTextLogDroppedMessages, "How many messages have been dropped from text_log due to the async log queue being full", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -1,16 +1,16 @@
-#include <Loggers/ExtendedLogChannel.h>
+#include <Loggers/ExtendedLogMessage.h>
 
+#include <base/getThreadId.h>
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <base/getThreadId.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int CANNOT_GETTIMEOFDAY;
+extern const int CANNOT_GETTIMEOFDAY;
 }
 
 ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)

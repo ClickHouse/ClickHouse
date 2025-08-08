@@ -38,6 +38,12 @@
 
         <!-- <stream_compress>0</stream_compress> -->
 
+        <!-- By default logging happens in different threads so it does not block the execution
+             If the amount of messages waiting to be flushed is too large, new messages will be dropped.
+        -->
+        <!-- <async>1</async> -->
+        <!-- <async_queue_max_size>100000</async_queue_max_size> -->
+
         <!-- Per level overrides (legacy):
 
         For example to suppress logging of the ConfigReloader you can use:
