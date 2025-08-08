@@ -59,7 +59,7 @@ public:
     time_t getLastChanged(const String & path) const override { return delegate->getLastChanged(path); }
     Poco::Timestamp getLastModified(const String & path) const override { return delegate->getLastModified(path); }
     void setReadOnly(const String & path) override { delegate->setReadOnly(path); }
-    void truncateFile(const String & path, size_t size) override { delegate->truncateFile(path, size); }
+    void truncateFile(const String & path) override { delegate->truncateFile(path); }
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }

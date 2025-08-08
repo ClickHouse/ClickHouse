@@ -17,11 +17,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static std::string getTempFileName(const std::string & dir)
 {
     return fs::path(dir) / getRandomASCIIString(32);
@@ -389,25 +384,30 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
-    if (metadata_storage.existsFile(path))
+    auto maybe_blobs_from_tx = metadata_tx.tryGetBlobsFromTransactionIfExists(path);
+    if (maybe_blobs_from_tx.has_value())
+    {
+        outcome->objects_to_remove = std::move(maybe_blobs_from_tx.value());
+
+        auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
+        write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+        write_operation->execute(metadata_lock);
+    }
+    else if (metadata_storage.existsFile(path))
     {
         auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
-        while (metadata->getTotalSizeBytes() > target_size)
+
+        while (metadata->getTotalSizeBytes() > 0)
         {
             auto object_key_with_metadata = metadata->popLastObject();
             outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
         }
 
-        if (metadata->getTotalSizeBytes() != target_size)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
-        }
-        LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
-
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
-
         write_operation->execute(metadata_lock);
     }
+
+    LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
 }
 
 void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)

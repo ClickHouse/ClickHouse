@@ -142,7 +142,7 @@ public:
         const WriteSettings & settings) override
     {
         auto tx = createEncryptedTransaction();
-        auto result = tx->writeFile(path, buf_size, mode, settings);
+        auto result = tx->writeFileWithAutoCommit(path, buf_size, mode, settings);
         return result;
     }
 
@@ -294,7 +294,7 @@ public:
         tx->commit();
     }
 
-    void truncateFile(const String & path, size_t size) override;
+    void truncateFile(const String & path) override;
 
     void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
 

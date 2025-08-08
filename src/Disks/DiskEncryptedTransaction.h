@@ -9,6 +9,7 @@
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -45,13 +46,20 @@ public:
         , disk_path(disk_path_)
         , current_settings(current_settings_)
         , delegate_disk(delegate_disk_)
-    {}
+    {
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
+            "Creating DiskEncryptedTransaction for delegating disk {} at path {}",
+            delegate_disk->getName(), disk_path);
+    }
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
     void commit(const TransactionCommitOptionsVariant & options) override
     {
         delegate_transaction->commit(options);
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
+            "Commit DiskEncryptedTransaction for delegating disk {} at path {}",
+            delegate_disk->getName(), disk_path);
     }
     void commit() override { commit(NoCommitOptions{}); }
 
@@ -252,10 +260,10 @@ public:
     }
 
     /// Truncate file to the target size.
-    void truncateFile(const std::string & src_path, size_t target_size) override
+    void truncateFile(const std::string & src_path) override
     {
         auto wrapped_path = wrappedPath(src_path);
-        delegate_transaction->truncateFile(wrapped_path, target_size);
+        delegate_transaction->truncateFile(wrapped_path);
     }
 
 private:
