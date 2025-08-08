@@ -136,6 +136,14 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
+    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
+
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const SharedHeader & /*header*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context_*/) const;
+
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,

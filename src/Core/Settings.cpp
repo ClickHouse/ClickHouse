@@ -6670,8 +6670,8 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", BETA) \
-    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
-Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
+    DECLARE(Float, vector_search_index_fetch_multiplier, 1.0, R"(
+Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
 )", BETA) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
@@ -6787,10 +6787,15 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
+    DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
+Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
+However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
+)", 0) \
     DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
 Allows to change the behaviour of the result type of `dateTrunc` function.
 
 Possible values:
+
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
@@ -7056,6 +7061,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
+    MAKE_OBSOLETE(M, Float, vector_search_postfilter_multiplier, 1.0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
@@ -7157,7 +7163,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     {
         auto name = setting.getName();
         key_column.insertData(name.data(), name.size());
-        value_column.insert(setting.getValueString());
+        value_column.insertData(setting.getValueString());
         size++;
     }
 

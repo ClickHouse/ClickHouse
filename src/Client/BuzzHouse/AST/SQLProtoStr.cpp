@@ -1810,35 +1810,61 @@ CONV_FN(JoinClause, jc)
     }
 }
 
+CONV_FN(KeyValuePair, kvp)
+{
+    ret += kvp.key();
+    ret += " = '";
+    ret += kvp.value();
+    ret += "'";
+}
+
+CONV_FN(SetValue, setv)
+{
+    ret += setv.property();
+    ret += " = ";
+    ret += setv.value();
+}
+
+CONV_FN(SettingValues, setv)
+{
+    SetValueToString(ret, setv.set_value());
+    for (int i = 0; i < setv.other_values_size(); i++)
+    {
+        ret += ", ";
+        SetValueToString(ret, setv.other_values(i));
+    }
+}
+
 CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
     ret += "(";
-    if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
+    if (ff.has_cluster() && ff.fname() > FileFunc_FName_icebergLocal)
     {
         ClusterToString(ret, false, ff.cluster());
         ret += ", ";
     }
     ret += "'";
     ret += ff.path();
-    ret += "', '";
+    ret += "'";
     if (ff.has_informat())
     {
+        ret += ", '";
         ret += InFormat_Name(ff.informat()).substr(3);
+        ret += "'";
     }
     else if (ff.has_outformat())
     {
+        ret += ", '";
         ret += OutFormat_Name(ff.outformat()).substr(4);
+        ret += "'";
     }
     else if (ff.has_inoutformat())
     {
+        ret += ", '";
         ret += InOutFormat_Name(ff.inoutformat()).substr(6);
+        ret += "'";
     }
-    else
-    {
-        ret += "CSV";
-    }
-    ret += "'";
     if (ff.has_structure())
     {
         ret += ", ";
@@ -1849,6 +1875,16 @@ CONV_FN(FileFunc, ff)
         ret += ", '";
         ret += ff.fcomp();
         ret += "'";
+    }
+    for (int i = 0; i < ff.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, ff.params(i));
+    }
+    if (ff.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, ff.setting_values());
     }
     ret += ")";
 }
@@ -2013,8 +2049,11 @@ CONV_FN(RedisFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     ExprToString(ret, rfunc.key());
-    ret += ", ";
-    ExprToString(ret, rfunc.structure());
+    if (rfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, rfunc.structure());
+    }
     if (rfunc.has_db_index())
     {
         ret += ", ";
@@ -2046,8 +2085,12 @@ CONV_FN(MongoDBFunc, mfunc)
     ret += mfunc.user();
     ret += "', '";
     ret += mfunc.password();
-    ret += "', ";
-    ExprToString(ret, mfunc.structure());
+    ret += "'";
+    if (mfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.structure());
+    }
     ret += ")";
 }
 
@@ -2055,7 +2098,7 @@ CONV_FN(S3Func, sfunc)
 {
     ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
+    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
         ClusterToString(ret, false, sfunc.cluster());
         ret += ", ";
@@ -2066,15 +2109,16 @@ CONV_FN(S3Func, sfunc)
     ret += sfunc.user();
     ret += "', '";
     ret += sfunc.password();
-    ret += "', '";
-    ret += InOutFormat_Name(sfunc.format()).substr(6);
-    ret += "', ";
-    ExprToString(ret, sfunc.structure());
-    if (sfunc.has_fcomp())
+    ret += "'";
+    for (int i = 0; i < sfunc.params_size(); i++)
     {
-        ret += ", '";
-        ret += sfunc.fcomp();
-        ret += "'";
+        ret += ", ";
+        KeyValuePairToString(ret, sfunc.params(i));
+    }
+    if (sfunc.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, sfunc.setting_values());
     }
     ret += ")";
 }
@@ -2083,7 +2127,7 @@ CONV_FN(AzureBlobStorageFunc, azure)
 {
     ret += AzureBlobStorageFunc_FName_Name(azure.fname());
     ret += "(";
-    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
+    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
     {
         ClusterToString(ret, false, azure.cluster());
         ret += ", ";
@@ -2107,22 +2151,15 @@ CONV_FN(AzureBlobStorageFunc, azure)
         ret += azure.password();
         ret += "'";
     }
-    if (azure.has_format())
-    {
-        ret += ", '";
-        ret += InOutFormat_Name(azure.format()).substr(6);
-        ret += "'";
-    }
-    if (azure.has_fcomp())
-    {
-        ret += ", '";
-        ret += azure.fcomp();
-        ret += "'";
-    }
-    if (azure.has_structure())
+    for (int i = 0; i < azure.params_size(); i++)
     {
         ret += ", ";
-        ExprToString(ret, azure.structure());
+        KeyValuePairToString(ret, azure.params(i));
+    }
+    if (azure.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, azure.setting_values());
     }
     ret += ")";
 }
@@ -2276,14 +2313,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += ")";
 }
 
-CONV_FN(KeyValuePair, kvp)
-{
-    ret += kvp.key();
-    ret += " = '";
-    ret += kvp.value();
-    ret += "'";
-}
-
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
 {
     ret += "VALUES ";
@@ -2371,6 +2400,11 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kMtproj:
             MergeTreeProjectionFuncToString(ret, tf.mtproj());
+            break;
+        case TableFunctionType::kNullf:
+            ret += "null(";
+            ExprToString(ret, tf.nullf());
+            ret += ")";
             break;
         default:
             ret += "numbers(10)";
@@ -2746,23 +2780,6 @@ CONV_FN(CTEs, cteq)
         SingleCTEToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
-}
-
-CONV_FN(SetValue, setv)
-{
-    ret += setv.property();
-    ret += " = ";
-    ret += setv.value();
-}
-
-CONV_FN(SettingValues, setv)
-{
-    SetValueToString(ret, setv.set_value());
-    for (int i = 0; i < setv.other_values_size(); i++)
-    {
-        ret += ", ";
-        SetValueToString(ret, setv.other_values(i));
-    }
 }
 
 CONV_FN(Select, select)
@@ -3689,8 +3706,8 @@ CONV_FN(DescribeStatement, ds)
     using DescType = DescribeStatement::DescOneofCase;
     switch (ds.desc_oneof_case())
     {
-        case DescType::kEst:
-            ExprSchemaTableToString(ret, ds.est());
+        case DescType::kTof:
+            TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
             ret += "(";
