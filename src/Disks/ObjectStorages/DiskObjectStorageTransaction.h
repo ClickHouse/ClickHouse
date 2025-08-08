@@ -59,17 +59,22 @@ protected:
 
     MetadataTransactionPtr metadata_transaction;
 
+    /// TODO we can get rid of this params
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
+
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
 
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_);
+        IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
     void undo() override;
@@ -124,14 +129,15 @@ public:
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
 {
-    IObjectStorage & destination_object_storage;
-    IMetadataStorage & destination_metadata_storage;
+    IObjectStorage& destination_object_storage;
+    IMetadataStorage& destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        IObjectStorage & destination_object_storage,
-        IMetadataStorage & destination_metadata_storage);
+        IObjectStorage& destination_object_storage,
+        IMetadataStorage& destination_metadata_storage,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

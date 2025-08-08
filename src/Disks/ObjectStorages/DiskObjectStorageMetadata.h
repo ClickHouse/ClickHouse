@@ -107,13 +107,6 @@ public:
         inline_data = data;
     }
 
-    void resetData()
-    {
-        inline_data.clear();
-        keys_with_meta.clear();
-        total_size = 0;
-    }
-
     const std::string & getInlineData() const
     {
         return inline_data;

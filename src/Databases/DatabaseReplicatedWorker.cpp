@@ -4,11 +4,11 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
+#include <Interpreters/Context.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
@@ -363,7 +363,6 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
-
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)

@@ -64,7 +64,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader sample_block,
+        Block sample_block,
         std::shared_ptr<IStorageCluster> storage_,
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
@@ -117,11 +117,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(
-        predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
-        context,
-        number_of_replicas);
+    extension = storage->getTaskIteratorExtension(predicate, context, number_of_replicas);
 }
 
 /// The code executes on initiator
@@ -142,7 +138,7 @@ void IStorageCluster::read(
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
-    SharedHeader sample_block;
+    Block sample_block;
     ASTPtr query_to_send = query_info.query;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -219,7 +215,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (try_results.empty())
             continue;
 
-        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
+        IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
@@ -234,13 +230,11 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
-        Pipe pipe{std::make_shared<RemoteSource>(
+        pipes.emplace_back(std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,
             current_settings[Setting::async_socket_for_remote],
-            current_settings[Setting::async_query_sending_for_remote])};
-        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-        pipes.emplace_back(std::move(pipe));
+            current_settings[Setting::async_query_sending_for_remote]));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

@@ -47,7 +47,6 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
-    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -150,8 +149,6 @@ public:
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
 
     void moveFile(const std::string & path_from, const std::string & path_to) override;
-
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 

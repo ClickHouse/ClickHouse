@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <memory>
 #include <stack>
 
 #include <Common/JSONBuilder.h>
@@ -8,7 +6,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,7 +31,6 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("description", int(description));
     changes.emplace_back("actions", int(actions));
     changes.emplace_back("indexes", int(indexes));
-    changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
 
@@ -62,7 +59,7 @@ bool QueryPlan::isCompleted() const
     return isInitialized() && !root->step->hasOutputHeader();
 }
 
-const SharedHeader & QueryPlan::getCurrentHeader() const
+const Header & QueryPlan::getCurrentHeader() const
 {
     checkInitialized();
     checkNotCompleted();
@@ -88,14 +85,14 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     {
         const auto & step_header = inputs[i];
         const auto & plan_header = plans[i]->getCurrentHeader();
-        if (!blocksHaveEqualStructure(*step_header, *plan_header))
+        if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
                 root->step->getName(),
-                plan_header->dumpStructure(),
-                step_header->dumpStructure());
+                plan_header.dumpStructure(),
+                step_header.dumpStructure());
     }
 
     for (auto & plan : plans)
@@ -143,14 +140,14 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
         const auto & root_header = root->step->getOutputHeader();
         const auto & step_header = step->getInputHeaders().front();
-        if (!blocksHaveEqualStructure(*root_header, *step_header))
+        if (!blocksHaveEqualStructure(root_header, step_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
                 step->getName(),
                 root->step->getName(),
-                root_header->dumpStructure(),
-                step_header->dumpStructure());
+                root_header.dumpStructure(),
+                step_header.dumpStructure());
 
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
@@ -234,7 +231,7 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
     {
         auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
-        for (const auto & output_column : *step.getOutputHeader())
+        for (const auto & output_column : step.getOutputHeader())
         {
             auto column_map = std::make_unique<JSONBuilder::JSONMap>();
             column_map->add("Name", output_column.name);
@@ -252,9 +249,6 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.indexes)
         step.describeIndexes(map);
-
-    if (options.projections)
-        step.describeProjections(map);
 }
 
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
@@ -344,7 +338,7 @@ static void explainStep(
             settings.out << "Header: ";
             bool first = true;
 
-            for (const auto & elem : *step.getOutputHeader())
+            for (const auto & elem : step.getOutputHeader())
             {
                 if (!first)
                     settings.out << "\n" << prefix << "        ";
@@ -374,9 +368,6 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
-
-    if (options.projections)
-        step.describeProjections(settings);
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
@@ -493,7 +484,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
@@ -703,32 +694,6 @@ QueryPlan QueryPlan::clone() const
     }
 
     return result;
-}
-
-
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
-{
-    chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
-
-    const auto & header = node->step->getOutputHeader();
-    const auto & plan_header = plan->getCurrentHeader();
-
-    if (!blocksHaveEqualStructure(*header, *plan_header))
-    {
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-
-        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-        plan->addStep(std::move(expression));
-    }
-
-    nodes.splice(nodes.end(), std::move(plan->nodes));
-
-    node->step = std::move(plan->getRootNode()->step);
-    node->children = std::move(plan->getRootNode()->children);
-
-    max_threads = std::max(max_threads, plan->max_threads);
-    resources = std::move(plan->resources);
 }
 
 }

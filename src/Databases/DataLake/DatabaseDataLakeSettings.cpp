@@ -4,7 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -21,7 +21,6 @@ namespace ErrorCodes
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0)             \
-    DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
     DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
@@ -31,7 +30,7 @@ namespace ErrorCodes
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
-    LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
+    LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)

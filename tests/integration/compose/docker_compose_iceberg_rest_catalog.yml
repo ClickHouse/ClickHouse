@@ -44,8 +44,8 @@ services:
         aliases:
           - warehouse-rest.minio
     ports:
-      - 9001
-      - 9000
+        - 9001:9001
+        - 9002:9000
     command: ["server", "/data", "--console-address", ":9001"]
   # TODO: move this code to cluster.py
   mc:

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Compression/CompressedReadBufferBase.h>
+#include "CompressedReadBufferBase.h"
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 

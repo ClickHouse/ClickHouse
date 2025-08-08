@@ -57,14 +57,13 @@ static const auto cleaner_reschedule_ms = 60000;
 static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
-    ContextPtr context_,
-    const String & metadata_path_,
-    const ASTStorage * database_engine_define_,
-    const String & dbname_,
-    const StoragePostgreSQL::Configuration & configuration_,
-    postgres::PoolWithFailoverPtr pool_,
-    bool cache_tables_,
-    UUID uuid)
+        ContextPtr context_,
+        const String & metadata_path_,
+        const ASTStorage * database_engine_define_,
+        const String & dbname_,
+        const StoragePostgreSQL::Configuration & configuration_,
+        postgres::PoolWithFailoverPtr pool_,
+        bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
@@ -72,15 +71,10 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
+    , db_disk(getContext()->getDatabaseDisk())
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
-    , db_uuid(uuid)
 {
-    if (persistent)
-    {
-        auto db_disk = getDisk();
-        db_disk->createDirectories(metadata_path);
-    }
-
+    db_disk->createDirectories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -242,7 +236,6 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
 void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
-    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -259,9 +252,6 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
         cached_tables[table_name] = storage;
 
     detached_or_dropped.erase(table_name);
-
-    if (!persistent)
-        return;
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     db_disk->removeFileIfExists(table_marked_as_removed);
@@ -301,10 +291,6 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
-    if (!persistent)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
-
-    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -323,21 +309,15 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 }
 
 
-void DatabasePostgreSQL::drop(ContextPtr)
+void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    if (!persistent)
-        return;
-
-    auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
 
 void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
 {
-    if (persistent)
     {
-        auto db_disk = getDisk();
         std::lock_guard lock{mutex};
         /// Check for previously dropped tables
         for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
@@ -395,17 +375,12 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
-    auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
         {
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
-
-            if (!persistent)
-                continue;
-
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
             db_disk->removeFileIfExists(table_marked_as_removed);
         }
@@ -481,6 +456,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+    ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
     if (storage_engine_arguments->children.empty())
@@ -596,8 +572,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             args.database_name,
             configuration,
             pool,
-            use_table_cache,
-            args.uuid);
+            use_table_cache);
     };
     factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
 }

@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Access/Common/AccessFlags.h>
 
 #include <Functions/addressToLine.h>

@@ -8,7 +8,6 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
-#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -25,10 +24,6 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if defined(OS_LINUX)
-#    include <netinet/tcp.h>
-#endif
-
 
 namespace DB
 {
@@ -42,8 +37,6 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -51,62 +44,24 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
+    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
+
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            out.emplace(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        out.emplace(filename, small_buffer_size);
 }
 
-std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
+static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -132,8 +87,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
-    openFileIfExists("/proc/net/tcp", net_tcp);
-    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
@@ -160,10 +113,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
 
     openFileIfExists("/proc/meminfo", meminfo);
-
-    openFileIfExists("/proc/pressure/memory", memory_pressure);
-    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-    openFileIfExists("/proc/pressure/io", io_pressure);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -221,10 +170,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
+
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
-        std::filesystem::directory_options::skip_permission_denied))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
     {
         String device_name = device_dir.path().filename();
 
@@ -787,56 +736,6 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
-void readPressureFile(
-    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
-    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
-{
-    in.rewind();
-    /// The shape of this file is:
-    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
-    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
-
-    /// We need the first field to capture whether it's a partial or total stall.
-    /// We also ignore the time averages as well. Recording the counter (the last field)
-    /// lets us recreate any average, with better identification of any short spikes
-    while (!in.eof())
-    {
-        String stall_type;
-        readStringUntilWhitespace(stall_type, in);
-
-        String skip;
-        // skip avg10=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg60=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg300=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip total=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-
-        uint64_t counter;
-        readText(counter, in);
-
-        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
-
-        if (!first_run)
-        {
-            uint64_t prev = prev_pressure_vals[metric_key];
-
-                uint64_t delta = counter - prev;
-            new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
-                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
-        }
-
-        prev_pressure_vals[metric_key] = counter;
-        skipToNextLineOrEOF(in);
-    }
-}
 #endif
 
 // Warnings for pending mutations
@@ -985,8 +884,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 #endif
-
-    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1476,46 +1373,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-
-    if (cpu_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/cpu", memory_pressure);
-        }
-    }
-
-    if (memory_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/memory", memory_pressure);
-        }
-    }
-
-    if (io_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/io", io_pressure);
-        }
-    }
-
     if (file_nr)
     {
         try
@@ -1765,132 +1622,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
-    }
-
-    if (net_tcp || net_tcp6)
-    {
-        UInt64 total_sockets = 0;
-        UInt64 sockets_by_state[16] = {};
-        UInt64 transmit_queue_size = 0;
-        UInt64 receive_queue_size = 0;
-        UInt64 unrecovered_retransmits = 0;
-        std::unordered_set<std::string> remote_addresses;
-
-        auto process_net = [&](const char * path, auto & file)
-        {
-            try
-            {
-                file->rewind();
-                /// Header
-                skipToNextLineOrEOF(*file);
-
-                while (!file->eof())
-                {
-                    /// Line number
-                    skipWhitespaceIfAny(*file, true);
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Local address and port
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Remote address and port
-                    String remote_address_and_port;
-                    readStringUntilWhitespace(remote_address_and_port, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
-                        remote_address_and_port.resize(pos);
-                    remote_addresses.emplace(remote_address_and_port);
-
-                    /// Socket state
-                    UInt8 state = 0;
-                    char state_hex[2]{};
-                    readPODBinary(state_hex, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    state = unhex2(state_hex);
-                    if (state < 16)
-                        ++sockets_by_state[state];
-
-                    /// tx_queue:rx_queue
-                    String tx_rx_queue;
-                    readStringUntilWhitespace(tx_rx_queue, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
-                    {
-                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
-                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
-
-                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
-                        {
-                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
-                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
-
-                            transmit_queue_size += tx_queue_size;
-                            receive_queue_size += rx_queue_size;
-                        }
-                    }
-
-                    /// tr:when
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Retransmits
-                    String retransmits_str;
-                    readStringUntilWhitespace(retransmits_str, *file);
-                    if (retransmits_str.size() == 8)
-                    {
-                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
-                        unrecovered_retransmits += retransmits;
-                    }
-
-                    skipToNextLineOrEOF(*file);
-                    ++total_sockets;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                openFileIfExists(path, file);
-            }
-        };
-
-        if (net_tcp)
-            process_net("/proc/net/tcp", net_tcp);
-
-        if (net_tcp6)
-            process_net("/proc/net/tcp6", net_tcp6);
-
-        new_values["NetworkTCPSockets"] = { total_sockets,
-            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
-
-        auto process_socket_state = [&](UInt8 state, const char * description)
-        {
-            if (state < 16 && sockets_by_state[state])
-                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
-                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
-        };
-
-        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
-        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
-        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
-        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
-        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
-        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
-        process_socket_state(TCP_CLOSE, "CLOSE");
-        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
-        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
-        process_socket_state(TCP_LISTEN, "LISTEN");
-        process_socket_state(TCP_CLOSING, "CLOSING");
-
-        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
-            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
-            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
-            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
-            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
     if (vm_max_map_count)

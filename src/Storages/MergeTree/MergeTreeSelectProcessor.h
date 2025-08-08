@@ -94,7 +94,7 @@ private:
     static void injectLazilyReadColumns(
         size_t rows,
         Block & block,
-        size_t part_index,
+        MergeTreeReadTask * task,
         const LazilyReadInfoPtr & lazily_read_info);
 
     /// Sets up range readers corresponding to data readers

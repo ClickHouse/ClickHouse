@@ -82,7 +82,7 @@ def check_query(query=QUERY_1):
     query_time = time.time() - start
     print("Query time:", query_time)
 
-    assert query_time < 8
+    assert query_time < 5
 
 
 def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data_ms):

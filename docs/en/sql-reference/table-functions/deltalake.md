@@ -9,11 +9,12 @@ title: 'deltaLake'
 
 # deltaLake Table Function
 
-Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system.
+Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
 
 ## Syntax {#syntax}
 
 `deltaLake` is an alias of `deltaLakeS3`, its supported for compatibility.
+
 
 ```sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
@@ -21,8 +22,6 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-
-deltaLakeLocal(path, [,format])
 ```
 
 ## Arguments {#arguments}
@@ -30,11 +29,11 @@ deltaLakeLocal(path, [,format])
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Delta lake table.
 
-## Returned value {#returned_value}
+**Returned value**
 
 A table with the specified structure for reading data in the specified Delta Lake table.
 
-## Examples {#examples}
+**Examples**
 
 Selecting rows from the table in S3 `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`:
 
@@ -54,7 +53,7 @@ LIMIT 2
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-## Related {#related}
+**See Also**
 
 - [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
 - [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)

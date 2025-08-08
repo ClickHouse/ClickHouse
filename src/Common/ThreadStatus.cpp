@@ -7,6 +7,7 @@
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
+#include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -107,11 +108,11 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+    , memory_spill_scheduler(false)
 {}
 
-ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
+    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
     chassert(!current_thread);
 
@@ -172,20 +173,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
-{
-    chassert(query_id.empty());
-    query_id = std::move(new_query_id);
-}
-
-void ThreadStatus::clearQueryId() noexcept
-{
-    query_id.clear();
-}
-
 const String & ThreadStatus::getQueryId() const
 {
-    return query_id;
+    return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const
@@ -276,7 +266,7 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
-    chassert(current_thread == this);
+    chassert(!check_current_thread_on_destruction || current_thread == this);
 
     /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
     flushUntrackedMemory();
@@ -285,18 +275,17 @@ ThreadStatus::~ThreadStatus()
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
-    else
-        LOG_FATAL(log, "current_thread contains invalid address");
+    else if (check_current_thread_on_destruction)
+        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
-        auto & counters = current_performance_counters ? *current_performance_counters : performance_counters;
-        RUsageCounters::updateProfileEvents(*last_rusage, counters);
+        RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
         if (taskstats)
-            taskstats->updateCounters(counters);
+            taskstats->updateCounters(performance_counters);
     }
     catch (...)
     {
@@ -325,7 +314,6 @@ void ThreadStatus::onFatalError()
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
-std::atomic_flag MainThreadStatus::is_initialized;
 
 MainThreadStatus & MainThreadStatus::getInstance()
 {
@@ -336,19 +324,10 @@ MainThreadStatus & MainThreadStatus::getInstance()
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
-    is_initialized.test_and_set(std::memory_order_relaxed);
 }
 
 MainThreadStatus::~MainThreadStatus()
 {
-    /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
-    /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
-    /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open
-    /// If the `metrics_provider` static object is destroyed first then by the time when the destructor of `thread_status` is called
-    /// the file descriptors are closed, which will throw errors.
-    /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
-    /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 

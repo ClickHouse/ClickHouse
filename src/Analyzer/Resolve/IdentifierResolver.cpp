@@ -187,7 +187,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
-    storage->updateExternalDynamicMetadataIfExists(context);
+    if (storage->hasExternalDynamicMetadata())
+    {
+        storage->updateExternalDynamicMetadata(context);
+    }
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -913,9 +916,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
-
-        if (!left_resolved_identifier && !right_resolved_identifier)
-            return {};
 
         return {
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,

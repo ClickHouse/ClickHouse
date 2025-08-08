@@ -937,60 +937,55 @@ TEST(ColumnDynamic, rollback)
         ASSERT_EQ(num_rows, column_variant.size());
     };
 
-    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::unordered_map<String, size_t> sizes)
+    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::vector<size_t> sizes)
     {
-        const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(cp).variants_checkpoints;
+        const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(cp).nested;
         size_t num_rows = 0;
 
-        for (const auto & [variant, checkpoint] : variants_checkpoints)
+        for (size_t i = 0; i < nested.size(); ++i)
         {
-            ASSERT_EQ(checkpoint->size, sizes.at(variant));
-            num_rows += sizes.at(variant);
+            ASSERT_EQ(nested[i]->size, sizes[i]);
+            num_rows += sizes[i];
         }
 
         ASSERT_EQ(num_rows, cp.size);
     };
 
-    std::vector<std::vector<size_t>> variant_checkpoints_sizes;
-    std::vector<std::pair<ColumnCheckpointPtr, std::unordered_map<String, size_t>>> dynamic_checkpoints;
+    std::vector<std::pair<ColumnCheckpointPtr, std::vector<size_t>>> checkpoints;
 
     auto column = ColumnDynamic::create(2);
     auto checkpoint = column->getCheckpoint();
 
     column->insert(Field(42));
+
     column->updateCheckpoint(*checkpoint);
+    checkpoints.emplace_back(checkpoint, std::vector<size_t>{0, 1, 0});
+
     column->insert(Field("str1"));
     column->rollback(*checkpoint);
 
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 0});
-    dynamic_checkpoints.emplace_back(checkpoint, std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 0}});
-
-    check_checkpoint(*checkpoint, dynamic_checkpoints.back().second);
-    check_variant(column->getVariantColumn(), variant_checkpoints_sizes.back());
+    check_checkpoint(*checkpoint, checkpoints.back().second);
+    check_variant(column->getVariantColumn(), checkpoints.back().second);
 
     column->insert("str1");
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 1});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 1}});
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 1});
 
     column->insert("str2");
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 2}});
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 2});
 
     column->insert(Array({1, 2}));
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{1, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 1}, {"Int8", 1}, {"String", 2}});
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{1, 1, 2});
 
     column->insert(Field(42.42));
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{2, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 2}, {"Int8", 1}, {"String", 2}});
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{2, 1, 2});
 
-    for (size_t i = 0; i != variant_checkpoints_sizes.size(); ++i)
+    for (const auto & [cp, sizes] : checkpoints)
     {
         auto column_copy = column->clone();
-        column_copy->rollback(*dynamic_checkpoints[i].first);
+        column_copy->rollback(*cp);
 
-        check_checkpoint(*dynamic_checkpoints[i].first, dynamic_checkpoints[i].second);
-        check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), variant_checkpoints_sizes[i]);
+        check_checkpoint(*cp, sizes);
+        check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), sizes);
     }
 }
 

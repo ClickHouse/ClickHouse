@@ -37,9 +37,9 @@ ASTPtr ASTMoveAccessEntityQuery::clone() const
 
 void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr
+    ostr << (settings.hilite ? hilite_keyword : "")
                   << "MOVE " << AccessEntityTypeInfo::get(type).name
-                 ;
+                  << (settings.hilite ? hilite_none : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {
@@ -49,8 +49,8 @@ void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     else
         formatNames(names, ostr);
 
-    ostr
-                  << " TO "
+    ostr << (settings.hilite ? hilite_keyword : "")
+                  << " TO " << (settings.hilite ? hilite_none : "")
                   << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);
