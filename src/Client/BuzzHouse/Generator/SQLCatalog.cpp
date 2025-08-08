@@ -24,7 +24,7 @@ bool SQLBase::isEngineReplaceable() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
         || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
-        || isNullEngine() || isGenerateRandomEngine();
+        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -102,6 +102,10 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
     if (isKeeperMapEngine())
     {
         return fmt::format("/kfile{}", tname);
+    }
+    if (isArrowFlightEngine())
+    {
+        return fmt::format("/aflight{}", tname);
     }
     chassert(0);
     return "";

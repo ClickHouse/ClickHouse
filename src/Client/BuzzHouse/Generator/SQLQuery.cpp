@@ -418,6 +418,13 @@ void StatementGenerator::setTableFunction(
             gfunc->set_max_string_length(string_length_dist(rg.generator));
             gfunc->set_max_array_length(nested_rows_dist(rg.generator));
         }
+        else if (t.isArrowFlightEngine())
+        {
+            ArrowFlightFunc * affunc = tfunc->mutable_flight();
+
+            affunc->set_address(t.host_params);
+            affunc->set_dataset(t.getTablePath(fc, false));
+        }
         else
         {
             chassert(0);

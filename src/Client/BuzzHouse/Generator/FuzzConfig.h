@@ -47,23 +47,24 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30);
 
-const constexpr uint64_t allow_replacing_mergetree
-    = (UINT64_C(1) << 0),
-    allow_coalescing_mergetree = (UINT64_C(1) << 1), allow_summing_mergetree = (UINT64_C(1) << 2),
-    allow_aggregating_mergetree = (UINT64_C(1) << 3), allow_collapsing_mergetree = (UINT64_C(1) << 4),
-    allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5), allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7),
-    allow_setengine = (UINT64_C(1) << 8), allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10),
-    allow_stripelog = (UINT64_C(1) << 11), allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13),
-    allow_embedded_rocksdb = (UINT64_C(1) << 14), allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16),
-    allow_postgresql = (UINT64_C(1) << 17), allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19),
-    allow_redis = (UINT64_C(1) << 20), allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22),
-    allow_hudi = (UINT64_C(1) << 23), allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
-    allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27), allow_icebergAzure = (UINT64_C(1) << 28),
-    allow_icebergLocal = (UINT64_C(1) << 29), allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31),
-    allow_dictionary = (UINT64_C(1) << 32), allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
-    allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
-    allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
-    allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42);
+const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
+                         allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
+                         allow_collapsing_mergetree = (UINT64_C(1) << 4), allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5),
+                         allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7), allow_setengine = (UINT64_C(1) << 8),
+                         allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10), allow_stripelog = (UINT64_C(1) << 11),
+                         allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13), allow_embedded_rocksdb = (UINT64_C(1) << 14),
+                         allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16), allow_postgresql = (UINT64_C(1) << 17),
+                         allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19), allow_redis = (UINT64_C(1) << 20),
+                         allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22), allow_hudi = (UINT64_C(1) << 23),
+                         allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
+                         allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27),
+                         allow_icebergAzure = (UINT64_C(1) << 28), allow_icebergLocal = (UINT64_C(1) << 29),
+                         allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31), allow_dictionary = (UINT64_C(1) << 32),
+                         allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
+                         allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
+                         allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
+                         allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
+                         allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43);
 
 using JSONObjectType = JSONParserImpl::Element;
 
@@ -217,8 +218,8 @@ public:
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
-             arrowflight_port = 8888, use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000,
-             min_string_length = 0, max_string_length = 1009;
+             use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
+             max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",

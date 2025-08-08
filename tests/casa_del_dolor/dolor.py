@@ -283,6 +283,9 @@ parser.add_argument(
 parser.add_argument(
     "--with-hms", action="store_true", help="With Hive catalog for MinIO"
 )
+parser.add_argument(
+    "--with-arrowflight", action="store_true", help="With Arrow flight support"
+)
 
 args = parser.parse_args()
 
@@ -379,6 +382,7 @@ for i in range(0, len(args.replica_values)):
             with_iceberg_catalog=args.with_rest,
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
+            with_arrowflight=args.with_arrowflight,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],

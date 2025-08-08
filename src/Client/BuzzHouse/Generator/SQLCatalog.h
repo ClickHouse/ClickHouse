@@ -163,7 +163,7 @@ public:
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    String file_comp, partition_strategy, partition_columns_in_data_file;
+    String file_comp, partition_strategy, partition_columns_in_data_file, host_params;
     std::optional<InOutFormat> file_format;
     CatalogTable catalog = CatalogTable::None;
 
@@ -269,6 +269,8 @@ public:
     bool isExternalDistributedEngine() const { return teng == TableEngineValues::ExternalDistributed; }
 
     bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
+
+    bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
     bool isNotTruncableEngine() const;
 

@@ -2329,6 +2329,15 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
     ret += tudf ? ")" : "";
 }
 
+CONV_FN(ArrowFlightFunc, afunc)
+{
+    ret += "arrowflight('";
+    ret += afunc.address();
+    ret += "', '";
+    ret += afunc.dataset();
+    ret += "')";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2405,6 +2414,9 @@ CONV_FN(TableFunction, tf)
             ret += "null(";
             ExprToString(ret, tf.nullf());
             ret += ")";
+            break;
+        case TableFunctionType::kFlight:
+            ArrowFlightFuncToString(ret, tf.flight());
             break;
         default:
             ret += "numbers(10)";

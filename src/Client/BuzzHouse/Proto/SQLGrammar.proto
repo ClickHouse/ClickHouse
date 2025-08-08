@@ -2674,6 +2674,11 @@ message ValuesStatement {
     repeated ExprList extra_expr_lists = 2;
 }
 
+message ArrowFlightFunc {
+    required string address = 1;
+    required string dataset = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2698,6 +2703,7 @@ message TableFunction {
         MongoDBFunc mongodb = 20;
         MergeTreeProjectionFunc mtproj = 21;
         Expr nullf = 22;
+        ArrowFlightFunc flight = 23;
     }
 }
 
@@ -3224,6 +3230,7 @@ enum TableEngineValues {
     KeeperMap = 39;
     ExternalDistributed = 40;
     MaterializedPostgreSQL = 41;
+    ArrowFlight = 42;
 }
 
 enum TableEngineOption {

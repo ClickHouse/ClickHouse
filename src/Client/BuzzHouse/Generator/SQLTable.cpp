@@ -1297,6 +1297,14 @@ void StatementGenerator::generateEngineDetails(
         }
         setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
     }
+    else if (te->has_engine() && b.isArrowFlightEngine())
+    {
+        /// Set arrow flight params
+        b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
+        te->add_params()->set_svalue(b.host_params);
+        te->add_params()->set_svalue(b.getTablePath(fc, false));
+    }
+
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
         b.toption = TShared;
@@ -1947,6 +1955,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)
         {
             this->ids.emplace_back(URL);
+        }
+        if (!fc.arrow_flight_servers.empty() && (fc.engine_mask & allow_arrowflight) != 0)
+        {
+            this->ids.emplace_back(ArrowFlight);
         }
         if (allow_mysql_tbl || allow_postgresql_tbl)
         {

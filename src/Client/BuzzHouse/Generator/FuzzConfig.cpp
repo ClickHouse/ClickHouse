@@ -292,7 +292,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"materializedpostgresql", allow_materialized_postgresql},
            {"replicated", allow_replicated},
            {"shared", allow_shared},
-           {"datalakecatalog", allow_datalakecatalog}};
+           {"datalakecatalog", allow_datalakecatalog},
+           {"arrowflight", allow_arrowflight}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -316,7 +317,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_secure_port", [&](const JSONObjectType & value) { http_secure_port = static_cast<uint32_t>(value.getUInt64()); }},
-        {"arrowflight_port", [&](const JSONObjectType & value) { arrowflight_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
