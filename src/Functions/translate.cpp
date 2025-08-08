@@ -281,7 +281,6 @@ struct TranslateUTF8Impl
                 data_size += src_len;
             }
 
-            ++data_size;
             res_offsets[i] = data_size;
         }
 
