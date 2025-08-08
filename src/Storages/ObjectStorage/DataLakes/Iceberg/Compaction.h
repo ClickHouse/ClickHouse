@@ -6,6 +6,7 @@
 
 namespace Iceberg
 {
+#if USE_AVRO
 
 void compactIcebergTable(
     DB::ObjectStoragePtr object_storage_,
@@ -15,4 +16,5 @@ void compactIcebergTable(
     DB::ContextPtr context_,
     bool wait_concurrent_compaction = false);
 
+#endif
 }

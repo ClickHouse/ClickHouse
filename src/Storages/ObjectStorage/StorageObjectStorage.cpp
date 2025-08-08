@@ -52,6 +52,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
@@ -71,6 +72,7 @@ void scheduleCompactionJob(
 {
     auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
     std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
+    /// Compaction thread poll responses for compaction tasks.
     context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
         Iceberg::compactIcebergTable(
             object_storage,
@@ -80,6 +82,8 @@ void scheduleCompactionJob(
             context
         );
     });
+
+    /// Compaction Scheduler thread poll responses for task like "sleep for N seconds and schedule compaction of table".
     context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([=] {
         scheduleCompactionJob(
             object_storage,
@@ -558,6 +562,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     ContextPtr context)
 {
+#if USE_AVRO
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
     {
         if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
@@ -571,6 +576,7 @@ bool StorageObjectStorage::optimize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enalble 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
         }
     }
+#endif
     return false;
 }
 

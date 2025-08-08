@@ -10,7 +10,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Logger.h>
-#include "Core/Settings.h"
+#include <Core/Settings.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -21,6 +21,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+
+#if USE_AVRO
 
 namespace DB::Setting
 {
@@ -81,6 +83,8 @@ private:
     std::vector<Row> partition_values;
 };
 
+/// Plan of compaction consists information about all data files and what delete files should be applied for them.
+/// Also it contains some other information about previous metadata.
 struct Plan
 {
     bool need_optimize = false;
@@ -468,6 +472,8 @@ void clearOldFiles(
     }
 }
 
+/// Only 1 thread at certain moment of time can compact table.
+/// TODO: implement CAS for ObjectStoragePtr
 bool tryGetLock(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration)
@@ -502,6 +508,7 @@ void compactIcebergTable(
         bool need_merge = true;
         while (!tryGetLock(object_storage_, configuration_))
         {
+            /// In this case we will wait untill another thread will optimize our table.
             if (!wait_concurrent_compaction)
                 return;
             need_merge = false;
@@ -519,3 +526,5 @@ void compactIcebergTable(
 }
 
 }
+
+#endif
