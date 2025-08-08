@@ -895,8 +895,8 @@ String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
         output_buffer << tab << "inner table header: " << inner_metadata->getSampleBlock().dumpStructure() << "\n";
 
 
-        output_buffer << tab << "input header: " << input_headers.at(current)->dumpStructure() << "\n";
-        output_buffer << tab << "output header: " << output_headers.at(current)->dumpStructure() << "\n";
+        output_buffer << tab << "input header: " << input_headers.at(current).dumpStructure() << "\n";
+        output_buffer << tab << "output header: " << output_headers.at(current).dumpStructure() << "\n";
     }
     else
     {
