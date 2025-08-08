@@ -316,7 +316,7 @@ private:
     void flatTableColumnPath(
         uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
-    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, bool escape, Expr * expr);
+    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     void generateTableExpression(RandomGenerator & rg, bool use_global_agg, Expr * expr);
@@ -412,7 +412,7 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos);
+    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, bool allow_chaos, const SQLTable & t, TableFunction * tfunc);
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
@@ -588,7 +588,7 @@ private:
                 }
                 else
                 {
-                    next->set_value(getTableStructure(rg, b, allow_chaos));
+                    next->set_value(getTableStructure(rg, b, allow_chaos, true));
                 }
                 added_structure++;
             }

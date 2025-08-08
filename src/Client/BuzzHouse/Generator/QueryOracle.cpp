@@ -237,7 +237,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
     }
     else
     {

@@ -431,7 +431,7 @@ void StatementGenerator::setTableFunction(
         }
         if (structure)
         {
-            structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, allow_chaos));
+            structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, allow_chaos, false));
         }
         if (sfunc || afunc || t.isOnLocal())
         {
@@ -527,8 +527,7 @@ auto StatementGenerator::getQueryTableLambda()
     };
 }
 
-void StatementGenerator::addRandomRelation(
-    RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, const bool escape, Expr * expr)
+void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, Expr * expr)
 {
     if (rg.nextBool())
     {
@@ -566,7 +565,7 @@ void StatementGenerator::addRandomRelation(
             const uint32_t ncame = col_counter++;
             auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
 
-            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(escape));
+            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
             first = false;
             centries[ncame] = std::move(tp);
         }
@@ -1018,7 +1017,6 @@ bool StatementGenerator::joinedTableOrFunction(
             rg,
             rel_name,
             (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(),
-            false,
             grf ? grf->mutable_structure() : tf->mutable_nullf());
         if (grf)
         {
@@ -1076,7 +1074,7 @@ bool StatementGenerator::joinedTableOrFunction(
             const String & bottomName = entry.getBottomName();
 
             url += fmt::format("{}{}", first ? "" : ",", bottomName);
-            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(true));
+            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(false));
             first = false;
         }
         this->remote_entries.clear();

@@ -705,7 +705,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
                     first ? "" : ", ",
                     entry.getBottomName(),
                     entry.path.size() > 1 ? "Array(" : "",
-                    entry.getBottomType()->typeName(true),
+                    entry.getBottomType()->typeName(false),
                     entry.path.size() > 1 ? ")" : "");
                 first = false;
             }

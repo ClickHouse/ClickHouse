@@ -1004,7 +1004,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
-String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos)
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const bool allow_chaos, const bool escape)
 {
     String buf;
     bool first = true;
@@ -1018,7 +1018,7 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
             "{}{} {}{}",
             first ? "" : ", ",
             entry.getBottomName(),
-            entry.getBottomType()->typeName(true),
+            entry.getBottomType()->typeName(escape),
             entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         first = false;
     }
