@@ -561,11 +561,11 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         /// Default bytes size is 1
         UInt8 data_bytes_size = 1;
 
-        // But always check against column_type if available to ensure it is also a valid type
+        /// But always check against column_type if available to ensure it is also a valid type
         if (column_type != nullptr)
             data_bytes_size = getDataBytesSize(column_type);
 
-        // Finally try to use a user argument if specified.
+        /// Finally try to use a user argument if specified.
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)

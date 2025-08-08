@@ -203,7 +203,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         /// Default bytes size is 1.
         UInt8 delta_bytes_size = 1;
 
-        // But always check against column_type if available to ensure it is also a valid type
+        /// But always check against column_type if available to ensure it is also a valid type
         if (column_type != nullptr)
             delta_bytes_size = getDeltaBytesSize(column_type);
 
