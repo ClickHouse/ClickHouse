@@ -516,9 +516,9 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 b.data() + offsets_b[i - 1],
-                b.data() + offsets_b[i] - 1);
+                b.data() + offsets_b[i]);
         }
     }
 
@@ -530,7 +530,7 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 reinterpret_cast<const UInt8 *>(b.data()),
                 reinterpret_cast<const UInt8 *>(b.data()) + b.size());
         }
