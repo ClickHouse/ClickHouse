@@ -635,6 +635,5 @@ wordShingleSimHash
 wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF8
 wordShingleSimHashUTF8
-wyHash64
 xor
 zookeeperSessionUptime
