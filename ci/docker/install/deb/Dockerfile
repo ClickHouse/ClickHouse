@@ -61,5 +61,3 @@ RUN \
 VOLUME ["/run", "/run/lock"]
 
 STOPSIGNAL SIGRTMIN+3
-
-ENTRYPOINT ["/lib/systemd/systemd"]
