@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupConcurrencyCheck.h>
+#include <Backups/BackupKeeperSettings.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/join.hpp>
 
@@ -91,16 +92,16 @@ void BackupCoordinationStageSync::State::addErrorInfo(std::exception_ptr excepti
 
 
 BackupCoordinationStageSync::BackupCoordinationStageSync(
-        bool is_restore_,
-        const String & zookeeper_path_,
-        const String & current_host_,
-        const Strings & all_hosts_,
-        bool allow_concurrency_,
-        BackupConcurrencyCounters & concurrency_counters_,
-        const WithRetries & with_retries_,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-        QueryStatusPtr process_list_element_,
-        LoggerPtr log_)
+    bool is_restore_,
+    const String & zookeeper_path_,
+    const String & current_host_,
+    const Strings & all_hosts_,
+    bool allow_concurrency_,
+    BackupConcurrencyCounters & concurrency_counters_,
+    const WithRetries & with_retries_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
+    QueryStatusPtr process_list_element_,
+    LoggerPtr log_)
     : is_restore(is_restore_)
     , operation_name(is_restore ? "restore" : "backup")
     , current_host(current_host_)
@@ -112,10 +113,10 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , schedule(schedule_)
     , process_list_element(process_list_element_)
     , log(log_)
-    , failure_after_host_disconnected_for_seconds(with_retries.getKeeperSettings().failure_after_host_disconnected_for_seconds)
-    , finish_timeout_after_error(with_retries.getKeeperSettings().finish_timeout_after_error)
-    , sync_period_ms(with_retries.getKeeperSettings().sync_period_ms)
-    , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version)
+    , failure_after_host_disconnected_for_seconds(with_retries.getBackupKeeperSettings().failure_after_host_disconnected_for_seconds)
+    , finish_timeout_after_error(with_retries.getBackupKeeperSettings().finish_timeout_after_error)
+    , sync_period_ms(with_retries.getBackupKeeperSettings().sync_period_ms)
+    , max_attempts_after_bad_version(with_retries.getBackupKeeperSettings().max_attempts_after_bad_version)
     , zookeeper_path(zookeeper_path_)
     , root_zookeeper_path(zookeeper_path.parent_path().parent_path())
     , operation_zookeeper_path(zookeeper_path.parent_path())
@@ -215,7 +216,8 @@ void BackupCoordinationStageSync::createRootNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path in ZooKeeper specified: {}", zookeeper_path);
     }
 
-    auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::createRootNodes", WithRetries::kInitialization);
+    auto holder
+        = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::createRootNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
         {
@@ -228,7 +230,8 @@ void BackupCoordinationStageSync::createRootNodes()
 
 void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency()
 {
-    auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::createStartAndAliveNodes", WithRetries::kInitialization);
+    auto holder = with_retries.createRetriesControlHolderForBackup(
+        "BackupCoordinationStageSync::createStartAndAliveNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zookeeper);
@@ -466,7 +469,7 @@ void BackupCoordinationStageSync::watchingThread()
         try
         {
             /// Recreate the 'alive' node if necessary and read a new state from ZooKeeper.
-            auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::watchingThread");
+            auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::watchingThread");
             auto & zookeeper = holder.faulty_zookeeper;
             with_retries.renewZooKeeper(zookeeper);
 
@@ -783,7 +786,7 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
         stopWatchingThread();
     }
 
-    auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::setStage");
+    auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::setStage");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zookeeper);
@@ -976,7 +979,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
 
     try
     {
-        auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);
+        auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::finish", retries_kind);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zookeeper);
@@ -1397,9 +1400,8 @@ void BackupCoordinationStageSync::setError(const Exception & exception, bool thr
 
     try
     {
-
-
-        auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::setError", WithRetries::kErrorHandling);
+        auto holder
+            = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::setError", WithRetries::kErrorHandling);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zookeeper);

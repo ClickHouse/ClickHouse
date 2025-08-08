@@ -8,7 +8,8 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/WithRetries.h>
+#include <Backups/BackupKeeperSettings.h>
+#include <Common/ZooKeeper/WithRetries.h>
 
 
 namespace DB

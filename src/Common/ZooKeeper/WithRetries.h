@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Backups/BackupKeeperSettings.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -9,10 +8,10 @@
 namespace DB
 {
 
-/// In backups every request to [Zoo]Keeper should be retryable
-/// and this tiny class encapsulates all the machinery for make it possible -
-/// a [Zoo]Keeper client which injects faults with configurable probability
-/// and a retries controller which performs retries with growing backoff.
+struct BackupKeeperSettings;
+
+/// In most situations Keeper should be retryable and this tiny class encapsulates all the machinery for make it possible -
+/// a Keeper client which injects faults with configurable probability and a retries controller which performs retries with growing backoff.
 class WithRetries
 {
 public:
@@ -37,30 +36,52 @@ public:
     class RetriesControlHolder
     {
     public:
-        ZooKeeperRetriesInfo info;
         ZooKeeperRetriesControl retries_ctl;
         FaultyKeeper faulty_zookeeper;
 
     private:
         friend class WithRetries;
+        RetriesControlHolder(const WithRetries * parent, const String & name);
         RetriesControlHolder(const WithRetries * parent, const String & name, Kind kind);
     };
 
-    RetriesControlHolder createRetriesControlHolder(const String & name, Kind kind = Kind::kNormal) const;
-    WithRetries(LoggerPtr log, zkutil::GetZooKeeper get_zookeeper_, const BackupKeeperSettings & settings, QueryStatusPtr process_list_element_, RenewerCallback callback = {});
+    RetriesControlHolder createRetriesControlHolderForOperations(const String & name) const;
+    RetriesControlHolder createRetriesControlHolderForBackup(const String & name, Kind kind = Kind::kNormal) const;
+
+    WithRetries(
+        LoggerPtr log,
+        zkutil::GetZooKeeper get_zookeeper_,
+        const BackupKeeperSettings & settings_,
+        QueryStatusPtr process_list_element_,
+        RenewerCallback callback = {});
+
+    WithRetries(
+        LoggerPtr log,
+        zkutil::GetZooKeeper get_zookeeper_,
+        const ZooKeeperRetriesInfo & info_,
+        Float64 fault_injection_probability_,
+        UInt64 fault_injection_seed_,
+        RenewerCallback callback = {});
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
 
-    const BackupKeeperSettings & getKeeperSettings() const;
+    const BackupKeeperSettings & getBackupKeeperSettings() const;
+
 private:
     /// This will provide a special wrapper which is useful for testing
     FaultyKeeper getFaultyZooKeeper() const;
 
     LoggerPtr log;
     zkutil::GetZooKeeper get_zookeeper;
-    BackupKeeperSettings settings;
     QueryStatusPtr process_list_element;
+
+    /// Only one of the 2 is possible
+    std::unique_ptr<BackupKeeperSettings> backup_settings;
+    std::unique_ptr<ZooKeeperRetriesInfo> info;
+
+    Float64 fault_injection_probability;
+    UInt64 fault_injection_seed;
 
     /// This callback is called each time when a new [Zoo]Keeper session is created.
     /// In backups it is primarily used to re-create an ephemeral node to signal the coordinator
