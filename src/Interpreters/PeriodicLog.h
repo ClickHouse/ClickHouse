@@ -10,7 +10,7 @@
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
-
+    M(LightweightZooKeeperLogElement) \
 
 namespace DB
 {

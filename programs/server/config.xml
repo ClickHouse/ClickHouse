@@ -1391,6 +1391,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
+    <!-- Lightweight ZooKeeper log.
+    -->
+    <lightweight_zookeeper_log>
+        <database>system</database>
+        <table>lightweight_zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </lightweight_zookeeper_log>
+
     <!-- Configure system.dashboards for dashboard.html.
 
          Could have any query parameters, for which there will be an input on the page.

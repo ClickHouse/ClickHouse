@@ -139,6 +139,7 @@ namespace
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_LIGHTWEIGHT_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -314,7 +315,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
         }
     }
-
     return std::make_shared<TSystemLog>(context, log_settings);
 
 }
@@ -402,6 +402,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (crash_log)
     {
         CrashLog::initialize(crash_log);
+    }
+
+    if (lightweight_zookeeper_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("lightweight_zookeeper_log.collect_interval_milliseconds",
+                                                                DEFAULT_LIGHTWEIGHT_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        lightweight_zookeeper_log->startCollect("LightweightZooKeeperLog", collect_interval_milliseconds);
     }
 }
 
