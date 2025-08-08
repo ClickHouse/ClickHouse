@@ -144,7 +144,7 @@ inline void KeyPrefetch(const StringRef & key)
     const size_t max_prefetch = 256;
     const size_t n = key.size < max_prefetch ? key.size : max_prefetch;
     const char * ptr = key.data;
-    const char * end = ptr + n - (n % cache_line_size);
+    const char * end = ptr + n;
     for (; ptr < end; ptr += cache_line_size)
     {
         __builtin_prefetch(ptr);
