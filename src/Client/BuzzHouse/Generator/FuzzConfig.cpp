@@ -158,6 +158,17 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
     };
 }
 
+static DB::Strings loadArray(const JSONObjectType & value)
+{
+    DB::Strings res;
+
+    for (const auto entry : value.getArray())
+    {
+        res.emplace_back(String(entry.getString()));
+    }
+    return res;
+}
+
 static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
 {
     return [&](const JSONObjectType & value)
@@ -305,6 +316,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_port", [&](const JSONObjectType & value) { http_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"http_secure_port", [&](const JSONObjectType & value) { http_secure_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"arrowflight_port", [&](const JSONObjectType & value) { arrowflight_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
@@ -351,6 +363,11 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
+        {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
+        {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},
+        {"http_servers", [&](const JSONObjectType & value) { http_servers = loadArray(value); }},
+        {"https_servers", [&](const JSONObjectType & value) { https_servers = loadArray(value); }},
+        {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
@@ -440,15 +457,7 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            if constexpr (std::is_same_v<T, ServerEndpoint>)
-            {
-                const auto & tabchar = buf.find('\t');
-                out.push_back(ServerEndpoint(buf.substr(0, tabchar), static_cast<uint32_t>(std::stoul(buf.substr(tabchar + 1)))));
-            }
-            else
-            {
-                out.push_back(buf);
-            }
+            out.push_back(buf);
             buf.resize(0);
             found++;
         }
@@ -467,8 +476,6 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    loadServerSettings<ServerEndpoint>(
-        this->server_endpoints, "servers", R"(SELECT DISTINCT "host_address", "port" FROM "system"."clusters")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const

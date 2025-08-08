@@ -697,7 +697,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
+            url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
             for (const auto & entry : this->entries)
             {
                 url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());

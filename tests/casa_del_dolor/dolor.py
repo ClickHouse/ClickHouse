@@ -391,7 +391,9 @@ logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
 )
 for i in range(0, len(args.replica_values)):
-    logger.info(f"Server node{i} running on host {servers[i].ip_address}, port 9000")
+    logger.info(
+        f"Server node{i} running on host {servers[i].hostname}, with IPv4 {servers[i].ip_address}, port 9000"
+    )
 servers[len(servers) - 1].wait_start(8)
 
 if args.with_postgresql:

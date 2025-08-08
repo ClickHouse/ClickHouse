@@ -59,6 +59,17 @@ class BuzzHouseGenerator(Generator):
         if "clickhouse" in buzz_config:
             buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
 
+        # Set available servers
+        for entry in [
+            ("remote_servers", "9000"),
+            ("remote_secure_servers", "9440"),
+            ("http_servers", "8123"),
+            ("https_servers", "8443"),
+            ("arrow_flight_servers", "8888"),
+        ]:
+            buzz_config[entry[0]] = [
+                f"{val.hostname}:{entry[1]}" for val in cluster.instances.values()
+            ]
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {

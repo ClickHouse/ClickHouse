@@ -67,30 +67,6 @@ const constexpr uint64_t allow_replacing_mergetree
 
 using JSONObjectType = JSONParserImpl::Element;
 
-class ServerEndpoint
-{
-public:
-    String hostname;
-    uint32_t port;
-
-    ServerEndpoint()
-        : hostname("localhost")
-        , port(9000)
-    {
-    }
-
-    ServerEndpoint(const String & hostname_, const uint32_t port_)
-        : hostname(hostname_)
-        , port(port_)
-    {
-    }
-
-    ServerEndpoint(const ServerEndpoint & c) = default;
-    ServerEndpoint(ServerEndpoint && c) = default;
-    ServerEndpoint & operator=(const ServerEndpoint & c) = default;
-    ServerEndpoint & operator=(ServerEndpoint && c) noexcept = default;
-};
-
 class Catalog
 {
 public:
@@ -227,8 +203,8 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    std::vector<ServerEndpoint> server_endpoints;
-    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches;
+    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
+        http_servers, https_servers, arrow_flight_servers;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -241,8 +217,8 @@ public:
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
-             use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
-             max_string_length = 1009;
+             arrowflight_port = 8888, use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000,
+             min_string_length = 0, max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",

@@ -469,7 +469,7 @@ void StatementGenerator::setTableFunction(
     {
         RemoteFunc * rfunc = tfunc->mutable_remote();
         const bool isPeer = usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer();
-        const RemoteFunc_RName fname = (isPeer || rg.nextBool()) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
+        const RemoteFunc_RName fname = (isPeer || rg.nextSmallNumber() < 8) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
         rfunc->set_rname(fname);
         if (isPeer)
@@ -587,6 +587,40 @@ void StatementGenerator::addRandomRelation(
     }
 }
 
+String StatementGenerator::getNextRandomServerAddresses(RandomGenerator & rg, const bool secure)
+{
+    /// Query any possible server
+    String address;
+    const auto & servers = secure ? fc.remote_secure_servers : fc.remote_servers;
+
+    if (servers.empty() || rg.nextBool())
+    {
+        return fc.getConnectionHostAndPort(secure);
+    }
+    const uint32_t nservers = (rg.nextRandomUInt32() % static_cast<uint32_t>(servers.size())) + 1;
+
+    chassert(this->ids.empty());
+    for (uint32_t i = 0; i < static_cast<uint32_t>(servers.size()); i++)
+    {
+        this->ids.emplace_back(i);
+    }
+    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+    for (uint32_t i = 0; i < nservers; i++)
+    {
+        address += fmt::format("{}{}", i == 0 ? "" : ",", servers[this->ids[i]]);
+    }
+    this->ids.clear();
+    return address;
+}
+
+String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secure)
+{
+    const auto & servers = secure ? fc.https_servers : fc.http_servers;
+
+    return (servers.empty() || rg.nextBool()) ? fc.getHTTPURL(secure)
+                                              : fmt::format("http{}://{}", secure ? "s" : "", rg.pickRandomly(servers));
+}
+
 bool StatementGenerator::joinedTableOrFunction(
     RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
 {
@@ -681,35 +715,11 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
-        String address;
         RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
-        const RemoteFunc_RName fname = rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure;
+        const RemoteFunc_RName fname = rg.nextSmallNumber() < 4 ? RemoteFunc::remoteSecure : RemoteFunc::remote;
 
         rfunc->set_rname(fname);
-        if (fc.server_endpoints.empty() || rg.nextSmallNumber() < 8)
-        {
-            address = fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure);
-        }
-        else
-        {
-            /// Query any possible server
-            const uint32_t nservers = (rg.nextRandomUInt32() % static_cast<uint32_t>(fc.server_endpoints.size())) + 1;
-
-            chassert(this->ids.empty());
-            for (uint32_t i = 0; i < static_cast<uint32_t>(fc.server_endpoints.size()); i++)
-            {
-                this->ids.emplace_back(i);
-            }
-            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
-            for (uint32_t i = 0; i < nservers; i++)
-            {
-                const auto & nserver = fc.server_endpoints[this->ids[i]];
-
-                address += fmt::format("{}{}:{}", i == 0 ? "" : ",", nserver.hostname, nserver.port);
-            }
-            this->ids.clear();
-        }
-        rfunc->set_address(std::move(address));
+        rfunc->set_address(getNextRandomServerAddresses(rg, fname == RemoteFunc::remoteSecure));
         /// Here don't care about the returned result
         this->depth++;
         const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());
@@ -1051,7 +1061,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=SELECT+";
+        url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "/?query=SELECT+";
         flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
         std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
         for (const auto & entry : this->remote_entries)
