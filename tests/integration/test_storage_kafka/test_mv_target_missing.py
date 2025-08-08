@@ -46,28 +46,41 @@ def kafka_setup_teardown():
     yield
 
 
-def test_missing_mv_target(kafka_cluster):
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_missing_mv_target(kafka_cluster, create_query_generator):
     admin = k.get_admin_client(kafka_cluster)
-    topic = "mv_target_missing"
+    topic = "mv_target_missing" + k.get_topic_postfix(create_query_generator)
     k.kafka_create_topic(admin, topic)
+
+    settings = {
+        "kafka_row_delimiter": "\n",
+        "format_csv_delimiter": "|",
+    }
+    if create_query_generator == k.generate_old_create_table_query:
+        settings["kafka_commit_on_select"] = 1
+
+    create_query = create_query_generator(
+        "kafka",
+        "a UInt64, b String",
+        topic_list=topic,
+        consumer_group=topic,
+        format="CSV",
+        settings=settings,
+    )
 
     instance.query(
         f"""
+        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.kafka;
         DROP TABLE IF EXISTS test.target1;
         DROP TABLE IF EXISTS test.target2;
         DROP TABLE IF EXISTS test.mv1;
         DROP TABLE IF EXISTS test.mv2;
 
-        CREATE TABLE test.kafka (a UInt64, b String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = '{topic}',
-                     kafka_group_name = '{topic}',
-                     kafka_commit_on_select = 1,
-                     kafka_format = 'CSV',
-                     kafka_row_delimiter = '\n',
-                     format_csv_delimiter = '|';
+        {create_query};
 
         CREATE TABLE test.target2 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a;
         CREATE MATERIALIZED VIEW test.mv1 TO test.target1 AS SELECT * FROM test.kafka;
@@ -76,25 +89,33 @@ def test_missing_mv_target(kafka_cluster):
     )
 
     def has_error(res):
-        return "Materialized view" in res
+        return "Materialized view test.mv1 is not ready\n" == res
 
     instance.query_with_retry(
         "SELECT exceptions.text[1] FROM system.kafka_consumers WHERE database='test' and table='kafka'",
         check_callback=has_error,
     )
 
-    instance.query("CREATE TABLE test.target1 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a")
+    instance.query(
+        "CREATE TABLE test.target1 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a"
+    )
 
     k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
 
-    assert instance.query_with_retry(
-        "SELECT count() FROM test.target2",
-        check_callback=lambda x: int(x) == 2,
-    ).strip() == "2"
-    assert instance.query_with_retry(
-        "SELECT count() FROM test.target1",
-        check_callback=lambda x: int(x) == 2,
-    ).strip() == "2"
+    assert (
+        instance.query_with_retry(
+            "SELECT count() FROM test.target2",
+            check_callback=lambda x: int(x) == 2,
+        ).strip()
+        == "2"
+    )
+    assert (
+        instance.query_with_retry(
+            "SELECT count() FROM test.target1",
+            check_callback=lambda x: int(x) == 2,
+        ).strip()
+        == "2"
+    )
 
     instance.query(
         """
