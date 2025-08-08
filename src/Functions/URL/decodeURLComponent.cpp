@@ -35,8 +35,6 @@ static size_t encodeURL(const char * __restrict src, size_t src_size, char * __r
             dst_pos += 2;
         }
     }
-    *dst_pos = 0;
-    ++dst_pos;
     return dst_pos - dst;
 }
 
