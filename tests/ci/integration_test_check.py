@@ -38,6 +38,7 @@ def get_json_params_dict(
     docker_images: List[DockerImage],
     run_by_hash_total: int,
     run_by_hash_num: int,
+    job_configuration: str
 ) -> dict:
     return {
         "context_name": check_name,
@@ -50,6 +51,8 @@ def get_json_params_dict(
         "disable_net_host": True,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
+        "pr_updated_at": pr_info.updated_at,
+        "job_configuration": job_configuration,
     }
 
 
@@ -166,6 +169,8 @@ def main():
             run_by_hash_total = int(option.split("/")[1])
             break
 
+    job_configuration = options[0].strip()
+
     is_flaky_check = "flaky" in check_name
 
     assert (
@@ -211,6 +216,7 @@ def main():
                 images,
                 run_by_hash_total,
                 run_by_hash_num,
+                job_configuration
             )
         )
         json_params.write(params_text)
