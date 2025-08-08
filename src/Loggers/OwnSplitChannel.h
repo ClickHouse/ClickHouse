@@ -30,8 +30,8 @@ class SystemLogQueue;
 struct TextLogElement;
 using TextLogQueue = SystemLogQueue<TextLogElement>;
 
-using AsyncLogMetric = std::pair<std::string, double>;
-using AsyncLogMetrics = std::vector<AsyncLogMetric>;
+using AsyncLogQueueSize = std::pair<std::string, size_t>;
+using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 
 class OwnSplitChannelBase : public Poco::Channel
 {
@@ -163,7 +163,7 @@ public:
 
     void flushTextLogs();
 
-    AsyncLogMetrics getAsynchronousMetrics();
+    AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
     std::atomic<bool> is_open = false;

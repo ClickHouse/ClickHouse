@@ -2156,7 +2156,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
     {
         new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
-            = {metric.second, "Number of async messages queued pending for logging in this channel"};
+            = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
     }
 
     /// Add more metrics as you wish.

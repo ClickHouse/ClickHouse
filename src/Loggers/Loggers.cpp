@@ -430,7 +430,7 @@ void Loggers::flushTextLogs()
         async->flushTextLogs();
 }
 
-DB::AsyncLogMetrics Loggers::getAsynchronousMetricsFromAsyncLogs()
+DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         return async->getAsynchronousMetrics();

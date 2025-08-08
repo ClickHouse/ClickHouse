@@ -144,7 +144,7 @@ void OwnSplitChannel::logSplit(
     try
     {
         /// Log data to child channels
-        for (auto & [name, channel] : channels)
+        for (auto & channel : channels | std::views::values)
         {
             auto priority = channel->getPriority();
             if (priority >= msg.getPriority())
@@ -343,7 +343,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
         dropped_messages = 0;
     }
 
-    message_queue.push_back(message);
+    message_queue.push_back(std::move(message));
     condition.notify_one();
 }
 
@@ -452,23 +452,23 @@ void OwnAsyncSplitChannel::flushTextLogs()
     flush_text_logs.wait(true, std::memory_order_seq_cst);
 }
 
-AsyncLogMetrics OwnAsyncSplitChannel::getAsynchronousMetrics()
+AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 {
-    AsyncLogMetrics metrics;
-    for (const auto & element : name_to_channels)
+    AsyncLogQueueSizes metrics;
+    for (const auto & [name, channel] : name_to_channels)
     {
         for (size_t i = 0; i < channels.size(); i++)
         {
-            if (channels[i] == element.second.get())
+            if (channels[i] == channel.get())
             {
-                metrics.push_back({element.first, static_cast<double>(queues[i]->getCurrentMessageSize())});
+                metrics.push_back({name, queues[i]->getCurrentMessageSize()});
                 break;
             }
         }
     }
 
     if (text_log.lock())
-        metrics.push_back({"TextLog", static_cast<double>(text_log_queue.getCurrentMessageSize())});
+        metrics.push_back({"TextLog", text_log_queue.getCurrentMessageSize()});
 
     return metrics;
 }
@@ -478,7 +478,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
-    auto & extended_channel = channels[i];
+    const auto & extended_channel = channels[i];
 
     auto log_notification = [&](auto & async_message)
     {
