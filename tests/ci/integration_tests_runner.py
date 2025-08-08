@@ -987,13 +987,21 @@ class ClickhouseIntegrationTestsRunner:
             total_time, group_index = heapq.heappop(sequential_heap)
             total_group_times[group_index] = total_time
 
+        # sort tests in groups by execution time to run slow tests first
+        def module_sort_key(m):
+            return (-tests_execution_times.get(m, -1.0), m)
+
+        for i in range(len(test_file_groups)):
+            test_file_groups[i].sort(key=module_sort_key)
+
         # expand groups
         final_test_groups = []
         for group_of_test_files in test_file_groups:
             test_name_group = []
-            for module_name in sorted(group_of_test_files):
-                test_name_group.extend(file_to_test_map.get(module_name, []))
-            final_test_groups.append(sorted(test_name_group))
+            for module_name in group_of_test_files:
+                tests_in_file = sorted(file_to_test_map.get(module_name, []))
+                test_name_group.extend(tests_in_file)
+            final_test_groups.append(test_name_group)
 
         # log
         for i, test_group in enumerate(final_test_groups):
