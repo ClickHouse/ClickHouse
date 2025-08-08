@@ -1012,13 +1012,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .last_modified = object_metadata->last_modified
                 }, getContext());
 
-            auto hive_partition_columns_to_read_from_file_path = file_iterator->getHivePartitionColumns();
-
-            if (!hive_partition_columns_to_read_from_file_path.empty())
+            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
-                    hive_partition_columns_to_read_from_file_path,
+                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
                     path);
             }
 

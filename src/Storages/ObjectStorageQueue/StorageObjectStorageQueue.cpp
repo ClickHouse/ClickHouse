@@ -230,6 +230,33 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            columns,
+            hive_partition_columns_to_read_from_file_path,
+            configuration->getRawPath().path,
+            true,
+            std::nullopt,
+            context_
+        );
+    }
+
+    std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+
+    for (const auto & [name, type_] : hive_partition_columns_to_read_from_file_path)
+    {
+        hive_partition_columns_to_read_from_file_path_set.insert(name);
+    }
+
+    for (const auto & column : columns.getAllPhysical())
+    {
+        if (!hive_partition_columns_to_read_from_file_path_set.contains(column.getNameInStorage()))
+        {
+            file_columns.emplace_back(column);
+        }
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
@@ -237,21 +264,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
 
-    auto virtuals = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
-
-    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
-    {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
-            storage_metadata.columns,
-            configuration->getRawPath().path,
-            std::nullopt,
-            context_
-        );
-        for (const auto & iter : hive_partition_columns_to_read_from_file_path)
-            virtuals.addEphemeral(iter.getNameInStorage(), iter.getTypeInStorage(), "");
-    }
-
-    setVirtuals(virtuals);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 
     bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
@@ -742,7 +755,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             storage_snapshot,
             queue_context,
             supportsSubsetOfColumns(queue_context),
-            PrepareReadingFromFormatHiveParams {storage_snapshot->metadata->getColumns().getAllPhysical(),
+            PrepareReadingFromFormatHiveParams {file_columns,
                 hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
         );
 
@@ -1336,6 +1349,14 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
     return zkutil::extractZooKeeperPath(result_zk_path, true);
+}
+
+std::unordered_set<std::string_view> StorageObjectStorageQueue::getHivePartitioningColumns() const
+{
+    std::unordered_set<std::string_view> res;
+    for (const auto & [name, value] : hive_partition_columns_to_read_from_file_path)
+        res.insert(name);
+    return res;
 }
 
 }

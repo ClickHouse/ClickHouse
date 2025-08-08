@@ -72,9 +72,6 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
-        const NamesAndTypesList & getHivePartitionColumns() const
-            { return hive_partition_columns_to_read_from_file_path; }
-
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;

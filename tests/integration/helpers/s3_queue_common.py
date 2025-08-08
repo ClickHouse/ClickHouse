@@ -178,6 +178,14 @@ def create_mv(
 
     node.query(f"DROP TABLE IF EXISTS {mv_name};")
 
+    names = ""
+    for column in format.split(","):
+        name, _ = column.strip().rsplit(" ", 1)
+        if names == "":
+            names = name
+        else:
+            names += f", {name}"
+
     virtual_format = ""
     virtual_names = ""
     virtual_columns_list = virtual_columns.split(",")
@@ -195,14 +203,14 @@ def create_mv(
             """)
         node.query(
             f"""
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """)
         if not dst_table_exists:
             node.query(f"""

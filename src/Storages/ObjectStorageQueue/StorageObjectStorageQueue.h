@@ -83,6 +83,8 @@ public:
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
+    std::unordered_set<std::string_view> getHivePartitioningColumns() const override;
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -168,6 +170,7 @@ private:
     const bool keep_data_in_keeper;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 };
 
 }
