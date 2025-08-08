@@ -64,9 +64,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -138,7 +135,6 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
-demangle
 dictGet
 dictGetAll
 dictGetChildren
@@ -326,7 +322,6 @@ log
 log10
 log1p
 log2
-logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
@@ -593,7 +588,6 @@ tanh
 tcpPort
 tgamma
 throwIf
-tid
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
