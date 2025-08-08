@@ -455,7 +455,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
