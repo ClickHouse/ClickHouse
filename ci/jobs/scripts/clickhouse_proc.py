@@ -740,11 +740,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     )
 
         Shell.check(
-            f"cd {temp_dir} && tar -czf jemalloc.tar.gz --files-from <(find . -type d -name jemalloc_profiles)",
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
             verbose=True,
         )
-        if Path(f"{temp_dir}/jemalloc.tar.gz").exists():
-            res.append(f"{temp_dir}/jemalloc.tar.gz")
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
         else:
             print("WARNING: Jemalloc profiles not found")
             return []
