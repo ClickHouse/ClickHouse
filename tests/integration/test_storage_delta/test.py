@@ -2173,7 +2173,7 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     query_id = f"query_{TABLE_NAME}_1"
     result = int(
         instance.query(
-            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%' SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}",
+            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%year=2024%' SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}",
             query_id=query_id,
         )
     )
