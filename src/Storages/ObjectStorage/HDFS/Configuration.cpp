@@ -41,11 +41,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
+    : Configuration(other)
+{
+    url = other.url;
+    path = other.path;
+    paths = other.paths;
+}
+
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.substr(1));
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
@@ -70,10 +78,10 @@ std::string StorageHDFSConfiguration::getPathWithoutGlobs() const
         return "/";
     return path.substr(0, end_of_path_without_globs);
 }
-StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorageQuerySettings{
+    return StorageObjectStorage::QuerySettings{
         .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],

@@ -8,6 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

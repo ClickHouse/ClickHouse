@@ -14,35 +14,31 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 Creates a table from files in HDFS. This table function is similar to the [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) table functions.
 
-## Syntax {#syntax}
-
-```sql
+``` sql
 hdfs(URI, format, structure)
 ```
 
-## Arguments {#arguments}
+**Input parameters**
 
-| Argument  | Description                                                                                                                                                              |
-|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URI`     | The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings. |
-| `format`  | The [format](/sql-reference/formats) of the file.                                                                                                                          |
-| `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
+- `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
+- `format` — The [format](/sql-reference/formats) of the file.
+- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
-## Returned value {#returned_value}
+**Returned value**
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**example**
+**Example**
 
 Table from `hdfs://hdfs1:9000/test` and selection of the first two rows from it:
 
-```sql
+``` sql
 SELECT *
 FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2
 ```
 
-```text
+``` text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -76,7 +72,7 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 <!-- -->
 
-```sql
+``` sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
@@ -85,7 +81,7 @@ FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name 
 
 <!-- -->
 
-```sql
+``` sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
@@ -98,7 +94,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 Query the data from files named `file000`, `file001`, ... , `file999`:
 
-```sql
+``` sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
@@ -118,8 +114,8 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 
 Use virtual column, created with Hive-style partitioning
 
-```sql
-SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
+``` sql
+SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
@@ -128,6 +124,6 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 - [hdfs_create_new_file_on_insert](operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [hdfs_skip_empty_files](operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
-## Related {#related}
+**See Also**
 
 - [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)

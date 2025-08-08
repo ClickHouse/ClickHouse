@@ -5,7 +5,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB

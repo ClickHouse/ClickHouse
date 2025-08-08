@@ -56,7 +56,6 @@ public:
 
     UInt64 serialize(WriteBuffer & write_buffer);
 
-    UInt64 deserialize(ReadBuffer & read_buffer);
 private:
     /// data holds a 256-bit bitmap for all labels of a state. Its 256 bits correspond to 256
     /// possible label values.
@@ -114,7 +113,7 @@ public:
 private:
     struct FlagValues
     {
-        uint8_t is_final : 1;
+        unsigned int is_final : 1;
         EncodingMethod encoding_method : 3;
     };
 

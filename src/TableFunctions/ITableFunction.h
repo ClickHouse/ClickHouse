@@ -87,7 +87,7 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+    virtual AccessType getSourceAccessType() const;
 
 private:
     virtual StoragePtr executeImpl(

@@ -294,7 +294,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         while (task_it != current_tasks.end())
         {
             auto & task = *task_it;
-
             if (task->completely_processed)
             {
                 chassert(task->was_executed);
@@ -390,7 +389,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// Maybe such asserts are too paranoid and excessive,
     /// but it's easy enough to break DDLWorker in a very unobvious way by making some minor change in code.
     [[maybe_unused]] bool have_no_tasks_info = !first_failed_task_name && current_tasks.empty() && !last_skipped_entry_name;
-    chassert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
+    assert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
     {
         /// We should return true if some invariants are violated.
         String reason;

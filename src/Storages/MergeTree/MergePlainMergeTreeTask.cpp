@@ -7,7 +7,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB

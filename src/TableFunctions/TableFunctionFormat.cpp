@@ -27,7 +27,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -111,7 +111,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     builder.init(Pipe(input_format));
     if (columns.hasDefaults())
     {
-        builder.addSimpleTransform([&](const SharedHeader & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
         });
@@ -124,6 +124,9 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
+
+    if (blocks.size() == 1)
+        return blocks[0];
 
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
@@ -214,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category = FunctionDocumentation::Category::TableFunction
+    .category{""}
 };
 
 }

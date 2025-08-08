@@ -7,7 +7,7 @@ toc_title: 'Introduction'
 title: 'Table Engines'
 ---
 
-# Table engines
+# Table Engines
 
 The table engine (type of table) determines:
 
@@ -18,7 +18,7 @@ The table engine (type of table) determines:
 - Whether multithread request execution is possible.
 - Data replication parameters.
 
-## Engine families {#engine-families}
+## Engine Families {#engine-families}
 
 ### MergeTree {#mergetree}
 
@@ -29,13 +29,12 @@ Engines in the family:
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
 | [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
-| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replication)                               |
 | [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
 | [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
 | [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |
 | [VersionedCollapsingMergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree)                                  |
-| [CoalescingMergeTree](/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
 
 ### Log {#log}
 
@@ -49,7 +48,7 @@ Engines in the family:
 | [StripeLog](/engines/table-engines/log-family/stripelog) |
 | [Log](/engines/table-engines/log-family/log)                   |
 
-### Integration engines {#integration-engines}
+### Integration Engines {#integration-engines}
 
 Engines for communicating with other data storage and processing systems.
 
@@ -71,7 +70,7 @@ Engines in the family:
 | [S3Queue](../../engines/table-engines/integrations/s3queue.md)                  |
 | [TimeSeries](../../engines/table-engines/integrations/time-series.md)           |
 
-### Special engines {#special-engines}
+### Special Engines {#special-engines}
 
 Engines in the family:
 
@@ -94,7 +93,7 @@ Engines in the family:
 | [KeeperMap](/engines/table-engines/special/keeper-map)        |
 | [FileLog](/engines/table-engines/special/filelog)                                                   |
 
-## Virtual columns {#table_engines-virtual_columns}
+## Virtual Columns {#table_engines-virtual_columns}
 
 A virtual column is an integral table engine attribute that is defined in the engine source code.
 

@@ -2,7 +2,6 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
-#include <Interpreters/DeadLetterQueue.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>

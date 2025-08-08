@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include "Disks/ObjectStorages/Local/LocalObjectStorage.h"
 
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -13,9 +13,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class StorageLocalConfiguration : public StorageObjectStorageConfiguration
+class StorageLocalConfiguration : public StorageObjectStorage::Configuration
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
@@ -51,12 +53,11 @@ public:
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
-    {
-        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("/", readonly));
-    }
+    ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
+
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>("/"); }
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 

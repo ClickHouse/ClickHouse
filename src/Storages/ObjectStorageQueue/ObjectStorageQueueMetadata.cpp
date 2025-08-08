@@ -19,7 +19,6 @@
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <shared_mutex>
-#include <Core/ServerUUID.h>
 
 
 namespace ProfileEvents
@@ -157,9 +156,6 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 
 void ObjectStorageQueueMetadata::startup()
 {
-    if (startup_called.exchange(true))
-         return;
-
     if (!task
         && mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
@@ -347,7 +343,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                         "Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (table_metadata.buckets != 0)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -374,9 +370,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
-    chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
+    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
     buckets_num = value;
     table_metadata.buckets = value;
 }
@@ -506,14 +501,10 @@ namespace
     {
         std::string hostname;
         std::string table_id;
-        std::string server_uuid;
-
-        size_t version = 1;
 
         bool operator ==(const Info & other) const
         {
-            return hostname == other.hostname && table_id == other.table_id
-                && (version == 0 || other.version == 0 || server_uuid == other.server_uuid);
+            return hostname == other.hostname && table_id == other.table_id;
         }
 
         static Info create(const StorageID & storage_id)
@@ -521,7 +512,6 @@ namespace
             Info self;
             self.hostname = DNSResolver::instance().getHostName();
             self.table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
-            self.server_uuid = toString(ServerUUID::get());
             return self;
         }
 
@@ -530,18 +520,16 @@ namespace
             SipHash hash;
             hash.update(hostname);
             hash.update(table_id);
-            hash.update(server_uuid);
             return hash.get128();
         }
 
         std::string serialize() const
         {
             WriteBufferFromOwnString buf;
+            size_t version = 0;
             buf << version << "\n";
             buf << hostname << "\n";
             buf << table_id << "\n";
-            if (version >= 1)
-                buf << server_uuid << "\n";
             return buf.str();
         }
 
@@ -549,11 +537,10 @@ namespace
         {
             ReadBufferFromString buf(str);
             Info info;
-            buf >> info.version >> "\n";
+            size_t version;
+            buf >> version >> "\n";
             buf >> info.hostname >> "\n";
             buf >> info.table_id >> "\n";
-            if (info.version >= 1)
-                buf >> info.server_uuid >> "\n";
             return info;
         }
     };

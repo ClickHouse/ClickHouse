@@ -1,4 +1,4 @@
-#include <Server/MySQLHandler.h>
+#include "MySQLHandler.h"
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
@@ -18,7 +18,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
@@ -31,15 +30,16 @@
 #include <Common/setThreadName.h>
 
 #if USE_SSL
+#    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
+
 #endif
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -63,7 +63,6 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int OPENSSL_ERROR;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
@@ -198,15 +197,13 @@ MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, bool secure_required_,
-     uint32_t connection_id_,
+    bool ssl_enabled, uint32_t connection_id_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("MySQLHandler"))
-    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
@@ -270,9 +267,6 @@ void MySQLHandler::run()
 
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
-
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -512,13 +506,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173.
+        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
         auto settings = query_context->getSettingsCopy();
-        if (!settings[Setting::allow_experimental_analyzer])
-        {
-            settings[Setting::prefer_column_name_to_alias] = true;
-            query_context->setSettings(settings);
-        }
+        settings[Setting::prefer_column_name_to_alias] = true;
+        query_context->setSettings(settings);
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
@@ -670,18 +661,19 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled,
-    bool secure_required_,
     uint32_t connection_id_,
-    KeyPair & private_key_,
+    RSA & public_key_,
+    RSA & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
+    , public_key(public_key_)
     , private_key(private_key_)
 {}
 
 void MySQLHandlerSSL::authPluginSSL()
 {
-    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key, log);
+    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(

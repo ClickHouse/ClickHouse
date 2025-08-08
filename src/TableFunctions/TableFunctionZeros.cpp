@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -94,8 +94,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 [example:1]
                 This query will test the speed of `randomPrintableASCII` function using multiple threads.
                 See also the `system.zeros` table.)",
-            .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
+            .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
     }});
 
     factory.registerFunction<TableFunctionZeros<false>>({.documentation = {
@@ -107,8 +106,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 [example:1]
                 This query will test the speed of `randomPrintableASCII` function using single thread.
                 See also the `system.zeros_mt` table.)",
-            .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
+            .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
     }});
 }
 

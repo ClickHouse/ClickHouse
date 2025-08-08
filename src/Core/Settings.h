@@ -69,9 +69,6 @@ class WriteBuffer;
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
-    M(CLASS_NAME, LightweightDeleteMode) \
-    M(CLASS_NAME, AlterUpdateMode) \
-    M(CLASS_NAME, UpdateParallelMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -103,9 +100,7 @@ class WriteBuffer;
     M(CLASS_NAME, TransactionsWaitCSNMode) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, URI) \
-    M(CLASS_NAME, VectorSearchFilterStrategy) \
-    M(CLASS_NAME, GeoToH3ArgumentOrder)
+    M(CLASS_NAME, URI)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -301,7 +299,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_index) != nullptr)
+        if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_index) != nullptr)
         {
             store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
             gin_index_stores[stream_name] = store;
@@ -380,7 +378,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
         GinIndexStorePtr store;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*index_helper) != nullptr)
+        if (typeid_cast<const MergeTreeIndexFullText *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
@@ -433,7 +431,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
 
     if (index_file_hashing_stream)
     {
-        if (write_final_mark && !last_index_block.empty())
+        if (write_final_mark && last_index_block)
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
@@ -490,10 +488,10 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
-        /// Register additional files written only by the text index. Required because otherwise DROP TABLE complains about unknown
+        /// Register additional files written only by the full-text index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
+        if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_indices[i]) != nullptr)
         {
             String filename_without_extension = skip_indices[i]->getFileName();
             checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();

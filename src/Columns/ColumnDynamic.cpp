@@ -1021,26 +1021,25 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
         });
 }
 
-ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
-{
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
-    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
-        variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
-    return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
-}
-
 void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
-    auto & variants_checkpoints = assert_cast<DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
+    auto & nested = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    const auto & variants = variant_column_ptr->getVariants();
 
-    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+    size_t old_size = nested.size();
+    chassert(old_size <= variants.size());
+
+    for (size_t i = 0; i < old_size; ++i)
     {
-        auto it = variants_checkpoints.find(name);
-        /// If column has new variants since last checkpoint create checkpoints for them.
-        if (it == variants_checkpoints.end())
-            variants_checkpoints.emplace(name, variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint());
-        else
-            variant_column_ptr->getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
+        variants[i]->updateCheckpoint(*nested[i]);
+    }
+
+    /// If column has new variants since last checkpoint create checkpoints for them.
+    if (old_size < variants.size())
+    {
+        nested.resize(variants.size());
+        for (size_t i = old_size; i < variants.size(); ++i)
+            nested[i] = variants[i]->getCheckpoint();
     }
 
     checkpoint.size = size();
@@ -1048,22 +1047,28 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
-    const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
+    const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(nested.size() <= variant_column_ptr->getNumVariants());
+
+    /// The structure hasn't changed, so we can use generic rollback of Variant column
+    if (nested.size() == variant_column_ptr->getNumVariants())
+    {
+        variant_column_ptr->rollback(checkpoint);
+        return;
+    }
 
     /// Manually rollback internals of Variant column
     variant_column_ptr->getOffsets().resize_assume_reserved(checkpoint.size);
     variant_column_ptr->getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
 
-    for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
-    {
-        auto it = variants_checkpoints.find(name);
-        /// Keep the structure of variant as is but rollback
-        /// to 0 variants that are not in the checkpoint.
-        if (it == variants_checkpoints.end())
-            variant_column_ptr->getVariantPtrByGlobalDiscriminator(discr) = variant_column_ptr->getVariantPtrByGlobalDiscriminator(discr)->cloneEmpty();
-        else
-            variant_column_ptr->getVariantByGlobalDiscriminator(discr).rollback(*it->second);
-    }
+    auto & variants = variant_column_ptr->getVariants();
+    for (size_t i = 0; i < nested.size(); ++i)
+        variants[i]->rollback(*nested[i]);
+
+    /// Keep the structure of variant as is but rollback
+    /// to 0 variants that are not in the checkpoint.
+    for (size_t i = nested.size(); i < variants.size(); ++i)
+        variants[i] = variants[i]->cloneEmpty();
 }
 
 String ColumnDynamic::getTypeNameAt(size_t row_num) const
@@ -1118,7 +1123,7 @@ void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) cons
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
 {
     if (source_columns.empty())
         return;
@@ -1134,14 +1139,14 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t f
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
     auto & variant_col = getVariantColumn();
-    variant_col.getLocalDiscriminators().reserve_exact(new_size * factor);
-    variant_col.getOffsets().reserve_exact(new_size * factor);
+    variant_col.getLocalDiscriminators().reserve_exact(new_size);
+    variant_col.getOffsets().reserve_exact(new_size);
 
     /// Second, preallocate memory for variants.
-    prepareVariantsForSquashing(source_columns, factor);
+    prepareVariantsForSquashing(source_columns);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1244,7 +1249,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
                 source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
         }
 
-        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
+        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
 }
 

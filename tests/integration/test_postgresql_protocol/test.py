@@ -4,7 +4,6 @@ import datetime
 import decimal
 import logging
 import os
-import random
 import uuid
 
 import psycopg
@@ -23,23 +22,7 @@ cluster = ClickHouseCluster(__file__)
 cluster.add_instance(
     "node",
     main_configs=[
-        "configs/postgresql.xml",
-        "configs/log.xml",
-        "configs/ssl_conf.xml",
-        "configs/dhparam.pem",
-        "configs/server.crt",
-        "configs/server.key",
-    ],
-    user_configs=["configs/default_passwd.xml"],
-    with_postgres=True,
-    with_postgresql_java_client=True,
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
-)
-
-cluster.add_instance(
-    "node_secure",
-    main_configs=[
-        "configs/postgresql_secure.xml",
+        "configs/postresql.xml",
         "configs/log.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
@@ -88,7 +71,7 @@ def test_psql_client(started_cluster):
         )
     cmd_prefix = [
         "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
     ]
     cmd_prefix += ["--no-align", "--field-separator=' '"]
 
@@ -150,86 +133,6 @@ def test_psql_client(started_cluster):
             "SELECT 0\n",
         ]
     )
-
-def test_psql_client_secure(started_cluster):
-    node = cluster.instances["node_secure"]
-
-    started_cluster.copy_file_to_container(
-        started_cluster.postgres_id,
-        os.path.join(SCRIPT_DIR, "queries", "query1.sql"),
-        "/query1.sql",
-    )
-
-    cmd_prefix = [
-        "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
-    ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
-    )
-    logging.debug(res)
-    assert res == "\n".join(["a", "1", "(1 row)", ""])
-
-
-    postgres_container = started_cluster.get_docker_handle(started_cluster.postgres_id);
-
-    cmd_prefix = [
-        "/usr/bin/psql",
-        f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
-    ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
-
-    code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
-    logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
-    assert (
-        "ERROR:  SSL connection required.\n"
-        in stderr.decode()
-    )
-
-    assert node.contains_in_log(
-        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
-    )
-
-
-def test_new_user(started_cluster):
-    node = cluster.instances["node"]
-
-    db_id = f"x_{random.randint(0, 1000000)}"
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        database="",
-    )
-    cur = ch.cursor()
-    cur.execute(f"CREATE DATABASE {db_id}")
-    cur.execute(f"USE {db_id}")
-    cur.execute("CREATE USER IF NOT EXISTS name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="name7",
-        password="my_password",
-        database=db_id,
-    )
-    cur = ch.cursor()
-    cur.execute("select 1;")
-    assert cur.fetchall() == [(1,)]
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        database="",
-    )
-    cur = ch.cursor()
-    cur.execute(f"DROP DATABASE {db_id}")
 
 
 def test_python_client(started_cluster):

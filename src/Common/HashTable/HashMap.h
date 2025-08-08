@@ -46,8 +46,6 @@ struct PairNoInit
         , second(std::forward<SecondValue>(second_))
     {
     }
-
-    auto operator<=>(const PairNoInit &) const = default;
 };
 
 template <typename First, typename Second>

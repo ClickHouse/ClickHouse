@@ -6,7 +6,6 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
-#include <Columns/IColumn_fwd.h>
 
 namespace boost
 {
@@ -45,7 +44,6 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64)
@@ -82,7 +80,6 @@ struct MergeTreeSettings
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 
