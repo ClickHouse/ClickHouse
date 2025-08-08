@@ -37,6 +37,7 @@ struct ParsedDataFileInfo
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
     String data_object_file_path_key;
     String data_object_file_path; // Full path to the data object file
+    Int32 read_schema_id;
     std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
 
     bool operator<(const ParsedDataFileInfo & other) const
@@ -96,7 +97,7 @@ private:
 
     IcebergDataSnapshot iceberg_data_snapshot;
     size_t current_manifest_list_entry_index = 0;
-    Iceberg::ManifestFileContent current_manifest_content;
+    std::optional<Iceberg::ManifestFileContent> current_manifest_content;
     size_t current_manifest_file_entry_index = 0;
 
     ActionsDAG * filter_dag = nullptr;
@@ -121,73 +122,7 @@ private:
 
     ManifestFilePtr getManifestFile(
         ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const;
-    };
-
-template <typename T>
-std::vector<T> IcebergMetadata::getFilesImpl(
-    const ActionsDAG * filter_dag,
-    FileContentType file_content_type,
-    ContextPtr local_context,
-    std::function<T(const ManifestFileEntry &)> transform_function) const
-{
-    std::vector<T> files;
-    {
-        SharedLockGuard lock(mutex);
-
-        if (!relevant_snapshot)
-            return {};
-
-
-        for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
-        {
-            Int64 previous_entry_schema = -1;
-            std::optional<ManifestFilesPruner> pruner;
-            auto manifest_file_ptr = getManifestFile(
-                local_context,
-                manifest_list_entry.manifest_file_path,
-                manifest_list_entry.added_sequence_number,
-                manifest_list_entry.added_snapshot_id);
-            const auto & data_files_in_manifest = manifest_file_ptr->getFiles(file_content_type);
-            for (const auto & manifest_file_entry : data_files_in_manifest)
-            {
-                // Trying to reuse already initialized pruner
-                if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
-                {
-                    previous_entry_schema = manifest_file_entry.schema_id;
-                    if (previous_entry_schema > manifest_file_entry.schema_id)
-                    {
-                        LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
-                    }
-                    pruner.emplace(
-                        schema_processor,
-                        relevant_snapshot_schema_id,
-                        manifest_file_entry.schema_id,
-                        filter_dag ? filter_dag : nullptr,
-                        *manifest_file_ptr,
-                        local_context);
-                }
-
-                if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
-                {
-                    if (!use_partition_pruning || !pruner->canBePruned(manifest_file_entry))
-                    {
-                        files.push_back(transform_function(manifest_file_entry));
-                    }
-                }
-            }
-        }
-    }
-    std::sort(files.begin(), files.end());
-    return files;
-}
 };
-
-
-IcebergKeysIterator::IcebergKeysIterator(ObjectStoragePtr object_storage_, Iceberg::IcebergTableStateSnapshotPtr snapshot_, IDataLakeMetadata::FileProgressCallback callback_) {
-
-}
-
-
 
 } // namespace DB
 
