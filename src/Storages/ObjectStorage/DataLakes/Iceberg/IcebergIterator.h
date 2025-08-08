@@ -51,16 +51,18 @@ class SingleThreadIcebergKeysIterator
 public:
     SingleThreadIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
-        ActionsDAG * filter_dag_,
+        const ActionsDAG * filter_dag_,
         ContextPtr local_context_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
+        IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
         IDataLakeMetadata::FileProgressCallback callback_)
         : object_storage(object_storage_)
         , filter_dag(filter_dag_)
         , local_context(local_context_)
         , table_snapshot(table_snapshot_)
         , data_snapshot(data_snapshot_)
+        , iceberg_metadata_cache(iceberg_metadata_cache_)
         , callback(std::move(callback_))
         , use_partition_pruning(
               [this]()
@@ -159,26 +161,31 @@ private:
 
 class IcebergIterator : public IObjectIterator 
 {
+public:
     IcebergIterator(
         ObjectStoragePtr object_storage_,
-        ActionsDAG * filter_dag_,
+        const ActionsDAG * filter_dag_,
         ContextPtr local_context_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
+        IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
         IDataLakeMetadata::FileProgressCallback callback_)
         : single_thread_iterator(
-            object_storage_, filter_dag_, local_context_, table_snapshot_, data_snapshot_, std::move(callback_)),
-            blocking_queue(100),
-            producer_task(local_context_->getSchedulePool().createTask("IcebergMetaReaderThread", [this]{ 
-                while (true)
-                {
-                    auto info = single_thread_iterator.next();
-                    if (!info)
-                        break;
-                    blocking_queue.push(std::move(info));
-                }
-                blocking_queue.close();
-             }))
+              object_storage_, filter_dag_, local_context_, table_snapshot_, data_snapshot_, iceberg_metadata_cache_, std::move(callback_))
+        , blocking_queue(100)
+        , producer_task(local_context_->getSchedulePool().createTask(
+              "IcebergMetaReaderThread",
+              [this]
+              {
+                  while (true)
+                  {
+                      auto info = single_thread_iterator.next();
+                      if (!info)
+                          break;
+                      blocking_queue.push(std::move(info));
+                  }
+                  blocking_queue.close();
+              }))
     {
         producer_task->activateAndSchedule();
     }
@@ -198,10 +205,8 @@ class IcebergIterator : public IObjectIterator
         return std::numeric_limits<size_t>::max();
     }
 
-    ~IcebergIterator() override
-    {
-        producer_task->deactivate();
-    }
+    ~IcebergIterator() override { producer_task->deactivate(); }
+
 private:
     SingleThreadIcebergKeysIterator single_thread_iterator;
     BlockingMCSP<IcebergDataObjectInfoPtr> blocking_queue;

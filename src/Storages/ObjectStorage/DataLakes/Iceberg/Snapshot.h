@@ -10,7 +10,9 @@
 namespace Iceberg
 {
 
-struct IcebergSnapshot
+struct IcebergDataSnapshot
+
+
 {
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
@@ -25,6 +27,17 @@ struct IcebergSnapshot
         return std::nullopt;
     }
 };
+
+using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
+
+struct IcebergTableStateSnapshot
+{
+    Int32 metadata_version;
+    Int32 schema_id;
+    std::optional<Int64> snapshot_id;
+};
+
+using IcebergTableStateSnapshotPtr = std::shared_ptr<IcebergTableStateSnapshot>;
 
 struct IcebergHistoryRecord
 {
