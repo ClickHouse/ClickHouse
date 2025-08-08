@@ -11,6 +11,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
 #include <IO/Operators.h>
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -259,6 +260,7 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition, ActionsDAG & actions_dag, 
 JoinActionRef concatConditionsWithFunction(
     const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, const FunctionOverloadResolverPtr & concat_function)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction");
     if (conditions.empty())
         return JoinActionRef(nullptr);
 
@@ -268,19 +270,30 @@ JoinActionRef concatConditionsWithFunction(
     auto nodes = std::ranges::to<ActionsDAG::NodeRawConstPtrs>(std::views::transform(conditions, [](const auto & x) { return x.getNode(); }));
 
     const auto & result_node = actions_dag->addFunction(concat_function, nodes, {});
+    // LOG_TRACE(getLogger("DEBUGGING!"), "concatConditionsWithFunction: {}, {}", result_node.result_name, actions_dag->dumpDAG());
     actions_dag->addOrReplaceInOutputs(result_node);
     return JoinActionRef(&result_node, actions_dag.get());
 }
 
-JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
+JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-    return concatConditionsWithFunction(conditions, actions_dag, and_function);
+    if (use_or_semantics)
+    {
+        LOG_TRACE(getLogger("DEBUGGING!"), "1");
+        FunctionOverloadResolverPtr or_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+        return concatConditionsWithFunction(conditions, actions_dag, or_function);
+    }
+    else
+    {
+        LOG_TRACE(getLogger("DEBUGGING!"), "2");
+        FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return concatConditionsWithFunction(conditions, actions_dag, and_function);
+    }
 }
 
-JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
+JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    auto condition = concatConditions(conditions, actions_dag);
+    auto condition = concatConditions(conditions, actions_dag, use_or_semantics);
     conditions.clear();
     if (condition)
         conditions = {condition};
@@ -513,7 +526,6 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
         columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
     return std::make_shared<const Block>(Block{columns});
 }
-
 static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
 {
     for (auto & output_node : dag.getOutputs())
@@ -612,12 +624,24 @@ JoinPtr JoinStepLogical::convertToPhysical(
         }
     }
 
-    if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+    const bool left_filter_is_disjunction =
+        join_expression.condition.left_filter_disjunctive;
+
+    if (auto left_pre_filter_condition =
+            concatMergeConditions(join_expression.condition.left_filter_conditions,
+                                   expression_actions.left_pre_join_actions,
+                                   left_filter_is_disjunction))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
-    if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+    const bool right_filter_is_disjunction =
+        join_expression.condition.right_filter_disjunctive;
+
+    if (auto right_pre_filter_condition =
+            concatMergeConditions(join_expression.condition.right_filter_conditions,
+                                   expression_actions.right_pre_join_actions,
+                                   right_filter_is_disjunction))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
@@ -656,9 +680,9 @@ JoinPtr JoinStepLogical::convertToPhysical(
         if (!has_keys)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                 formatJoinCondition(join_condition));
-        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions, join_condition.left_filter_disjunctive))
             table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions, join_condition.right_filter_disjunctive))
             table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 

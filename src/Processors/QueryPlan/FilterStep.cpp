@@ -6,6 +6,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -142,6 +144,8 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    StackTrace stack_trace;
+    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: stack trace: {}", stack_trace.toString());
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,
@@ -157,6 +161,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// This is needed to support short-circuit properly.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+
+    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: and_atoms size: {}", and_atoms.size());
 
     for (auto & and_atom : and_atoms)
     {
@@ -191,7 +197,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
-void FilterStep::describeActions(FormatSettings & settings) const
+void FilterStep::describeActions(FormatSettings & settings) const /// HERE?
 {
     String prefix(settings.offset, settings.indent_char);
 
@@ -200,6 +206,8 @@ void FilterStep::describeActions(FormatSettings & settings) const
     std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
+    LOG_DEBUG(getLogger("FilterStep"), "describeActions: and_atoms size: {}", and_atoms.size());
 
     for (auto & and_atom : and_atoms)
     {
