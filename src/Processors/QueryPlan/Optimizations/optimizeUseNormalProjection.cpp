@@ -351,7 +351,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
         if (projection_query_info.prewhere_info)
         {
-            auto filter_actions = std::make_shared<ExpressionActions>(std::move(projection_query_info.prewhere_info->prewhere_actions));
+            auto filter_actions = std::make_shared<ExpressionActions>(std::move(projection_query_info.prewhere_info->prewhere_actions.value()));
             pipe.addSimpleTransform(
                 [&](const SharedHeader & header)
                 {

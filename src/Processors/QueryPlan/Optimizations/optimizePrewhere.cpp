@@ -95,12 +95,10 @@ ActionsDAG splitAndFillPrewhereInfo(
         conditions.push_back(split_result.split_nodes_mapping.at(condition));
 
     /// Is it possible that prewhere_info->prewhere_actions was not empty?
-    /// Not sure, but just in case let's merge it
-    bool has_existing_prewhere = !prewhere_info->prewhere_actions.getOutputs().empty();
-    
-    if (has_existing_prewhere)
+    /// Not sure, but just in case let's merge it    
+    if (prewhere_info->prewhere_actions)
     {
-        split_result.first.mergeInplace(std::move(prewhere_info->prewhere_actions));
+        split_result.first.mergeInplace(std::move(*prewhere_info->prewhere_actions));
 
         const auto * existing_prewhere_node = &split_result.first.findInOutputs(prewhere_info->prewhere_column_name);
         conditions.insert(conditions.begin(), existing_prewhere_node);
@@ -112,16 +110,16 @@ ActionsDAG splitAndFillPrewhereInfo(
     {
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
+            prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
     }
     else
     {
         prewhere_info->remove_prewhere_column = true;
 
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        const auto * node = &prewhere_info->prewhere_actions.addFunction(func_builder_and, std::move(conditions), {});
+        const auto * node = &prewhere_info->prewhere_actions->addFunction(func_builder_and, std::move(conditions), {});
         prewhere_info->prewhere_column_name = node->result_name;
-        prewhere_info->prewhere_actions.getOutputs().push_back(node);
+        prewhere_info->prewhere_actions->getOutputs().push_back(node);
     }
 
     return std::move(split_result.second);

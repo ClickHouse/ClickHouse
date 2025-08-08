@@ -461,7 +461,10 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     if (!table_expression_query_info.prewhere_info)
         return;
 
-    auto & prewhere_actions = table_expression_query_info.prewhere_info->prewhere_actions;
+    if (!table_expression_query_info.prewhere_info->prewhere_actions)
+        return;
+
+    auto & prewhere_actions = *table_expression_query_info.prewhere_info->prewhere_actions;
 
     NameSet required_columns;
     if (column_names.size() == 1)
@@ -921,7 +924,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             prewhere_info->row_level_column_name = filter_info.column_name;
                             prewhere_info->need_filter = true;
                         }
-                        else if (prewhere_info->prewhere_actions.getOutputs().empty())
+                        else if (!prewhere_info->prewhere_actions)
                         {
                             prewhere_info->prewhere_actions = std::move(filter_info.actions);
                             prewhere_info->prewhere_column_name = filter_info.column_name;
