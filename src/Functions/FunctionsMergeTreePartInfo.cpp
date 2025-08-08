@@ -262,7 +262,7 @@ Function which checks if the part of the first argument is covered by the part o
     {
         "Basic example",
         R"(
-WITH 'all_12_25_7_4' AS lhs, 'all_7_100_10_20' AS rhs 
+WITH 'all_12_25_7_4' AS lhs, 'all_7_100_10_20' AS rhs
 SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
         )",
         R"(
@@ -290,7 +290,7 @@ Function that helps to cut the useful values out of the `MergeTree` part name.
     {
         "Basic example",
         R"(
-WITH mergeTreePartInfo('all_12_25_7_4') AS info 
+WITH mergeTreePartInfo('all_12_25_7_4') AS info
 SELECT info.partition_id, info.min_block, info.max_block, info.level, info.mutation;
         )",
         R"(
