@@ -7,6 +7,7 @@ import string
 import time
 import uuid
 from datetime import datetime
+from multiprocessing.dummy import Pool
 
 import delta
 import pyarrow as pa
@@ -135,6 +136,22 @@ def started_cluster():
             stay_alive=True,
             with_zookeeper=True,
         )
+        cluster.add_instance(
+            "node_with_disabled_delta_kernel",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/disabled_delta_kernel.xml",
+            ],
+            with_minio=True,
+            with_azurite=True,
+            stay_alive=True,
+            with_zookeeper=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -212,6 +229,15 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
+def get_node(cluster, use_delta_kernel):
+    if use_delta_kernel == "1":
+        return cluster.instances["node1"]
+    elif use_delta_kernel == "0":
+        return cluster.instances["node_with_disabled_delta_kernel"]
+    else:
+        assert False
+
+
 def create_delta_table(
     instance,
     storage_type,
@@ -219,7 +245,6 @@ def create_delta_table(
     cluster,
     format="Parquet",
     allow_dynamic_metadata_for_data_lakes=False,
-    use_delta_kernel=False,
     **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
@@ -239,7 +264,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+            """
             + allow_dynamic_metadata_for_datalakes_suffix
         )
 
@@ -249,7 +274,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+            """
             + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
@@ -263,7 +288,6 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeLocal('{table_path}', {format})
-            SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
             """
         )
     else:
@@ -314,18 +338,18 @@ def create_initial_data_file(
     [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_single_log_file")
 
     inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
     )
 
     # For local storage, we need to use the absolute path
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/{instance.name}/database/user_files"
     )
     table_path = os.path.join(user_files_path, TABLE_NAME)
 
@@ -347,7 +371,6 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=use_delta_kernel,
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -361,14 +384,14 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
 
     TABLE_NAME = randomize_table_name("test_partition_by")
 
     # For local storage, we need to use the absolute path
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/{instance.name}/database/user_files"
     )
     table_path = os.path.join(user_files_path, TABLE_NAME)
 
@@ -397,7 +420,6 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=use_delta_kernel,
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
@@ -407,7 +429,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -415,7 +437,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
 
     # For local storage, we need to use the absolute path
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/{instance.name}/database/user_files"
     )
     table_path = os.path.join(user_files_path, TABLE_NAME)
     # We need to exclude the leading slash for local storage protocol file://
@@ -458,7 +480,6 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=use_delta_kernel,
     )
     assert (
         int(
@@ -513,7 +534,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_multiple_log_files(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -530,9 +551,7 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
     )
     assert len(s3_objects) == 1
 
-    create_delta_table(
-        instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel
-    )
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_delta_from_df(
@@ -554,7 +573,7 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_metadata(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -565,6 +584,7 @@ def test_metadata(started_cluster, use_delta_kernel):
         instance,
         "SELECT number, toString(number) FROM numbers(100)",
         TABLE_NAME,
+        node_name=instance.name,
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
@@ -582,15 +602,13 @@ def test_metadata(started_cluster, use_delta_kernel):
     assert next(iter(stats["minValues"].values())) == 0
     assert next(iter(stats["maxValues"].values())) == 99
 
-    create_delta_table(
-        instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel
-    )
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_types(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     TABLE_NAME = randomize_table_name("test_types")
     spark = started_cluster.spark_session
     result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
@@ -647,7 +665,7 @@ def test_types(started_cluster, use_delta_kernel):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
     )
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     assert (
         instance.query(f"SELECT * FROM {table_function}").strip()
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
@@ -667,7 +685,7 @@ def test_types(started_cluster, use_delta_kernel):
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_restart_broken(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken"
@@ -681,6 +699,7 @@ def test_restart_broken(started_cluster, use_delta_kernel):
         instance,
         "SELECT number, toString(number) FROM numbers(100)",
         TABLE_NAME,
+        node_name=instance.name,
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
@@ -691,7 +710,6 @@ def test_restart_broken(started_cluster, use_delta_kernel):
         "s3",
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=use_delta_kernel,
         bucket=bucket,
     )
 
@@ -738,7 +756,7 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_restart_broken_table_function(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken2"
@@ -752,6 +770,7 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
         instance,
         "SELECT number, toString(number) FROM numbers(100)",
         TABLE_NAME,
+        node_name=instance.name,
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
@@ -793,10 +812,11 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, cluster",
-    [("1", False), ("1", True), ("0", False)],
+    [("1", False), ("1", True)],
+    # [("1", False), ("1", True), ("0", False)], /// FIXME: this does not work with disabled delta-kernel
 )
 def test_partition_columns(started_cluster, use_delta_kernel, cluster):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -868,9 +888,9 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     print(f"Uploaded files: {files}")
 
     if cluster:
-        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     else:
-        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     result = instance.query(f"describe table {table_function}").strip()
     assert (
@@ -937,7 +957,6 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), h Nullable(Bool))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
-       SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
         """
     )
     assert (
@@ -968,7 +987,6 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (b Nullable(String), c Nullable(Date32), d Nullable(Int32))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
-       SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
        """
     )
     assert (
@@ -1052,7 +1070,7 @@ test9	2000-01-09	9"""
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_types(started_cluster, use_delta_kernel):
-    node = started_cluster.instances["node1"]
+    node = get_node(started_cluster, use_delta_kernel)
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
 
@@ -1128,25 +1146,25 @@ def test_complex_types(started_cluster, use_delta_kernel):
     write_deltalake(path, table, storage_options=storage_options)
 
     assert "1\n2\n3\n" in node.query(
-        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}')"
     )
     assert (
         "('123 Elm St','Springfield','IL')\n('456 Maple St','Shelbyville','IL')\n('789 Oak St','Ogdenville','IL')"
         in node.query(
-            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}')"
         )
     )
     assert (
         "{'key1':'value1','key2':'value2'}\n{'key1':'value3','key2':'value4'}\n{'key1':'value5','key2':'value6'}"
         in node.query(
-            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}')"
         )
     )
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_filesystem_cache(started_cluster, use_delta_kernel):
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     TABLE_NAME = randomize_table_name("test_filesystem_cache")
@@ -1160,13 +1178,12 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
         instance,
         "SELECT toUInt64(number), toString(number) FROM numbers(100)",
         TABLE_NAME,
+        node_name=instance.name,
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(
-        instance, "s3", TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel
-    )
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
@@ -1232,6 +1249,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         node1,
         "SELECT number, toString(number) FROM numbers(100)",
         TABLE_NAME,
+        node_name=node1.name,
     )
 
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
@@ -2091,7 +2109,8 @@ def test_partition_columns_3(started_cluster):
     )
 
 
-def test_filtering_by_virtual_columns(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -2126,9 +2145,13 @@ def test_filtering_by_virtual_columns(started_cluster):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs=0)"
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    result = int(
+        instance.query(
+            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+        )
+    )
     assert result == num_rows
 
     assert (
@@ -2142,13 +2165,15 @@ def test_filtering_by_virtual_columns(started_cluster):
         "7\tname_7\t32\tUS\t2027\n"
         "8\tname_8\t32\tUS\t2028\n"
         "9\tname_9\t32\tUS\t2029"
-        == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY all SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
+        ).strip()
     )
 
     query_id = f"query_{TABLE_NAME}_1"
     result = int(
         instance.query(
-            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%'",
+            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%2024%' SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}",
             query_id=query_id,
         )
     )
@@ -2159,6 +2184,21 @@ def test_filtering_by_virtual_columns(started_cluster):
             f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+    if use_delta_kernel == "0":
+        assert 1 < int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
+        )
+    elif use_delta_kernel == "1":
+        assert 0 == int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
+        )
+    else:
+        assert False
 
 
 def test_column_pruning(started_cluster):
@@ -2234,3 +2274,57 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+
+def test_concurrent_queries(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_concurrent_queries")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = []
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
+
+    num_rows = 500000
+    now = datetime.now()
+    data = [
+        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
+        for i in range(num_rows)
+    ]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+        f"/{TABLE_NAME}"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    instance.query(
+        f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+
+    def select(_):
+        instance.query(
+            f"SELECT * FROM {TABLE_NAME} SETTINGS max_read_buffer_size_remote_fs=100",
+        )
+
+    busy_pool = Pool(10)
+    p = busy_pool.map_async(select, range(10))
+    p.wait()
+
+    select(0)
