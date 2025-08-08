@@ -165,10 +165,11 @@ namespace detail
                 res_value[10] = 0xFF;
                 res_value[11] = 0xFF;
                 memcpy(&res_value[12], &ipv4, 4);
+                parsed = true;
             }
             else
             {
-                parsed = parseIPv6whole(src_value, src_value_end, res_value);
+                parsed = parseIPv6Whole(src_value, src_value_end, res_value);
             }
 
             if (!parsed)
