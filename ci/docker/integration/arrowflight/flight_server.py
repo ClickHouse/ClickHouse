@@ -1,6 +1,7 @@
-import pyarrow.flight as fl
-import pyarrow as pa
 import json
+
+import pyarrow as pa
+import pyarrow.flight as fl
 
 
 class FlightServer(fl.FlightServerBase):

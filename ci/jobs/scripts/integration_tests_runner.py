@@ -1,5 +1,6 @@
 import csv
 import glob
+import heapq
 import json
 import logging
 import os
@@ -9,7 +10,6 @@ import shlex
 import shutil
 import subprocess
 import time
-import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
 from statistics import median
@@ -61,9 +61,8 @@ def has_test(tests: List[str], test_to_match: str) -> bool:
     return False
 
 
-def get_changed_tests_to_run(pr_info, repo_path):
+def get_changed_tests_to_run(changed_files, repo_path):
     result = set()
-    changed_files = pr_info["changed_files"]
 
     if changed_files is None:
         return []
@@ -660,16 +659,16 @@ class ClickhouseIntegrationTestsRunner:
         return counters, tests_times, log_paths
 
     def run_flaky_check(self, should_fail=False):
-        pr_info = self.params["pr_info"]
-
-        tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
+        tests_to_run = get_changed_tests_to_run(
+            self.params["changed_files"], self.repo_path
+        )
         if not tests_to_run:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
-        description_prefix = "No flaky tests: "
+        description_prefix = "No failed tests: "
         logging.info("Starting check with retries")
         final_retry = 0
         counters = {
@@ -831,32 +830,40 @@ class ClickhouseIntegrationTestsRunner:
             try:
                 logging.info(
                     "Querying play via HTTP (Attempt %s/%s)...",
-                    attempt + 1, max_retries
+                    attempt + 1,
+                    max_retries,
                 )
 
-                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
+                response = requests.post(
+                    CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120
+                )
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
-                    row['file']: float(row['file_duration_ms']) for row in result_data
+                    row["file"]: float(row["file_duration_ms"]) for row in result_data
                 }
 
                 logging.info(
                     "Successfully fetched execution times for %s modules via HTTP.",
-                    len(tests_execution_times)
+                    len(tests_execution_times),
                 )
                 return tests_execution_times
 
             except requests.exceptions.RequestException as e:
                 logging.warning(
                     "Attempt %s/%s failed to fetch test times via HTTP: %s",
-                    attempt + 1, max_retries, e
+                    attempt + 1,
+                    max_retries,
+                    e,
                 )
                 if attempt < max_retries - 1:
                     logging.info("Retrying in %s seconds...", retry_delay_seconds)
                     time.sleep(retry_delay_seconds)
                 else:
-                    logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
+                    logging.error(
+                        "All %s attempts failed. Could not fetch test times.",
+                        max_retries,
+                    )
                     raise
 
     def group_tests_by_execution_time(self) -> List[List[str]]:
@@ -871,41 +878,57 @@ class ClickhouseIntegrationTestsRunner:
         file_to_test_map = self.group_test_by_file(self.all_tests)
         all_current_files = sorted(list(file_to_test_map.keys()))
 
-        sequential_test_prefixes = [p.split("::", 1)[0] for p in self._get_parallel_tests_skip_list(self.repo_path)]
+        sequential_test_prefixes = [
+            p.split("::", 1)[0]
+            for p in self._get_parallel_tests_skip_list(self.repo_path)
+        ]
         sequential_files_list = []
         parallel_files_list = []
 
         for file in all_current_files:
-            is_sequential = any(file.startswith(prefix) for prefix in sequential_test_prefixes)
+            is_sequential = any(
+                file.startswith(prefix) for prefix in sequential_test_prefixes
+            )
             if is_sequential:
                 sequential_files_list.append(file)
             else:
                 parallel_files_list.append(file)
 
         tests_execution_times = self.get_tests_execution_time()
-        assert len(tests_execution_times) > 400, \
-            f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        assert (
+            len(tests_execution_times) > 400
+        ), f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
         # use median exec time for tests with unknown execution time
         median_time = median(list(tests_execution_times.values()))
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in parallel_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in parallel_files_list
+            if mod in known_db_modules_set
         }
         new_parallel_tests: List[str] = [
             mod for mod in parallel_files_list if mod not in known_db_modules_set
         ]
         sequential_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in sequential_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in sequential_files_list
+            if mod in known_db_modules_set
         }
         new_sequential_tests: List[str] = [
             mod for mod in sequential_files_list if mod not in known_db_modules_set
         ]
 
-        logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
+        logging.info(
+            "Found %s parallel modules with known execution time.",
+            len(parallel_tests_with_known_time),
+        )
         logging.info("Found %s new parallel modules:", len(new_parallel_tests))
         logging.info("%s", str(new_parallel_tests))
-        logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
+        logging.info(
+            "Found %s sequential modules with known execution time.",
+            len(sequential_tests_with_known_time),
+        )
         logging.info("Found %s new sequential modules:", len(new_sequential_tests))
         logging.info("%s", str(new_sequential_tests))
 
@@ -914,7 +937,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(parallel_heap)
 
         sorted_timed_parallel = sorted(
-            parallel_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            parallel_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_parallel:
             total_time, group_index, files = heapq.heappop(parallel_heap)
@@ -924,7 +949,9 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_parallel_tests:
             total_time, group_index, files = heapq.heappop(parallel_heap)
             files.append(file)
-            heapq.heappush(parallel_heap, (total_time + median_time, group_index, files))
+            heapq.heappush(
+                parallel_heap, (total_time + median_time, group_index, files)
+            )
 
         test_file_groups = [[] for _ in range(num_groups)]
         parallel_group_times = [0.0] * num_groups
@@ -939,7 +966,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(sequential_heap)
 
         sorted_timed_sequential = sorted(
-            sequential_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            sequential_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_sequential:
             total_time, group_index = heapq.heappop(sequential_heap)
@@ -980,7 +1009,11 @@ class ClickhouseIntegrationTestsRunner:
             sequential_time = total_time - parallel_time
             logging.info(
                 "Group %d | Tests: %d | Total time: %.2fs (parallel: %.2fs, sequential: %.2fs)",
-                i, len(test_group), total_time, parallel_time, sequential_time
+                i,
+                len(test_group),
+                total_time,
+                parallel_time,
+                sequential_time,
             )
 
         return final_test_groups
@@ -1069,7 +1102,7 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        grouped_tests['parallel'] = filtered_parallel_tests
+        grouped_tests["parallel"] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
