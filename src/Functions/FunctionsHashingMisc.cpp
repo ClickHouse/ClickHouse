@@ -89,15 +89,15 @@ New projects are advised to use [`sipHash128Reference`](#siphash128reference).
     };
     FunctionDocumentation::ReturnedValue sipHash128_returned_value = {"Returns a 128-bit `SipHash` hash value.", {"FixedString(16)"}};
     FunctionDocumentation::Examples sipHash128_examples = {
-        {
-            "Usage example",
-            "SELECT hex(sipHash128('foo', '\\x01', 3));",
-            R"(
+    {
+        "Usage example",
+        "SELECT hex(sipHash128('foo', '\\x01', 3));",
+        R"(
 ┌─hex(sipHash128('foo', '', 3))────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
-            )"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn sipHash128_introduced_in = {1, 1};
     FunctionDocumentation::Category sipHash128_category = FunctionDocumentation::Category::Hash;
@@ -110,7 +110,7 @@ Same as [`sipHash128`](#siphash128) but additionally takes an explicit key argum
 :::tip use sipHash128ReferenceKeyed for new projects
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128ReferenceKeyed](#siphash128referencekeyed).
+New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
 :::
 )";
     FunctionDocumentation::Syntax sipHash128Keyed_syntax = "sipHash128Keyed((k0, k1), [arg1, arg2, ...])";
@@ -134,16 +134,55 @@ New projects should probably use [sipHash128ReferenceKeyed](#siphash128reference
     FunctionDocumentation::Category sipHash128Keyed_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash128Keyed_documentation = {sipHash128Keyed_description, sipHash128Keyed_syntax, sipHash128Keyed_arguments, sipHash128Keyed_returned_value, sipHash128Keyed_examples, sipHash128Keyed_introduced_in, sipHash128Keyed_category};
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
-    factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
-        .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
-        .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
-        .category = FunctionDocumentation::Category::Hash
-    });
-    factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
-        .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
-                       "instead of using a fixed key.",
-        .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .category = FunctionDocumentation::Category::Hash});
+
+    FunctionDocumentation::Description sipHash128Ref_description = R"(
+Like [`sipHash128`](/sql-reference/functions/hash-functions#siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
+    )";
+    FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments sipHash128Ref_arguments = {
+        {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue sipHash128Ref_returned_value = {"Returns the computed 128-bit `SipHash` hash value of the input arguments.", {"FixedString(16)"}};
+    FunctionDocumentation::Examples sipHash128Ref_examples = {
+    {
+        "Usage example",
+        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+        R"(
+┌─hex(sipHash128Reference('foo', '', 3))─┐
+│ 4D1BE1A22D7F5933C0873E1698426260       │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn sipHash128Ref_introduced_in = {23, 2};
+    FunctionDocumentation::Category sipHash128Ref_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation sipHash128Ref_documentation = {sipHash128Ref_description, sipHash128Ref_syntax, sipHash128Ref_arguments, sipHash128Ref_returned_value, sipHash128Ref_examples, sipHash128Ref_introduced_in, sipHash128Ref_category};
+    factory.registerFunction<FunctionSipHash128Reference>(sipHash128Ref_documentation);
+
+    FunctionDocumentation::Description sipHash128RefKeyed_description = R"(
+Same as [`sipHash128Reference`](#sipHash128Reference) but additionally takes an explicit key argument instead of using a fixed key.
+    )";
+    FunctionDocumentation::Syntax sipHash128RefKeyed_syntax = "sipHash128ReferenceKeyed((k0, k1), arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments sipHash128RefKeyed_arguments = {
+        {"(k0, k1)", "Tuple of two values representing the key", {"Tuple(UInt64, UInt64)"}},
+        {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue sipHash128RefKeyed_returned_value = {"Returns the computed 128-bit `SipHash` hash value of the input arguments.", {"FixedString(16)"}};
+    FunctionDocumentation::Examples sipHash128RefKeyed_examples = {
+    {
+        "Usage example",
+        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+         R"(
+┌─hex(sipHash128Reference('foo', '', 3))─┐
+│ 4D1BE1A22D7F5933C0873E1698426260       │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn sipHash128RefKeyed_introduced_in = {23, 2};
+    FunctionDocumentation::Category sipHash128RefKeyed_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation sipHash128RefKeyed_documentation = {sipHash128RefKeyed_description, sipHash128RefKeyed_syntax, sipHash128RefKeyed_arguments, sipHash128RefKeyed_returned_value, sipHash128RefKeyed_examples, sipHash128RefKeyed_introduced_in, sipHash128RefKeyed_category};
+    factory.registerFunction<FunctionSipHash128ReferenceKeyed>(sipHash128RefKeyed_documentation);
 
     FunctionDocumentation::Description cityHash64_description = R"(
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
