@@ -1,4 +1,6 @@
 #pragma once
+#include "config.h"
+
 #include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>

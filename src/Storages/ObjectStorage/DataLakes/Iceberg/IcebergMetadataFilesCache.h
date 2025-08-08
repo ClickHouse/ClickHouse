@@ -28,7 +28,7 @@ namespace DB
 {
 
 /// The structure that can identify a manifest file. We store it in cache.
-/// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
+/// And we can get `ManifestFileContent` from cache by ManifestFileCacheKey.
 struct ManifestFileCacheKey
 {
     String manifest_file_path;

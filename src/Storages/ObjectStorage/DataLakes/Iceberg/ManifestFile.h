@@ -30,6 +30,12 @@ enum class FileContentType : uint8_t
     EQUALITY_DELETE = 2
 };
 
+enum class ManifestFileContentType : uint8_t
+{
+    DATA = 0,
+    DELETE = 1
+};
+
 String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
@@ -48,7 +54,7 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
-/// Description of Data file in manifest file
+/// Description of a single content file in manifest file
 struct ManifestFileEntry
 {
     // It's the original string in the Iceberg metadata
