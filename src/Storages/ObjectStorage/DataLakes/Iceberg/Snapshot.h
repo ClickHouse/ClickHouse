@@ -7,25 +7,29 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
+#    include <Formats/FormatFilterInfo.h>
+#    include <Formats/FormatParserSharedResources.h>
+
+
 namespace Iceberg
 {
 
 struct ManifestListEntry
 {
     DB::ManifestFileCacheKey manifest_file_cache_key;
-    ManifestFileContentType content_type;
 };
 
 using ManifestListEntries = std::vector<ManifestListEntry>;
 
 struct IcebergDataSnapshot
 {
-    ManifestListEntries manifest_list_entries;
+    DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
-    Int32 schema_id;
+    Int32 corresponding_schema_id;
+    DB::ColumnMapperPtr column_mapper;
 
     std::optional<size_t> getTotalRows() const
     {
@@ -35,11 +39,13 @@ struct IcebergDataSnapshot
     }
 };
 
+using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
+
 struct IcebergTableStateSnapshot
 {
     Int32 metadata_version;
-    std::optional<Int32> snapshot_id;
-    std::optional<Int32> schema_id; // Set if snapshot is null or schema was changed after corresponding data commit
+    Int32 schema_id;
+    std::optional<Int64> snapshot_id;
 };
 
 using IcebergTableStateSnapshotPtr = std::shared_ptr<IcebergTableStateSnapshot>;

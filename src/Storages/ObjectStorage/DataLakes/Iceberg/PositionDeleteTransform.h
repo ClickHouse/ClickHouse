@@ -3,9 +3,10 @@
 
 #if USE_AVRO
 
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
-#include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#    include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
+#    include <Processors/ISimpleTransform.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
 namespace DB
 {

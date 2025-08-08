@@ -7,21 +7,22 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#    include <Core/Types.h>
+#    include <Disks/ObjectStorages/IObjectStorage.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
-#include <Common/SharedMutex.h>
-#include <tuple>
-#include <optional>
-#include <base/defines.h>
+#    include <optional>
+#    include <tuple>
+#    include <base/defines.h>
+#    include <Common/SharedMutex.h>
 
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -39,7 +40,8 @@ public:
         StorageObjectStorageConfigurationWeakPtr configuration_,
         const ContextPtr & context_,
         Int32 format_version_,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        IcebergMetadataFilesCachePtr cache_ptr,
+        String table_location_);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -58,6 +60,9 @@ public:
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override;
 
@@ -93,16 +98,9 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable std::shared_ptr<IcebergSchemaProcessor> schema_processor;
     IcebergMetadataFilesCachePtr iceberg_metadata_cache;
+    const Int32 format_version;
+    const String table_location;
     LoggerPtr log;
-
-    struct GeneralTableInfo
-    {
-        const Int32 format_version;
-        const String table_location;
-    };
-
-    bool initialized = false;
-    std::optional<GeneralTableInfo> general_info;
 
     Iceberg::IcebergTableStateSnapshot & getRelevantSnapshot() const { return *relevant_snapshot; }
 
@@ -110,9 +108,13 @@ private:
 
     Iceberg::IcebergTableStateSnapshotPtr relevant_snapshot{};
 
+    ColumnMapperPtr initializeColumnMapper(
+        Poco::JSON::Array::Ptr schemas, Poco::JSON::Object::Ptr snapshot, StorageObjectStorageConfigurationPtr configuration_ptr) const;
 
+
+    Iceberg::IcebergDataSnapshotPtr getDataSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object);
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
-    void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    void getSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
 
