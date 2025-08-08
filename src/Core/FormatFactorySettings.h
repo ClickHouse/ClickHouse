@@ -901,9 +901,9 @@ For example, instead of output:
   }
 ],
 ```
-    
+
 The output will be formatted as:
-    
+
 ```json
 "data":
 [
