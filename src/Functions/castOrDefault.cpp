@@ -452,7 +452,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn toIPv6OrDefault_introduced_in = {22, 3};
-    FunctionDocumentation::Category toIPv6OrDefault_category = FunctionDocumentation::Category::IPAddresses;
+    FunctionDocumentation::Category toIPv6OrDefault_category = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation toIPv6OrDefault_documentation = {toIPv6OrDefault_description, toIPv6OrDefault_syntax, toIPv6OrDefault_arguments, toIPv6OrDefault_returned_value, toIPv6OrDefault_examples, toIPv6OrDefault_introduced_in, toIPv6OrDefault_category};
 
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)

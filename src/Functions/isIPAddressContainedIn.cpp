@@ -403,7 +403,7 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
             {"IPv6 address not in range", "SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')", "0"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
-        FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddresses;
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionIsIPAddressContainedIn>(documentation);
