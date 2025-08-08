@@ -110,6 +110,7 @@ def create_table(
     database_name="default",
     replace=False,
     no_settings=False,
+    hive_partitioning="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -127,10 +128,10 @@ def create_table(
 
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning}', 'CSV')"
 
     create = "REPLACE" if replace else "CREATE"
     if not replace:
@@ -177,6 +178,14 @@ def create_mv(
 
     node.query(f"DROP TABLE IF EXISTS {mv_name};")
 
+    names = ""
+    for column in format.split(","):
+        name, _ = column.strip().rsplit(" ", 1)
+        if names == "":
+            names = name
+        else:
+            names += f", {name}"
+
     virtual_format = ""
     virtual_names = ""
     virtual_columns_list = virtual_columns.split(",")
@@ -194,14 +203,14 @@ def create_mv(
             """)
         node.query(
             f"""
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """)
         if not dst_table_exists:
             node.query(f"""

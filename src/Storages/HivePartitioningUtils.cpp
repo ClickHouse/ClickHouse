@@ -69,7 +69,11 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
 
     const auto hive_map = parseHivePartitioningKeysAndValues(sample_path);
 
+    std::map<std::string_view, std::string_view> hive_map_sorted;
     for (const auto & item : hive_map)
+        hive_map_sorted.insert(item);
+
+    for (const auto & item : hive_map_sorted)
     {
         const std::string key(item.first);
         const std::string value(item.second);
