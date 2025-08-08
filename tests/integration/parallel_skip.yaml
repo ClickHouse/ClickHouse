@@ -47,7 +47,7 @@
 - test_server_reload/
 - test_storage_kafka/
 - test_storage_kerberized_kafka/
-#- test_storage_rabbitmq/
+- test_storage_rabbitmq/
 #- test_storage_s3/
 #- test_storage_s3_queue/
 #- test_system_flush_logs/
