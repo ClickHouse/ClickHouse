@@ -79,9 +79,8 @@ struct BitShiftRightImpl
 
             const size_t old_size = out_vec.size();
             size_t length = shift_right_end - begin;
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             /// We start from the byte on the right and shift right shift_right_bits bit by byte
             UInt8 * op_pointer = const_cast<UInt8 *>(shift_right_end);
