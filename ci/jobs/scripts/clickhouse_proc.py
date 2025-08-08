@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -377,6 +378,12 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
         proc = subprocess.Popen(
             command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
         )
@@ -633,6 +640,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
         if Path(self.GDB_LOG).exists():
             res.append(self.GDB_LOG)
         if all:
@@ -675,6 +683,71 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         else:
             print("WARNING: Coordination logs not found")
             return []
+
+    @classmethod
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        if not profiles:
+            return []
+
+        profiles = profiles.split('\n')
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split('.')
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+
+        # fetch jeprof
+        if Shell.check(
+            f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
+            verbose=True,
+        ) and Shell.check(
+            f"sed -i -e 's/@jemalloc_version@/5.3.0-12-g41a859ef/g' -e 's/@JEMALLOC_PREFIX@//g' {temp_dir}/jeprof && chmod +x {temp_dir}/jeprof"
+        ):
+            has_flamegraph = Shell.check(
+                f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
+                verbose=True,
+            )
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt {chbinary}"
+            for pid, profile in latest_profiles.items():
+                Shell.check(
+                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                    verbose=True
+                )
+
+                if has_flamegraph:
+                    Shell.check(
+                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                        verbose=True
+                    )
+
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
+        else:
+            print("WARNING: Jemalloc profiles not found")
+            return []
+        return res
 
     def _get_logs_archives_server(self):
         assert Path(
