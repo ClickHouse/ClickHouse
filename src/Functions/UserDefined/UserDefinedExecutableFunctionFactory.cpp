@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
+    extern const int UDF_EXECUTION_FAILED;
 }
 
 namespace Setting
@@ -182,56 +184,93 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        ColumnWithTypeAndName result(result_type, configuration.result_name);
-        Block result_block({result});
+        // catch UDF execution error and throw it as UDF_EXECUTION_FAILED
+        String args_str = Poco::cat(String(", "), command_arguments_with_parameters.begin(), command_arguments_with_parameters.end());
+        try {
+            ColumnWithTypeAndName result(result_type, configuration.result_name);
+            Block result_block({result});
 
-        Block arguments_block(arguments_copy);
-        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(arguments_block)));
-        auto shell_input_pipe = Pipe(std::move(source));
+            Block arguments_block(arguments_copy);
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(arguments_block)));
+            auto shell_input_pipe = Pipe(std::move(source));
 
-        ShellCommandSourceConfiguration shell_command_source_configuration;
+            ShellCommandSourceConfiguration shell_command_source_configuration;
 
-        if (coordinator_configuration.is_executable_pool)
-        {
-            shell_command_source_configuration.read_fixed_number_of_rows = true;
-            shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+            if (coordinator_configuration.is_executable_pool)
+            {
+                shell_command_source_configuration.read_fixed_number_of_rows = true;
+                shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+            }
+
+            Pipes shell_input_pipes;
+            shell_input_pipes.emplace_back(std::move(shell_input_pipe));
+
+            Pipe pipe = coordinator->createPipe(
+                command,
+                command_arguments_with_parameters,
+                std::move(shell_input_pipes),
+                result_block,
+                context,
+                shell_command_source_configuration);
+
+            QueryPipeline pipeline(std::move(pipe));
+            PullingPipelineExecutor executor(pipeline);
+
+            auto result_column = result_type->createColumn();
+            result_column->reserve(input_rows_count);
+
+            Block block;
+            while (executor.pull(block))
+            {
+                const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+                result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+            }
+
+            size_t result_column_size = result_column->size();
+            if (result_column_size != input_rows_count)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Function {}: wrong result, expected {} row(s), actual {}",
+                    quoteString(getName()),
+                    input_rows_count,
+                    result_column_size);
+
+                return result_column;
         }
-
-        Pipes shell_input_pipes;
-        shell_input_pipes.emplace_back(std::move(shell_input_pipe));
-
-        Pipe pipe = coordinator->createPipe(
-            command,
-            command_arguments_with_parameters,
-            std::move(shell_input_pipes),
-            result_block,
-            context,
-            shell_command_source_configuration);
-
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        auto result_column = result_type->createColumn();
-        result_column->reserve(input_rows_count);
-
-        Block block;
-        while (executor.pull(block))
+        catch (const Exception & e)
         {
-            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+            // ClickHouse exceptions
+            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+                "User defined function '{}' failed: {} (Error code: {}). "
+                "Command: '{}', Arguments: [{}]",
+                getName(),
+                e.message(),
+                e.code(),
+                command_with_parameters,
+                args_str);
         }
-
-        size_t result_column_size = result_column->size();
-        if (result_column_size != input_rows_count)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {}: wrong result, expected {} row(s), actual {}",
-                quoteString(getName()),
-                input_rows_count,
-                result_column_size);
-
-        return result_column;
+        catch (const std::exception & e)
+        {
+            // Standard library exceptions
+            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+                "User defined function '{}' failed: {}. "
+                "Command: '{}', Arguments: [{}]",
+                getName(),
+                e.what(),
+                command_with_parameters,
+                args_str);
+        }
+        catch (...)
+        {
+            // Unknown exceptions
+            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+                "User defined function '{}' failed with unknown error. "
+                "Command: '{}', Arguments: [{}]",
+                getName(),
+                command_with_parameters,
+                args_str);
+        }
+        UNREACHABLE();
     }
-
 private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
