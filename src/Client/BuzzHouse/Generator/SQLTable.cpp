@@ -933,8 +933,16 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
+    if (te->has_engine() && b.isReplicatedMergeTree())
+    {
+        /// Replicated table params, must come first
+        chassert(te->params_size() == 0);
+        te->add_params()->set_svalue("/clickhouse/path/{shard}/t" + std::to_string(b.tname));
+        te->add_params()->set_svalue("{replica}");
+    }
     if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
     {
+        /// Optional list of columns to be summed
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
 
@@ -949,7 +957,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Replicated MergeTree are to be used with cluster
-    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && (!b.toption.has_value() || b.toption.value() != TShared)
+    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && !b.isSharedMergeTree()
         && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
@@ -1019,12 +1027,10 @@ void StatementGenerator::generateEngineDetails(
 
     if (b.isMergeTreeFamily())
     {
-        const bool allow_replicated_tbl = replica_setup && (fc.engine_mask & allow_replicated) != 0;
-
-        if (te->has_engine() && !b.is_temp && (allow_replicated_tbl || allow_shared_tbl) && rg.nextSmallNumber() < 4)
+        if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)
         {
             chassert(this->ids.empty());
-            if (allow_replicated_tbl)
+            if ((fc.engine_mask & allow_replicated) != 0)
             {
                 this->ids.emplace_back(TReplicated);
             }
@@ -1356,8 +1362,7 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if ((b.isMergeTreeFamily() || b.isLogFamily())
-            && ((b.toption.has_value() && b.toption.value() == TShared) || rg.nextSmallNumber() < 3)
+        if ((b.isMergeTreeFamily() || b.isLogFamily()) && (b.isSharedMergeTree() || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -2481,7 +2486,7 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DMemory);
     }
-    if (replica_setup && (fc.engine_mask & allow_replicated) != 0)
+    if ((fc.engine_mask & allow_replicated) != 0)
     {
         this->ids.emplace_back(DReplicated);
     }
@@ -2507,10 +2512,6 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
 
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (next.isReplicatedDatabase())
-    {
-        next.zoo_path_counter = this->zoo_path_counter++;
-    }
     if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
     {
         next.cluster = rg.pickRandomly(fc.clusters);

@@ -115,11 +115,10 @@ public:
 struct SQLDatabase
 {
 public:
-    std::optional<String> cluster;
-    DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
-    uint32_t zoo_path_counter;
+    std::optional<String> cluster;
+    DetachStatus attached = DetachStatus::ATTACHED;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -149,7 +148,7 @@ public:
 
     String getName() const { return "d" + std::to_string(dname); }
 
-    void finishDatabaseSpecification(DatabaseEngine * dspec) const;
+    void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
 struct SQLBase
