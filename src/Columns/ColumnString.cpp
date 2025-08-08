@@ -73,28 +73,23 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 
     if (to_size <= from_size)
     {
-        /// Just cut column.
+        /// Just cut the column.
 
         res->offsets.assign(offsets.begin(), offsets.begin() + to_size);
-        res->chars.assign(chars.begin(), chars.begin() + offsets[to_size - 1]);
+        res->chars.assign(chars.begin(), chars.begin() + offsetAt(to_size));
     }
     else
     {
         /// Copy column and append empty strings for extra elements.
 
-        Offset offset = 0;
         if (from_size > 0)
         {
             res->offsets.assign(offsets.begin(), offsets.end());
             res->chars.assign(chars.begin(), chars.end());
-            offset = offsets.back();
         }
 
         /// Empty strings.
-
-        res->offsets.resize_exact(to_size);
-        for (size_t i = from_size; i < to_size; ++i)
-            res->offsets[i] = offset;
+        res->offsets.resize_fill(to_size, offsets.back());
     }
 
     return res;
@@ -138,7 +133,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
+    size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
