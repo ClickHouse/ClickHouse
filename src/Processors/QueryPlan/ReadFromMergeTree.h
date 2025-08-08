@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -8,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -178,6 +180,9 @@ public:
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
+    void registerColumnsChanges(
+        const std::vector<std::string> &new_columns,
+        const std::vector<std::string> &removed_columns);
 
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }

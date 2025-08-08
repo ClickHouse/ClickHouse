@@ -2830,4 +2830,41 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
     }
 }
 
+
+void ReadFromMergeTree::registerColumnsChanges(
+    const std::vector<std::string> &removed_columns,
+    const std::vector<std::string> &new_columns)
+{
+    size_t changes_counter = 0;
+
+    /// Remove the columns. As defensive strategy I ensure that the columns exist
+    for (const std::string &removed_column : removed_columns)
+    {
+        const auto it = std::ranges::find(all_column_names, removed_column);
+        chassert(it != all_column_names.end());
+
+        all_column_names.erase(it);
+        ++changes_counter;
+    }
+
+    /// Now insert the new columns. Unlike the previous ones, these bay exist, in that case I do nothing.
+    for (const std::string &new_column : new_columns)
+    {
+        const auto it = std::ranges::find(all_column_names, new_column);
+        if (it != all_column_names.end())
+            continue;
+
+        all_column_names.emplace(it, new_column);
+        ++changes_counter;
+    }
+
+    if (output_header.has_value() && changes_counter > 0)
+    {
+        output_header = MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            lazily_read_info, query_info.prewhere_info);
+    }
+}
+
+
 }
