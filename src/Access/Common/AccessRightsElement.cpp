@@ -142,7 +142,7 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
 {
     auto is_enabled_user_name_access_type = true;
     if (const auto context = Context::getGlobalContextInstance())
@@ -151,7 +151,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
     }
 
-    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
+    buffer << "ON ";
     if (isGlobalWithParameter())
     {
         /// Special check for backward compatibility.
@@ -323,6 +323,10 @@ void AccessRightsElement::replaceDeprecated()
         case AccessType::KAFKA:
         case AccessType::NATS:
         case AccessType::RABBITMQ:
+            if (!anyDatabase())
+                /// This will leave statements like `REVOKE S3 ON system.*` untouched
+                /// These statements will be deleted afterwards with `eraseNotGrantable()`
+                break;
             access_flags = AccessType::READ | AccessType::WRITE;
             parameter = DB::toString(current_access_type);
             break;
@@ -434,7 +438,7 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
     bool no_output = true;
     for (size_t i = 0; i != size(); ++i)
@@ -451,7 +455,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
             if (!std::exchange(no_output, false))
                 buffer << ", ";
 
-            buffer << (hilite ? IAST::hilite_keyword : "") << keyword << (hilite ? IAST::hilite_none : "");
+            buffer << keyword;
             if (!element.anyColumn())
                 element.formatColumnNames(buffer);
         }
@@ -469,12 +473,12 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
         if (!next_element_on_same_db_and_table)
         {
             buffer << " ";
-            element.formatONClause(buffer, hilite);
+            element.formatONClause(buffer);
         }
     }
 
     if (no_output)
-        buffer << (hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (hilite ? IAST::hilite_none : "") << "*.*";
+        buffer << "USAGE ON " << "*.*";
 }
 
 }

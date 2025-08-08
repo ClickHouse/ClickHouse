@@ -228,7 +228,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         std::shared_ptr<StorageSystemPartsBase> storage_,
         std::vector<UInt8> columns_mask_,
         bool has_state_column_);
@@ -248,7 +248,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
-    Block sample_block,
+    SharedHeader sample_block,
     std::shared_ptr<StorageSystemPartsBase> storage_,
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
@@ -314,7 +314,7 @@ void StorageSystemPartsBase::read(
 
     auto reading = std::make_unique<ReadFromSystemPartsBase>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), has_state_column);
+        std::move(context), std::make_shared<const Block>(std::move(header)), std::move(this_ptr), std::move(columns_mask), has_state_column);
 
     query_plan.addStep(std::move(reading));
 }
@@ -324,7 +324,7 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
     auto header = getOutputHeader();
 
-    MutableColumns res_columns = header.cloneEmptyColumns();
+    MutableColumns res_columns = header->cloneEmptyColumns();
 
     while (StoragesInfo info = stream->next())
     {

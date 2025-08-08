@@ -11,12 +11,13 @@ namespace DB
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration_)
+    StorageObjectStorageConfigurationWeakPtr configuration_,
+    ContextPtr context)
     : log(getLogger("DeltaLakeMetadata"))
-    , table_snapshot(
-        std::make_shared<DeltaLake::TableSnapshot>(
+    , table_snapshot(std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
+            context,
             log))
 {
 }
@@ -24,11 +25,13 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
+    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
 bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 {
+    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->update();
 }
 
@@ -38,11 +41,13 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     size_t list_batch_size,
     ContextPtr /* context  */) const
 {
+    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
 {
+    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getTableSchema();
 }
 
@@ -53,25 +58,41 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
-DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
+ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const DB::StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
     auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
-
-    info.format_header.clear();
-    for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())
-        info.format_header.insert({column_type->createColumn(), column_type, column_name});
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
     /// So we add partition columns to read schema and put it together into format_header.
     /// Partition values will be added to result data right after data is read.
+    DB::NameToNameMap physical_names_map;
+    DB::NameSet read_columns;
+    {
+        std::lock_guard lock(table_snapshot_mutex);
+        physical_names_map = table_snapshot->getPhysicalNamesMap();
+        read_columns = table_snapshot->getReadSchema().getNameSet();
+    }
 
-    const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
+    Block format_header;
+    for (auto && column_with_type_and_name : info.format_header)
+    {
+        auto physical_name = DeltaLake::getPhysicalName(column_with_type_and_name.name, physical_names_map);
+        if (!read_columns.contains(physical_name))
+        {
+            LOG_TEST(log, "Filtering out non-readable column: {}", column_with_type_and_name.name);
+            continue;
+        }
+        column_with_type_and_name.name = physical_name;
+        format_header.insert(std::move(column_with_type_and_name));
+    }
+    info.format_header = std::move(format_header);
+
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())
     {

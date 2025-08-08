@@ -3,7 +3,6 @@
 #include <atomic>
 #include <unordered_map>
 #include <Core/Joins.h>
-#include <Core/Block.h>
 #include <Interpreters/joinDispatch.h>
 
 namespace DB

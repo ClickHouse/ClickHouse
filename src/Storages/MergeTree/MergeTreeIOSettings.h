@@ -58,6 +58,7 @@ struct MergeTreeReaderSettings
     double  query_condition_cache_selectivity_threshold = 1.0;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
+    size_t filesystem_prefetches_limit = 0;
 };
 
 struct MergeTreeWriterSettings
