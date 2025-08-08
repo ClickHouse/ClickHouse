@@ -560,13 +560,13 @@ SinkToStoragePtr StorageObjectStorage::write(
 
 bool StorageObjectStorage::optimize(
     const ASTPtr & /*query*/,
-    const StorageMetadataPtr & metadata_snapshot,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
     const ASTPtr & /*partition*/,
     bool /*final*/,
     bool /*deduplicate*/,
     const Names & /* deduplicate_by_columns */,
     bool /*cleanup*/,
-    ContextPtr context)
+    [[maybe_unused]] ContextPtr context)
 {
 #if USE_AVRO
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
