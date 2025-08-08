@@ -1285,6 +1285,8 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
+    ThreadPool & getIcebergCompactionThreadPool() const;
+    ThreadPool & getIcebergSchedulerCompactionThreadPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;

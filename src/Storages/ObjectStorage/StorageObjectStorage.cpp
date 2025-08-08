@@ -1,3 +1,4 @@
+#include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -44,6 +45,7 @@ namespace Setting
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool allow_experimental_insert_into_iceberg;
+    extern const SettingsMilliseconds iceberg_period_compaction;
 }
 
 namespace ErrorCodes
@@ -53,6 +55,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+void scheduleCompactionJob(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    SharedHeader sample_block,
+    ContextPtr context)
+{
+    auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
+    std::cerr << "wait " << std::chrono::milliseconds(compaction_period).count() << '\n';
+    std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
+    context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
+        std::cerr << "background check\n";
+        Iceberg::compactIcebergTable(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            context
+        );
+    });
+    context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([=] {
+        scheduleCompactionJob(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            context
+        );
+    });
+}
+
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -267,6 +305,15 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
+
+    if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites())
+    {
+        const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
+        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_, format_settings_, sample_block]
+        {
+            scheduleCompactionJob(object_storage_, configuration_, format_settings_, sample_block, context);
+        });
+    }
 }
 
 String StorageObjectStorage::getName() const
@@ -511,7 +558,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     ContextPtr context)
 {
-    if (configuration->isDataLakeConfiguration())
+    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         Iceberg::compactIcebergTable(object_storage, configuration, format_settings, sample_block, context);

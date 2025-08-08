@@ -75,6 +75,7 @@ private:
 
 struct Plan
 {
+    bool need_optimize = false;
     using Partition = std::vector<std::shared_ptr<DataFilePlan>>;
     std::vector<Partition> partitions;
     IcebergMetadata::IcebergHistory history;
@@ -82,7 +83,7 @@ struct Plan
     std::unordered_map<String, std::vector<String>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
-
+    std::unique_ptr<IcebergMetadata> iceberg_metadata;
     ParititonEncoder partition_encoder;
 };
 
@@ -160,6 +161,8 @@ Plan getPlan(
         }
     }
     plan.history = std::move(snapshots_info);
+    plan.need_optimize = !all_positional_delete_files.empty();
+    plan.iceberg_metadata = std::move(iceberg_metadata);
     return plan;
 }
 
@@ -417,6 +420,7 @@ void clearOldFiles(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     const String & new_metadata_path,
+    ContextPtr context,
     const Plan & plan)
 {
     const auto metadata_files = listFiles(*object_storage, *configuration, "metadata", ".metadata.json");
@@ -427,15 +431,25 @@ void clearOldFiles(
         object_storage->removeObjectIfExists(StoredObject(metadata_file));
     }
 
-    for (const auto & partition : plan.partitions)
+    for (const auto & snapshot : plan.history)
     {
-        for (const auto & data_file : partition)
+        auto manifest_list = plan.iceberg_metadata->getManifestList(context, snapshot.manifest_list_path);
+        for (const auto & manifest_file : manifest_list)
         {
-            object_storage->removeObjectIfExists(StoredObject(data_file->parsed_data_file_info.data_object_file_path));
-            for (const auto & manifest_list : data_file->manifest_list->manifest_lists_path)
-                object_storage->removeObjectIfExists(StoredObject(manifest_list));
-            object_storage->removeObjectIfExists(StoredObject(data_file->manifest_list->path));
+            auto manifest_file_content = plan.iceberg_metadata->tryGetManifestFile(
+            context, manifest_file.manifest_file_path, manifest_file.added_sequence_number, manifest_file.added_snapshot_id);
+
+            auto data_files = manifest_file_content->getFiles(FileContentType::DATA);
+            auto positional_delete_files = manifest_file_content->getFiles(FileContentType::POSITION_DELETE);
+
+            for (const auto & data_file : data_files)
+                object_storage->removeObjectIfExists(StoredObject(data_file.file_path));
+
+            for (const auto & delete_file : positional_delete_files)
+                object_storage->removeObjectIfExists(StoredObject(delete_file.file_path));
+            object_storage->removeObjectIfExists(StoredObject(manifest_file.manifest_file_path));
         }
+        object_storage->removeObjectIfExists(StoredObject(snapshot.manifest_list_path));
     }
 }
 
@@ -448,9 +462,12 @@ void compactIcebergTable(
 {
     FileNamesGenerator generator(configuration_->getRawPath().path, configuration_->getRawPath().path, false);
     auto plan = getPlan(object_storage_, configuration_, context_, generator);
-    writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-    auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
-    clearOldFiles(object_storage_, configuration_, metadata_file, plan);
+    if (plan.need_optimize)
+    {
+        writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
+        auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
+        clearOldFiles(object_storage_, configuration_, metadata_file, context_, plan);
+    }
 }
 
 }
