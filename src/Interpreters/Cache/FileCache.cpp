@@ -1019,7 +1019,7 @@ bool FileCache::tryReserve(
     std::optional<CachePriorityGuard::WriteLock> cache_write_lock;
     {
         cache_write_lock = cache_guard.tryWriteLockFor(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
-        if (!cache_write_lock)
+        if (!cache_write_lock->owns_lock())
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
             failure_reason = "cache contention";
@@ -1161,68 +1161,69 @@ bool FileCache::tryReserve(
         }
     }
 
+    if (!cache_write_lock.has_value())
+        cache_write_lock = cache_guard.writeLock();
+    chassert(cache_write_lock->owns_lock());
+
+    /// Release hold space,
+    /// as we will not fill it with new entry or entry size increment.
+    main_eviction_info.hold_space.reset();
+    query_eviction_info.hold_space.reset();
+
+    if (!reserve_stat.total_stat.invalidated_entries.empty())
     {
-        if (!cache_write_lock.has_value())
-            cache_write_lock = cache_guard.writeLock();
-
-        /// Release hold space,
-        /// as we will not fill it with new entry or entry size increment.
-        main_eviction_info.hold_space.reset();
-        query_eviction_info.hold_space.reset();
-
-        if (!reserve_stat.total_stat.invalidated_entries.empty())
+        for (const auto & [entry, iterator] : reserve_stat.total_stat.invalidated_entries)
         {
-            for (const auto & [entry, iterator] : reserve_stat.total_stat.invalidated_entries)
-            {
-                if (!entry->isRemoved(cache_write_lock.value()))
-                    iterator->remove(cache_write_lock.value());
-            }
-        }
-
-        if (eviction_candidates.size() > 0)
-        {
-            ///// Invalidate and remove queue entries and execute finalize func.
-            eviction_candidates.finalize(nullptr, cache_write_lock.value());
-        }
-        else if (!main_priority->canFit(size, required_elements_num, cache_write_lock.value(), queue_iterator))
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
-                "This is a bug. Queue entry type: {}. Cache info: {}",
-                size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
-                main_priority->getStateInfoForLog(cache_write_lock.value()));
-        }
-
-        if (queue_iterator)
-        {
-            /// Increase size of queue entry.
-            queue_iterator->incrementSize(size, cache_write_lock.value());
-        }
-        else
-        {
-            /// Create a new queue entry and assign currently reserved size to it.
-            queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_write_lock.value());
-            file_segment.setQueueIterator(queue_iterator);
-        }
-
-        main_priority->check(cache_write_lock.value());
-
-        file_segment.reserved_size += size;
-        chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
-
-        if (main_priority->getSize(cache_write_lock.value()) > (1ull << 63))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
-
-        if (query_context)
-        {
-            auto query_queue_it = query_context->tryGet(file_segment.key(), file_segment.offset(), cache_write_lock.value());
-            if (query_queue_it)
-                query_queue_it->incrementSize(size, cache_write_lock.value());
-            else
-                query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_write_lock.value());
+            if (!entry->isRemoved(cache_write_lock.value()))
+                iterator->remove(cache_write_lock.value());
         }
     }
+
+    if (eviction_candidates.size() > 0)
+    {
+        ///// Invalidate and remove queue entries and execute finalize func.
+        eviction_candidates.finalize(nullptr, cache_write_lock.value());
+    }
+    else if (!main_priority->canFit(size, required_elements_num, cache_write_lock.value(), queue_iterator))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
+            "This is a bug. Queue entry type: {}. Cache info: {}",
+            size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
+            main_priority->getStateInfoForLog(cache_write_lock.value()));
+    }
+
+    if (queue_iterator)
+    {
+        /// Increase size of queue entry.
+        queue_iterator->incrementSize(size, cache_write_lock.value());
+    }
+    else
+    {
+        /// Create a new queue entry and assign currently reserved size to it.
+        queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_write_lock.value());
+        file_segment.setQueueIterator(queue_iterator);
+    }
+
+    main_priority->check(cache_write_lock.value());
+
+    file_segment.reserved_size += size;
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
+
+    if (main_priority->getSize(cache_write_lock.value()) > (1ull << 63))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+
+    if (query_context)
+    {
+        auto query_queue_it = query_context->tryGet(file_segment.key(), file_segment.offset(), cache_write_lock.value());
+        if (query_queue_it)
+            query_queue_it->incrementSize(size, cache_write_lock.value());
+        else
+            query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_write_lock.value());
+    }
+
+    cache_write_lock.reset();
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
     {

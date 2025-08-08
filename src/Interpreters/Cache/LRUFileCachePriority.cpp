@@ -242,14 +242,15 @@ void LRUFileCachePriority::iterate(
             continue;
         }
 
-        if (metadata->size() != entry.size)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Mismatch of file segment size in file segment metadata "
-                "and priority queue: {} != {} ({})",
-                entry.size.load(), metadata->size(), metadata->file_segment->getInfoForLog());
-        }
+        // No longer valid as we iterate without write-lock.
+        //if (metadata->size() != entry.size)
+        //{
+        //    throw Exception(
+        //        ErrorCodes::LOGICAL_ERROR,
+        //        "Mismatch of file segment size in file segment metadata "
+        //        "and priority queue: {} != {} ({})",
+        //        entry.size.load(), metadata->size(), metadata->file_segment->getInfoForLog());
+        //}
 
         auto result = func(*locked_key, metadata);
         switch (result)
