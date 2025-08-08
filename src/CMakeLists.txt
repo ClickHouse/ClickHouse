@@ -59,6 +59,14 @@ add_subdirectory (Processors)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    message(STATUS "ClickHouse distributed cache is enabled, will build with it")
+    add_subdirectory (DistributedCache)
+else()
+    message(STATUS "ClickHouse distributed cache is disabled, will build without it")
+endif()
+
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
@@ -97,15 +105,11 @@ add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
-list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
-
-if (TARGET ch_contrib::sz3)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
-endif()
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -198,12 +202,19 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=1)
+else()
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
+endif()
+
+
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
@@ -216,6 +227,9 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+if (TARGET ch_contrib::consistent_hashing)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
+endif()
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -272,6 +286,12 @@ add_object_library(clickhouse_client Client)
 # https://github.com/ClickHouse/ClickHouse/issues/65745
 set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    add_object_library(clickhouse_distributed_cache DistributedCache)
+    add_object_library(clickhouse_server_distributed_cache Server/DistributedCache)
+endif()
+
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 if (TARGET ch_contrib::ssh)
@@ -333,11 +353,6 @@ if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
-
-if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
-endif()
 
 # Otherwise it will slow down stack traces printing too much.
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
@@ -408,6 +423,10 @@ endif()
 if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
+
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
 
 if (TARGET ch_contrib::ssh)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
@@ -684,6 +703,10 @@ endif ()
 
 if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::arrow_flight)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
 endif()
 
 if (ENABLE_BUZZHOUSE)

@@ -48,3 +48,6 @@ SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));
 WITH colorOKLCHToSRGB((1e3, 1e6, 180)) as t
 SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));
 
+SELECT '--- Fuzzing';
+WITH colorOKLCHToSRGB((1e3, 1e6, 180), materialize(0.)) as t
+SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));

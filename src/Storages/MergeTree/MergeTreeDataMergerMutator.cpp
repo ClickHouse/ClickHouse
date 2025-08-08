@@ -381,7 +381,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
         if (!merge_choices.empty())
             partitions_hint.insert(partition_id);
         else
-            LOG_TRACE(log, "Nothing to merge in partition {} with max_merge_sizes = {} (looked up {} ranges)",
+            LOG_TEST(log, "Nothing to merge in partition {} with max_merge_sizes = {} (looked up {} ranges)",
                 partition_id, convertMaxMergeSizesToString(selector.max_merge_sizes), ranges_in_partition.size());
     }
 
