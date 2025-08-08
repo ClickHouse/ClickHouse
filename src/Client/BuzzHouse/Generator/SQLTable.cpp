@@ -933,7 +933,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && (b.isReplicatedMergeTree() || b.isSharedMergeTree()) && rg.nextSmallNumber() < 8)
+    if (te->has_engine() && b.isReplicatedOrSharedMergeTree() && rg.nextSmallNumber() < 8)
     {
         /// Replicated table params must come first when set
         std::vector<TableEngineParam> temp_params;
@@ -966,9 +966,9 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
-    /// ReplicatedMergeTrees are to be used with cluster, but not SharedMergeTrees
-    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && !b.isSharedMergeTree() && (b.db || !supports_cloud_features)
-        && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    /// Don't use on CLUSTER with ReplicatedMergeTrees or SharedMergeTrees
+    if (!fc.clusters.empty() && !b.isSharedMergeTree() && (!b.db || !b.db->isSharedDatabase())
+        && (b.db || !supports_cloud_features) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
         {
@@ -2522,7 +2522,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
 
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
+    if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
         cd->mutable_cluster()->set_cluster(next.cluster.value());
@@ -2534,7 +2534,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if (!next.isSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         svs = svs ? svs : cd->mutable_setting_values();

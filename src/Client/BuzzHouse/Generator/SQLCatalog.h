@@ -187,6 +187,8 @@ public:
         return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
     }
 
+    bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
+
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 
     bool isJoinEngine() const { return teng == TableEngineValues::Join; }
