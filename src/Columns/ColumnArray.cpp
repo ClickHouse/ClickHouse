@@ -201,13 +201,11 @@ bool ColumnArray::isDefaultAt(size_t n) const
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
-    /** Similarly - only for arrays of fixed length values.
-      */
+    /// Similarly - only for arrays of fixed length values.
     if (!data->isFixedAndContiguous())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
-
     size_t elems = 0;
 
     if (length)
