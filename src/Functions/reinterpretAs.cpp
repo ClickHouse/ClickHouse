@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/castTypeToEither.h>
 
 #include <Core/callOnTypeIndex.h>
 
@@ -23,8 +22,6 @@
 #include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
-
-#include <base/unaligned.h>
 
 
 namespace DB
@@ -290,8 +287,8 @@ public:
             return false;
         }))
         {
-            /// Destination could be array, source has to be String/FixedString
-            /// Above lambda block of callOnTwoTypeIndexes() only for scalar result type specializations.
+            /// Destination could be an array, source has to be String/FixedString
+            /// Above lambda block of callOnTwoTypeIndexes only for scalar result type specializations.
             /// All Array(T) result types are handled with a single code block below using insertData().
             if (WhichDataType(result_type).isArray())
             {
