@@ -328,15 +328,15 @@ static std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs 
                 children.size());
         }
 
-        children[0] = evaluateConstantExpressionOrIdentifierAsLiteral(children[0], context);
-        children[1] = evaluateConstantExpressionOrIdentifierAsLiteral(children[1], context);
+        auto key_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[0], context);
+        auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[1], context);
 
-        auto arg_name_value = children[0]->as<ASTLiteral>()->value;
+        auto arg_name_value = key_literal->as<ASTLiteral>()->value;
         if (arg_name_value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential name");
 
         auto arg_name = arg_name_value.safeGet<String>();
-        auto arg_value = children[1]->as<ASTLiteral>()->value;
+        auto arg_value = value_literal->as<ASTLiteral>()->value;
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
         if (!inserted)

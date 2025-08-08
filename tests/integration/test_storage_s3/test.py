@@ -2788,6 +2788,6 @@ def test_key_value_args(started_cluster):
         f"CREATE TABLE {table_name} (a Int32, b String) engine = S3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip')"
     )
     assert (
-        f"S3(\\'{url}\\', \\'TSVRaw\\', \\'format\\' = \\'TSVRaw\\', \\'access_key_id\\' = \\'minio\\', \\'secret_access_key\\' = \\'[HIDDEN]\\', \\'compression_method\\' = \\'gzip\\')"
+        f"S3(\\'{url}\\', \\'TSVRaw\\', format = \\'TSVRaw\\', access_key_id = \\'minio\\', secret_access_key = \\'[HIDDEN]\\', compression_method = \\'gzip\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
