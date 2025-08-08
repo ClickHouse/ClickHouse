@@ -348,7 +348,6 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     if (items == 0)
     {
         size_t length = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
-        out += length;
         ++items;
     }
 
