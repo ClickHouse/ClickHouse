@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/window-functions/dense_rank
-sidebar_label: dense_rank
+description: 'Documentation for the dense_rank window function'
+sidebar_label: 'dense_rank'
 sidebar_position: 7
+slug: /sql-reference/window-functions/dense_rank
+title: 'dense_rank'
 ---
 
 # dense_rank
@@ -15,8 +17,8 @@ The [rank](./rank.md) function provides the same behaviour, but with gaps in ran
 Alias: `denseRank` (case-sensitive)
 
 ```sql
-dense_rank (column_name)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+dense_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
@@ -55,7 +57,7 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
+SELECT player, salary,
        dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
 FROM salaries;
 ```

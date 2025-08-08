@@ -5,9 +5,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
-#include "IValueSource.h"
-#include "IArraySource.h"
-#include "IArraySink.h"
+#include <Functions/GatherUtils/IValueSource.h>
+#include <Functions/GatherUtils/IArraySource.h>
+#include <Functions/GatherUtils/IArraySink.h>
 
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.
@@ -63,27 +63,7 @@ void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & r
 void sliceHasStartsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasEndsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 
-inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
-{
-    switch (search_type)
-    {
-        case ArraySearchType::All:
-            sliceHasAll(first, second, result);
-            break;
-        case ArraySearchType::Any:
-            sliceHasAny(first, second, result);
-            break;
-        case ArraySearchType::Substr:
-            sliceHasSubstr(first, second, result);
-            break;
-        case ArraySearchType::StartsWith:
-            sliceHasStartsWith(first, second, result);
-            break;
-        case ArraySearchType::EndsWith:
-            sliceHasEndsWith(first, second, result);
-            break;
-    }
-}
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 

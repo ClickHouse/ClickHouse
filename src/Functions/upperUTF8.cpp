@@ -25,14 +25,13 @@ REGISTER_FUNCTION(UpperUTF8)
     FunctionDocumentation::Description description
         = R"(Converts a string to lowercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.)";
     FunctionDocumentation::Syntax syntax = "upperUTF8(input)";
-    FunctionDocumentation::Arguments arguments = {{"input", "Input with String type"}};
-    FunctionDocumentation::ReturnedValue returned_value = "A String data type value";
-    FunctionDocumentation::Examples examples = {
-        {"first", "SELECT upperUTF8('München') as Upperutf8;", "MÜNCHEN"},
-    };
-    FunctionDocumentation::Categories categories = {"String"};
+    FunctionDocumentation::Arguments arguments = {{"input", "Input string to convert.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a lowercase string.", {"String"}};
+    FunctionDocumentation::Examples examples = { {"first", "SELECT upperUTF8('München') as Upperutf8;", "MÜNCHEN"}, };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
-    factory.registerFunction<FunctionUpperUTF8>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionUpperUTF8>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

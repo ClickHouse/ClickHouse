@@ -32,7 +32,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
             prev_comma = false;
             continue;
         }
-        else if (token.type == TokenType::Comma)
+        if (token.type == TokenType::Comma)
         {
             if (num_literals_in_sequence)
             {
@@ -159,7 +159,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             prev_comma = false;
             continue;
         }
-        else if (token.type == TokenType::Comma)
+        if (token.type == TokenType::Comma)
         {
             if (num_literals_in_sequence)
             {

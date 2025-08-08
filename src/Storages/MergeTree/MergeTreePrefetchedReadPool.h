@@ -14,11 +14,12 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithContext
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
 {
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -26,6 +27,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     String getName() const override { return "PrefetchedReadPool"; }
@@ -70,10 +72,7 @@ private:
     {
         using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
-            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
-        {
-        }
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_);
 
         ~ThreadTask()
         {
@@ -88,6 +87,7 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };

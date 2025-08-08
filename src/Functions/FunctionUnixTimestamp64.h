@@ -5,8 +5,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -49,6 +50,11 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeInt64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeInt64>();
     }
 

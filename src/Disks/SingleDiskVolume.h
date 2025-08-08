@@ -14,6 +14,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override
     {
+        if (disks[0]->isReadOnly())
+            return {};
         return disks[0]->reserve(bytes);
     }
 

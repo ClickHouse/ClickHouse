@@ -29,6 +29,7 @@ template <typename T> inline constexpr size_t max_precision = 0;
 template <> inline constexpr size_t max_precision<Decimal32> = 9;
 template <> inline constexpr size_t max_precision<Decimal64> = 18;
 template <> inline constexpr size_t max_precision<DateTime64> = 18;
+template <> inline constexpr size_t max_precision<Time64> = 18;
 template <> inline constexpr size_t max_precision<Decimal128> = 38;
 template <> inline constexpr size_t max_precision<Decimal256> = 76;
 
@@ -37,7 +38,7 @@ inline auto scaleMultiplier(UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
         return common::exp10_i32(scale);
-    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
+    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64> || std::is_same_v<T, Time64>)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);
@@ -310,9 +311,11 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
-    if constexpr (std::is_floating_point_v<To>)
+    if constexpr (is_floating_point<To>)
     {
-        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
+        /// Float64 is enough to accommodate the digits of the biggest decimal (with possible precision loss),
+        /// while Float32 is not enough, and it can overflow to infinity.
+        result = static_cast<To>(static_cast<Float64>(decimal.value) / static_cast<Float64>(scaleMultiplier<DecimalNativeType>(scale)));
     }
     else if constexpr (is_integer<To> && (sizeof(To) >= sizeof(DecimalNativeType)))
     {

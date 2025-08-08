@@ -1,14 +1,13 @@
 import logging
-import time
 import os
+import time
 
 import pytest
+from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
-from helpers.utility import generate_values, replace_config, SafeThread
-from azure.storage.blob import BlobServiceClient
+from helpers.utility import SafeThread, generate_values, replace_config
 from test_storage_azure_blob_storage.test import azure_query
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NODE_NAME = "node"

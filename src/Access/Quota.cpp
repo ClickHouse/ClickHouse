@@ -24,9 +24,33 @@ std::vector<UUID> Quota::findDependencies() const
     return to_roles.findDependencies();
 }
 
+bool Quota::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    return to_roles.hasDependencies(ids);
+}
+
 void Quota::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     to_roles.replaceDependencies(old_to_new_ids);
+}
+
+void Quota::copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_quota = typeid_cast<const Quota &>(src);
+    to_roles.copyDependenciesFrom(src_quota.to_roles, ids);
+}
+
+void Quota::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    to_roles.removeDependencies(ids);
+}
+
+void Quota::clearAllExceptDependencies()
+{
+    all_limits.clear();
+    key_type = QuotaKeyType::NONE;
 }
 
 }

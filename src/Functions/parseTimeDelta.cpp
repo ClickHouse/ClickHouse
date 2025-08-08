@@ -61,7 +61,8 @@ namespace
         {"microseconds", 1e-6},
         {"microsecond", 1e-6},
         {"microsec", 1e-6},
-        {"μs", 1e-6},
+        {"μs", 1e-6}, // U+03BC = Greek letter mu
+        {"µs", 1e-6}, // U+00B5 = micro symbol
         {"us", 1e-6},
 
         {"nanoseconds", 1e-9},
@@ -138,6 +139,11 @@ namespace
             return std::make_shared<DataTypeFloat64>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeFloat64>();
+        }
+
         bool useDefaultImplementationForConstants() const override { return true; }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -162,7 +168,7 @@ namespace
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid expression for function {}, don't find valid characters, str: \"{}\".",
+                        "Invalid argument of function {}, no valid characters, str: \"{}\".",
                         getName(),
                         String(str));
                 }
@@ -170,7 +176,7 @@ namespace
                 /// last pos character must be character and not be separator or number after ignoring '.' and ' '
                 if (!isalpha(str[last_pos]))
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, str: \"{}\".", getName(), String(str));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, str: \"{}\".", getName(), String(str));
                 }
 
                 /// scan spaces at the beginning
@@ -184,7 +190,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find number failed, str: \"{}\".",
+                            "Invalid argument of function {}, number not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -197,7 +203,7 @@ namespace
                         {
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid expression for function {}, find number after '.' failed, str: \"{}\".",
+                                "Invalid argument of function {}, number not found after '.', str: \"{}\".",
                                 getName(),
                                 String(str));
                         }
@@ -211,7 +217,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, convert string to float64 failed: \"{}\".",
+                            "Invalid argument of function {}, can't convert String to Float64: \"{}\".",
                             getName(),
                             String(base_str));
                     }
@@ -225,7 +231,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find unit failed, str: \"{}\".",
+                            "Invalid argument of function {}, time unit not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -236,7 +242,7 @@ namespace
                     if (iter == time_unit_to_float.end()) /// not find unit
                     {
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
+                            ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, can't parse the unit: \"{}\".", getName(), unit);
                     }
                     result += base * iter->second;
 

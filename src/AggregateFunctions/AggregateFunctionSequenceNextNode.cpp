@@ -18,15 +18,19 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <base/range.h>
 
 #include <bitset>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_funnel_functions;
+}
 
 constexpr size_t max_events_size = 64;
-
 constexpr size_t min_required_args = 3;
 
 namespace ErrorCodes
@@ -175,7 +179,7 @@ class SequenceNextNodeImpl final
     using Self = SequenceNextNodeImpl<T, Node>;
 
     using Data = SequenceNextNodeGeneralData<Node>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     static constexpr size_t base_cond_column_idx = 2;
@@ -448,7 +452,7 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !settings->allow_experimental_funnel_functions)
+    if (settings == nullptr || !(*settings)[Setting::allow_experimental_funnel_functions])
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `allow_experimental_funnel_functions` setting to enable it", name);

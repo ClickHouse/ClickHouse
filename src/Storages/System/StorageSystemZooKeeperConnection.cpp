@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 
 #include <Poco/NumberParser.h>
@@ -34,11 +34,12 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         /* 6 */ {"is_expired", std::make_shared<DataTypeUInt8>(), "Is the current connection expired."},
         /* 7 */ {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
         /* 8 */ {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
-        /* 9 */ {"xid", std::make_shared<DataTypeInt32>(), "XID of the current session."},
+        /* 9 */ {"xid", std::make_shared<DataTypeInt64>(), "XID of the current session."},
         /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)),
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
         },
         /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
+        /* 12*/ {"session_timeout_ms", std::make_shared<DataTypeUInt64>(), "Session timeout (in milliseconds)"},
     };
 }
 
@@ -91,6 +92,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);
             columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
+            columns[12]->insert(zookeeper->getSessionTimeoutMS());
         }
     };
 

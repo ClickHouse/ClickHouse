@@ -33,6 +33,7 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
+SET join_algorithm = 'hash';
 
 --
 -- different tree example

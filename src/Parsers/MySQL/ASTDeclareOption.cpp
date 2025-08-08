@@ -102,15 +102,14 @@ bool ParserCharsetOrCollateName::parseImpl(IParser::Pos & pos, ASTPtr & node, Ex
 
     if (p_identifier.parse(pos, node, expected))
         return true;
-    else
+
+    if (p_string_literal.parse(pos, node, expected))
     {
-        if (p_string_literal.parse(pos, node, expected))
-        {
-            const auto & string_value = node->as<ASTLiteral>()->value.safeGet<String>();
-            node = std::make_shared<ASTIdentifier>(string_value);
-            return true;
-        }
+        const auto & string_value = node->as<ASTLiteral>()->value.safeGet<String>();
+        node = std::make_shared<ASTIdentifier>(string_value);
+        return true;
     }
+
 
     return false;
 }

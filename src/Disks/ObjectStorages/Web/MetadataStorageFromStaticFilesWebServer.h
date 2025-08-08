@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct PartitionCommand;
+
 class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
@@ -28,19 +30,19 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::StaticWeb; }
 
-    bool exists(const std::string & path) const override;
-
-    bool isFile(const std::string & path) const override;
-
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
+    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     StoredObjects getStorageObjects(const std::string & path) const override;
+    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     struct stat stat(const String & /* path */) const override { return {}; }
 
@@ -56,6 +58,9 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
+    bool isReadOnly() const override { return true; }
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
@@ -86,12 +91,19 @@ public:
 
     void createDirectoryRecursive(const std::string & path) override;
 
-    void commit() override
+    void commit(const TransactionCommitOptionsVariant &) override
     {
         /// Nothing to commit.
     }
 
     bool supportsChmod() const override { return false; }
+
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
+    {
+        if (metadata_storage.existsFileOrDirectory(path))
+            return metadata_storage.getStorageObjects(path);
+        return std::nullopt;
+    }
 };
 
 }

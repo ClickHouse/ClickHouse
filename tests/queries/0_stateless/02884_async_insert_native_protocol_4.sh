@@ -23,7 +23,7 @@ echo "(2) (3) (4) (5)" | $CLICKHOUSE_CLIENT_WITH_LOG $async_insert_options --asy
 $CLICKHOUSE_CLIENT -q "
     SELECT * FROM t_async_insert_native_4 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT format, status, rows, data_kind, format
     FROM system.asynchronous_insert_log

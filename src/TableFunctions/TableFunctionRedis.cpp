@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 
 #include <Interpreters/Context.h>
@@ -42,7 +43,7 @@ private:
         const ASTPtr & ast_function, ContextPtr context,
         const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Redis"; }
+    const char * getStorageEngineName() const override { return "Redis"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

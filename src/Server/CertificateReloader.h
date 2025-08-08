@@ -4,20 +4,21 @@
 
 #if USE_SSL
 
+#include <openssl/ssl.h>
+
+#include <Common/MultiVersion.h>
+#include <Common/Logger.h>
+#include <Common/Crypto/KeyPair.h>
+
+#include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Crypto/X509Certificate.h>
+
 #include <string>
 #include <filesystem>
 #include <list>
 #include <unordered_map>
 #include <mutex>
-
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <openssl/ssl.h>
-#include <openssl/x509v3.h>
-#include <Poco/Crypto/RSAKey.h>
-#include <Poco/Crypto/X509Certificate.h>
-#include <Common/MultiVersion.h>
-#include <Common/Logger.h>
 
 
 namespace DB
@@ -36,8 +37,8 @@ public:
 
     struct Data
     {
-        Poco::Crypto::X509Certificate::List certs_chain;
-        Poco::Crypto::EVPPKey key;
+        X509Certificate::List certs_chain;
+        KeyPair key;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
@@ -77,6 +78,9 @@ public:
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
+    /// Handle configuration reload client for default path
+    void tryLoadClient(const Poco::Util::AbstractConfiguration & config);
+
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
@@ -103,6 +107,9 @@ private:
     std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);
     mutable std::mutex data_mutex;
 };
+
+/// A callback for OpenSSL
+int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log);
 
 }
 

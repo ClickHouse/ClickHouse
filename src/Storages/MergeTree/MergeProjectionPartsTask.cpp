@@ -38,16 +38,15 @@ bool MergeProjectionPartsTask::executeStep()
             selected_parts[0]->renameTo(projection.name + ".proj", true);
             selected_parts[0]->setName(projection.name);
             selected_parts[0]->is_temp = false;
+            selected_parts[0]->temp_projection_block_number.reset();
             new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
             /// Task is finished
             return false;
         }
-        else
-        {
-            LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
-            next_level_parts.push_back(std::move(selected_parts[0]));
-        }
+
+        LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
+        next_level_parts.push_back(std::move(selected_parts[0]));
     }
     else if (selected_parts.size() > 1)
     {
@@ -56,7 +55,7 @@ bool MergeProjectionPartsTask::executeStep()
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         MergeTreeData::DataPartsVector const_selected_parts(
             std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
-        projection_future_part->assign(std::move(const_selected_parts));
+        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {});
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
 
@@ -85,7 +84,11 @@ bool MergeProjectionPartsTask::executeStep()
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
+        /// FIXME (alesapin) we should use some temporary storage for this,
+        /// not commit each subprojection part
+        next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
+        next_level_parts.back()->temp_projection_block_number = block_num;
     }
 
     /// Need execute again

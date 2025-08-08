@@ -2,7 +2,6 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <optional>
 #include <stack>
 
 #include <Common/logger_useful.h>
@@ -14,7 +13,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionsComparison.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -266,7 +264,7 @@ public:
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-        auto col = function.execute(args, function.getResultType(), 1);
+        auto col = function.execute(args, function.getResultType(), 1, /* dry_run = */ false);
         col->get(0, value);
     }
 

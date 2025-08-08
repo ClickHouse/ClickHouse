@@ -202,8 +202,7 @@ private:
             }
             return;
         }
-        else
-            visit(child);
+        visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)

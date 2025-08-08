@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -19,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(getPort().getHeader().columns())
 {
     const auto & sample_block = getPort().getHeader();
@@ -80,17 +81,14 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             return have_value;
         }
         /// The name has an escape sequence.
-        else
-        {
-            tmp.append(buf.position(), next_pos - buf.position());
-            buf.position() += next_pos + 1 - buf.position();
-            if (buf.eof())
-                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
 
-            tmp.push_back(parseEscapeSequence(*buf.position()));
-            ++buf.position();
-            continue;
-        }
+        tmp.append(buf.position(), next_pos - buf.position());
+        buf.position() += next_pos + 1 - buf.position();
+        if (buf.eof())
+            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
+
+        tmp.push_back(parseEscapeSequence(*buf.position()));
+        ++buf.position();
     }
 
     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from TSKV format");
@@ -164,27 +162,26 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream after field in TSKV format: {}", name_ref.toString());
             }
-            else if (*in->position() == '\t')
+            if (*in->position() == '\t')
             {
                 ++in->position();
                 continue;
             }
-            else if (*in->position() == '\n')
+            if (*in->position() == '\n')
             {
                 ++in->position();
                 break;
             }
-            else
-            {
-                /// Possibly a garbage was written into column, remove it
-                if (index >= 0)
-                {
-                    columns[index]->popBack(1);
-                    seen_columns[index] = read_columns[index] = false;
-                }
 
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Found garbage after field in TSKV format: {}", name_ref.toString());
+            /// Possibly a garbage was written into column, remove it
+            if (index >= 0)
+            {
+                columns[index]->popBack(1);
+                seen_columns[index] = read_columns[index] = false;
             }
+
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Found garbage after field in TSKV format: {}", name_ref.toString());
         }
     }
 
@@ -299,7 +296,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");

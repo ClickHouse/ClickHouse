@@ -20,7 +20,7 @@ class MergeSortingTransform : public SortingTransform
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingTransform(
-        const Block & header,
+        SharedHeader header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
         size_t max_block_bytes,
@@ -28,8 +28,9 @@ public:
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
-        size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDiskPtr tmp_data_,
+        size_t max_bytes_in_block_before_external_sort_,
+        size_t max_bytes_in_query_before_external_sort_,
+        TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
@@ -44,8 +45,10 @@ protected:
 private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
-    size_t max_bytes_before_external_sort;
-    TemporaryDataOnDiskPtr tmp_data;
+    size_t max_bytes_in_block_before_external_sort;
+    size_t max_bytes_in_query_before_external_sort;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    size_t temporary_files_num = 0;
     size_t min_free_disk_space;
     size_t max_block_bytes;
 

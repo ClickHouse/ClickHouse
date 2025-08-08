@@ -4,7 +4,6 @@
 #include <mutex>
 
 #include <Core/Names.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
@@ -163,8 +162,8 @@ public:
 
             auto & key_column_to_cast = key_columns[key_attribute_type_index];
             ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
+            auto cast_column = castColumnAccurate(column_to_cast, key_attribute_type);
+            key_column_to_cast = std::move(cast_column);
             key_type = key_attribute_type;
         }
     }

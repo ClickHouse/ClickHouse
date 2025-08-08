@@ -1,3 +1,6 @@
+#include <DataTypes/DataTypeObject.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Core/Field.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnsNumber.h>
@@ -237,6 +240,33 @@ void ColumnObjectDeprecated::Subcolumn::get(size_t n, Field & res) const
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
 }
 
+std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAndType(size_t n) const
+{
+    if (isFinalized())
+        return getFinalizedColumn().getValueNameAndType(n);
+
+    size_t ind = n;
+    if (ind < num_of_defaults_in_prefix)
+        return least_common_type.get()->createColumnConstWithDefaultValue(1)->getValueNameAndType(0);
+
+    ind -= num_of_defaults_in_prefix;
+    for (const auto & part : data)
+    {
+        if (ind < part->size())
+        {
+            Field field;
+            part->get(ind, field);
+            const auto column = least_common_type.get()->createColumn();
+            column->insert(convertFieldToTypeOrThrow(field, *least_common_type.get()));
+            return column->getValueNameAndType(0);
+        }
+
+        ind -= part->size();
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
+}
+
 void ColumnObjectDeprecated::Subcolumn::checkTypes() const
 {
     DataTypes prefix_types;
@@ -392,14 +422,14 @@ void ColumnObjectDeprecated::Subcolumn::insertRangeFrom(const Subcolumn & src, s
 
         if (n * 3 >= column->size())
         {
-            auto casted_column = castColumn({column, column_type, ""}, least_common_type.get());
-            data.back()->insertRangeFrom(*casted_column, from, n);
+            auto cast_column = castColumn({column, column_type, ""}, least_common_type.get());
+            data.back()->insertRangeFrom(*cast_column, from, n);
             return;
         }
 
-        auto casted_column = column->cut(from, n);
-        casted_column = castColumn({casted_column, column_type, ""}, least_common_type.get());
-        data.back()->insertRangeFrom(*casted_column, 0, n);
+        auto cast_column = column->cut(from, n);
+        cast_column = castColumn({cast_column, column_type, ""}, least_common_type.get());
+        data.back()->insertRangeFrom(*cast_column, 0, n);
     };
 
     size_t pos = 0;
@@ -677,16 +707,35 @@ size_t ColumnObjectDeprecated::allocatedBytes() const
     return res;
 }
 
-void ColumnObjectDeprecated::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnObjectDeprecated::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     for (auto & entry : subcolumns)
         for (auto & part : entry->data.data)
             callback(part);
 }
 
-void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnObjectDeprecated::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & entry : subcolumns)
+    {
+        for (auto & part : entry->data.data)
+        {
+            callback(*part);
+            part->forEachMutableSubcolumnRecursively(callback);
+        }
+    }
+}
+
+void ColumnObjectDeprecated::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & entry : subcolumns)
+        for (auto & part : entry->data.data)
+            callback(part);
+}
+
+void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & entry : subcolumns)
     {
         for (auto & part : entry->data.data)
         {
@@ -698,7 +747,7 @@ void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveMutableColumnC
 
 void ColumnObjectDeprecated::insert(const Field & field)
 {
-    const auto & object = field.safeGet<const Object &>();
+    const auto & object = field.safeGet<Object>();
 
     HashSet<StringRef, StringRefHash> inserted_paths;
     size_t old_size = size();
@@ -754,13 +803,37 @@ void ColumnObjectDeprecated::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-    auto & object = res.safeGet<Object &>();
+    auto & object = res.safeGet<Object>();
 
     for (const auto & entry : subcolumns)
     {
         auto it = object.try_emplace(entry->path.getPath()).first;
         entry->data.get(n, it->second);
     }
+}
+
+std::pair<String, DataTypePtr> ColumnObjectDeprecated::getValueNameAndType(size_t n) const
+{
+    WriteBufferFromOwnString wb;
+    wb << '{';
+
+    bool first = true;
+
+    for (const auto & entry : subcolumns)
+    {
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        writeDoubleQuoted(entry->path.getPath(), wb);
+        const auto & [value, type] = entry->data.getValueNameAndType(n);
+        wb << ": " << value;
+    }
+
+    wb << "}";
+
+    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

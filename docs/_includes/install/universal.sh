@@ -14,7 +14,12 @@ then
         HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
         if [ "${HAS_SSE42}" ]
         then
-            DIR="amd64"
+            if ldd --version 2>&1 | grep -q musl
+            then
+                DIR="amd64musl"
+            else
+                DIR="amd64"
+            fi
         else
             DIR="amd64compat"
         fi
@@ -91,9 +96,6 @@ echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./${clickhouse}"
 
-if [ "${OS}" = "Linux" ]
-then
-    echo
-    echo "You can also install it:
-    sudo ./${clickhouse} install"
-fi
+echo
+echo "You can also install it:
+sudo ./${clickhouse} install"

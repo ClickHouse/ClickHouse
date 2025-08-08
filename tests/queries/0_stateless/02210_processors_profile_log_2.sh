@@ -14,7 +14,7 @@ SELECT sum(number) FROM numbers_mt(1000000)
 SETTINGS max_threads = 4, log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
 EOF
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS processors_profile_log"
 
 ${CLICKHOUSE_CLIENT} -q "select name, sum(input_rows), sum(input_bytes), sum(output_rows), sum(output_bytes) from system.processors_profile_log where query_id = '${QUERY_ID}' group by name, plan_step, plan_group order by name, sum(input_rows), sum(input_bytes), sum(output_rows), sum(output_bytes)"
 

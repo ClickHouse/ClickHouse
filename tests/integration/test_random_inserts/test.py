@@ -4,6 +4,7 @@ import threading
 import time
 
 import pytest
+
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager

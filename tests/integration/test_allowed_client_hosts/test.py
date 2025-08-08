@@ -1,5 +1,7 @@
-import pytest
 import logging
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

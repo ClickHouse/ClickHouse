@@ -7,6 +7,7 @@
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -146,6 +147,20 @@ namespace
     }
 }
 
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol request_protocol)
+{
+    auto context = Context::getGlobalContextInstance();
+
+    if (!context)
+    {
+        return std::make_shared<EnvironmentProxyConfigurationResolver>(
+            request_protocol,
+            false);
+    }
+
+    return get(request_protocol, context->getConfigRef());
+}
+
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
     Protocol request_protocol,
     const Poco::Util::AbstractConfiguration & configuration)
@@ -170,13 +185,13 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     {
         return nullptr;
     }
-    auto prefix = *prefix_opt;
+    const auto & prefix = *prefix_opt;
 
     if (hasRemoteResolver(prefix, configuration))
     {
         return getRemoteResolver(request_protocol, prefix, configuration);
     }
-    else if (hasListResolver(prefix, configuration))
+    if (hasListResolver(prefix, configuration))
     {
         return getListResolver(request_protocol, prefix, configuration);
     }

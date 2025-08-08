@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -9,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/Regexps.h>
-
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -19,14 +20,26 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool count_matches_stop_at_empty_match;
+}
+
 using Pos = const char *;
 
 template <class CountMatchesBase>
 class FunctionCountMatches : public IFunction
 {
+    const bool count_matches_stop_at_empty_match;
+
 public:
     static constexpr auto name = CountMatchesBase::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCountMatches<CountMatchesBase>>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCountMatches<CountMatchesBase>>(context); }
+
+    explicit FunctionCountMatches(ContextPtr context)
+        : count_matches_stop_at_empty_match(context->getSettingsRef()[Setting::count_matches_stop_at_empty_match])
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -40,6 +53,11 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt64>();
     }
 
@@ -61,7 +79,7 @@ public:
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
-        else if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
+        if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -85,7 +103,7 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
+        if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -100,11 +118,10 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
     }
 
-    static uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches)
+    uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches) const
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
@@ -113,19 +130,23 @@ public:
         Pos end = reinterpret_cast<Pos>(src.data() + src.size());
 
         uint64_t match_count = 0;
-        while (true)
+        while (pos < end)
         {
-            if (pos >= end)
-                break;
-            if (!re.match(pos, end - pos, matches, matches_limit))
-                break;
-            /// Progress should be made, but with empty match the progress will not be done.
-            /// Also note that simply check is pattern empty is not enough,
-            /// since for example "'[f]{0}'" will match zero bytes:
-            if (!matches[0].length)
-                break;
-            pos += matches[0].offset + matches[0].length;
-            ++match_count;
+            if (re.match(pos, end - pos, matches, matches_limit) && matches[0].length > 0)
+            {
+                pos += matches[0].offset + matches[0].length;
+                ++match_count;
+            }
+            else
+            {
+                if (count_matches_stop_at_empty_match)
+                    /// Progress should be made, but with empty match the progress will not be done.
+                    break;
+
+                /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
+                /// The reason is simply because the pattern could match another part of input when forwarded.
+                pos++;
+            }
         }
 
         return match_count;

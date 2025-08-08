@@ -12,18 +12,34 @@
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <Core/Settings.h>
+#include <Common/RemoteHostFilter.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool azure_create_new_file_on_insert;
+    extern const SettingsBool azure_ignore_file_doesnt_exist;
+    extern const SettingsUInt64 azure_list_object_keys_size;
+    extern const SettingsBool azure_skip_empty_files;
+    extern const SettingsBool azure_throw_on_zero_files_match;
+    extern const SettingsBool azure_truncate_on_insert;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_azure;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -40,35 +56,28 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "account_key",
     "connection_string",
     "storage_account_url",
+    "partition_strategy"
 };
 
 void StorageAzureConfiguration::check(ContextPtr context) const
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
-    Configuration::check(context);
+    StorageObjectStorageConfiguration::check(context);
 }
 
-StorageAzureConfiguration::StorageAzureConfiguration(const StorageAzureConfiguration & other)
-    : Configuration(other)
-{
-    blob_path = other.blob_path;
-    blobs_paths = other.blobs_paths;
-    connection_params = other.connection_params;
-}
-
-StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.azure_truncate_on_insert,
-        .create_new_file_on_insert = settings.azure_create_new_file_on_insert,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_azure,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.azure_skip_empty_files,
-        .list_object_keys_size = settings.azure_list_object_keys_size,
-        .throw_on_zero_files_match = settings.azure_throw_on_zero_files_match,
-        .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
+    return StorageObjectStorageQuerySettings{
+        .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
+        .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::azure_skip_empty_files],
+        .list_object_keys_size = settings[Setting::azure_list_object_keys_size],
+        .throw_on_zero_files_match = settings[Setting::azure_throw_on_zero_files_match],
+        .ignore_non_existent_file = settings[Setting::azure_ignore_file_doesnt_exist],
     };
 }
 
@@ -81,10 +90,13 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
-        connection_params.createForContainer(),
+        connection_params.auth_method,
+        std::move(client),
         std::move(settings),
+        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL());
+        connection_params.getConnectionURL(),
+        /*common_key_prefix*/ "");
 }
 
 static AzureBlobStorage::ConnectionParams getConnectionParams(
@@ -102,12 +114,12 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
     }
     else
     {
         AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
     }
 
     return connection_params;
@@ -140,20 +152,34 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
+    if (collection.has("partition_strategy"))
+    {
+        const auto partition_strategy_name = collection.get<std::string>("partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        }
+
+        partition_strategy_type = partition_strategy_type_opt.value();
+    }
+
+    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+
     blobs_paths = {blob_path};
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
+    if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 3 to {} arguments: "
-            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
-            "[account_name, account_key, format, compression, structure)])",
-            (with_structure ? 8 : 7));
+            "Storage AzureBlobStorage requires 3 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -210,20 +236,29 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
-            if (with_structure)
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy/structure");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
-                format = fourth_arg;
-                compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-                structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            {
+                if (with_structure)
+                {
+                    structure = sixth_arg;
+                }
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", sixth_arg);
+            }
         }
         else
         {
             account_name = fourth_arg;
             account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/structure");
             if (is_format_arg(sixth_arg))
             {
                 format = sixth_arg;
@@ -239,13 +274,46 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
     else if (engine_args.size() == 7)
     {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (!with_structure && is_format_arg(fourth_arg))
+        const auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+
+        if (is_format_arg(fourth_arg))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
+            const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+            if (!partition_strategy_type_opt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+            }
+
+            partition_strategy_type = partition_strategy_type_opt.value();
+
+            /// If it's of type String, then it is not `partition_columns_in_data_file`
+            if (const auto seventh_arg = tryGetLiteralArgument<String>(engine_args[6], "structure/partition_columns_in_data_file"))
+            {
+                if (with_structure)
+                {
+                    structure = seventh_arg.value();
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected `partition_columns_in_data_file` of type boolean, but found: {}", seventh_arg.value());
+                }
+            }
+            else
+            {
+                partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            }
         }
         else
         {
+            if (!with_structure && is_format_arg(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            }
+
             account_name = fourth_arg;
             account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
@@ -255,59 +323,166 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
         }
     }
-    else if (with_structure && engine_args.size() == 8)
+    else if (engine_args.size() == 8)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+
+        if (is_format_arg(fourth_arg))
+        {
+            if (!with_structure)
+            {
+                /// If the fourth argument is a format, then it means a connection string is being used.
+                /// When using a connection string, the function only accepts 8 arguments in case `with_structure=true`
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid sequence / combination of arguments");
+            }
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
+            const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+            if (!partition_strategy_type_opt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+            }
+
+            partition_strategy_type = partition_strategy_type_opt.value();
+            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+        }
+        else
+        {
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            format = sixth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+
+            auto eighth_arg = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy/structure");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive))
+            {
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+            }
+            else
+            {
+                if (with_structure)
+                {
+                    structure = eighth_arg;
+                }
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", eighth_arg);
+            }
+        }
+    }
+    else if (engine_args.size() == 9)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         account_name = fourth_arg;
         account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
         if (!is_format_arg(sixth_arg))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
         format = sixth_arg;
         compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-        structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+        }
+        partition_strategy_type = partition_strategy_type_opt.value();
+        /// If it's of type String, then it is not `partition_columns_in_data_file`
+        if (const auto nineth_arg = tryGetLiteralArgument<String>(engine_args[8], "structure/partition_columns_in_data_file"))
+        {
+            if (with_structure)
+            {
+                structure = nineth_arg.value();
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected `partition_columns_in_data_file` of type boolean, but found: {}", nineth_arg.value());
+            }
+        }
+        else
+        {
+            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        }
+    }
+    else if (engine_args.size() == 10 && with_structure)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        account_name = fourth_arg;
+        account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
+        if (!is_format_arg(sixth_arg))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+        format = sixth_arg;
+        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+        }
+        partition_strategy_type = partition_strategy_type_opt.value();
+        partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
     blobs_paths = {blob_path};
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
-void StorageAzureConfiguration::addStructureAndFormatToArgs(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context)
+void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
-        if (args.size() < 3 || args.size() > 8)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Azure requires 3 to 7 arguments: "
-                            "StorageObjectStorage(connection_string|storage_account_url, container_name, "
-                            "blobpath, [account_name, account_key, format, compression, structure])");
-        }
+        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
         auto format_literal = std::make_shared<ASTLiteral>(format_);
-        auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+        auto is_format_arg = [] (const std::string & s) -> bool
+        {
+            return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
+        };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
         {
             args.push_back(format_literal);
-            /// Add compression = "auto" before structure argument.
-            args.push_back(std::make_shared<ASTLiteral>("auto"));
-            args.push_back(structure_literal);
+            if (with_structure)
+            {
+                /// Add compression = "auto" before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(structure_literal);
+            }
         }
         /// (connection_string, container_name, blobpath, structure) or
         /// (connection_string, container_name, blobpath, format)
@@ -320,12 +495,15 @@ void StorageAzureConfiguration::addStructureAndFormatToArgs(
             {
                 if (fourth_arg == "auto")
                     args[3] = format_literal;
-                /// Add compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(structure_literal);
+                if (with_structure)
+                {
+                    /// Add compression=auto before structure argument.
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(structure_literal);
+                }
             }
             /// (..., structure) -> (..., format, compression, structure)
-            else
+            else if (with_structure)
             {
                 auto structure_arg = args.back();
                 args[3] = format_literal;
@@ -348,15 +526,19 @@ void StorageAzureConfiguration::addStructureAndFormatToArgs(
             {
                 if (fourth_arg == "auto")
                     args[3] = format_literal;
-                args.push_back(structure_literal);
+                if (with_structure)
+                    args.push_back(structure_literal);
             }
             /// (..., account_name, account_key) -> (..., account_name, account_key, format, compression, structure)
             else
             {
                 args.push_back(format_literal);
-                /// Add compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(structure_literal);
+                if (with_structure)
+                {
+                    /// Add compression=auto before structure argument.
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(structure_literal);
+                }
             }
         }
         /// (connection_string, container_name, blobpath, format, compression, structure) or
@@ -372,7 +554,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgs(
             {
                 if (fourth_arg == "auto")
                     args[3] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[5], "structure") == "auto")
+                if (with_structure && checkAndGetLiteralArgument<String>(args[5], "structure") == "auto")
                     args[5] = structure_literal;
             }
             /// (..., account_name, account_key, format) -> (..., account_name, account_key, format, compression, structure)
@@ -380,12 +562,15 @@ void StorageAzureConfiguration::addStructureAndFormatToArgs(
             {
                 if (sixth_arg == "auto")
                     args[5] = format_literal;
-                /// Add compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(structure_literal);
+                if (with_structure)
+                {
+                    /// Add compression=auto before structure argument.
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(structure_literal);
+                }
             }
             /// (..., account_name, account_key, structure) -> (..., account_name, account_key, format, compression, structure)
-            else
+            else if (with_structure)
             {
                 auto structure_arg = args.back();
                 args[5] = format_literal;
@@ -403,14 +588,15 @@ void StorageAzureConfiguration::addStructureAndFormatToArgs(
             /// (..., format, compression) -> (..., format, compression, structure)
             if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
                 args[5] = format_literal;
-            args.push_back(structure_literal);
+            if (with_structure)
+                args.push_back(structure_literal);
         }
         /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
         else if (args.size() == 8)
         {
             if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
                 args[5] = format_literal;
-            if (checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
+            if (with_structure && checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
                 args[7] = structure_literal;
         }
     }

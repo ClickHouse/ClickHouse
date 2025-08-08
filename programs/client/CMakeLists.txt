@@ -1,5 +1,6 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
+    FuzzLoop.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
@@ -12,8 +13,15 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_parsers
 )
 
+if (ENABLE_BUZZHOUSE)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
 if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
+endif()
+if (TARGET ch_rust::chdig)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::chdig)
 endif()
 
 # Always use internal readpassphrase

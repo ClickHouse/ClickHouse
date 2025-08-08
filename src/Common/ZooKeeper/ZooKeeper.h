@@ -1,22 +1,25 @@
 #pragma once
 
-#include "Types.h"
-#include <Poco/Util/LayeredConfiguration.h>
-#include <future>
-#include <memory>
-#include <string>
+#include <Core/Types.h>
+
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/thread_local_rng.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperException.h>
+
+#include <future>
+#include <memory>
+#include <string>
+#include <variant>
 #include <unistd.h>
 
+
+namespace Poco::Net
+{
+    class SocketAddress;
+}
 
 namespace ProfileEvents
 {
@@ -47,38 +50,11 @@ namespace zkutil
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct ShuffleHost
-{
-    enum AvailabilityZoneInfo
-    {
-        SAME = 0,
-        UNKNOWN = 1,
-        OTHER = 2,
-    };
+/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
+/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
+constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
-    String host;
-    bool secure = false;
-    UInt8 original_index = 0;
-    AvailabilityZoneInfo az_info = UNKNOWN;
-    Priority priority;
-    UInt64 random = 0;
-
-    /// We should resolve it each time without caching
-    mutable std::optional<Poco::Net::SocketAddress> address;
-
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
-            < std::forward_as_tuple(rhs.az_info, rhs.priority, rhs.random);
-    }
-};
-
-using ShuffleHosts = std::vector<ShuffleHost>;
+struct ShuffleHost;
 
 struct RemoveException
 {
@@ -248,7 +224,7 @@ public:
 
     ~ZooKeeper();
 
-    ShuffleHosts shuffleHosts() const;
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,
@@ -311,7 +287,7 @@ public:
     MultiExistsResponse exists(TIter start, TIter end)
     {
         return multiRead<Coordination::ExistsResponse, true>(
-            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
+            start, end, [&](const auto & path) { return zkutil::makeExistsRequest(path); }, [&](const auto & path) { return asyncExists(path); });
     }
 
     MultiExistsResponse exists(const std::vector<std::string> & paths)
@@ -332,7 +308,7 @@ public:
     MultiGetResponse get(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, false>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncGet(path); });
     }
 
     MultiGetResponse get(const std::vector<std::string> & paths)
@@ -367,7 +343,7 @@ public:
     MultiTryGetResponse tryGet(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, true>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
+            start, end, [&](const auto & path) { return zkutil::makeGetRequest(path); }, [&](const auto & path) { return asyncTryGet(path); });
     }
 
     MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
@@ -462,6 +438,16 @@ public:
         return tryGetChildren(paths.begin(), paths.end(), list_request_type);
     }
 
+    Coordination::ACLs getACL(const std::string & path, Coordination::Stat * stat = nullptr);
+
+    /// Doesn't not throw in the following cases:
+    /// * The node doesn't exist. Returns false in this case.
+    bool tryGetACL(
+        const std::string & path,
+        Coordination::ACLs & res,
+        Coordination::Stat * stat = nullptr,
+        Coordination::Error * code = nullptr);
+
     /// Performs several operations in a transaction.
     /// Throws on every error.
     /// For check_session_valid see addCheckSessionOp
@@ -479,15 +465,16 @@ public:
 
     Int64 getClientID();
 
-    /// Remove the node with the subtree. If someone concurrently adds or removes a node
-    /// in the subtree, the result is undefined.
-    void removeRecursive(const std::string & path);
+    /// Remove the node with the subtree.
+    /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
+    /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
+    void removeRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
 
-    /// Remove the node with the subtree. If someone concurrently removes a node in the subtree,
-    /// this will not cause errors.
+    /// Same as removeRecursive but in case if Keeper does not supports RemoveRecursive and
+    /// if someone concurrently removes a node in the subtree, this will not cause errors.
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
-    void tryRemoveRecursive(const std::string & path);
+    Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.
@@ -513,6 +500,7 @@ public:
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,
@@ -584,6 +572,11 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureSync asyncTrySyncNoThrow(const std::string & path);
 
+    using FutureGetACL = std::future<Coordination::GetACLResponse>;
+    FutureGetACL asyncGetACL(const std::string & path);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGetACL asyncTryGetACLNoThrow(const std::string & path);
+
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
     ///
@@ -622,7 +615,7 @@ public:
 
     std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
-    int32_t getConnectionXid() const;
+    int64_t getConnectionXid() const;
 
     String getConnectedHostAvailabilityZone() const;
 
@@ -662,6 +655,7 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
+    Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
     /// returns error code with optional reason
     std::pair<Coordination::Error, std::string>
@@ -834,20 +828,7 @@ bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
-template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
-{
-    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
-    {
-        auto request = std::make_shared<Coordination::CheckRequest>();
-        request->path = path;
-        request->not_exists = true;
-        requests.push_back(std::move(request));
-        return;
-    }
-
-    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-    requests.push_back(makeRemoveRequest(path, -1));
-}
+template <class Client>
+void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path);
 
 }

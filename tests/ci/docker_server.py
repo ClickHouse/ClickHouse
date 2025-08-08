@@ -12,24 +12,22 @@ from pathlib import Path
 from typing import Dict, List
 
 from build_download_helper import read_build_urls
+from ci_utils import Utils
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
+    GITHUB_SERVER_URL,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
 )
-from git_helper import Git
+from git_helper import GIT_PREFIX, Git, git_runner
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
+from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from version_helper import (
-    ClickHouseVersion,
-    get_version_from_repo,
-    version_arg,
-)
+from version_helper import ClickHouseVersion, get_version_from_repo, version_arg
 
 git = Git(ignore_no_tags=True)
 
@@ -138,14 +136,13 @@ def retry_popen(cmd: str, log_file: Path) -> int:
             retcode = process.wait()
             if retcode == 0:
                 return 0
-            else:
-                # From time to time docker build may failed. Curl issues, or even push
-                logging.error(
-                    "The following command failed, sleep %s before retry: %s",
-                    sleep_seconds,
-                    cmd,
-                )
-                time.sleep(sleep_seconds)
+            # From time to time docker build may failed. Curl issues, or even push
+            logging.error(
+                "The following command failed, sleep %s before retry: %s",
+                sleep_seconds,
+                cmd,
+            )
+            time.sleep(sleep_seconds)
     return retcode
 
 
@@ -223,10 +220,11 @@ def build_and_push_image(
     # images must be built separately and merged together with `docker manifest`
     digests = []
     multiplatform_sw = Stopwatch()
+    temp_path = Path(TEMP_PATH)
     for arch in ARCH:
         single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
-        metadata_path = p.join(TEMP_PATH, arch_tag)
+        metadata_path = temp_path / arch_tag
         dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
         urls = []
@@ -251,12 +249,12 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = Path(TEMP_PATH) / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
+        log_file = temp_path / Utils.normalize_string(f"{image.repo}:{tag}-{arch}.log")
         if retry_popen(cmd, log_file) != 0:
             result.append(
                 TestResult(
                     f"{image.repo}:{tag}-{arch}",
-                    "FAIL",
+                    FAIL,
                     single_sw.duration_seconds,
                     [log_file],
                 )
@@ -265,7 +263,7 @@ def build_and_push_image(
         result.append(
             TestResult(
                 f"{image.repo}:{tag}-{arch}",
-                "OK",
+                OK,
                 single_sw.duration_seconds,
                 [log_file],
             )
@@ -282,12 +280,12 @@ def build_and_push_image(
         if retry_popen(cmd, Path("/dev/null")) != 0:
             result.append(
                 TestResult(
-                    f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
+                    f"{image.repo}:{tag}", FAIL, multiplatform_sw.duration_seconds
                 )
             )
             return result
         result.append(
-            TestResult(f"{image.repo}:{tag}", "OK", multiplatform_sw.duration_seconds)
+            TestResult(f"{image.repo}:{tag}", OK, multiplatform_sw.duration_seconds)
         )
     else:
         logging.info(
@@ -296,6 +294,59 @@ def build_and_push_image(
         )
 
     return result
+
+
+def test_docker_library(test_results: TestResults) -> None:
+    """we test our images vs the official docker library repository to track integrity"""
+    check_images = [
+        tr.name
+        for tr in test_results
+        if (
+            tr.name.startswith("clickhouse/clickhouse-server")
+            and "alpine" not in tr.name
+        )
+    ]
+    if not check_images:
+        return
+    test_name = "docker library image test"
+    temp_path = Path(TEMP_PATH)
+    stopwatch = Stopwatch()
+    try:
+        repo = "docker-library/official-images"
+        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
+        repo_path = temp_path / repo
+        git_runner(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
+        logging.info(
+            "Patching tests config to run clickhouse tests for clickhouse/clickhouse-server"
+        )
+        git_runner(
+            "sed -i '/testAlias+=(/ a[clickhouse/clickhouse-server]=clickhouse' "
+            f"{repo_path/'test/config.sh'}"
+        )
+        run_sh = (repo_path / "test/run.sh").absolute()
+        for image in check_images:
+            test_sw = Stopwatch()
+            cmd = f"{run_sh} {image}"
+            tag = image.rsplit(":", 1)[-1]
+            log_file = (
+                temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
+            )
+            with TeePopen(cmd, log_file) as process:
+                retcode = process.wait()
+            status = OK if retcode == 0 else FAIL
+            test_results.append(
+                TestResult(
+                    f"{test_name} ({tag})",
+                    status,
+                    test_sw.duration_seconds,
+                    [log_file],
+                )
+            )
+    except Exception as e:
+        logging.error("Failed while testing the docker library image: %s", e)
+        test_results.append(
+            TestResult(test_name, FAIL, stopwatch.duration_seconds, raw_logs=str(e))
+        )
 
 
 def main():
@@ -377,7 +428,6 @@ def main():
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    status = SUCCESS
     test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
@@ -386,8 +436,13 @@ def main():
                     image, push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
-            if test_results[-1].status != "OK":
-                status = FAILURE
+
+    if not push:
+        # The image is built locally only when we don't push it
+        # See `--output=type=docker`
+        test_docker_library(test_results)
+
+    status = SUCCESS if all(tr.status == OK for tr in test_results) else FAILURE
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(

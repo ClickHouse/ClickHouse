@@ -52,7 +52,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 

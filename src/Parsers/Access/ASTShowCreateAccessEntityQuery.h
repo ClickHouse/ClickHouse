@@ -44,7 +44,7 @@ public:
 
 protected:
     String getKeyword() const;
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

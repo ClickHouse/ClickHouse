@@ -25,7 +25,7 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.

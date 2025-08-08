@@ -1,27 +1,37 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Poco/String.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace
 {
@@ -31,16 +41,24 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
         {
         }
 
         /// Acquire the result of visiting the create query.
-        TableNamesSet getDependencies() &&
+        TableNamesSet getDependencies()
         {
             dependencies.erase(table_name);
-            return std::move(dependencies);
+            return dependencies;
+        }
+        std::optional<StorageID> getMvToDependency()
+        {
+            return mv_to_dependency;
+        }
+        std::optional<StorageID> getMvFromDependency()
+        {
+            return mv_from_dependency;
         }
 
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
@@ -76,6 +94,9 @@ namespace
         String current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
+        bool can_throw;
+        std::optional<StorageID> mv_to_dependency;
+        std::optional<StorageID> mv_from_dependency;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -84,15 +105,31 @@ namespace
             {
                 for (const auto & target : create.targets->targets)
                 {
-                    const auto & table_id = target.table_id;
-                    if (!table_id.table_name.empty())
+                    if (target.kind == ViewTarget::Kind::To)
                     {
-                        /// TO target_table (for materialized views)
-                        QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                        if (target_name.database.empty())
-                            target_name.database = current_database;
-                        dependencies.emplace(target_name);
+                        const auto & table_id = target.table_id;
+                        if (!table_id.table_name.empty())
+                        {
+                            mv_to_dependency = table_id;
+                            if (mv_to_dependency->database_name.empty())
+                                mv_to_dependency->database_name = current_database;
+                            dependencies.emplace(mv_to_dependency->getQualifiedName());
+                        }
+                        else
+                        {
+                            mv_to_dependency = StorageID{table_name.database, table_name.table, create.uuid};
+                            mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
+                            mv_to_dependency->uuid = target.inner_uuid;
+                        }
                     }
+                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
+                    {
+                        mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
+                        mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
+                    }
+
+                    if (mv_to_dependency && mv_to_dependency->database_name.empty())
+                        mv_to_dependency->database_name = current_database;
                 }
             }
 
@@ -107,8 +144,29 @@ namespace
 
             /// Visit nested select query only for views, for other cases it's not
             /// an actual dependency as it will be executed only once to fill the table.
-            if (create.select && !create.isView())
-                skip_asts.insert(create.select);
+            if (create.select)
+            {
+                if (create.isView())
+                {
+                    if (create.is_materialized_view)
+                    {
+                        auto select_copy = create.select->clone();
+                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        if (!select_query.select_table_id.empty())
+                        {
+                            mv_from_dependency = select_query.select_table_id;
+
+                            /// Keepeing UUID is problematic
+                            mv_from_dependency->uuid = UUIDHelpers::Nil;
+                        }
+                    }
+                }
+                else
+                    skip_asts.insert(create.select);
+            }
+
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -149,6 +207,7 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
+            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 
@@ -466,34 +525,37 @@ namespace
         try
         {
             ParserSelectWithUnionQuery parser;
-            String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
+            String description = fmt::format("Query for ClickHouse dictionary {}.{}", backQuoteIfNeed(data.table_name.database), backQuoteIfNeed(data.table_name.table));
             String fixed_query = removeWhereConditionPlaceholder(query);
             const Settings & settings = data.global_context->getSettingsRef();
-            ASTPtr select = parseQuery(parser, fixed_query, description,
-                settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ASTPtr select = parseQuery(
+                parser, fixed_query, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);
         }
         catch (...)
         {
-            tryLogCurrentException("DDLDependencyVisitor");
+            if (data.can_throw)
+                throw;
+            else
+                tryLogCurrentException("DDLDependencyVisitor");
         }
     }
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return std::move(data).getDependencies();
+    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
 }
 
-TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database)
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }

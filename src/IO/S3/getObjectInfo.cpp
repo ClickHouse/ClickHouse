@@ -1,4 +1,6 @@
+#include <optional>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/Expect404ResponseScope.h>
 
 #if USE_AWS_S3
 
@@ -66,7 +68,8 @@ namespace
 
 bool isNotFoundError(Aws::S3::S3Errors error)
 {
-    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY
+        || error == Aws::S3::S3Errors::NO_SUCH_BUCKET;
 }
 
 ObjectInfo getObjectInfo(
@@ -77,16 +80,22 @@ ObjectInfo getObjectInfo(
     bool with_metadata,
     bool throw_on_error)
 {
+    std::optional<Expect404ResponseScope> scope; // 404 is not an error
+    if (!throw_on_error)
+        scope.emplace();
+
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
     {
         return *object_info;
     }
-    else if (throw_on_error)
+    if (throw_on_error)
     {
-        throw S3Exception(error.GetErrorType(),
+        throw S3Exception(
+            error.GetErrorType(),
             "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
+            error.GetMessage(),
+            static_cast<size_t>(error.GetResponseCode()));
     }
     return {};
 }
@@ -107,6 +116,8 @@ bool objectExists(
     const String & key,
     const String & version_id)
 {
+    Expect404ResponseScope scope; // 404 is not an error
+
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
     if (object_info)
         return true;
@@ -115,8 +126,8 @@ bool objectExists(
         return false;
 
     throw S3Exception(error.GetErrorType(),
-        "Failed to check existence of key {} in bucket {}: {}",
-        key, bucket, error.GetMessage());
+        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}",
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()), error.GetErrorType());
 }
 
 void checkObjectExists(

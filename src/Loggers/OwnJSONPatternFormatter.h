@@ -3,8 +3,8 @@
 
 #include <Poco/PatternFormatter.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "ExtendedLogChannel.h"
-#include "OwnPatternFormatter.h"
+#include <Loggers/ExtendedLogChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 
 /** Format log messages own way in JSON.
@@ -33,6 +33,7 @@ public:
 
 private:
     std::string date_time;
+    std::string date_time_utc;
     std::string thread_name;
     std::string thread_id;
     std::string level;

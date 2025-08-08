@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 
+#include <vector>
 
 namespace DB
 {

@@ -7,8 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +16,7 @@
 
 #include <deque>
 #include <atomic>
+
 
 namespace CurrentMetrics
 {
@@ -26,6 +27,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -71,7 +75,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -111,9 +115,10 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override
@@ -127,27 +132,15 @@ public:
         finishAndWait();
     }
 
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
-    }
-
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
         started_suffix = true;
     }
 
-    String getContentType() const override
-    {
-        WriteBufferFromOwnString buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
     bool supportsWritingException() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 

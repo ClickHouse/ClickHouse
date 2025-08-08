@@ -5,6 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <base/AlignedUnion.h>
 #include <base/StringRef.h>
 
 namespace DB
@@ -25,9 +26,9 @@ struct SingleValueDataBase
 
     virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
-    virtual void insertResultInto(IColumn &) const = 0;
+    virtual void insertResultInto(IColumn &, const DataTypePtr & type) const = 0;
     virtual void write(WriteBuffer &, const ISerialization &) const = 0;
-    virtual void read(ReadBuffer &, const ISerialization &, Arena *) = 0;
+    virtual void read(ReadBuffer &, const ISerialization &, const DataTypePtr & type, Arena *) = 0;
 
     virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
     virtual bool isEqualTo(const SingleValueDataBase &) const = 0;
@@ -92,9 +93,9 @@ struct SingleValueDataFixed
     bool has_value = false;
 
     bool has() const { return has_value; }
-    void insertResultInto(IColumn & to) const;
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const;
     void write(WriteBuffer & buf, const ISerialization &) const;
-    void read(ReadBuffer & buf, const ISerialization &, Arena *);
+    void read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *);
     bool isEqualTo(const IColumn & column, size_t index) const;
     bool isEqualTo(const Self & to) const;
 
@@ -205,9 +206,9 @@ public:
     ~SingleValueDataNumeric() override;
 
     bool has() const override;
-    void insertResultInto(IColumn & to) const override;
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) override;
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena * arena) override;
     bool isEqualTo(const IColumn & column, size_t index) const override;
     bool isEqualTo(const SingleValueDataBase & to) const override;
 
@@ -291,9 +292,9 @@ private:
 
 public:
     bool has() const override { return size != 0; }
-    void insertResultInto(IColumn & to) const override;
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
-    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena) override;
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
     bool isEqualTo(const SingleValueDataBase &) const override;
@@ -323,9 +324,9 @@ private:
 
 public:
     bool has() const override { return !value.isNull(); }
-    void insertResultInto(IColumn & to) const override;
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *) override;
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
     bool isEqualTo(const SingleValueDataBase & other) const override;
@@ -341,6 +342,41 @@ public:
 };
 
 static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGeneric struct");
+
+/// The same as SingleValueDataGeneric but stores value inside IColumn instead of Field.
+/// It's less performant as IColumn is not optimized to store single value.
+/// But for some data types storing value inside Field can lead to issues, for such
+/// types this struct can be used.
+struct SingleValueDataGenericWithColumn final : public SingleValueDataBase
+{
+    static constexpr bool is_compilable = false;
+
+private:
+    using Self = SingleValueDataGenericWithColumn;
+    ColumnPtr value;
+
+public:
+    bool has() const override { return value.operator bool(); }
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
+
+    bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    bool isEqualTo(const SingleValueDataBase & other) const override;
+    void set(const IColumn & column, size_t row_num, Arena *) override;
+    void set(const SingleValueDataBase & other, Arena *) override;
+
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
+
+    static bool allocatesMemoryInArena() { return false; }
+};
+
+static_assert(sizeof(SingleValueDataGenericWithColumn) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGenericWithColumn struct");
+
+bool canUseFieldForValueData(const DataTypePtr & value_type);
 
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename, bool...> class AggregateFunctionTemplate, bool unary, bool... isMin>
@@ -368,17 +404,20 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_types);
 
-    return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
+    if (canUseFieldForValueData(value_type))
+        return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
+    return new AggregateFunctionTemplate<SingleValueDataGenericWithColumn, isMin...>(argument_types);
 }
 
 /// Helper to allocate enough memory to store any derived class
 struct SingleValueDataBaseMemoryBlock
 {
-    std::aligned_union_t<
+    AlignedUnionT<
         SingleValueDataBase::MAX_STORAGE_SIZE,
-        SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromTypeIndex
+        SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromType
         SingleValueDataString,
-        SingleValueDataGeneric>
+        SingleValueDataGeneric,
+        SingleValueDataGenericWithColumn>
         memory;
     SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(&memory); }
     const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(&memory); }
@@ -387,8 +426,8 @@ struct SingleValueDataBaseMemoryBlock
 static_assert(alignof(SingleValueDataBaseMemoryBlock) == 8);
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
-/// It will build the object based on the type idx on the memory block provided
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data);
+/// It will build the object based on the type on the memory block provided
+void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data);
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
 }

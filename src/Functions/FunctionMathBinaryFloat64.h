@@ -53,15 +53,20 @@ private:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    template <typename LeftType, typename RightType>
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    template <typename Type>
     static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg, size_t input_rows_count)
     {
-        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<Type>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
-            LeftType left_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
+            Type left_src_data[Impl::rows_per_iteration];
+            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<Type>());
             const auto & right_src_data = right_arg_typed->getData();
             auto & dst_data = dst->getData();
             dst_data.resize(input_rows_count);
@@ -74,9 +79,9 @@ private:
 
             if (rows_remaining != 0)
             {
-                RightType right_src_remaining[Impl::rows_per_iteration];
-                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                Type right_src_remaining[Impl::rows_per_iteration];
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(Type));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(Type));
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(left_src_data, right_src_remaining, dst_remaining);
@@ -90,10 +95,10 @@ private:
         return nullptr;
     }
 
-    template <typename LeftType, typename RightType>
-    static ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg, size_t input_rows_count)
+    template <typename Type>
+    static ColumnPtr executeTyped(const ColumnVector<Type> * left_arg, const IColumn * right_arg, size_t input_rows_count)
     {
-        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<Type>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
@@ -110,13 +115,13 @@ private:
 
             if (rows_remaining != 0)
             {
-                LeftType left_src_remaining[Impl::rows_per_iteration];
-                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                Type left_src_remaining[Impl::rows_per_iteration];
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(Type));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(Type));
 
-                RightType right_src_remaining[Impl::rows_per_iteration];
-                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                Type right_src_remaining[Impl::rows_per_iteration];
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(Type));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(Type));
 
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
@@ -127,13 +132,13 @@ private:
 
             return dst;
         }
-        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<Type>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
             const auto & left_src_data = left_arg->getData();
-            RightType right_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
+            Type right_src_data[Impl::rows_per_iteration];
+            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<Type>());
             auto & dst_data = dst->getData();
             dst_data.resize(input_rows_count);
 
@@ -145,9 +150,9 @@ private:
 
             if (rows_remaining != 0)
             {
-                LeftType left_src_remaining[Impl::rows_per_iteration];
-                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                Type left_src_remaining[Impl::rows_per_iteration];
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(Type));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(Type));
 
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
@@ -173,41 +178,44 @@ private:
         TypeIndex left_index = col_left.type->getTypeId();
         TypeIndex right_index = col_right.type->getTypeId();
 
-        if (WhichDataType(col_left.type).isDecimal())
+        /// There are two cases: if both types are float with 32-bit or less, we use the Float32 specialization,
+        /// otherwise we the Float64 version of the function.
+
+        bool use_32bit = WhichDataType(left_index).isFloat() && WhichDataType(right_index).isFloat()
+            && col_left.type->getSizeOfValueInMemory() <= 4 && col_right.type->getSizeOfValueInMemory() <= 4;
+
+        if (use_32bit)
+        {
+            col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat32>());
+            col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat32>());
+        }
+        else
         {
             col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat64>());
-            left_index = TypeIndex::Float64;
-        }
-
-        if (WhichDataType(col_right.type).isDecimal())
-        {
             col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat64>());
-            right_index = TypeIndex::Float64;
         }
 
         ColumnPtr res;
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & type) -> bool
         {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftType = typename Types::LeftType;
-            using RightType = typename Types::RightType;
-            using ColVecLeft = ColumnVector<LeftType>;
+            using Type = std::decay_t<decltype(type)>;
+            using Column = ColumnVector<Type>;
 
             const IColumn * left_arg = col_ptr_left.get();
             const IColumn * right_arg = col_ptr_right.get();
 
-            if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
+            if (const auto left_arg_typed = checkAndGetColumn<Column>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg, input_rows_count)))
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
                     right_arg->getName(), getName());
             }
-            if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
+            if (const auto left_arg_typed = checkAndGetColumnConst<Column>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg, input_rows_count)))
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -217,7 +225,7 @@ private:
             return false;
         };
 
-        if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
+        if (!(call(Float64()) || call(Float32())))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 col_left.column->getName(), getName());
 

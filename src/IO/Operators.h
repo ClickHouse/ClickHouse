@@ -5,9 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <functional>
-
-
 namespace DB
 {
 
@@ -44,7 +41,6 @@ struct DoubleQuoteManipReadBuffer    : std::reference_wrapper<ReadBuffer> { usin
 struct BinaryManipReadBuffer         : std::reference_wrapper<ReadBuffer> { using std::reference_wrapper<ReadBuffer>::reference_wrapper; };
 
 inline WriteBuffer & operator<<(WriteBuffer & buf, const auto & x) { writeText(x, buf); return buf; }
-inline WriteBuffer & operator<<(WriteBuffer & buf, const pcg32_fast & x) { PcgSerializer::serializePcg32(x, buf); return buf; }
 
 inline EscapeManipWriteBuffer      operator<< (WriteBuffer & buf, EscapeManip)      { return buf; }
 inline QuoteManipWriteBuffer       operator<< (WriteBuffer & buf, QuoteManip)       { return buf; }
@@ -80,7 +76,6 @@ inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); re
 template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, String & x)         { readString(x, buf);   return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)           { readChar(x, buf);     return buf; }
-template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, pcg32_fast & x)     { PcgDeserializer::deserializePcg32(x, buf); return buf; }
 
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }

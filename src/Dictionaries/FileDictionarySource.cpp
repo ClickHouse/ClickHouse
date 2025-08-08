@@ -1,14 +1,14 @@
-#include "FileDictionarySource.h"
+#include <Dictionaries/FileDictionarySource.h>
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -17,8 +17,8 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -72,7 +72,8 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                     const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -81,7 +82,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `file` does not support attribute expressions");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` does not support attribute expressions");
 
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");

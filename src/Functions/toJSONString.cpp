@@ -24,6 +24,11 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeString>();
+        }
+
         bool useDefaultImplementationForConstants() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

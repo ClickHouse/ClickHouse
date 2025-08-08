@@ -34,8 +34,12 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
     auto current = pdata->data.get();
     if (!current)
         return -1;
+    return setCertificateCallback(ssl, current.get(), log);
+}
 
-    if (current->certs_chain.empty())
+int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log)
+{
+    if (current_data->certs_chain.empty())
         return -1;
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
@@ -43,29 +47,36 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
         LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
         return -1;
     }
-    if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(current->certs_chain[0].certificate())); err != 1)
+
+    const auto * root_certificate = static_cast<const X509 *>(current_data->certs_chain.front());
+    if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(root_certificate)); err != 1)
     {
         LOG_ERROR(log, "Use certificate {}", Poco::Net::Utility::getLastError());
         return -1;
     }
-    for (auto cert = current->certs_chain.begin() + 1; cert != current->certs_chain.end(); cert++)
+
+    for (auto cert = current_data->certs_chain.begin() + 1; cert != current_data->certs_chain.end(); cert++)
     {
-        if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(cert->certificate())); err != 1)
+        const auto * certificate = static_cast<const X509 *>(*cert);
+        if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(certificate)); err != 1)
         {
             LOG_ERROR(log, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             return -1;
         }
     }
-    if (auto err = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key))); err != 1)
+
+    if (auto err = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current_data->key))); err != 1)
     {
         LOG_ERROR(log, "Use private key {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+
     if (auto err = SSL_check_private_key(ssl); err != 1)
     {
         LOG_ERROR(log, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+
     return 1;
 }
 
@@ -87,6 +98,12 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 }
 
 
+void CertificateReloader::tryLoadClient(const Poco::Util::AbstractConfiguration & config)
+{
+    tryLoad(config, nullptr, Poco::Net::SSLManager::CFG_CLIENT_PREFIX);
+}
+
+
 void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
     std::lock_guard lock{data_mutex};
@@ -103,7 +120,12 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     else
     {
         if (!ctx)
-            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        {
+            if (prefix == Poco::Net::SSLManager::CFG_CLIENT_PREFIX)
+                ctx = Poco::Net::SSLManager::instance().defaultClientContext()->sslContext();
+            else
+                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        }
         data.push_back(MultiData(ctx));
         --it;
         data_index[prefix] = it;
@@ -164,7 +186,7 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
-    : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
+    : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
 }
 

@@ -1,7 +1,7 @@
-#include "KafkaProducer.h"
-#include "Core/Block.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
+#include <Storages/Kafka/KafkaProducer.h>
+#include <Core/Block.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -105,6 +105,11 @@ void KafkaProducer::finish()
         ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
+}
+
+void KafkaProducer::cancel() noexcept
+{
+    /* no op */
 }
 
 }

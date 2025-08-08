@@ -17,9 +17,9 @@ REGISTER_FUNCTION(VisitParamExtractInt)
           "beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.",
         .syntax = "simpleJSONExtractInt(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
-        .returned_value = "It returns the number parsed from the field if the field exists and contains a number, 0 otherwise.",
+        = {{"json", "The JSON in which the field is searched for.", {"String"}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
+        .returned_value = {"It returns the number parsed from the field if the field exists and contains a number, 0 otherwise."},
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons
@@ -40,7 +40,7 @@ SELECT simpleJSONExtractInt(json, 'foo') FROM jsons ORDER BY json;)",
 0
 -3
 5)"}},
-        .categories{"JSON"}});
+        .category = FunctionDocumentation::Category::JSON});
     factory.registerAlias("visitParamExtractInt", "simpleJSONExtractInt");
 }
 

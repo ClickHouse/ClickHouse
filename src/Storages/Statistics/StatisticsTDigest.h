@@ -11,7 +11,8 @@ class StatisticsTDigest : public IStatistics
 public:
     explicit StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
-    void update(const ColumnPtr & column) override;
+    void build(const ColumnPtr & column) override;
+    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;

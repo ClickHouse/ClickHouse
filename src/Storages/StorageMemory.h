@@ -4,10 +4,10 @@
 #include <optional>
 #include <mutex>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Storages/MemorySettings.h>
 
 #include <Common/MultiVersion.h>
 
@@ -15,6 +15,7 @@ namespace DB
 {
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
+struct MemorySettings;
 
 /** Implements storage in the RAM.
   * Suitable for temporary data.
@@ -31,7 +32,9 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        const MemorySettings & memory_settings_ = MemorySettings());
+        const MemorySettings & memory_settings_);
+
+    ~StorageMemory() override;
 
     String getName() const override { return "Memory"; }
 
@@ -42,11 +45,12 @@ public:
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;
+        size_t rows_approx = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    const MemorySettings & getMemorySettingsRef() const { return memory_settings; }
+    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
     void read(
         QueryPlan & query_plan,
@@ -83,8 +87,8 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -138,7 +142,7 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    MemorySettings memory_settings;
+    std::unique_ptr<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

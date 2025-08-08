@@ -1,19 +1,15 @@
-#include <base/scope_guard.h>
-#include <Common/logger_useful.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
+#include <Common/quoteString.h>
 #include <Storages/IStorage.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -50,7 +46,7 @@ void DatabaseMemory::createTable(
         query_to_store = query->clone();
         auto * create = query_to_store->as<ASTCreateQuery>();
         if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
@@ -77,9 +73,8 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
-            if (fs::exists(table_data_dir))
-                (void)fs::remove_all(table_data_dir);
+            auto metdata_disk = getDisk();
+            metdata_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -120,8 +115,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
-        else
-            return {};
+        return {};
     }
     return it->second->clone();
 }
@@ -133,9 +127,10 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::removeDataPath(ContextPtr local_context)
+void DatabaseMemory::removeDataPath(ContextPtr)
 {
-    (void)std::filesystem::remove_all(local_context->getPath() + data_path);
+    auto db_disk = getDisk();
+    db_disk->removeRecursive(data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)
@@ -146,17 +141,30 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    std::lock_guard lock{mutex};
-    auto it = create_queries.find(table_id.table_name);
-    if (it == create_queries.end() || !it->second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+    /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
+    ASTPtr create_query;
+    {
+        std::lock_guard lock{mutex};
+        auto it = tables.find(table_id.table_name);
+        if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
-    applyMetadataChangesToCreateQuery(it->second, metadata);
+        auto it_query = create_queries.find(table_id.table_name);
+        if (it_query == create_queries.end() || !it_query->second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+        create_query = it_query->second;
+    }
+
+    /// Apply metadata changes without holding a lock to avoid possible deadlock
+    /// (i.e. when ALTER contains IN (table))
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
@@ -204,11 +212,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 
     return res;
+}
+
+void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

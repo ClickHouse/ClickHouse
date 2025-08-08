@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm <<EOL
+$CLICKHOUSE_CLIENT -m <<EOL
 drop table if exists dist_01247;
 drop table if exists data_01247;
 
@@ -29,7 +29,7 @@ for ((i = 0; i < 100; ++i)); do
         "--optimize_distributed_group_by_sharding_key=1"
         "--prefer_localhost_replica=0"
     )
-    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -nm -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
+    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
 
     # expect zero new network errors
     network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")

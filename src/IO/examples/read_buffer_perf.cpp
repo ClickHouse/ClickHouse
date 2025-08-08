@@ -15,7 +15,8 @@ int main(int, char **)
 
         Int64 a = 0;
         Float64 b = 0;
-        String c, d;
+        String c;
+        String d;
 
         size_t i = 0;
         while (!in.eof())

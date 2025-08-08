@@ -58,6 +58,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -86,7 +87,7 @@ public:
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 private:
     [[noreturn]] static void throwNoSerialization()

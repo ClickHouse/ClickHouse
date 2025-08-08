@@ -19,6 +19,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -394,7 +395,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     convertToFullIfSparse(chunk);
 
     current_chunk = std::move(chunk);
-    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);
+    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const
@@ -431,7 +432,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinKind kind_,
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
-    const Blocks & input_headers,
+    SharedHeaders & input_headers,
     size_t max_block_size_)
     : kind(kind_)
     , strictness(strictness_)
@@ -457,14 +458,14 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors = {
-        createCursor(input_headers[0], on_clause_.key_names_left, strictness),
-        createCursor(input_headers[1], on_clause_.key_names_right, strictness),
+        createCursor(*input_headers[0], on_clause_.key_names_left, strictness),
+        createCursor(*input_headers[1], on_clause_.key_names_right, strictness),
     };
 }
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr join_ptr,
-    const Blocks & input_headers,
+    SharedHeaders & input_headers,
     size_t max_block_size_)
     : MergeJoinAlgorithm(
         join_ptr->getTableJoin().kind(),
@@ -475,8 +476,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
 {
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
-        size_t left_idx = input_headers[0].getPositionByName(left_key);
-        size_t right_idx = input_headers[1].getPositionByName(right_key);
+        size_t left_idx = input_headers[0]->getPositionByName(left_key);
+        size_t right_idx = input_headers[1]->getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
 
@@ -646,14 +647,13 @@ void dispatchKind(JoinKind kind, Args && ... args)
 {
     if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
         return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+    if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
         return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+    if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
         return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+    if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
@@ -1103,7 +1103,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
         }
-        else if (cmp < 0)
+        if (cmp < 0)
         {
             if (asof_join_state.hasMatch(left_cursor, asof_inequality))
             {
@@ -1116,10 +1116,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 left_cursor->next();
                 continue;
             }
-            else
-            {
-                asof_join_state.reset();
-            }
+
+            asof_join_state.reset();
+
 
             /// no matches for rows in left table, just pass them through
             size_t num = nextDistinct(*left_cursor);
@@ -1246,8 +1245,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
 MergeJoinTransform::MergeJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
@@ -1265,8 +1264,8 @@ MergeJoinTransform::MergeJoinTransform(
         JoinKind kind_,
         JoinStrictness strictness_,
         const TableJoin::JoinOnClause & on_clause_,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(

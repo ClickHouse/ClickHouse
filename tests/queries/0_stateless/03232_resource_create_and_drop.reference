@@ -1,0 +1,5 @@
+default_03232_resource_1	['default_03232_disk_1']	['default_03232_disk_1']	CREATE RESOURCE default_03232_resource_1 (WRITE DISK default_03232_disk_1, READ DISK default_03232_disk_1)
+default_03232_resource_1	['default_03232_disk_1']	['default_03232_disk_1']	CREATE RESOURCE default_03232_resource_1 (WRITE DISK default_03232_disk_1, READ DISK default_03232_disk_1)
+default_03232_resource_2	['default_03232_disk_2']	[]	CREATE RESOURCE default_03232_resource_2 (READ DISK default_03232_disk_2)
+default_03232_resource_3	[]	['default_03232_disk_2']	CREATE RESOURCE default_03232_resource_3 (WRITE DISK default_03232_disk_2)
+default_03232_resource_1	['default_03232_disk_1']	['default_03232_disk_1']	CREATE RESOURCE default_03232_resource_1 (WRITE DISK default_03232_disk_1, READ DISK default_03232_disk_1)

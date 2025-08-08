@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -137,7 +138,7 @@ def test_parallel_replicas_over_distributed(
         node.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": max_parallel_replicas,
             },
@@ -150,7 +151,7 @@ def test_parallel_replicas_over_distributed(
         node.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 0,
+                "enable_parallel_replicas": 0,
             },
         )
         == expected_result

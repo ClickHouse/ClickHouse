@@ -3,11 +3,18 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include "Common/NamedCollections/NamedCollections.h"
+#include <Common/NamedCollections/NamedCollections.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_file;
+}
 
 namespace ErrorCodes
 {
@@ -26,11 +33,11 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    const size_t max_args_num = with_structure ? 4 : 3;
-    if (args.empty() || args.size() > max_args_num)
-    {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not more than {} arguments", max_args_num);
-    }
+    if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage Local requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -60,15 +67,15 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     paths = {path};
 }
 
-StorageObjectStorage::QuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.engine_file_truncate_on_insert,
+    return StorageObjectStorageQuerySettings{
+        .truncate_on_insert = settings[Setting::engine_file_truncate_on_insert],
         .create_new_file_on_insert = false,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_file,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.engine_file_skip_empty_files,
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_file],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::engine_file_skip_empty_files],
         .list_object_keys_size = 0,
         .throw_on_zero_files_match = false,
         .ignore_non_existent_file = false};

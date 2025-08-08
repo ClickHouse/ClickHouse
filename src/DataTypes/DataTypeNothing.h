@@ -28,6 +28,9 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return 0; }
     bool canBeInsideNullable() const override { return true; }
+    bool isComparable() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

@@ -9,13 +9,15 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-/// Store metadata on a separate disk
+/// Stores metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -35,11 +37,12 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    bool exists(const std::string & path) const override;
+    /// Metadata on disk for an empty file can store empty list of blobs and size=0
+    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
 
-    bool isFile(const std::string & path) const override;
-
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 
@@ -50,6 +53,8 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
@@ -73,6 +78,8 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+
+    bool isReadOnly() const override { return disk->isReadOnly(); }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
@@ -89,7 +96,7 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit(const TransactionCommitOptionsVariant & options) final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -98,6 +105,8 @@ public:
     void createEmptyMetadataFile(const std::string & path) override;
 
     void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+
+    bool supportAddingBlobToMetadata() override { return true; }
 
     void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
@@ -131,6 +140,7 @@ public:
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
 
 
