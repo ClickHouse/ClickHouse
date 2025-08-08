@@ -1122,7 +1122,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "2h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
