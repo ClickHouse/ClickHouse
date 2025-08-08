@@ -276,7 +276,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
         subprocess.check_output(
             docker_exec(
@@ -284,24 +284,29 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
                 f"RABBITMQ_ERLANG_COOKIE={cookie}",
                 rabbitmq_id,
                 "rabbitmqctl",
-                "await_startup",
+                command,
             ),
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-        return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
         error_message = (
-            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"rabbitmqctl {command} failed with return code {e.returncode}. "
             f"Output: {e.output.decode(errors='replace')}"
         )
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
+        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
         raise RuntimeError(
-            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+            f"rabbitmqctl {command} timed out{output}"
         )
+
+
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", 5)
+    return True
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -2354,13 +2359,13 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
                 ):
                     logging.debug("RabbitMQ is available")
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.5)
+                time.sleep(1)
 
         start = time.time()
         while time.time() - start < timeout:
@@ -2375,6 +2380,38 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
+
+    def stop_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
+        )
+
+    def start_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+        )
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
+
+    def reset_rabbitmq(self, timeout=240):
+        self.stop_rabbitmq_app()
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
+        self.start_rabbitmq_app()
+
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0

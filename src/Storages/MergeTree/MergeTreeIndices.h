@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Storages/IndicesDescription.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <memory>
 #include <string>
@@ -185,11 +186,11 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
+        const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
 
     /// The vector similarity index overrides this method
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/,
+        const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
         const std::optional<VectorSearchParameters> & /*parameters*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
