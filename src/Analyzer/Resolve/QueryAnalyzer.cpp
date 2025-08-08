@@ -2987,50 +2987,88 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
-        auto & in_second_argument = function_in_arguments_nodes[1];
+        QueryTreeNodePtr in_first_argument = function_in_arguments_nodes[0]->clone();
 
-        if (auto * subquery_node = in_second_argument->as<QueryNode>())
+        /// Resolve first argument of IN to determine if it is constant or not. In case of constant we will not do any rewriting
+        resolveExpressionNode(
+            in_first_argument,
+            scope,
+            true /*allow_lambda_expression*/,
+            true /*allow_table_expression*/
+        );
+
+//        if (in_first_argument)
+//        {
+//            std::cerr << "AFTER:\n\n" << in_first_argument->dumpTree() << "\n\n\n";
+//        }
+
+        if (!in_first_argument->as<ConstantNode>())
         {
-            /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM subquery WHERE x = subquery.x LIMIT 1)'
+            auto & in_second_argument = function_in_arguments_nodes[1];
 
-//            std::cerr
-//                << "\n======= BEFORE ===========\n"
-//                << node->dumpTree()
-//                << "\n==================\n\n\n";
-
-            auto constant_data_type = std::make_shared<DataTypeUInt64>();
-            auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-
-            new_exists_subquery->setIsSubquery(true);
-            new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-            new_exists_subquery->getJoinTree() = std::move(in_second_argument);
+            if (in_second_argument->as<QueryNode>())
             {
-                auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
-                equals_function_node_ptr->getArguments().getNodes() = {
-                    std::move(function_in_arguments_nodes[0]),  /// x
-                    subquery_node->getProjectionNode()->clone() /// subquery.x
+                /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
+
+//                std::cerr
+//                    << "\n======= BEFORE ===========\n"
+//                    << node->dumpTree()
+//                    << "\n==================\n\n\n";
+
+
+                /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
+                /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
+                /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
+                auto subquery_node = in_second_argument->clone();
+                String unique_column_name = "_unique_name_" + toString(UUIDHelpers::generateV4());
+                subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+
+                /// SELECT * AS _unique_name_ FROM subquery
+                auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+                internal_exists_subquery->setIsSubquery(true);
+                internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
+                internal_exists_subquery->getJoinTree() = std::move(subquery_node);
+
+                /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
+                auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+                auto constant_data_type = std::make_shared<DataTypeUInt64>();
+                new_exists_subquery->setIsSubquery(true);
+                new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+                new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
+
+                {
+                    auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
+
+                    auto & copy_of_in_first_parameter = function_in_arguments_nodes[0];//*/in_first_argument;
+
+                    auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
+
+                    equals_function_node_ptr->getArguments().getNodes() = {
+                        std::move(copy_of_in_first_parameter), /// x
+                        std::move(subquery_projection) /// `_unique_name_` from subquery
+                    };
+
+                    new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
+                }
+                new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+                QueryTreeNodePtr new_exists_argument = new_exists_subquery;
+
+                function_node_ptr = std::make_shared<FunctionNode>("exists");
+                function_node_ptr->getArguments().getNodes() = {
+                    std::move(new_exists_argument)
                 };
 
-                new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
+                node = function_node_ptr;
+                function_name = "exists";
+                is_special_function_in = false;
+                is_special_function_exists = true;
+
+//                std::cerr
+//                    << "\n======= AFTER  ===========\n"
+//                    << node->dumpTree()
+//                    << "\n==================\n\n\n";
             }
-            new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-            QueryTreeNodePtr new_exists_argument = new_exists_subquery;
-
-            function_node_ptr = std::make_shared<FunctionNode>("exists");
-            function_node_ptr->getArguments().getNodes() = {
-                std::move(new_exists_argument)
-            };
-
-            node = function_node_ptr;
-            function_name = "exists";
-            is_special_function_in = false;
-            is_special_function_exists = true;
-
-//            std::cerr
-//                << "\n======= AFTER  ===========\n"
-//                << node->dumpTree()
-//                << "\n==================\n\n\n";
         }
     }
 
