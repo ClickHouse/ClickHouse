@@ -20,7 +20,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
 }
 
 namespace ErrorCodes
@@ -301,9 +300,14 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_index) != nullptr)
+        if (const auto * gin_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_index != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(
+                stream_name,
+                data_part_storage,
+                data_part_storage,
+                gin_index->gin_filter_params.segment_digestion_threshold_bytes,
+                gin_index->gin_filter_params.bloom_filter_false_positive_rate);
             gin_index_stores[stream_name] = store;
         }
 
@@ -496,10 +500,11 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
             String filename_without_extension = skip_indices[i]->getFileName();
-            checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_post"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_seg"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_sid"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
         }
     }
 
