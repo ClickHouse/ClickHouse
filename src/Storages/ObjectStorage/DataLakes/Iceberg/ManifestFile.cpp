@@ -1,4 +1,5 @@
 #include <optional>
+#include "Core/TypeId.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -329,6 +330,9 @@ ManifestFileContent::ManifestFileContent(
                 String right_str;
                 /// lower_bound and upper_bound may be NULL.
                 if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+                    continue;
+
+                if (name_and_type.type->getTypeId() == DB::TypeIndex::Tuple || name_and_type.type->getTypeId() == DB::TypeIndex::Map || name_and_type.type->getTypeId() == DB::TypeIndex::Array)
                     continue;
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
