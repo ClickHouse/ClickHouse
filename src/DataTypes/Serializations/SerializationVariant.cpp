@@ -477,7 +477,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
-        col.getLocalDiscriminatorsPtr() = cached_discriminators;
+        /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
+        if (rows_offset)
+            col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
+        else
+            col.getLocalDiscriminatorsPtr() = cached_discriminators;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -491,7 +495,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
-                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, rows_offset, limit, 0);
+                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
         }
         else
         {
@@ -503,10 +507,17 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             variant_limits = variant_pair.second;
         }
 
+        /// If we have rows_offset, we must put discriminators without applied rows_offset in cache because we
+        /// need these discriminators to calculate offsets for variants after we get them from cache.
         if (rows_offset)
-            addToSubstreamsCache(cache, settings.path, IColumn::mutate(col.getLocalDiscriminatorsPtr()));
+        {
+            size_t num_read_discriminators = col.getLocalDiscriminatorsPtr()->size() - variant_state->num_rows_read;
+            addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr()->cut(variant_state->num_rows_read, num_read_discriminators));
+        }
         else
+        {
             addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
+        }
     }
     /// It may happen that there is no such stream, in this case just do nothing.
     else
