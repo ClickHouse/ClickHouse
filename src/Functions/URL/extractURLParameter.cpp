@@ -49,7 +49,8 @@ struct ExtractURLParameterImpl
                     if (!param_begin)
                         break;
 
-                    if (param_begin[-1] != '?' && param_begin[-1] != '#' && param_begin[-1] != '&')
+                    char prev_char = param_begin[-1];
+                    if (prev_char != '?' && prev_char != '#' && prev_char != '&')
                     {
                         /// Parameter name is different but has the same suffix.
                         param_begin += param_len;
@@ -64,19 +65,11 @@ struct ExtractURLParameterImpl
             if (param_begin)
             {
                 const char * param_end = find_first_symbols<'&', '#'>(param_begin, end);
-                if (param_end == end)
-                    param_end = param_begin + strlen(param_begin);
-
                 size_t param_size = param_end - param_begin;
 
                 res_data.resize(res_offset + param_size);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], param_begin, param_size);
                 res_offset += param_size;
-            }
-            else
-            {
-                /// No parameter found, put empty string in result.
-                res_data.resize(res_offset);
             }
 
             res_offsets[i] = res_offset;

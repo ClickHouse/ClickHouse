@@ -90,7 +90,7 @@ public:
         size_t param_len = pattern.size();
 
         const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
-        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset - 1]);
+        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset]);
         const char * begin_pos = url_begin;
         const char * end_pos = begin_pos;
 
@@ -100,11 +100,12 @@ public:
             if (query_string_begin + 1 >= url_end)
                 break;
 
-            const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - query_string_begin - 1, param_str, param_len));
+            const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - (query_string_begin + 1), param_str, param_len));
             if (pos == nullptr)
                 break;
 
-            if (pos[-1] != '?' && pos[-1] != '#' && pos[-1] != '&')
+            char prev_char = pos[-1];
+            if (prev_char != '?' && prev_char != '#' && prev_char != '&')
             {
                 pos = nullptr;
                 break;
@@ -114,13 +115,12 @@ public:
             end_pos = begin_pos + param_len;
 
             /// Skip the value.
-            while (*end_pos && *end_pos != '&' && *end_pos != '#')
-                ++end_pos;
+            end_pos = find_first_symbols<'&', '#'>(end_pos, url_end);
 
             /// Capture '&' before or after the parameter.
-            if (*end_pos == '&')
+            if (end_pos < url_end && *end_pos == '&')
                 ++end_pos;
-            else if (begin_pos[-1] == '&')
+            else if (prev_char == '&')
                 --begin_pos;
         } while (false);
 
