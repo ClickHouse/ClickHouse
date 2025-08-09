@@ -58,10 +58,11 @@ protected:
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
 };
 
-class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransform
+
+class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
 {
 public:
-    IcebergBitmapPositionDeleteTransform(
+    IcebergStreamingPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
@@ -87,7 +88,19 @@ public:
 
 private:
     void initialize();
-    RoaringBitmapWithSmallSet<size_t, 32> bitmap;
+
+    struct PositionDeleteFileIndexes
+    {
+        size_t filename_index;
+        size_t position_index;
+    };
+
+    void fetchNewChunkFromSource(size_t delete_source_index);
+
+    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
+    std::vector<Chunk> latest_chunks;
+    std::vector<size_t> iterator_at_latest_chunks;
+    std::set<std::pair<size_t, size_t>> latest_positions;
 };
 
 }

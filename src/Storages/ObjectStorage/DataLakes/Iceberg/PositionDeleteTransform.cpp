@@ -110,53 +110,83 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", column_name);
 }
 
-void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
+void IcebergStreamingPositionDeleteTransform::initialize()
+{
+    for (size_t i = 0; i < delete_sources.size(); ++i)
+    {
+        auto & delete_source = delete_sources[i];   
+        size_t position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+        size_t filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
+        
+        delete_source_column_indices.push_back(PositionDeleteFileIndexes{
+            .filename_index = filename_index,
+            .position_index = position_index        
+        });
+        auto latest_chunk = delete_source->read();
+        iterator_at_latest_chunks.push_back(0);
+        if (latest_chunk.hasRows())
+            latest_positions.insert(std::pair<size_t, size_t>{latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), i});
+        latest_chunks.push_back(std::move(latest_chunk));
+    }
+}
+
+void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t delete_source_index)
+{
+    auto latest_chunk = delete_sources[delete_source_index]->read();
+    if (latest_chunk.hasRows())
+        latest_positions.insert(std::pair<size_t, size_t>{latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), delete_source_index});
+
+    iterator_at_latest_chunks[delete_source_index] = 0;
+    latest_chunks[delete_source_index] = std::move(latest_chunk);
+}
+
+void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
-    IColumn::Filter delete_vector(num_rows, true);
-    size_t num_rows_after_filtration = num_rows;
-
+    IColumn::Filter filter(num_rows, true);
+    size_t num_rows_after_filtration = chunk.getNumRows();
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
     if (!chunk_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
-    size_t row_num_offset = chunk_info->row_num_offset;
-    for (size_t i = 0; i < num_rows; i++)
+    size_t total_previous_chunks_size = chunk_info->row_num_offset;
+
+    for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
-        size_t row_idx = row_num_offset + i;
-        if (bitmap.rb_contains(row_idx))
+        while (!latest_positions.empty())
         {
-            delete_vector[i] = false;
-            num_rows_after_filtration--;
+            auto it = latest_positions.begin();
+            if (it->first < i + total_previous_chunks_size)
+            {
+                size_t delete_source_index = it->second;
+                latest_positions.erase(it);
+                if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
+                {
+                    fetchNewChunkFromSource(delete_source_index);
+                }
+                else
+                {
+                    ++iterator_at_latest_chunks[delete_source_index];
+                    auto position_index = delete_source_column_indices[delete_source_index].position_index;
+                    latest_positions.insert(std::pair<size_t, size_t>{latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]), delete_source_index});
+                }
+            }
+            else if (it->first == i + total_previous_chunks_size)
+            {
+                filter[i] = false;
+                --num_rows_after_filtration;
+                break;
+            }
+            else
+                break;
         }
     }
 
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
-        column = column->filter(delete_vector, -1);
+        column = column->filter(filter, -1);
 
     chunk.setColumns(std::move(columns), num_rows_after_filtration);
-}
-
-void IcebergBitmapPositionDeleteTransform::initialize()
-{
-    for (auto & delete_source : delete_sources)
-    {
-        while (auto delete_chunk = delete_source->read())
-        {
-            int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
-            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
-
-            auto position_column = delete_chunk.getColumns()[position_index];
-            auto filename_column = delete_chunk.getColumns()[filename_index];
-
-            for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
-            {
-                auto position_to_delete = position_column->get64(i);
-                bitmap.add(position_to_delete);
-            }
-        }
-    }
 }
 
 }
