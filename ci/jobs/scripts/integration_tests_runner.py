@@ -193,7 +193,7 @@ class ClickhouseIntegrationTestsRunner:
             self.run_by_hash_num = 0
 
         # release/asan/tsan/msan
-        self.job_configuration = self.params.get("job_configuration", "")
+        self.job_configuration = self.params.get("job_configuration", "").split('_')[-1]
         self.pr_updated_at = self.params.get("pr_updated_at", "")
 
         self._all_tests = []  # type: List[str]
