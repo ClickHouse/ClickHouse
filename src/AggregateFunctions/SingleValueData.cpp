@@ -1169,6 +1169,14 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         return;
     }
 
+    /// Compatibility with an invalid format in certain old versions.
+    if (rhs_size_signed == 0)
+    {
+        /// Don't free large_data here.
+        size = 1;
+        return;
+    }
+
     /// The strings are serialized as zero terminated.
     char last_char;
 
