@@ -16,19 +16,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct ReplaceRegexpTraits
+enum class ReplaceRegexpTraits : uint8_t
 {
-    enum class Replace : uint8_t
-    {
-        First,
-        All
-    };
+    First,
+    All
 };
 
 /** Replace all matches of regexp 'needle' to string 'replacement'. 'needle' and 'replacement' are constants.
   * 'replacement' can contain substitutions, for example: '\2-\3-\1'
   */
-template <typename Name, ReplaceRegexpTraits::Replace replace>
+template <typename Name, ReplaceRegexpTraits replace>
 struct ReplaceRegexpImpl
 {
     static constexpr auto name = Name::name;
@@ -129,7 +126,8 @@ struct ReplaceRegexpImpl
         size_t copy_pos = 0;
         size_t match_pos = 0;
 
-        while (match_pos < haystack_length)
+        /// It's possible to find empty match at the end of the string (e.g, '$'), so non-strict comparison.
+        while (match_pos <= haystack_length)
         {
             /// If no more replacements possible for current string
             bool can_finish_current_string = false;
@@ -159,7 +157,7 @@ struct ReplaceRegexpImpl
                     res_offset += replacement.size();
                 }
 
-                if constexpr (replace == ReplaceRegexpTraits::Replace::First)
+                if constexpr (replace == ReplaceRegexpTraits::First)
                     can_finish_current_string = true;
 
                 if (match.empty())
@@ -181,6 +179,7 @@ struct ReplaceRegexpImpl
                 res_offset += haystack_length - copy_pos;
                 copy_pos = haystack_length;
                 match_pos = copy_pos;
+                break;
             }
         }
     }
@@ -218,12 +217,12 @@ struct ReplaceRegexpImpl
         /// pattern analysis incurs some cost too.
         if (canFallbackToStringReplacement(needle, replacement, searcher, num_captures))
         {
-            auto convert_trait = [](ReplaceRegexpTraits::Replace first_or_all)
+            auto convert_trait = [](ReplaceRegexpTraits first_or_all)
             {
                 switch (first_or_all)
                 {
-                    case ReplaceRegexpTraits::Replace::First: return ReplaceStringTraits::Replace::First;
-                    case ReplaceRegexpTraits::Replace::All:   return ReplaceStringTraits::Replace::All;
+                    case ReplaceRegexpTraits::First: return ReplaceStringTraits::Replace::First;
+                    case ReplaceRegexpTraits::All:   return ReplaceStringTraits::Replace::All;
                 }
             };
             ReplaceStringImpl<Name, convert_trait(replace)>::vectorConstantConstant(
