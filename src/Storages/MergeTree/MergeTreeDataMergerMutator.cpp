@@ -330,9 +330,25 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             case MergeType::Regular:
                 /// Do not update anything for regular merge.
                 return;
-            case MergeType::TTLDelete:
+            case MergeType::TTLDelete: {
                 next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
+                const auto & storage = data.getStorageID();
+                auto time_t_to_string  = [] (time_t timestamp) -> std::string {
+                    std::tm tm = {};
+                    localtime_r(&timestamp, &tm);
+                    std::ostringstream oss;
+                    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+                    return oss.str();
+                };
+
+                LOG_TRACE(log, "For table '{}' under db '{}', the next scheduled execution time of TTLDelete task"
+                                " for partition '{}' will be: '{}'",
+                                storage.table_name,
+                                storage.database_name,
+                                partition_id,
+                                time_t_to_string(next_delete_ttl_merge_times_by_partition[partition_id]));
                 return;
+            }
             case MergeType::TTLRecompress:
                 next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
                 return;
