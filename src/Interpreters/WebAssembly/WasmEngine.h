@@ -28,15 +28,6 @@ public:
 
     virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
 
-    template <typename T>
-    T & getRef(WasmPtr ptr)
-    {
-        auto * raw = getMemory(ptr, sizeof(T));
-        if (reinterpret_cast<uintptr_t>(raw) % alignof(T) != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Alignment error");
-        return *reinterpret_cast<T *>(raw);
-    }
-
     virtual WasmPtr growMemory(WasmSizeT num_pages) = 0;
 
     /// Returns the current memory size in bytes

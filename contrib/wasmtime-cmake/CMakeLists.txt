@@ -1,5 +1,5 @@
 option(ENABLE_WASMTIME "Enable WasmTime engine" ${ENABLE_LIBRARIES})
-if (NOT ENABLE_WASMTIME)
+if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST)
     message (STATUS "Not using wasmtime")
     return()
 endif()
@@ -42,7 +42,6 @@ clickhouse_import_crate(
 clickhouse_config_crate_flags(wasmtime)
 
 target_link_libraries(_ch_wasmtime INTERFACE wasmtime)
-set_target_properties(_ch_wasmtime PROPERTIES
-       INTERFACE_LINK_OPTIONS "-Wl,--allow-multiple-definition")
+set_target_properties(_ch_wasmtime PROPERTIES INTERFACE_LINK_OPTIONS "-Wl,--allow-multiple-definition")
 
 add_library(ch_contrib::wasmtime ALIAS _ch_wasmtime)
