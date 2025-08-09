@@ -46,7 +46,7 @@ private:
     /// Size of i-th element
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const
     {
-        chassert(offsets[i] > offsets[i - 1]);
+        chassert(offsets[i] >= offsets[i - 1]);
         return offsets[i] - offsets[i - 1];
     }
 
