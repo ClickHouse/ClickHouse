@@ -106,7 +106,7 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1] - 1);
+            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
 
             const auto * synset = extension->getSynonyms(word);
 

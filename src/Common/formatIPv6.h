@@ -12,8 +12,8 @@
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;
-constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;     /// Does not count tail zero byte.
-constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byte.
+constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;
+constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;
 
 namespace DB
 {
@@ -109,13 +109,6 @@ inline const char * parseIPv4(const char * src, unsigned char * dst)
     if (parseIPv4(src, [](){ return false; }, dst))
         return src;
     return nullptr;
-}
-
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv4whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv4(src, dst);
-    return end != nullptr && *end == '\0';
 }
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
@@ -274,7 +267,7 @@ inline const char * parseIPv6(const char * src, const char * end, unsigned char 
 }
 
 /// returns true if whole buffer was parsed successfully
-inline bool parseIPv6whole(const char * src, const char * end, unsigned char * dst)
+inline bool parseIPv6Whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv6(src, end, dst) == end;
 }
@@ -285,13 +278,6 @@ inline const char * parseIPv6(const char * src, unsigned char * dst)
     if (parseIPv6(src, [](){ return false; }, dst))
         return src;
     return nullptr;
-}
-
-/// returns true if whole null-terminated string was parsed successfully
-inline bool parseIPv6whole(const char * src, unsigned char * dst)
-{
-    const char * end = parseIPv6(src, dst);
-    return end != nullptr && *end == '\0';
 }
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
@@ -428,7 +414,8 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
     for (size_t octet = 0; octet < padding; ++octet)
     {
         *dst++ = '0';
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t octet = 4 - src_size; octet < limit; ++octet)
@@ -443,18 +430,17 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
 
         memcpy(dst, str, len);
         dst += len;
-        *dst++ = '.';
+        if (octet < 3)
+            *dst++ = '.';
     }
 
     for (size_t mask = 0; mask < mask_tail_octets; ++mask)
     {
+        if (mask > 0)
+            *dst++ = '.';
         memcpy(dst, mask_string, mask_length);
         dst += mask_length;
-
-        *dst++ = '.';
     }
-
-    dst[-1] = '\0';
 }
 
 inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")

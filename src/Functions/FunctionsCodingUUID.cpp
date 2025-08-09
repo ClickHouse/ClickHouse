@@ -79,7 +79,7 @@ public:
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(variant));
     }
 
-    void deserialize(const UInt8 * src16, UInt8 * dst36) const
+    void serialize(const UInt8 * src16, UInt8 * dst36) const
     {
         formatHex({src16, 4}, &dst36[0], first_half_binary_representation);
         dst36[8] = '-';
@@ -92,7 +92,7 @@ public:
         formatHex({src16 + 10, 6}, &dst36[24], Representation::BigEndian);
     }
 
-    void serialize(const UInt8 * src36, UInt8 * dst16) const
+    void deserialize(const UInt8 * src36, UInt8 * dst16) const
     {
         /// If string is not like UUID - implementation specific behaviour.
         parseHex(&src36[0], {dst16 + 0, 4}, first_half_binary_representation);
@@ -200,7 +200,7 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vec_res.resize(input_rows_count * (uuid_text_length + 1));
+            vec_res.resize(input_rows_count * uuid_text_length);
             offsets_res.resize(input_rows_count);
 
             size_t src_offset = 0;
@@ -209,11 +209,9 @@ public:
             const UUIDSerializer uuid_serializer(variant);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_bytes_length;
                 dst_offset += uuid_text_length;
-                vec_res[dst_offset] = 0;
-                ++dst_offset;
                 offsets_res[i] = dst_offset;
             }
 
@@ -284,8 +282,8 @@ public:
                 /// If string has correct length but contains something not like UUID - implementation specific behaviour.
 
                 size_t string_size = offsets_in[i] - src_offset;
-                if (string_size == uuid_text_length + 1)
-                    uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                if (string_size == uuid_text_length)
+                    uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 else
                     memset(&vec_res[dst_offset], 0, uuid_bytes_length);
 
@@ -318,7 +316,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_text_length;
                 dst_offset += uuid_bytes_length;
             }

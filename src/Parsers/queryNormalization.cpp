@@ -242,7 +242,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 
         res_data.insert(token.begin, token.end);
     }
-    res_data.push_back(0);
 }
 
 }

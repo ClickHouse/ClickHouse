@@ -76,11 +76,13 @@ public:
     {
         UInt32 v4;
         if (DB::parseIPv4whole(addr_.data(), addr_.data() + addr_.size(), reinterpret_cast<unsigned char *>(&v4)))
+        {
             addr = v4;
+        }
         else
         {
             addr = IPv6AddrType();
-            bool success = DB::parseIPv6whole(addr_.data(), addr_.data() + addr_.size(), std::get<IPv6AddrType>(addr).data());
+            bool success = DB::parseIPv6Whole(addr_.data(), addr_.data() + addr_.size(), std::get<IPv6AddrType>(addr).data());
             if (!success)
                 throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", addr_);
         }

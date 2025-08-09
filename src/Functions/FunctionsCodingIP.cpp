@@ -101,7 +101,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -222,7 +222,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -371,7 +371,7 @@ private:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(input_rows_count * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
+            vec_res.resize(input_rows_count * IPV4_MAX_TEXT_LENGTH); /// the longest value is: 255.255.255.255
             offsets_res.resize(input_rows_count);
             char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
@@ -649,7 +649,6 @@ public:
         writeHexByteUppercase(mac >> 8, &out[12]);
         out[14] = ':';
         writeHexByteUppercase(mac, &out[15]);
-        out[17] = '\0';
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -667,14 +666,14 @@ public:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 17); /// the value is: xx:xx:xx:xx:xx:xx
             offsets_res.resize(vec_in.size());
 
             size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
                 formatMAC(vec_in[i], &vec_res[current_offset]);
-                current_offset += 18;
+                current_offset += 17;
                 offsets_res[i] = current_offset;
             }
 
@@ -787,7 +786,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t current_offset = offsets_src[i];
-                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
+                size_t string_size = current_offset - prev_offset;
 
                 if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
                     vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
@@ -1105,7 +1104,7 @@ public:
             ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = parseIPv4whole(
                 reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                reinterpret_cast<const char *>(&vec_src[new_offset]),
                 reinterpret_cast<unsigned char *>(&result));
             prev_offset = new_offset;
         }
@@ -1167,9 +1166,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset new_offset = offsets_src[i];
-            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                            reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
-                                            reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = parseIPv6Whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
+                                        reinterpret_cast<const char *>(&vec_src[new_offset]),
+                                        reinterpret_cast<unsigned char *>(buffer));
             prev_offset = new_offset;
         }
 

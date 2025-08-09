@@ -79,8 +79,6 @@ bool convertbits(bech32_data & out, const bech32_data & in)
 
 void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
 {
-    *pos = '\0';
-    ++pos;
     offsets[i] = pos - begin;
 }
 
@@ -412,9 +410,7 @@ private:
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
-            {
                 --new_offset;
-            }
 
             /// enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)

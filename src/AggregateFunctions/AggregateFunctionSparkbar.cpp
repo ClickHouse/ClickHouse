@@ -163,8 +163,7 @@ private:
 
         if (data.points.empty())
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            offsets.push_back(offsets.back());
             return;
         }
 
@@ -174,8 +173,7 @@ private:
         if (from_x >= to_x)
         {
             size_t sz = updateFrame(values, Y{8});
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            offsets.push_back(offsets.back() + sz);
             return;
         }
 
@@ -231,8 +229,7 @@ private:
 
         if (y_max == 0)
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            offsets.push_back(offsets.back());
             return;
         }
 
@@ -266,8 +263,7 @@ private:
         for (const auto & y : histogram)
             sz += updateFrame(values, y);
 
-        values.push_back('\0');
-        offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        offsets.push_back(offsets.back() + sz);
     }
 
 public:

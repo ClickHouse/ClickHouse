@@ -287,7 +287,7 @@ private:
             const auto pad_to_next_block = block_size == 1 ? 0 : 1;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size + 1;
+                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     resulting_size += tag_size;
             }
@@ -390,9 +390,6 @@ private:
                     encrypted += tag_size;
                 }
             }
-
-            *encrypted = '\0';
-            ++encrypted;
 
             encrypted_result_column_offsets.push_back(encrypted - encrypted_result_column_data.data());
         }
@@ -563,7 +560,7 @@ private:
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
                 size_t string_size = input_column->getDataAt(row_idx).size;
-                resulting_size += string_size + 1;  /// With terminating zero.
+                resulting_size += string_size;
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
@@ -705,9 +702,6 @@ private:
                     }
                 }
             }
-
-            *decrypted = '\0';
-            ++decrypted;
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
             if constexpr (use_null_when_decrypt_fail)

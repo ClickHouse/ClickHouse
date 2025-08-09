@@ -297,7 +297,7 @@ byteSize(argument [, ...])
 
 **Examples**
 
-For [String](../data-types/string.md) arguments, the function returns the string length + 9 (terminating zero + length).
+For [String](../data-types/string.md) arguments, the function returns the string length + 8 (length).
 
 Query:
 
