@@ -29,10 +29,10 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
-bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
+bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
     std::lock_guard lock(table_snapshot_mutex);
-    return table_snapshot->update();
+    return table_snapshot->update(context);
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
