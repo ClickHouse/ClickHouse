@@ -15,7 +15,7 @@
 - test_distributed_respect_user_timeouts/
 - test_dns_cache/
 - test_global_overcommit_tracker/
-- test_grpc_protocol/
+#- test_grpc_protocol/
 - test_host_regexp_multiple_ptr_records/
 - test_http_failover/
 - test_https_replication/
@@ -25,7 +25,7 @@
 - test_keeper_multinode_simple/
 - test_keeper_two_nodes_cluster/
 - test_limited_replicated_fetches/
-- test_merge_tree_s3/
+#- test_merge_tree_s3/
 - test_mysql_database_engine/
 - test_parts_delete_zookeeper/
 - test_postgresql_replica_database_engine/
@@ -41,10 +41,10 @@
 - test_storage_kafka/
 - test_storage_kerberized_kafka/
 - test_storage_rabbitmq/
-- test_storage_s3/
-- test_storage_s3_queue/
-- test_system_flush_logs/
-- test_system_logs/
+#- test_storage_s3/
+#- test_storage_s3_queue/
+#- test_system_flush_logs/
+#- test_system_logs/
 - test_system_metrics/
 - test_ttl_move/
 - test_user_ip_restrictions/
