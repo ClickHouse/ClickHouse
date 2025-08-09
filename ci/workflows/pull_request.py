@@ -127,6 +127,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         can_be_trusted,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/auto_pr_descriptions.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
