@@ -1,6 +1,7 @@
 import copy
 
 from ci.defs.job_configs import JobConfigs
+from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.digest import Digest
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
