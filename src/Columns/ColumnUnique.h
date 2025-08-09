@@ -362,11 +362,13 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 
     // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
     if constexpr (is_float_vector_v<ColumnType>)
+    {
         if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
         {
             auto nan = NaNOrZero<typename ColumnType::ValueType>();
             return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
         }
+    }
 
     auto single_value_column = column_holder->cloneEmpty();
     single_value_column->insert(x);
