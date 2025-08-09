@@ -94,13 +94,16 @@ public:
                 size_t old_dst_size = dst_data.size();
                 dst_data.resize(old_dst_size + bytes_to_copy);
                 memcpySmallAllowReadWriteOverflow15(dst_data.data() + old_dst_size, src_pos, bytes_to_copy);
-                src_pos = next_src_pos;
 
                 if (next_src_pos == src_end)
+                {
+                    src_pos = src_end;
                     break;
+                }
 
                 dst_data.emplace_back('\\');
                 dst_data.emplace_back(*next_src_pos);
+                src_pos = next_src_pos + 1;
             }
 
             dst_offsets[row_idx] = dst_data.size();
