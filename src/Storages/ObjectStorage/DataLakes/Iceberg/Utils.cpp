@@ -349,10 +349,12 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
             result->set(Iceberg::f_type, "struct");
             Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
             size_t iter_names = 1;
+            size_t iter_fields = iter;
+            iter += type_tuple->getElements().size();
             for (const auto & element : type_tuple->getElements())
             {
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-                field->set(Iceberg::f_id, ++iter);
+                field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 field->set(Iceberg::f_required, false);
                 auto child_type = getIcebergType(element->getNormalizedType(), iter);
@@ -383,11 +385,11 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_type, "map");
             field->set(Iceberg::f_key_id, ++iter);
-            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
-
-            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             field->set(Iceberg::f_value_id, ++iter);
             field->set(Iceberg::f_value_required, false);
+
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
+            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             return field;
         }
         case TypeIndex::Nullable:
