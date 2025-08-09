@@ -1733,7 +1733,7 @@ def test_rmv_dropped_user(started_cluster):
     main_node.query(
         """
         DROP DATABASE IF EXISTS mat_view_dropped_user;
-        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/', '{shard}', '{replica}');
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
         CREATE TABLE mat_view_dropped_user.source (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
         CREATE TABLE mat_view_dropped_user.to (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
         DROP USER IF EXISTS test_mv_user;
@@ -1747,14 +1747,14 @@ def test_rmv_dropped_user(started_cluster):
     dummy_node.query(
         """
         DROP DATABASE IF EXISTS mat_view_dropped_user;
-        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/', '{shard}', '{replica}');
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
         SYSTEM SYNC DATABASE REPLICA mat_view_dropped_user;
-        DROP DATABASE mat_view_dropped_user;
+        DROP DATABASE mat_view_dropped_user SYNC;
         """, timeout=10
     )
 
     main_node.query(
         """
-        DROP DATABASE mat_view_dropped_user;
+        DROP DATABASE mat_view_dropped_user SYNC;
         """
     )
