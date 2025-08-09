@@ -181,7 +181,6 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_SEARCH_ALL,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
-         RPNElement::FUNCTION_MULTI_SEARCH,
          RPNElement::FUNCTION_MATCH});
 }
 
@@ -259,17 +258,6 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH)
-        {
-            std::vector<bool> result(element.set_gin_filters.back().size(), true);
-
-            const auto & gin_filters = element.set_gin_filters[0];
-
-            for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
-
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
@@ -392,7 +380,6 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "hasTokenOrNull" ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
-                 function_name == "multiSearchAny" ||
                  function_name == "searchAny" ||
                  function_name == "searchAll" ||
                  function_name == "match")
@@ -507,25 +494,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.gin_filter = std::make_unique<GinFilter>();
         const auto & value = const_value.safeGet<String>();
         token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, false, true);
-        return true;
-    }
-    if (function_name == "multiSearchAny")
-    {
-        out.function = RPNElement::FUNCTION_MULTI_SEARCH;
-
-        /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
-        std::vector<GinFilters> gin_filters;
-        gin_filters.emplace_back();
-        for (const auto & element : const_value.safeGet<Array>())
-        {
-            if (element.getType() != Field::Types::String)
-                return false;
-
-            gin_filters.back().emplace_back();
-            const auto & value = element.safeGet<String>();
-            token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
-        }
-        out.set_gin_filters = std::move(gin_filters);
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.

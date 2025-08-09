@@ -16,6 +16,7 @@ import time
 import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
+from statistics import median
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import requests
@@ -32,6 +33,7 @@ CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.c
 CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
 CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
 CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
+CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -840,7 +842,6 @@ class ClickhouseIntegrationTestsRunner:
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
                     AND (check_start_time <= ({start_time_filter}))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
-                    AND (test_status != 'SKIPPED')
                     AND (test_name != '')
                 GROUP BY test_name
             )
@@ -853,7 +854,6 @@ class ClickhouseIntegrationTestsRunner:
         max_retries = 3
         retry_delay_seconds = 5
 
-        url = f"https://{CLICKHOUSE_PLAY_HOST}/"
         params = {
             "database": CLICKHOUSE_PLAY_DB,
             "user": CLICKHOUSE_PLAY_USER,
@@ -867,7 +867,7 @@ class ClickhouseIntegrationTestsRunner:
                     attempt + 1, max_retries
                 )
 
-                response = requests.post(url, params=params, data=query, timeout=120)
+                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
@@ -918,6 +918,8 @@ class ClickhouseIntegrationTestsRunner:
         tests_execution_times = self.get_tests_execution_time()
         assert len(tests_execution_times) > 400, \
             f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        # use median exec time for tests with unknown execution time
+        median_time = median(list(tests_execution_times.values()))
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
@@ -955,7 +957,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_parallel_tests:
             total_time, group_index, files = heapq.heappop(parallel_heap)
             files.append(file)
-            heapq.heappush(parallel_heap, (total_time, group_index, files))
+            heapq.heappush(parallel_heap, (total_time + median_time, group_index, files))
 
         test_file_groups = [[] for _ in range(num_groups)]
         parallel_group_times = [0.0] * num_groups
@@ -980,7 +982,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_sequential_tests:
             total_time, group_index = heapq.heappop(sequential_heap)
             test_file_groups[group_index].append(file)
-            heapq.heappush(sequential_heap, (total_time, group_index))
+            heapq.heappush(sequential_heap, (total_time + median_time, group_index))
 
         # heap contains final total times
         total_group_times = [0.0] * num_groups
@@ -988,13 +990,21 @@ class ClickhouseIntegrationTestsRunner:
             total_time, group_index = heapq.heappop(sequential_heap)
             total_group_times[group_index] = total_time
 
+        # sort tests in groups by execution time to run slow tests first
+        def module_sort_key(m):
+            return (-tests_execution_times.get(m, -1.0), m)
+
+        for i in range(len(test_file_groups)):
+            test_file_groups[i].sort(key=module_sort_key)
+
         # expand groups
         final_test_groups = []
         for group_of_test_files in test_file_groups:
             test_name_group = []
-            for module_name in sorted(group_of_test_files):
-                test_name_group.extend(file_to_test_map.get(module_name, []))
-            final_test_groups.append(sorted(test_name_group))
+            for module_name in group_of_test_files:
+                tests_in_file = sorted(file_to_test_map.get(module_name, []))
+                test_name_group.extend(tests_in_file)
+            final_test_groups.append(test_name_group)
 
         # log
         for i, test_group in enumerate(final_test_groups):
@@ -1115,7 +1125,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "2h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
