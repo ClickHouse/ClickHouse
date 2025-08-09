@@ -1,5 +1,4 @@
 #include <optional>
-#include "Core/TypeId.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -11,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
 #include <Storages/ColumnsDescription.h>
