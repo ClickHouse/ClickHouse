@@ -256,8 +256,20 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
+        // to small table we can iterate without prefetching
+        constexpr size_t prefetch_min_size = 10000;
+        if (CouldPrefetchKey<Cell> && this->size() > prefetch_min_size)
+        {
+            auto it = this->prefetchingBegin();
+            auto end = this->prefetchingEnd();
+            for (; it != end; ++it)
+                func(it->getKey(), it->getMapped());
+        }
+        else
+        {
+            for (auto & it : *this)
+                func(it.getKey(), it.getMapped());
+        }
     }
 
     /// Call func(Mapped &) for each hash map element.

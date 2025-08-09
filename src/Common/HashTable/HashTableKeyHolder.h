@@ -133,3 +133,21 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key.size = 0;
 }
 
+inline void KeyPrefetch(const StringRef & key)
+{
+    const size_t cache_line_size = 64;
+    const size_t max_prefetch = 256;
+    const size_t n = key.size < max_prefetch ? key.size : max_prefetch;
+    const char * ptr = key.data;
+    const char * end = ptr + n;
+    for (; ptr < end; ptr += cache_line_size)
+    {
+        __builtin_prefetch(ptr);
+    }
+}
+
+template <typename CellType>
+concept CouldPrefetchKey = requires(CellType * cell)
+{
+    { KeyPrefetch(cell->getKey()) };
+};
