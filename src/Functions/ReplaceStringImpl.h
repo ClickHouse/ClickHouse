@@ -54,7 +54,7 @@ struct ReplaceStringImpl
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
         /// We will search for the next occurrence in all rows at once.
-        while (pos < end)
+        while (i < input_rows_count)
         {
             const UInt8 * match = searcher.search(pos, end - pos);
 
@@ -372,7 +372,7 @@ struct ReplaceStringImpl
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
         /// We will search for the next occurrence in all rows at once.
-        while (pos < end)
+        while (i < input_rows_count)
         {
             const UInt8 * match = searcher.search(pos, end - pos);
 

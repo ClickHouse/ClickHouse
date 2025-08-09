@@ -145,7 +145,7 @@ public:
 
                 /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
                 /// The reason is simply because the pattern could match another part of input when forwarded.
-                pos++;
+                ++pos;
             }
         }
 
