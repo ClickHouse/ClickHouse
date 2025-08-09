@@ -315,13 +315,25 @@ StorageObjectStorage::StorageObjectStorage(
     setInMemoryMetadata(metadata);
 
 #if USE_AVRO
-    if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites() && context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
     {
-        const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
-        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_, format_settings_, sample_block]
+        if (!updated_configuration)
         {
-            scheduleCompactionJob(object_storage_, configuration_, format_settings_, sample_block, context);
-        });
+            configuration->update(
+                object_storage,
+                context,
+                /* if_not_updated_before */is_table_function,
+                /* check_consistent_with_previous_metadata */true);
+            updated_configuration = true;
+        }
+        if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites())
+        {
+            const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
+            context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_, format_settings_, sample_block]
+            {
+                scheduleCompactionJob(object_storage_, configuration_, format_settings_, sample_block, context);
+            });
+        }
     }
 #endif
 }
