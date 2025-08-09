@@ -247,7 +247,7 @@ struct PositionImpl
             return;
         }
 
-        /// Current index in the array of strings.
+        /// Current index in the column of strings.
         size_t i = 0;
 
         typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
@@ -264,7 +264,7 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
             {
                 auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
