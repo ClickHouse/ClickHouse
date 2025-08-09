@@ -19,6 +19,7 @@ class _Environment(MetaClasses.Serializable):
     SHA: str
     PR_NUMBER: int
     EVENT_TYPE: str
+    EVENT_TIME: str
     JOB_OUTPUT_STREAM: str
     EVENT_FILE_PATH: str
     CHANGE_URL: str
@@ -61,6 +62,7 @@ class _Environment(MetaClasses.Serializable):
         PR_TITLE = ""
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
+        EVENT_TIME = ""
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -78,6 +80,9 @@ class _Environment(MetaClasses.Serializable):
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
+                EVENT_TIME = github_event.get("pull_request", {}).get(
+                    "updated_at", None
+                )
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -91,6 +96,7 @@ class _Environment(MetaClasses.Serializable):
                 if len(parts) >= 2:
                     pr_str = parts[1].split()[0]
                     LINKED_PR_NUMBER = int(pr_str) if pr_str.isdigit() else 0
+                EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
                 SHA = os.getenv(
@@ -176,6 +182,7 @@ class _Environment(MetaClasses.Serializable):
             JOB_OUTPUT_STREAM=JOB_OUTPUT_STREAM,
             SHA=SHA,
             EVENT_TYPE=EVENT_TYPE,
+            EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
             CHANGE_URL=CHANGE_URL,
