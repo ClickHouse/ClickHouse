@@ -89,7 +89,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(element_id, element-id);
 DEFINE_ICEBERG_FIELD_ALIAS(element_required, element-required);
 DEFINE_ICEBERG_FIELD_ALIAS(key_id, key-id);
 DEFINE_ICEBERG_FIELD_ALIAS(value_id, value-id);
-DEFINE_ICEBERG_FIELD_ALIAS(value_requires, value-requires);
+DEFINE_ICEBERG_FIELD_ALIAS(value_required, value-required);
 DEFINE_ICEBERG_FIELD_ALIAS(last_partition_id, last-partition-id);
 DEFINE_ICEBERG_FIELD_ALIAS(order_id, order-id);
 DEFINE_ICEBERG_FIELD_ALIAS(default_sort_order_id, default-sort-order-id);
