@@ -122,7 +122,8 @@ std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) con
     if (isNullAt(n))
         return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return getNestedColumn().getValueNameAndType(n);
+    auto [name, type] = getNestedColumn().getValueNameAndType(n);
+    return {std::move(name), std::make_shared<DataTypeNullable>(std::move(type))};
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
