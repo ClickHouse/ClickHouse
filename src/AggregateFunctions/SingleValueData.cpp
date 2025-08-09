@@ -1170,6 +1170,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     }
 
     /// The strings are serialized as zero terminated.
+    char last_char;
 
     UInt32 rhs_size = rhs_size_signed;
     if (rhs_size <= MAX_SMALL_STRING_SIZE + 1)
@@ -1177,15 +1178,38 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         /// Don't free large_data here.
         size = rhs_size;
         buf.readStrict(small_data, size - 1);
-        assertChar(0, buf);
+        readChar(last_char, buf);
     }
     else
     {
-        /// Reserve one byte more for null-character
-        allocateLargeDataIfNeeded(rhs_size + 1, arena);
         size = rhs_size;
+        allocateLargeDataIfNeeded(size - 1, arena);
         buf.readStrict(large_data, size - 1);
-        assertChar(0, buf);
+        readChar(last_char, buf);
+    }
+
+    /// Compatibility with an invalid format in certain old versions.
+    if (last_char != 0)
+    {
+        if (size < MAX_SMALL_STRING_SIZE + 1)
+        {
+            small_data[size - 1] = last_char;
+        }
+        else if (size == MAX_SMALL_STRING_SIZE + 1)
+        {
+            String tmp;
+            tmp.reserve(size);
+            tmp.assign(small_data, size - 1);
+            tmp += last_char;
+
+            allocateLargeDataIfNeeded(size, arena);
+            memcpy(large_data, tmp.data(), size);
+        }
+        else
+        {
+            large_data[size - 1] = last_char;
+        }
+        ++size;
     }
 }
 
