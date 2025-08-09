@@ -348,15 +348,17 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
             Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
             result->set(Iceberg::f_type, "struct");
             Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            size_t iter_names = 1;
             for (const auto & element : type_tuple->getElements())
             {
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter);
-                field->set(Iceberg::f_name, element->getName());
+                field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 field->set(Iceberg::f_required, false);
                 auto child_type = getIcebergType(element->getNormalizedType(), iter);
                 field->set(Iceberg::f_type, child_type);
                 fields->add(field);
+                ++iter_names;
             }
             result->set(Iceberg::f_fields, fields);
             return result;
@@ -385,7 +387,7 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             field->set(Iceberg::f_value_id, ++iter);
-            field->set(Iceberg::f_value_requires, false);
+            field->set(Iceberg::f_value_required, false);
             return field;
         }
         case TypeIndex::Nullable:
@@ -545,11 +547,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
-    Int32 iter = 0;
+    Int32 iter = static_cast<Int32>(columns.size());
+    Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_id, ++iter);
+        field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
         field->set(Iceberg::f_required, false);
         field->set(Iceberg::f_type, getIcebergType(column.type, iter));
