@@ -89,7 +89,7 @@ elseif (ARCH_AARCH64)
         # [8]  https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
         # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16+lse")
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
     endif ()
