@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
+static String getLoadSuggestionQueryUsingSystemTables(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -89,6 +89,67 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     return query;
 }
 
+static String getLoadSuggestionQueryUsingSystemCompletionsTable(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
+{
+    /// NOTE: Once you will update the completion list,
+    /// do not forget to update 01676_clickhouse_client_autocomplete.sh
+    /// TODO: Use belongs column for better contextual suggestions
+    String unlimited_contexts = fmt::format(
+        "('function', 'table engine', 'format', 'table function', 'data type', 'merge tree setting', 'setting', 'aggregate function combinator pair'{}{})",
+        (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE ? ", 'keyword'" : ""),
+        (basic_suggestion ? "" : ", 'cluster', 'macro', 'policy'")
+    );
+    String query = fmt::format(
+        "SELECT word FROM system.completions WHERE context IN {}",
+        unlimited_contexts
+    );
+
+    /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+    if (suggestion_limit > 0)
+    {
+        String limited_contexts = fmt::format(
+            "('database', 'table', 'column'{})",
+            (basic_suggestion ? "" : ", 'dictionary'")
+        );
+        query += fmt::format(
+            " UNION ALL SELECT word FROM ("
+            " SELECT word, context, ROW_NUMBER() OVER (PARTITION BY context ORDER BY word) AS rn FROM "
+            " (SELECT DISTINCT word, context FROM system.completions WHERE context IN {})"
+            ") WHERE rn <= {}",
+            limited_contexts,
+            suggestion_limit
+        );
+    }
+
+    query = "SELECT DISTINCT arrayJoin(extractAll(word, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    return query;
+}
+
+static std::optional<UInt8> tryReadUInt8FromBlock(const Block & block)
+{
+    if (block.empty())
+        return std::nullopt;
+
+    if (block.columns() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to check existence of completions table");
+
+    const auto & column = typeid_cast<const ColumnUInt8 &>(*block.getByPosition(0).column);
+    return column.getData()[0];
+}
+
+bool Suggest::hasSystemCompletions(IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info)
+{
+    UInt8 exists = 0;
+    String query = "EXISTS TABLE system.completions";
+    fetch(connection, timeouts, query, client_info,
+        [&](const Block & block)
+        {
+            if (auto v = tryReadUInt8FromBlock(block))
+                exists = *v;
+        });
+    return exists != 0;
+}
+
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
@@ -108,14 +169,15 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             try
             {
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
+                const auto server_revision = connection->getServerRevision(connection_parameters.timeouts);
+                const auto basic_suggestion = std::is_same_v<ConnectionType, LocalConnection>;
+
+                auto suggestion_query = hasSystemCompletions(*connection, connection_parameters.timeouts, my_context->getClientInfo()) ? getLoadSuggestionQueryUsingSystemCompletionsTable(suggestion_limit, basic_suggestion, server_revision) : getLoadSuggestionQueryUsingSystemTables(suggestion_limit, basic_suggestion, server_revision);
                 fetch(*connection,
                     connection_parameters.timeouts,
-                    getLoadSuggestionQuery(
-                        suggestion_limit,
-                        std::is_same_v<ConnectionType, LocalConnection>,
-                        connection->getServerRevision(connection_parameters.timeouts)
-                    ),
-                    my_context->getClientInfo());
+                    suggestion_query,
+                    my_context->getClientInfo(),
+                    [this](const Block & b) { fillWordsFromBlock(b); });
             }
             catch (const Exception & e)
             {
@@ -159,7 +221,9 @@ void Suggest::load(IServerConnection & connection,
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
+        const auto server_revision = connection.getServerRevision(timeouts);
+        auto suggestion_query = hasSystemCompletions(connection, timeouts, client_info) ? getLoadSuggestionQueryUsingSystemCompletionsTable(suggestion_limit, true, server_revision) : getLoadSuggestionQueryUsingSystemTables(suggestion_limit, true, server_revision);
+        fetch(connection, timeouts, suggestion_query, client_info, [this](const Block & block) { fillWordsFromBlock(block); });
     }
     catch (...)
     {
@@ -168,7 +232,7 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, std::function<void(const Block &)> on_data)
 {
     connection.sendQuery(
         timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {} /* external_roles*/, {});
@@ -179,7 +243,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                fillWordsFromBlock(packet.block);
+                on_data(packet.block);
                 continue;
 
             case Protocol::Server::TimezoneUpdate:
