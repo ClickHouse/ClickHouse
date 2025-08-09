@@ -481,7 +481,8 @@ bool tryGetLock(
     auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
     if (object_storage->exists(key))
         return false;
-    object_storage->writeObject(key, WriteMode::Rewrite);
+    auto buffer = object_storage->writeObject(key, WriteMode::Rewrite);
+    buffer->finalize();
     return true;
 }
 
