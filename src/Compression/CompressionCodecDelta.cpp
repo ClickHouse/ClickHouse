@@ -179,13 +179,14 @@ namespace
 
 UInt8 getDeltaBytesSize(const IDataType * column_type)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
+    if (!column_type->isValueRepresentedByNumber())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not numeric",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
+
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
@@ -202,6 +203,10 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         /// Default bytes size is 1.
         UInt8 delta_bytes_size = 1;
 
+        /// But always check against column_type if available to ensure it is also a valid type
+        if (column_type != nullptr)
+            delta_bytes_size = getDeltaBytesSize(column_type);
+
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -216,10 +221,6 @@ void registerCodecDelta(CompressionCodecFactory & factory)
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta value for delta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
             delta_bytes_size = static_cast<UInt8>(user_bytes_size);
-        }
-        else if (column_type)
-        {
-            delta_bytes_size = getDeltaBytesSize(column_type);
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
