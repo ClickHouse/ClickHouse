@@ -157,7 +157,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (Traits::array_agruments)
+        if (Traits::array_arguments)
         {
             addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
         }
@@ -221,7 +221,7 @@ public:
         const IColumn ** columns,
         const UInt8 * flags_data) const
     {
-        if (Traits::array_agruments)
+        if (Traits::array_arguments)
         {
             const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
             const auto & value_column = typeid_cast<const ColumnArray &>(*columns[1]);
