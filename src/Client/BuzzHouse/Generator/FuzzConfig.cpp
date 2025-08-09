@@ -158,6 +158,17 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
     };
 }
 
+static DB::Strings loadArray(const JSONObjectType & value)
+{
+    DB::Strings res;
+
+    for (const auto entry : value.getArray())
+    {
+        res.emplace_back(String(entry.getString()));
+    }
+    return res;
+}
+
 static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
 {
     return [&](const JSONObjectType & value)
@@ -281,7 +292,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"materializedpostgresql", allow_materialized_postgresql},
            {"replicated", allow_replicated},
            {"shared", allow_shared},
-           {"datalakecatalog", allow_datalakecatalog}};
+           {"datalakecatalog", allow_datalakecatalog},
+           {"arrowflight", allow_arrowflight}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -342,6 +354,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"disable_new_analyzer", [&](const JSONObjectType & value) { disable_new_analyzer = value.getBool(); }},
+        {"enable_parallel_replicas", [&](const JSONObjectType & value) { enable_parallel_replicas = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -351,6 +364,12 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
+        {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
+        {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},
+        {"http_servers", [&](const JSONObjectType & value) { http_servers = loadArray(value); }},
+        {"https_servers", [&](const JSONObjectType & value) { https_servers = loadArray(value); }},
+        {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
+        {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
@@ -440,15 +459,7 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            if constexpr (std::is_same_v<T, ServerEndpoint>)
-            {
-                const auto & tabchar = buf.find('\t');
-                out.push_back(ServerEndpoint(buf.substr(0, tabchar), static_cast<uint32_t>(std::stoul(buf.substr(tabchar + 1)))));
-            }
-            else
-            {
-                out.push_back(buf);
-            }
+            out.push_back(buf);
             buf.resize(0);
             found++;
         }
@@ -467,8 +478,6 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    loadServerSettings<ServerEndpoint>(
-        this->server_endpoints, "servers", R"(SELECT DISTINCT "host_address", "port" FROM "system"."clusters")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const

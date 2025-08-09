@@ -136,14 +136,14 @@ public:
 private:
     std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
     ExternalIntegrations & connections;
-    const bool supports_cloud_features, replica_setup;
+    const bool supports_cloud_features;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
 
     PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
          allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
-    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0,
-             backup_counter = 0, cache_counter = 0, aliases_counter = 0;
+    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, function_counter = 0, current_level = 0, backup_counter = 0,
+             cache_counter = 0, aliases_counter = 0;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::unordered_map<uint32_t, SQLTable> staged_tables, tables;
     std::unordered_map<uint32_t, SQLView> staged_views, views;
@@ -316,7 +316,7 @@ private:
     void flatTableColumnPath(
         uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
-    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, bool escape, Expr * expr);
+    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     void generateTableExpression(RandomGenerator & rg, bool use_global_agg, Expr * expr);
@@ -412,8 +412,10 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos);
+    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, bool allow_chaos, const SQLTable & t, TableFunction * tfunc);
+    String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
+    String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
@@ -586,7 +588,7 @@ private:
                 }
                 else
                 {
-                    next->set_value(getTableStructure(rg, b, allow_chaos));
+                    next->set_value(getTableStructure(rg, b, allow_chaos, true));
                 }
                 added_structure++;
             }
@@ -633,7 +635,7 @@ public:
     template <TableRequirement req>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
+    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
     void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);

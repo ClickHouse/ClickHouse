@@ -115,11 +115,10 @@ public:
 struct SQLDatabase
 {
 public:
-    std::optional<String> cluster;
-    DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
-    uint32_t zoo_path_counter;
+    std::optional<String> cluster;
+    DetachStatus attached = DetachStatus::ATTACHED;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -149,7 +148,7 @@ public:
 
     String getName() const { return "d" + std::to_string(dname); }
 
-    void finishDatabaseSpecification(DatabaseEngine * dspec) const;
+    void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
 struct SQLBase
@@ -163,7 +162,7 @@ public:
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    String file_comp, partition_strategy, partition_columns_in_data_file;
+    String file_comp, partition_strategy, partition_columns_in_data_file, host_params;
     std::optional<InOutFormat> file_format;
     CatalogTable catalog = CatalogTable::None;
 
@@ -187,6 +186,8 @@ public:
     {
         return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
     }
+
+    bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
 
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 
@@ -269,6 +270,8 @@ public:
     bool isExternalDistributedEngine() const { return teng == TableEngineValues::ExternalDistributed; }
 
     bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
+
+    bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
     bool isNotTruncableEngine() const;
 

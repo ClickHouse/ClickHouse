@@ -933,8 +933,26 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
+    if (te->has_engine() && b.isReplicatedOrSharedMergeTree() && rg.nextSmallNumber() < 8)
+    {
+        /// Replicated table params must come first when set
+        std::vector<TableEngineParam> temp_params;
+
+        for (const auto & item : te->params())
+        {
+            temp_params.emplace_back(item);
+        }
+        te->clear_params();
+        te->add_params()->set_svalue("/clickhouse/tables/{shard}/{database}/{table}");
+        te->add_params()->set_svalue("{replica}");
+        for (const auto & item : temp_params)
+        {
+            *te->add_params() = item;
+        }
+    }
     if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
     {
+        /// Optional list of columns to be summed
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
 
@@ -948,9 +966,9 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
-    /// Replicated MergeTree are to be used with cluster
-    if (!fc.clusters.empty() && (!b.db || !b.db->isSharedDatabase()) && (!b.toption.has_value() || b.toption.value() != TShared)
-        && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    /// Don't use on CLUSTER with ReplicatedMergeTrees or SharedMergeTrees
+    if (!fc.clusters.empty() && !b.isSharedMergeTree() && (!b.db || !b.db->isSharedDatabase())
+        && (b.db || !supports_cloud_features) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
         {
@@ -986,7 +1004,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
-String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos)
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const bool allow_chaos, const bool escape)
 {
     String buf;
     bool first = true;
@@ -1000,7 +1018,7 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
             "{}{} {}{}",
             first ? "" : ", ",
             entry.getBottomName(),
-            entry.getBottomType()->typeName(true),
+            entry.getBottomType()->typeName(escape),
             entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         first = false;
     }
@@ -1019,12 +1037,10 @@ void StatementGenerator::generateEngineDetails(
 
     if (b.isMergeTreeFamily())
     {
-        const bool allow_replicated_tbl = replica_setup && (fc.engine_mask & allow_replicated) != 0;
-
-        if (te->has_engine() && !b.is_temp && (allow_replicated_tbl || allow_shared_tbl) && rg.nextSmallNumber() < 4)
+        if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)
         {
             chassert(this->ids.empty());
-            if (allow_replicated_tbl)
+            if ((fc.engine_mask & allow_replicated) != 0)
             {
                 this->ids.emplace_back(TReplicated);
             }
@@ -1297,6 +1313,14 @@ void StatementGenerator::generateEngineDetails(
         }
         setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
     }
+    else if (te->has_engine() && b.isArrowFlightEngine())
+    {
+        /// Set arrow flight params
+        b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
+        te->add_params()->set_svalue(b.host_params);
+        te->add_params()->set_svalue(b.getTablePath(fc, false));
+    }
+
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
         b.toption = TShared;
@@ -1348,8 +1372,7 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if ((b.isMergeTreeFamily() || b.isLogFamily())
-            && ((b.toption.has_value() && b.toption.value() == TShared) || rg.nextSmallNumber() < 3)
+        if ((b.isMergeTreeFamily() || b.isLogFamily()) && (b.isSharedMergeTree() || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -1850,6 +1873,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     if (!fc.keeper_map_path_prefix.empty() && (fc.engine_mask & allow_keepermap) != 0)
     {
         this->ids.emplace_back(KeeperMap);
+    }
+    if (!fc.arrow_flight_servers.empty() && (fc.engine_mask & allow_arrowflight) != 0)
+    {
+        this->ids.emplace_back(ArrowFlight);
     }
     if (has_tables || has_views || has_dictionaries)
     {
@@ -2469,7 +2496,7 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DMemory);
     }
-    if (replica_setup && (fc.engine_mask & allow_replicated) != 0)
+    if ((fc.engine_mask & allow_replicated) != 0)
     {
         this->ids.emplace_back(DReplicated);
     }
@@ -2495,11 +2522,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
 
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (next.isReplicatedDatabase())
-    {
-        next.zoo_path_counter = this->zoo_path_counter++;
-    }
-    if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
+    if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
         cd->mutable_cluster()->set_cluster(next.cluster.value());
@@ -2511,7 +2534,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if (!next.isSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         svs = svs ? svs : cd->mutable_setting_values();

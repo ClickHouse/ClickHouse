@@ -2,13 +2,14 @@
 
 namespace BuzzHouse
 {
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * dspec) const
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
 {
     if (isReplicatedDatabase())
     {
-        dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
-        dspec->add_params()->set_svalue("s1");
-        dspec->add_params()->set_svalue("r1");
+        chassert(de->params_size() == 0);
+        de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
+        de->add_params()->set_svalue("{shard}");
+        de->add_params()->set_svalue("{replica}");
     }
 }
 
@@ -24,7 +25,7 @@ bool SQLBase::isEngineReplaceable() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
         || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
-        || isNullEngine() || isGenerateRandomEngine();
+        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -102,6 +103,10 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
     if (isKeeperMapEngine())
     {
         return fmt::format("/kfile{}", tname);
+    }
+    if (isArrowFlightEngine())
+    {
+        return fmt::format("/aflight{}", tname);
     }
     chassert(0);
     return "";

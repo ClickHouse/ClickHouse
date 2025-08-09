@@ -55,12 +55,11 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
 const DB::Strings StatementGenerator::compression
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
-StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
+StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
     : fc(fuzzc)
     , next_type_mask(fc.type_mask)
     , connections(conn)
-    , supports_cloud_features(scf)
-    , replica_setup(rs)
+    , supports_cloud_features(supports_cloud_features_)
     , deterministic_funcs_limit(
           static_cast<size_t>(
               std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
@@ -697,7 +696,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
+            url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
             for (const auto & entry : this->entries)
             {
                 url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
@@ -706,7 +705,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
                     first ? "" : ", ",
                     entry.getBottomName(),
                     entry.path.size() > 1 ? "Array(" : "",
-                    entry.getBottomType()->typeName(true),
+                    entry.getBottomType()->typeName(false),
                     entry.path.size() > 1 ? ")" : "");
                 first = false;
             }

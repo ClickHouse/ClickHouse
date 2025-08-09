@@ -237,7 +237,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
     }
     else
     {
@@ -491,7 +491,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
         {
-            const auto & toPickFrom = rg.nextMediumNumber() < 6 ? hotSettings : queryOracleSettings;
+            const auto & toPickFrom = (hotSettings.empty() || rg.nextMediumNumber() < 94) ? queryOracleSettings : hotSettings;
             const String & setting = rg.pickRandomly(toPickFrom);
             const CHSetting & chs = queryOracleSettings.at(setting);
             SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();

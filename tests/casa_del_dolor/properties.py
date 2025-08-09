@@ -963,8 +963,12 @@ def modify_server_settings(
         secure_port_xml.text = "9440"
     if root.find("https_port") is None:
         modified = True
-        secure_port_xml = ET.SubElement(root, "https_port")
-        secure_port_xml.text = "8443"
+        https_port_xml = ET.SubElement(root, "https_port")
+        https_port_xml.text = "8443"
+    if root.find("arrowflight_port") is None:
+        modified = True
+        arrowflight_port_xml = ET.SubElement(root, "arrowflight_port")
+        arrowflight_port_xml.text = "8888"
     if root.find("openSSL") is None:
         modified = True
         openssl_xml = ET.SubElement(root, "openSSL")
