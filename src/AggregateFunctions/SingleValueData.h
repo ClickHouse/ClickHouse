@@ -278,7 +278,7 @@ private:
     //// TODO: Maybe instead of a virtual class we need to go with a std::variant of the 3 to avoid reserving space for the vtable
     static constexpr UInt32 MAX_SMALL_STRING_SIZE
         = SingleValueDataBase::MAX_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(SingleValueDataBase);
-    static constexpr UInt32 MAX_STRING_SIZE = 1UL << 30;
+    static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
 
     union
     {
