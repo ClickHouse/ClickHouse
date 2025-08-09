@@ -78,7 +78,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const String & data_file_name,
+    const std::vector<String> & data_file_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
@@ -93,7 +93,8 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    bool use_previous_snapshots = true);
 
 class MetadataGenerator
 {
@@ -102,7 +103,7 @@ public:
 
     struct NextMetadataResult
     {
-        Poco::JSON::Object::Ptr snapshot;
+        Poco::JSON::Object::Ptr snapshot = nullptr;
         String metadata_path;
         String storage_metadata_path;
     };
@@ -114,7 +115,9 @@ public:
         Int32 added_files,
         Int32 added_records,
         Int32 added_files_size,
-        Int32 num_partitions);
+        Int32 num_partitions,
+        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+        std::optional<Int64> user_defined_timestamp = std::nullopt);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
