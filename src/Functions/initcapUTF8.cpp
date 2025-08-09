@@ -24,8 +24,6 @@ struct InitcapUTF8Impl
         ColumnString::Offsets & res_offsets,
         size_t /*input_rows_count*/)
     {
-        if (data.empty())
-            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
 

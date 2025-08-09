@@ -16,8 +16,6 @@ struct InitcapImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        if (data.empty())
-            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
 
@@ -32,8 +30,6 @@ struct InitcapImpl
 
     static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data, size_t input_rows_count)
     {
-        if (data.empty())
-            return;
         res_data.resize(data.size());
 
         ColumnString::Offset prev_offset = 0;
