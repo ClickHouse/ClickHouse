@@ -45,7 +45,6 @@ extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
-extern const int SYNTAX_ERROR;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -211,7 +210,7 @@ HashJoin::HashJoin(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported");
 
             if (key_columns.size() <= 1)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "ASOF join needs at least one equi-join column");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
 
             size_t asof_size;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);

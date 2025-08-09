@@ -2076,16 +2076,26 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
+DECLARE(Bool, query_plan_optimize_joins, true, R"(
+Apply query plan optimizations for joins.
+)", 0) \
 DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
-    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
     - 'auto': Let the planner decide which table to use as the build table.
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
+)", 0) \
+DECLARE(Bool, query_plan_optimize_join_order, true, R"(
+    Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
  )", 0) \
+    \
+    DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
+Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
+)", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
