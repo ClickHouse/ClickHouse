@@ -125,7 +125,7 @@ struct ExtractParamImpl
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
                 res[i] = ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i]);
             else
                 res[i] = 0;
@@ -199,7 +199,7 @@ struct ExtractParamToStringImpl
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
                 ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data);
 
             pos = begin + haystack_offsets[i];

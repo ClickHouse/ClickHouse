@@ -47,8 +47,7 @@ struct CountSubstringsImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        /// FIXME: suboptimal
-        memset(&res[0], 0, res.size() * sizeof(res[0])); /// NOLINT(readability-container-data-pointer)
+        memset(res.data(), 0, res.size() * sizeof(res[0]));
 
         if (needle.empty())
             return; // Return all zeros
@@ -68,13 +67,12 @@ struct CountSubstringsImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
             {
                 auto res_pos = needle.size() + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos >= start)
-                {
                     ++res[i];
-                }
+
                 /// Intersecting substrings in haystack accounted only once
                 pos += needle.size();
                 continue;
