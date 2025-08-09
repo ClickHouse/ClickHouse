@@ -44,11 +44,13 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/WithRetries.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/JSONBuilder.h>
 
+#include <Backups/BackupKeeperSettings.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
@@ -57,7 +59,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Backups/WithRetries.h>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
@@ -993,7 +994,7 @@ private:
             *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         std::vector<std::string> data_children;
         {
-            auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
+            auto holder = with_retries->createRetriesControlHolderForBackup("getKeeperMapDataKeys");
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
             {
@@ -1011,7 +1012,7 @@ private:
                 keys_full_path.push_back(data_zookeeper_path / key);
 
             zkutil::ZooKeeper::MultiTryGetResponse data;
-            auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
+            auto holder = with_retries->createRetriesControlHolderForBackup("getKeeperMapDataKeys");
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]
             {
@@ -1031,7 +1032,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
+        auto max_multiread_size = with_retries->getBackupKeeperSettings().batch_size_for_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -1122,7 +1123,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     {
         Coordination::Stat data_stats;
 
-        auto holder = with_retries->createRetriesControlHolder("checkKeeperMapData");
+        auto holder = with_retries->createRetriesControlHolderForBackup("checkKeeperMapData");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -1177,12 +1178,12 @@ void StorageKeeperMap::restoreDataImpl(
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
+    auto max_multi_size = with_retries->getBackupKeeperSettings().batch_size_for_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]
     {
-        auto holder = with_retries->createRetriesControlHolder("addKeeperMapData");
+        auto holder = with_retries->createRetriesControlHolderForBackup("addKeeperMapData");
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -1204,7 +1205,7 @@ void StorageKeeperMap::restoreDataImpl(
         /// if a table can be non empty we can have conflicting keys so we need to do single create for each row
         if (allow_non_empty_tables)
         {
-            auto holder = with_retries->createRetriesControlHolder("addKeeperMapData");
+            auto holder = with_retries->createRetriesControlHolderForBackup("addKeeperMapData");
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
             {

@@ -32,9 +32,9 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -43,6 +43,7 @@
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+#include "Common/ZooKeeper/WithRetries.h"
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -53,6 +54,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
 
@@ -63,6 +65,8 @@ namespace Setting
 {
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
     extern const SettingsBool database_replicated_always_detach_permanently;
+    extern const SettingsFloat keeper_fault_injection_probability;
+    extern const SettingsUInt64 keeper_fault_injection_seed;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -114,9 +118,15 @@ static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
-ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+ZooKeeperWithFaultInjectionPtr DatabaseReplicated::getZooKeeper() const
 {
-    return getContext()->getZooKeeper();
+    const auto & settings = getContext()->getSettingsRef();
+    return ZooKeeperWithFaultInjection::createInstance(
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed],
+        getContext()->getZooKeeper(),
+        "DatabaseReplicated",
+        log);
 }
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
@@ -477,7 +487,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
         }
 
-        auto current_zookeeper = getContext()->getZooKeeper();
+        auto current_zookeeper = getZooKeeper();
 
         if (!current_zookeeper->exists(zookeeper_path))
         {
@@ -579,7 +589,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
     }
 }
 
-bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
+bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper)
 {
     current_zookeeper->createAncestors(zookeeper_path);
 
@@ -609,7 +619,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     UNREACHABLE();
 }
 
-bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path)
+bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, const String & path)
 {
     Coordination::Stat stat;
     String maybe_database_mark;
@@ -641,7 +651,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
     return maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK);
 }
 
-void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper)
+void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperWithFaultInjectionPtr & current_zookeeper)
 {
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};
@@ -679,7 +689,7 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     }
 }
 
-void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
+void DatabaseReplicated::createReplicaNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper)
 {
     if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add new database replica: provided path {} "
@@ -871,7 +881,7 @@ void DatabaseReplicated::restoreTablesMetadataInKeeper()
         return;
     }
 
-    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, zookeeper_path, true, "");
+    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, true, "");
     UInt64 tables_digest{};
 
     for (auto existing_tables_it = getTablesIterator(local_context, {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
@@ -1277,7 +1287,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
     waitDatabaseStarted();
 
@@ -1295,7 +1305,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
-    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+    std::map<String, String> table_name_to_metadata;
+    {
+        auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::tryGetConsistentMetadataSnapshot");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper);
+            table_name_to_metadata = tryGetConsistentMetadataSnapshot(zookeeper, max_log_ptr);
+        });
+    }
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
@@ -1364,7 +1382,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
     }
 
-    auto make_query_context = [this, current_zookeeper]()
+    auto make_query_context = [this, & with_retries]()
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -1387,8 +1405,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("flatten_nested", false);
         query_context->setSetting("data_type_default_nullable", false);
 
-        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
-        query_context->initZooKeeperMetadataTransaction(txn);
+        auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::make_query_context");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
+            query_context->initZooKeeperMetadataTransaction(txn);
+        });
         return query_context;
     };
 
@@ -1623,27 +1645,40 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
 
             auto status = ExecutionStatus(0).serializeText();
-            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
-            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
-            if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
-                LOG_INFO(log, "Marked recovered {} as finished", entry_name);
-            else
-                LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
+            auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::mark_finished");
+            holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+            {
+                with_retries.renewZooKeeper(zookeeper);
+
+                auto res_finished = zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
+                auto res_synced = zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+                if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
+                    LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+                else
+                    LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
+            });
         }
     }
 
-    std::lock_guard lock{metadata_mutex};
-    assertDigest(getContext());
-    current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
+    auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::set_digest");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+
+        std::lock_guard lock{metadata_mutex};
+        assertDigest(getContext());
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
+        zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
+    });
 }
 
-std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperWithFaultInjectionPtr & zookeeper, UInt32 & max_log_ptr) const
 {
     return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
 }
 
 std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
-    const ZooKeeperPtr & zookeeper,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const FilterByNameFunction & filter_by_table_name,
     size_t max_retries,
     UInt32 & max_log_ptr) const
@@ -1755,7 +1790,14 @@ void DatabaseReplicated::dropReplica(
     if (full_replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
-    auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+    auto const & context = Context::getGlobalContextInstance();
+    const auto & settings = context->getSettingsRef();
+    auto zookeeper = ZooKeeperWithFaultInjection::createInstance(
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed],
+        context->getZooKeeper(),
+        "DatabaseReplicated::dropReplica",
+        nullptr);
 
     String database_mark;
     bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
@@ -2123,7 +2165,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getZooKeeper();
     UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
     auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
 
