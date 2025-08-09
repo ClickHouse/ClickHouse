@@ -324,7 +324,6 @@ StorageObjectStorage::StorageObjectStorage(
                 context,
                 /* if_not_updated_before */is_table_function,
                 /* check_consistent_with_previous_metadata */true);
-            updated_configuration = true;
         }
         if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites())
         {
