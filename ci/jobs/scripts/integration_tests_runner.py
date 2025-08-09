@@ -193,7 +193,7 @@ class ClickhouseIntegrationTestsRunner:
             self.run_by_hash_num = 0
 
         # release/asan/tsan/msan
-        self.job_configuration = self.params.get("job_configuration", "").split('_')[-1]
+        self.job_configuration = self.params.get("job_configuration", "")
         self.pr_updated_at = self.params.get("pr_updated_at", "")
 
         self._all_tests = []  # type: List[str]
@@ -804,7 +804,6 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_name LIKE '%{self.job_configuration}%')
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
                     AND (check_start_time <= ({start_time_filter}))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
