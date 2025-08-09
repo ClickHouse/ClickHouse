@@ -2,6 +2,9 @@ SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 
+-- Workaround for `DB::Exception: Unexpected number of columns in result sample block: 4 expected 3 ([__table1, __table1, __table3.name, __table3.age] = [__table1] + [__table3.age] + [__table3.name]): While executing JoiningTransform. (LOGICAL_ERROR)`
+SET query_plan_join_swap_table = 0;
+
 CREATE TABLE users (uid Int16, name String, age Int16) ORDER BY uid;
 
 INSERT INTO users VALUES (1231, 'John', 33);
