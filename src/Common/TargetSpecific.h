@@ -66,7 +66,7 @@
  * // All target-specific and default implementations are available here via
  * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
  *
- * If you want to write IFunction or IExecutableFuncionImpl with several implementations
+ * If you want to write IFunction or IExecutableFunctionImpl with several implementations
  * see PerformanceAdaptors.h.
  */
 
