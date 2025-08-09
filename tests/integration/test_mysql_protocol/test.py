@@ -373,7 +373,7 @@ def test_mysql_replacement_query(started_cluster):
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u default
-        --password=123 -e "kill query 0;"
+        --password=123 -e "set kill_throw_if_noop = 0; kill query 0;"
     """.format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
@@ -384,7 +384,7 @@ def test_mysql_replacement_query(started_cluster):
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u default
-        --password=123 -e "kill query where query_id='mysql:0';"
+        --password=123 -e "set kill_throw_if_noop = 0; kill query where query_id='mysql:0';"
     """.format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
