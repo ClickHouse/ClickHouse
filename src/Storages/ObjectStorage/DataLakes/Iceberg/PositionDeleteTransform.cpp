@@ -114,13 +114,13 @@ void IcebergStreamingPositionDeleteTransform::initialize()
 {
     for (size_t i = 0; i < delete_sources.size(); ++i)
     {
-        auto & delete_source = delete_sources[i];   
+        auto & delete_source = delete_sources[i];
         size_t position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
         size_t filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
-        
+
         delete_source_column_indices.push_back(PositionDeleteFileIndexes{
             .filename_index = filename_index,
-            .position_index = position_index        
+            .position_index = position_index
         });
         auto latest_chunk = delete_source->read();
         iterator_at_latest_chunks.push_back(0);
