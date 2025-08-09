@@ -54,6 +54,7 @@ from helpers.iceberg_utils import (
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
+DUMMY_STRING = "TRIGGERING_FLAKY_CHECK_AND_BUG_FIX_VALIDATION"
 
 def get_spark():
     builder = (
