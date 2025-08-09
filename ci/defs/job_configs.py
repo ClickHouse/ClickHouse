@@ -289,21 +289,31 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/install_check.py"],
+            include_paths=["./ci/jobs/install_check.py"],
         ),
         timeout=900,
     ).parametrize(
         Job.ParamSet(
-            parameter="release",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
-            requires=["Build (amd_release)"],
+            requires=[
+                ArtifactNames.DEB_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+            ],
         ),
         Job.ParamSet(
-            parameter="aarch64",
+            parameter="arm_release",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            requires=["Build (arm_release)"],
+            requires=[
+                ArtifactNames.DEB_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+            ],
         ),
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
