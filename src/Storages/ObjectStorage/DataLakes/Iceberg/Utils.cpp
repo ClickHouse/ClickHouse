@@ -556,7 +556,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         field->set(Iceberg::f_name, column.name);
         field->set(Iceberg::f_required, false);
         field->set(Iceberg::f_type, getIcebergType(column.type, iter));
-        column_name_to_source_id[column.name] = iter;
+        column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
     schema_representation->set(Iceberg::f_fields, schema_fields);
