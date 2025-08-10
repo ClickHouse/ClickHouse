@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -87,7 +86,7 @@ concept Preparable = requires (T t)
 class FunctionJSONHelpers
 {
 public:
-    template <typename Name, template<typename> typename Impl, class JSONParser, bool case_insensitive = false>
+    template <typename Name, template <typename> typename Impl, typename JSONParser, bool case_insensitive = false>
     class Executor
     {
     public:
@@ -241,7 +240,7 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        for (size_t j = 0; j != moves.size(); ++j)
+        for (size_t j = 0, size = moves.size(); j != size; ++j)
         {
             switch (moves[j].type)
             {
