@@ -68,7 +68,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
-
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -85,9 +87,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
-            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},

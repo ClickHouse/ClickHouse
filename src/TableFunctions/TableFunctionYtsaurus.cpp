@@ -50,7 +50,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "YTsaurus"; }
+    const char * getStorageEngineName() const override { return "YTsaurus"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

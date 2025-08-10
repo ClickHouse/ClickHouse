@@ -41,7 +41,7 @@ StorageYTsaurus::StorageYTsaurus(
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
     , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
-    , log(getLogger(" (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageYTsaurus(" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);

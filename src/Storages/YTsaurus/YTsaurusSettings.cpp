@@ -20,7 +20,7 @@ namespace ErrorCodes
 #define LIST_OF_YTSAURUS_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility", 0) \
     DECLARE(Bool, skip_unknown_columns, true, "Skip columns with unknown type", 0) \
-    DECLARE(Bool, force_read_table, false, "", 0) \
+    DECLARE(Bool, force_read_table, false, "Force the use of read table instead of lookups for dynamic tables.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
