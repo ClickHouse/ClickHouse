@@ -78,7 +78,7 @@ public:
         vec_offsets.resize(input_rows_count);
         vec_res.resize(input_rows_count * 16);
 
-        auto pos = vec_res.data();
+        UInt8 * pos = vec_res.data();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             UInt64 hindex = data[row];

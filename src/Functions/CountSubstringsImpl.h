@@ -40,7 +40,7 @@ struct CountSubstringsImpl
         [[maybe_unused]] ColumnUInt8 * res_null,
         size_t input_rows_count)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant, and it's irrelevant for this function.
         chassert(!res_null);
 
         const UInt8 * const begin = haystack_data.data();
@@ -52,7 +52,7 @@ struct CountSubstringsImpl
         if (needle.empty())
             return; // Return all zeros
 
-        /// Current index in the array of strings.
+        /// Current index in the column of strings.
         size_t i = 0;
 
         typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
