@@ -26,7 +26,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -36,8 +35,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#include <base/MemorySanitizer.h>
 #include <orc/MemoryPool.hh>
 #include <orc/Vector.hh>
 #include <Common/Allocator.h>
@@ -68,8 +65,6 @@ public:
             trace.onAlloc(ptr, actual_size);
         }
 
-        /// For nullable columns some of the values will not be initialized.
-        __msan_unpoison(ptr, size);
         return static_cast<char *>(ptr);
     }
 
@@ -1358,33 +1353,32 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     {
         const size_t n = orc_type->getMaximumLength();
         auto & concrete_holder_column = assert_cast<ColumnFixedString &>(*holder_column);
-        PaddedPODArray<UInt8> & column_chars_t = concrete_holder_column.getChars();
+        PaddedPODArray<UInt8> & column_chars = concrete_holder_column.getChars();
         size_t reserve_size = dict_size * n;
-        column_chars_t.resize_exact(reserve_size);
+        column_chars.resize_exact(reserve_size);
         size_t curr_offset = 0;
         for (size_t i = 0; i < dict_size; ++i)
         {
             const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
             size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
-            memcpy(&column_chars_t[curr_offset], buf, buf_size);
+            memcpy(&column_chars[curr_offset], buf, buf_size);
             curr_offset += n;
         }
     }
     else
     {
         auto & concrete_holder_column = assert_cast<ColumnString &>(*holder_column);
-        PaddedPODArray<UInt8> & column_chars_t = concrete_holder_column.getChars();
+        PaddedPODArray<UInt8> & column_chars = concrete_holder_column.getChars();
         PaddedPODArray<UInt64> & column_offsets = concrete_holder_column.getOffsets();
 
-        size_t reserve_size = orc_dict.dictionaryBlob.size() + dict_size;
-        column_chars_t.resize_exact(reserve_size);
+        column_chars.resize_exact(orc_dict.dictionaryBlob.size());
         column_offsets.resize_exact(dict_size);
         size_t curr_offset = 0;
         for (size_t i = 0; i < dict_size; ++i)
         {
             const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
             size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
-            memcpy(&column_chars_t[curr_offset], buf, buf_size);
+            memcpy(&column_chars[curr_offset], buf, buf_size);
             curr_offset += buf_size;
             column_offsets[i] = curr_offset;
         }
@@ -1446,7 +1440,7 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
 {
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
+    PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
@@ -1457,7 +1451,7 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
             reserve_size += orc_str_column->length[i];
     }
 
-    column_chars_t.resize_exact(reserve_size);
+    column_chars.resize_exact(reserve_size);
     column_offsets.resize_exact(orc_str_column->numElements);
 
     size_t curr_offset = 0;
@@ -1467,7 +1461,7 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
         {
             const auto * buf = orc_str_column->data[i];
             size_t buf_size = orc_str_column->length[i];
-            memcpy(&column_chars_t[curr_offset], buf, buf_size);
+            memcpy(&column_chars[curr_offset], buf, buf_size);
             curr_offset += buf_size;
             column_offsets[i] = curr_offset;
         }
@@ -1480,7 +1474,7 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
             {
                 const auto * buf = orc_str_column->data[i];
                 size_t buf_size = orc_str_column->length[i];
-                memcpy(&column_chars_t[curr_offset], buf, buf_size);
+                memcpy(&column_chars[curr_offset], buf, buf_size);
                 curr_offset += buf_size;
             }
 
@@ -1496,16 +1490,16 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
     size_t fixed_len = orc_type->getMaximumLength();
     auto internal_type = std::make_shared<DataTypeFixedString>(fixed_len);
     auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnFixedString &>(*internal_column).getChars();
-    column_chars_t.reserve(orc_column->numElements * fixed_len);
+    PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnFixedString &>(*internal_column).getChars();
+    column_chars.reserve(orc_column->numElements * fixed_len);
 
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
         if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            column_chars_t.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
+            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
         else
-            column_chars_t.resize_fill(column_chars_t.size() + fixed_len);
+            column_chars.resize_fill(column_chars.size() + fixed_len);
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1712,7 +1706,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     {
         case orc::STRING:
         case orc::BINARY:
-        case orc::VARCHAR: {
+        case orc::VARCHAR:
+        {
             if (type_hint)
             {
                 switch (type_hint->getTypeId())
@@ -1744,7 +1739,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             else
                 return readColumnWithStringData(orc_column, orc_type, column_name);
         }
-        case orc::CHAR: {
+        case orc::CHAR:
+        {
             if (type_hint)
             {
                 switch (type_hint->getTypeId())
