@@ -265,7 +265,7 @@ add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 add_contrib (bech32)
 
 option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
-if (ENABLE_FASTPFOR)
+if (ENABLE_FASTPFOR AND (ARCH_AMD64 OR ARCH_AARCH64))
     if (ARCH_AARCH64)
         add_contrib(simde-cmake simde)
     endif()
