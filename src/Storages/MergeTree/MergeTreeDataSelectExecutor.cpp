@@ -815,7 +815,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
                 const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
-                auto & stat = useful_indices_stat[num_indexes * part_index + idx];
+
+                auto index_stat_idx = idx;
+                if (settings[Setting::per_part_index_stats])
+                    index_stat_idx += num_indexes * part_index;
+               
+                auto & stat = useful_indices_stat[index_stat_idx];
 
                 stat.index_idx = index_idx;
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
