@@ -155,7 +155,8 @@ private:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto optional_args = FunctionArgumentDescriptors{
+        auto optional_args = FunctionArgumentDescriptors
+            {
             {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
         };
 
@@ -167,7 +168,8 @@ private:
         }
 
         validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors{
+            FunctionArgumentDescriptors
+            {
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
                 {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
@@ -187,7 +189,7 @@ private:
     {
         using namespace OpenSSLDetails;
 
-        const auto mode = arguments[0].column->getDataAt(0);
+        const StringRef mode = arguments[0].column->getDataAt(0);
 
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
