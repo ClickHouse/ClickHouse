@@ -910,20 +910,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pool.wait();
         }
 
-        /// Skip empty ranges.
-        std::erase_if(
-            parts_with_ranges,
-            [&](const auto & part)
-            {
-                size_t index = &part - parts_with_ranges.data();
-                if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[index])
-                {
-                    /// retain this part even if empty due to FINAL
-                    return false;
-                }
-
-                return !part.data_part || part.ranges.empty();
-            });
     }
 
     if (metadata_snapshot->hasPrimaryKey())
@@ -976,6 +962,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             index_stats.emplace_back(ReadFromMergeTree::IndexStat{
                 .type = ReadFromMergeTree::IndexType::Skip,
                 .name = index_name,
+                .part_name = parts_with_ranges[part_index].data_part->name,
                 .description = std::move(description),
                 .num_parts_after = stat.total_parts - stat.parts_dropped,
                 .num_granules_after = stat.total_granules - stat.granules_dropped});
@@ -1005,6 +992,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_parts_after = stat.total_parts - stat.parts_dropped,
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
+    /// Skip empty ranges.
+    std::erase_if(
+        parts_with_ranges,
+        [&](const auto & part)
+        {
+            size_t index = &part - parts_with_ranges.data();
+            if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[index])
+            {
+                /// retain this part even if empty due to FINAL
+                return false;
+            }
+
+            return !part.data_part || part.ranges.empty();
+        });
 
     return parts_with_ranges;
 }

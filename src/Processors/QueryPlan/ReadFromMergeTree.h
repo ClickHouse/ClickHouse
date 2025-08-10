@@ -82,6 +82,7 @@ public:
     {
         IndexType type;
         std::string name = {};
+        std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
