@@ -957,15 +957,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (settings[Setting::per_part_index_stats])
             {
                 description += " PART " + std::to_string(part_index) + "/" + std::to_string(part_stats_granularity);
+                index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                    .type = ReadFromMergeTree::IndexType::Skip,
+                    .name = index_name,
+                    .part_name = parts_with_ranges[part_index].data_part->name,
+                    .description = std::move(description),
+                    .num_parts_after = stat.total_parts - stat.parts_dropped,
+                    .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
-
-            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-                .type = ReadFromMergeTree::IndexType::Skip,
-                .name = index_name,
-                .part_name = parts_with_ranges[part_index].data_part->name,
-                .description = std::move(description),
-                .num_parts_after = stat.total_parts - stat.parts_dropped,
-                .num_granules_after = stat.total_granules - stat.granules_dropped});
+            else
+            {
+                index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                    .type = ReadFromMergeTree::IndexType::Skip,
+                    .name = index_name,
+                    .description = std::move(description),
+                    .num_parts_after = stat.total_parts - stat.parts_dropped,
+                    .num_granules_after = stat.total_granules - stat.granules_dropped});
+            }
         }
     }
 
