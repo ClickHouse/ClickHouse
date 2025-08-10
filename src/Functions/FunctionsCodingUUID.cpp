@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
-#include <base/hex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -15,9 +14,9 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
 
 #include <span>
+
 
 namespace DB::ErrorCodes
 {
