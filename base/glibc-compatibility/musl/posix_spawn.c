@@ -64,7 +64,7 @@ static int __posix_spawnx(pid_t *restrict res, const char *restrict path,
 	char *const argv[restrict], char *const envp[restrict])
 {
 	pid_t pid;
-	char stack[MINSIGSTKSZ];
+	char stack[16384];
 	int ec=0, cs;
 	struct args args;
 
