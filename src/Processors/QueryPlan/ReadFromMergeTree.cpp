@@ -1868,35 +1868,33 @@ static void buildIndexes(
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
             std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
-                auto l_index = useful_indices[l].index;
-                auto r_index = useful_indices[r].index;
+                const auto l_index = useful_indices[l].index;
+                const auto r_index = useful_indices[r].index;
 
-                bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
-                bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
 
-                if (l_is_minmax == r_is_minmax)
-                {
-                    const auto l_granularity = l_index->getGranularity();
-                    const auto r_granularity = r_index->getGranularity();
-
-                    const auto l_size = idx_sizes[l];
-                    const auto r_size = idx_sizes[r];
-                    return (l_granularity > r_granularity) || (l_size < r_size);
-                }
+                auto l_index_priority = l_is_minmax ? 1 : 2;
+                auto r_index_priority = r_is_minmax ? 1 : 2;
 
 #if USE_USEARCH
                 // A vector similarity index (if present) is the most selective, hence move it to front
                 bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
                 bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
                 if (l_is_vectorsimilarity)
-                    return true;
+                    l_index_priority = 0;
                 if (r_is_vectorsimilarity)
-                    return false;
+                    r_index_priority = 0;
 #endif
-                if (l_is_minmax)
-                    return true; // left is min max but right is not
+                // negated since we want to prioritize coarser indexes
+                const auto neg_l_granularity = -l_index->getGranularity();
+                const auto neg_r_granularity = -r_index->getGranularity();
 
-                return false; // right is min max but left is not
+                const auto l_size = idx_sizes[l];
+                const auto r_size = idx_sizes[r];
+
+                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+
             });
 
         }
