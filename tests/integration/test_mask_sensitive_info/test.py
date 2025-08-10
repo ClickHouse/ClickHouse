@@ -397,6 +397,10 @@ def test_create_database():
             f"Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '{password}'))",
             "DNS_ERROR",
         ),
+        (
+            f"Backup('', S3(named_collection_3, secret_access_key = '{password}', access_key_id = 'minio'))",
+            "DNS_ERROR",
+        ),
     ]
 
     def make_test_case(i):
@@ -425,6 +429,7 @@ def test_create_database():
             "CREATE DATABASE database3 ENGINE = S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')",
             # "CREATE DATABASE database4 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
             "CREATE DATABASE database4 ENGINE = Backup('', 'S3('http://minio1:9001/root/data/backup', 'minio', '[HIDDEN]')')",
+            "CREATE DATABASE database5 ENGINE = Backup('', 'S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')')",
         ],
         must_not_contain=[password],
     )
