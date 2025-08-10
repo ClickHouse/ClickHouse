@@ -1265,7 +1265,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     bool is_order_by_optimization_applied = params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2;
     if (!no_more_keys)
     {
-        auto foo = [&]()
+        auto no_order_by_optimization_impl = [&]()
         {
             for (size_t i = key_start; i < key_end; ++i)
             {
@@ -1320,23 +1320,30 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         };
         using DataType = decltype(method.data);
-        if (is_order_by_optimization_applied)
+        if (!is_order_by_optimization_applied)
         {
-            if constexpr (!HasImpls<DataType>::value &&
-                HasConstIterator<DataType>::value)
+            no_order_by_optimization_impl();
+        } else
+        {
+            if constexpr (HasImpls<DataType>::value || !HasConstIterator<DataType>::value)
+            {
+                no_order_by_optimization_impl();
+            } else
             {
                 size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
                 const size_t allowed_times_more = 4; // constant could be changed;
                 if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
                     max_allowable_fill = roundUpToPow2(params.limit_plus_offset_length * allowed_times_more);
+
                 const auto& optimization_indexes = params.optimization_indexes.value();
                 using DataIterator = typename DataType::iterator;
+
                 std::vector<DataIterator> top_keys_heap;
                 top_keys_heap.reserve(roundUpToPow2(params.limit_plus_offset_length));
                 chassert(method.data.size() <= max_allowable_fill);
                 for (auto iterator = method.data.begin(); iterator != method.data.end(); ++iterator)
                     top_keys_heap.push_back(iterator);
-                using DataIterator = typename decltype(method.data)::iterator;
+
                 auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
                 {
                     return ColumnsHashing::columns_hashing_impl::compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
@@ -1347,6 +1354,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     std::pop_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
                     top_keys_heap.pop_back();
                 }
+
                 for (size_t i = key_start; i < key_end; ++i)
                 {
                     AggregateDataPtr aggregate_data = nullptr;
@@ -1405,13 +1413,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     assert(aggregate_data != nullptr);
                     places[i] = aggregate_data;
                 }
-            } else
-            {
-                foo();
             }
-        } else
-        {
-            foo();
         }
     }
     else
