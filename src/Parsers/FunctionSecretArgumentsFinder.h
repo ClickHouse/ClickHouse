@@ -698,14 +698,11 @@ protected:
                 else
                 {
                     String arg_value;
-                    if (storage_function->arguments->at(i)->tryGetString(&arg_value, true))
+                    if (!storage_function->arguments->at(i)->tryGetString(&arg_value, true))
                     {
-                        replacement += "'" + arg_value + "'";
+                        return;
                     }
-                    else
-                    {
-                        replacement += "[ARG]";
-                    }
+                    replacement += "'" + arg_value + "'";
                 }
             }
             replacement += ")";
