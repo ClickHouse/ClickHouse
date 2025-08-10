@@ -114,8 +114,8 @@ def should_skip_job(job_name):
         "performance" not in job_name.lower()
         and job_name
         not in (
-            "Build (amd_release)",
-            "Build (arm_release)",
+            "Build (amd_binary)",
+            "Build (arm_binary)",
             JobNames.DOCKER_BUILDS_ARM,
             JobNames.DOCKER_BUILDS_AMD,
         )

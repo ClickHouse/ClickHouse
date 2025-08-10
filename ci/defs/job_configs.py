@@ -861,18 +861,18 @@ class JobConfigs:
     ).parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_release, master_head, {batch}/{total_batches}",
+                parameter=f"amd_binary, master_head, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=[ArtifactNames.CH_AMD_RELEASE],
+                requires=[ArtifactNames.CH_AMD_BINARY],
             )
             for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"arm_release, master_head, {batch}/{total_batches}",
+                parameter=f"arm_binary, master_head, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_ARM_RELEASE],
+                requires=[ArtifactNames.CH_ARM_BINARY],
             )
             for total_batches in (3,)
             for batch in range(1, total_batches + 1)
