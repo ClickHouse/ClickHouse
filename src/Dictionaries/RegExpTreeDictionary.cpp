@@ -134,7 +134,7 @@ struct RegExpTreeDictionary::RegexTreeNode
 
     bool match(const char * haystack, size_t size) const
     {
-        return searcher.Match(haystack, 0, size, re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+        return searcher.Match({haystack, size}, 0, size, re2::RE2::Anchor::UNANCHORED, nullptr, 0);
     }
 
     struct AttributeValue
