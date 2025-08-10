@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -20,6 +21,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionsStringSearchBase.h>
 
 #include <Interpreters/Context.h>
 
@@ -468,6 +470,24 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
 
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
+}
+
+bool RPNBuilderFunctionTreeNode::isOptimizedIndexFunction() const
+{
+    if (dag_node && dag_node->function_base)
+    {
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+        if (adaptor == nullptr)
+            return false;
+
+        const auto function = std::dynamic_pointer_cast<FunctionsStringSearchBase>(adaptor->getFunction());
+        if (function == nullptr)
+            return false;
+
+        return (function->info == FunctionsStringSearchBase::Info::Optimized);
+    }
+
+    return false;
 }
 
 }

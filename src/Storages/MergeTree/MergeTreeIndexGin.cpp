@@ -379,13 +379,17 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
 
     if (node.isFunction())
     {
-        const auto function = node.toFunctionNode();
-        // auto arguments_size = function.getArgumentsSize();
-        auto function_name = function.getFunctionName();
+        const RPNBuilderFunctionTreeNode function = node.toFunctionNode();
+
+        if (function.isOptimizedIndexFunction())
+            return traverseASTEqualsIndex(function, out);
+
+        const std::string function_name = function.getFunctionName();
 
         size_t function_arguments_size = function.getArgumentsSize();
         if (function_arguments_size < 2)
             return false;
+
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
@@ -436,10 +440,6 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
                 if (traverseASTEquals(function, rhs_argument, const_type, const_value, out))
                     return true;
             }
-        }
-        else if (function_name == "hasTokenIndex")
-        {
-            return traverseASTEqualsIndex(function, out);
         }
     }
 
@@ -617,12 +617,13 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
 {
     const String& function_name = function_node.getFunctionName();
+    // TODO: JAM Remove this in the future.
     if (function_name != "hasTokenIndex")
-        return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Index function: {}, only 'hasTokenIndex' is supported", function_name);
 
-    size_t function_arguments_size = function_node.getArgumentsSize();
-    if (function_arguments_size != 4)
-        return false;
+    const size_t function_arguments_size = function_node.getArgumentsSize();
+    if (function_arguments_size < 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function: {} has only {} arguments", function_name, function_arguments_size);
 
     auto index_argument = function_node.getArgumentAt(0);
     auto token_argument = function_node.getArgumentAt(1);

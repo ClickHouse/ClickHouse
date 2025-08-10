@@ -17,8 +17,12 @@ struct NameHasTokenOrNull
     static constexpr auto name = "hasTokenOrNull";
 };
 
-using FunctionHasToken
-    = FunctionsStringSearch<HasTokenImpl<NameHasToken, Volnitsky, false>>;
+using FunctionHasToken = FunctionsStringSearch<
+    HasTokenImpl<NameHasToken, Volnitsky, false>,
+    ExecutionErrorPolicy::Throw,
+    HaystackNeedleOrderIsConfigurable::No,
+    FunctionsStringSearchBase::Info::Optimizable>;
+
 using FunctionHasTokenOrNull
     = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, Volnitsky, false>, ExecutionErrorPolicy::Null>;
 

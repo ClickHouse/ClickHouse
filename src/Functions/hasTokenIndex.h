@@ -30,6 +30,7 @@
 #include <iterator>
 #include <print>
 #include <algorithm>
+#include <Functions/FunctionsStringSearchBase.h>
 
 namespace DB
 {
@@ -55,7 +56,7 @@ concept FunctionIndexConcept = requires(T t)
 
 
 template <FunctionIndexConcept Impl>
-class FunctionIndex : public IFunction
+class FunctionIndex : public FunctionsStringSearchBase
 {
     /// Helper function to extract the index and conditions safety.
     /// This performs all the checks and searches locally, so external code shouldn't check for them.
@@ -149,13 +150,12 @@ class FunctionIndex : public IFunction
 public:
     static constexpr auto name = Impl::name;
     using ResultType = typename Impl::ResultType;
-    ContextPtr context;
 
     explicit FunctionIndex(ContextPtr _context)
-        : context(_context)
+        : FunctionsStringSearchBase(_context, FunctionsStringSearchBase::Info::Optimized)
     {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIndex<Impl>>(context); }
+    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionIndex<Impl>>(_context); }
 
     String getName() const override { return name; }
 
