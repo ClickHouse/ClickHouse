@@ -327,4 +327,10 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+IMPLEMENT_SETTING_ENUM(
+    SearchOrphanedPartsDisks,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"any", SearchOrphanedPartsDisks::ANY},
+     {"local", SearchOrphanedPartsDisks::LOCAL},
+     {"none", SearchOrphanedPartsDisks::NONE}})
 }

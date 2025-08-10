@@ -295,7 +295,7 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            std::unique_ptr counter = std::make_unique<Counter>();
+            auto counter = std::make_unique<Counter>();
             counter->read(rb);
             counter->hash = counter_map.hash(counter->key);
             push(std::move(counter));
