@@ -62,6 +62,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/SessionTracker.h>
+#include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -445,6 +446,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
+
+    mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
 #if USE_NLP
     mutable OnceFlag synonyms_extensions_initialized;
@@ -1555,8 +1558,11 @@ void Context::setDictionariesLibPath(const String & path)
 
 void Context::setUserScriptsPath(const String & path)
 {
-    std::lock_guard lock(shared->mutex);
-    shared->user_scripts_path = path;
+    {
+        std::lock_guard lock(shared->mutex);
+        shared->user_scripts_path = path;
+    }
+    initWasmModuleManager();
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
@@ -3329,6 +3335,38 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 
     std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
+}
+
+void Context::initWasmModuleManager()
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->wasm_module_manager)
+        return;
+
+    const auto & config = shared->getConfigRefWithLock(lock);
+    if (!ConfigHelper::getBool(config, "allow_experimental_webassembly_udf"))
+        return;
+
+    auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
+
+    auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
+    user_scripts_disk->startup(/* skip_access_check */ true);
+    shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
+}
+
+bool Context::hasWasmModuleManager() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->wasm_module_manager != nullptr;
+}
+
+WasmModuleManager & Context::getWasmModuleManager() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->wasm_module_manager)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "WebAssembly module manager is not set up");
+    return *shared->wasm_module_manager;
 }
 
 #if USE_NLP

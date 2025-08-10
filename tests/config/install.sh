@@ -19,6 +19,8 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+WASM_ENGINE=""
+USE_ENCRYPTED_STORAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -39,6 +41,7 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
+        --wasm-engine) WASM_ENGINE=$2 && shift ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
@@ -70,6 +73,7 @@ echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
+mkdir -p $DEST_SERVER_PATH/user_files/
 mkdir -p $DEST_CLIENT_PATH
 
 # When adding a new config or changing the existing one,
@@ -151,6 +155,7 @@ ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/confi
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/user_files.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
@@ -212,6 +217,8 @@ ln -sf $SRC_PATH/lem-en.bin $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
+
+ln -sf $SRC_PATH/user_files/* $DEST_SERVER_PATH/user_files/
 
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \
@@ -377,6 +384,12 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
+fi
+
+ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
+
+if [ ! -z "$WASM_ENGINE" ]; then
+    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
 fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then

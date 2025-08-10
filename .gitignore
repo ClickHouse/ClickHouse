@@ -108,6 +108,7 @@ nbproject/*
 
 # Microsoft Visual Studio Code
 .vscode
+.history
 
 config-preprocessed.xml
 
