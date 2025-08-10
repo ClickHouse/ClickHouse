@@ -732,7 +732,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         std::atomic<size_t> parts_dropped = 0;
         std::atomic<size_t> elapsed_us = 0;
         std::atomic<MarkRanges::SearchAlgorithm> search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
-        size_t index_idx;
     };
 
     IndexStat pk_stat;
@@ -858,7 +857,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 auto & stat = useful_indices_stat[index_stat_idx];
 
-                stat.index_idx = index_idx;
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
