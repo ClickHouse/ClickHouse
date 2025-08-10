@@ -240,14 +240,16 @@ public:
 
     void insertDefault() override
     {
-        offsets.push_back(offsets.back());
+        auto last = offsets.back();
+        offsets.push_back(last);
     }
 
     void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + length);
+        auto last = offsets.back();
         for (size_t i = 0; i < length; ++i)
-            offsets.push_back(offsets.back());
+            offsets.push_back(last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

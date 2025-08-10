@@ -163,7 +163,8 @@ private:
 
         if (data.points.empty())
         {
-            offsets.push_back(offsets.back());
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -229,7 +230,8 @@ private:
 
         if (y_max == 0)
         {
-            offsets.push_back(offsets.back());
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
