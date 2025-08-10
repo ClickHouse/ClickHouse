@@ -803,23 +803,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
-
-            const auto index_order = skip_indexes.useful_indices.empty() ? std::nullopt : std::optional{skip_indexes.per_part_index_orders[part_index]};
             const auto num_indexes = skip_indexes.useful_indices.size();
 
-            for (size_t idx = 0; index_order.has_value() && idx < index_order.value().size(); ++idx)
+            for (size_t idx = 0; idx < num_indexes; ++idx)
             {
-                const auto &idx_order = index_order.value();
                 if (ranges.ranges.empty())
                     break;
 
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
 
-                const auto & index_and_condition = skip_indexes.useful_indices[idx_order[idx]];
+                const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
                 auto & stat = useful_indices_stat[num_indexes * part_index + idx];
 
-                stat.index_idx = idx_order[idx];
+                stat.index_idx = index_idx;
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
