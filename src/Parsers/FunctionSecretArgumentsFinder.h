@@ -679,118 +679,41 @@ protected:
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 
-        if (!storage_function)
-            return;
-
-        if (storage_function->name() == "S3")
+        /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
+        if (storage_function && storage_function->name() == "S3" && storage_function->arguments->size() >= 3)
         {
-            /// Backup('', S3(...))
-            findBackupS3SecretArguments(storage_function.get());
-        }
-    }
+            std::string replacement = "S3(";
 
-    void findBackupS3SecretArguments(const AbstractFunction * s3_function)
-    {
-        if (s3_function->arguments->size() == 0)
-            return;
-
-        if (s3_function->arguments->at(0)->isIdentifier())
-        {
-            /// Backup('', S3(named_collection, ..., secret_access_key = 'secret', ...))
-            findBackupS3NamedCollectionSecretArguments(s3_function);
-        }
-        else
-        {
-            /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
-            findBackupS3PositionalSecretArguments(s3_function);
-        }
-    }
-
-    void findBackupS3NamedCollectionSecretArguments(const AbstractFunction * s3_function)
-    {
-        String replacement = "S3(";
-
-        for (size_t i = 0; i < s3_function->arguments->size(); ++i)
-        {
-            if (i > 0)
-                replacement += ", ";
-
-            auto arg = s3_function->arguments->at(i);
-            auto equals_func = arg->getFunction();
-
-            if (equals_func && equals_func->name() == "equals" && equals_func->arguments->size() == 2)
+            for (size_t i = 0; i < storage_function->arguments->size(); ++i)
             {
-                // Named parameter: key = value
-                String param_name;
-                if (!equals_func->arguments->at(0)->tryGetString(&param_name, true))
+                if (i > 0)
                 {
-                    return;
+                    replacement += ", ";
                 }
-                replacement += param_name + " = ";
 
-                if (param_name == "secret_access_key")
+                if (i == 2) // Secret key position
                 {
                     replacement += "'[HIDDEN]'";
                 }
                 else
                 {
-                    String param_value;
-                    if (!equals_func->arguments->at(1)->tryGetString(&param_value, true))
+                    String arg_value;
+                    if (storage_function->arguments->at(i)->tryGetString(&arg_value, true))
                     {
-                        return;
+                        replacement += "'" + arg_value + "'";
                     }
-                    replacement += "'" + param_value + "'";
+                    else
+                    {
+                        replacement += "[ARG]";
+                    }
                 }
             }
-            else
-            {
-                // Positional argument (like named_collection name)
-                String arg_value;
-                if (!arg->tryGetString(&arg_value, true))
-                {
-                    return;
-                }
-                replacement += arg_value;
-            }
+            replacement += ")";
+
+            result.start = 1;
+            result.count = 1;
+            result.replacement = std::move(replacement);
         }
-        replacement += ")";
-
-        result.start = 1;
-        result.count = 1;
-        result.replacement = std::move(replacement);
-    }
-
-    void findBackupS3PositionalSecretArguments(const AbstractFunction * s3_function)
-    {
-        if (s3_function->arguments->size() < 3)
-            return;
-
-        String replacement = "S3(";
-
-        for (size_t i = 0; i < s3_function->arguments->size(); ++i)
-        {
-            if (i > 0)
-                replacement += ", ";
-
-            if (i == 2) // Secret key position
-            {
-                replacement += "'[HIDDEN]'";
-            }
-            else
-            {
-                String arg_value;
-                if (!s3_function->arguments->at(i)->tryGetString(&arg_value, true))
-                {
-                    return;
-                }
-                replacement += "'" + arg_value + "'";
-            }
-        }
-        replacement += ")";
-
-        result.start = 1;
-        result.count = 1;
-        result.replacement = std::move(replacement);
     }
 
     void findBackupNameSecretArguments()
