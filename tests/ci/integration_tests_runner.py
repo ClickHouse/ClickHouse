@@ -13,10 +13,13 @@ import signal
 import subprocess
 import sys
 import time
+import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
+from statistics import median
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
+import requests
 import yaml  # type: ignore[import-untyped]
 
 from ci_utils import kill_ci_runner
@@ -25,6 +28,12 @@ from integration_test_images import IMAGES
 from report import JOB_TIMEOUT_TEST_NAME
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
+CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.com")
+CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
+CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
+CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
+CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -191,6 +200,10 @@ class ClickhouseIntegrationTestsRunner:
             self.run_by_hash_total = 0
             self.run_by_hash_num = 0
 
+        # release/asan/tsan/msan
+        self.job_configuration = self.params.get("job_configuration", "")
+        self.pr_updated_at = self.params.get("pr_updated_at", "")
+
         self._all_tests = []  # type: List[str]
         self._tests_by_hash = []  # type: List[str]
 
@@ -333,7 +346,7 @@ class ClickhouseIntegrationTestsRunner:
         report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
+            f"timeout --verbose --signal=KILL 2m ./runner {runner_opts} {image_cmd} -- "
             f"--setup-plan --report-log={report_file}"
         )
 
@@ -809,6 +822,202 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
+    def get_tests_execution_time(self):
+        start_time_filter = "toStartOfDay(now())"
+        if self.pr_updated_at:
+            start_time_filter = f"parseDateTimeBestEffort('{self.pr_updated_at}')"
+
+        query = f"""
+            SELECT
+                file,
+                round(sum(test_duration_ms)) AS file_duration_ms
+            FROM
+            (
+                SELECT
+                    splitByString('::', test_name)[1] AS file,
+                    median(test_duration_ms) AS test_duration_ms
+                FROM checks
+                WHERE (check_name LIKE 'Integration%')
+                    AND (check_name LIKE '%{self.job_configuration}%')
+                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
+                    AND (check_start_time <= ({start_time_filter}))
+                    AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
+                    AND (test_name != '')
+                GROUP BY test_name
+            )
+            GROUP BY file
+            ORDER BY ALL
+            FORMAT JSON
+        """
+        logging.info(query)
+
+        max_retries = 3
+        retry_delay_seconds = 5
+
+        params = {
+            "database": CLICKHOUSE_PLAY_DB,
+            "user": CLICKHOUSE_PLAY_USER,
+            "password": CLICKHOUSE_PLAY_PASSWORD,
+        }
+
+        for attempt in range(max_retries):
+            try:
+                logging.info(
+                    "Querying play via HTTP (Attempt %s/%s)...",
+                    attempt + 1, max_retries
+                )
+
+                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
+                response.raise_for_status()
+                result_data = response.json().get("data", [])
+                tests_execution_times = {
+                    row['file']: float(row['file_duration_ms']) for row in result_data
+                }
+
+                logging.info(
+                    "Successfully fetched execution times for %s modules via HTTP.",
+                    len(tests_execution_times)
+                )
+                return tests_execution_times
+
+            except requests.exceptions.RequestException as e:
+                logging.warning(
+                    "Attempt %s/%s failed to fetch test times via HTTP: %s",
+                    attempt + 1, max_retries, e
+                )
+                if attempt < max_retries - 1:
+                    logging.info("Retrying in %s seconds...", retry_delay_seconds)
+                    time.sleep(retry_delay_seconds)
+                else:
+                    logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
+                    raise
+
+    def group_tests_by_execution_time(self) -> List[List[str]]:
+        """
+        Groups tests into balanced deterministic sets using historical execution time
+        """
+        num_groups = self.run_by_hash_total
+        logging.info("Splitting tests by execution time into %s groups", num_groups)
+        if num_groups <= 0:
+            return []
+
+        file_to_test_map = self.group_test_by_file(self.all_tests)
+        all_current_files = sorted(list(file_to_test_map.keys()))
+
+        sequential_test_prefixes = [p.split("::", 1)[0] for p in self._get_parallel_tests_skip_list(self.repo_path)]
+        sequential_files_list = []
+        parallel_files_list = []
+
+        for file in all_current_files:
+            is_sequential = any(file.startswith(prefix) for prefix in sequential_test_prefixes)
+            if is_sequential:
+                sequential_files_list.append(file)
+            else:
+                parallel_files_list.append(file)
+
+        tests_execution_times = self.get_tests_execution_time()
+        assert len(tests_execution_times) > 400, \
+            f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        # use median exec time for tests with unknown execution time
+        median_time = median(list(tests_execution_times.values()))
+        known_db_modules_set = set(tests_execution_times.keys())
+
+        parallel_tests_with_known_time: Dict[str, float] = {
+            mod: tests_execution_times[mod] for mod in parallel_files_list if mod in known_db_modules_set
+        }
+        new_parallel_tests: List[str] = [
+            mod for mod in parallel_files_list if mod not in known_db_modules_set
+        ]
+        sequential_tests_with_known_time: Dict[str, float] = {
+            mod: tests_execution_times[mod] for mod in sequential_files_list if mod in known_db_modules_set
+        }
+        new_sequential_tests: List[str] = [
+            mod for mod in sequential_files_list if mod not in known_db_modules_set
+        ]
+
+        logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
+        logging.info("Found %s new parallel modules:", len(new_parallel_tests))
+        logging.info("%s", str(new_parallel_tests))
+        logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
+        logging.info("Found %s new sequential modules:", len(new_sequential_tests))
+        logging.info("%s", str(new_sequential_tests))
+
+        # balance parallel tests
+        parallel_heap = [(0, i, []) for i in range(num_groups)]
+        heapq.heapify(parallel_heap)
+
+        sorted_timed_parallel = sorted(
+            parallel_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+        )
+        for file, time in sorted_timed_parallel:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            files.append(file)
+            heapq.heappush(parallel_heap, (total_time + time, group_index, files))
+
+        for file in new_parallel_tests:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            files.append(file)
+            heapq.heappush(parallel_heap, (total_time + median_time, group_index, files))
+
+        test_file_groups = [[] for _ in range(num_groups)]
+        parallel_group_times = [0.0] * num_groups
+        while parallel_heap:
+            total_time, group_index, files = heapq.heappop(parallel_heap)
+            test_file_groups[group_index] = files
+            parallel_group_times[group_index] = total_time
+
+        # balance sequential tests using a separate heap
+        # if using single heap, it will not be distributed equally
+        sequential_heap = [(parallel_group_times[i], i) for i in range(num_groups)]
+        heapq.heapify(sequential_heap)
+
+        sorted_timed_sequential = sorted(
+            sequential_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+        )
+        for file, time in sorted_timed_sequential:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            test_file_groups[group_index].append(file)
+            heapq.heappush(sequential_heap, (total_time + time, group_index))
+
+        for file in new_sequential_tests:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            test_file_groups[group_index].append(file)
+            heapq.heappush(sequential_heap, (total_time + median_time, group_index))
+
+        # heap contains final total times
+        total_group_times = [0.0] * num_groups
+        while sequential_heap:
+            total_time, group_index = heapq.heappop(sequential_heap)
+            total_group_times[group_index] = total_time
+
+        # sort tests in groups by execution time to run slow tests first
+        def module_sort_key(m):
+            return (-tests_execution_times.get(m, -1.0), m)
+
+        for i in range(len(test_file_groups)):
+            test_file_groups[i].sort(key=module_sort_key)
+
+        # expand groups
+        final_test_groups = []
+        for group_of_test_files in test_file_groups:
+            test_name_group = []
+            for module_name in group_of_test_files:
+                tests_in_file = sorted(file_to_test_map.get(module_name, []))
+                test_name_group.extend(tests_in_file)
+            final_test_groups.append(test_name_group)
+
+        # log
+        for i, test_group in enumerate(final_test_groups):
+            total_time = total_group_times[i]
+            parallel_time = parallel_group_times[i]
+            sequential_time = total_time - parallel_time
+            logging.info(
+                "Group %d | Tests: %d | Total time: %.2fs (parallel: %.2fs, sequential: %.2fs)",
+                i, len(test_group), total_time, parallel_time, sequential_time
+            )
+
+        return final_test_groups
+
     @property
     def tests_by_hash(self) -> List[str]:
         "Tries it's best to group the tests equally between groups"
@@ -817,6 +1026,20 @@ class ClickhouseIntegrationTestsRunner:
         if self.run_by_hash_total == 0:
             self._tests_by_hash = self.all_tests
             return self._tests_by_hash
+
+        # Split tests in groups by historical execution time
+        try:
+            all_groups = self.group_tests_by_execution_time()
+            self._tests_by_hash = all_groups[self.run_by_hash_num]
+            return self._tests_by_hash
+        except Exception as e:
+            logging.error("Can't split tests by execution time: %s", e)
+            logging.error(e)
+            # TODO remove after testing
+            raise
+
+        # Fallback in case play server doesn't work
+        # Split tests in groups by number of tests in group
         grouped_tests = self.group_test_by_file(self.all_tests)
         groups_by_hash = {
             g: [] for g in range(self.run_by_hash_total)
@@ -879,10 +1102,7 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        i = 0
-        for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
-            grouped_tests[f"parallel{i}"] = par_group
-            i += 1
+        grouped_tests['parallel'] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
@@ -905,7 +1125,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "2h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():

@@ -238,6 +238,7 @@ DataGrip
 DataLakeCatalog
 DataLens
 DataPacket
+DataPup
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -1720,6 +1721,7 @@ dateName
 dateTime
 dateTimeToSnowflake
 dateTimeToSnowflakeID
+dateTimeToUUIDv
 dateTrunc
 datetime
 datetimes
@@ -2732,6 +2734,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantized
+quantizations
 quartile
 queryID
 queryString
@@ -3121,10 +3124,12 @@ timeDiff
 timeSeries
 timeSeriesData
 timeSeriesDeltaToGrid
+timeSeriesDerivToGrid
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
+timeSeriesPredictLinearToGrid
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
