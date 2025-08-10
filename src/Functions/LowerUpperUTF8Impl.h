@@ -69,7 +69,7 @@ struct LowerUpperUTF8Impl
                 dst_size = ucasemap_utf8ToLower(
                     case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
 
-            if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
+            if (error_code == U_BUFFER_OVERFLOW_ERROR)
             {
                 size_t new_size = curr_offset + dst_size;
                 res_data.resize(new_size);
@@ -83,8 +83,8 @@ struct LowerUpperUTF8Impl
                         case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             }
 
-            if (error_code != U_ZERO_ERROR)
-                throw DB::Exception(
+            if (error_code != U_ZERO_ERROR && error_code != U_STRING_NOT_TERMINATED_WARNING)
+                throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Error calling {}: {} input: {} input_size: {}",
                     upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
