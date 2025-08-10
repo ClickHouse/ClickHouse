@@ -1856,9 +1856,9 @@ static void buildIndexes(
             auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
             index_order.resize(skip_indexes.useful_indices.size());
             std::iota(index_order.begin(), index_order.end(), 0);
-            
+
             index_sizes.clear();
-       
+
             for (const auto &idx : skip_indexes.useful_indices)
             {
                 const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
