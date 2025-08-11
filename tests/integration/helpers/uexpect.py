@@ -19,19 +19,6 @@ from queue import Empty, Queue
 from subprocess import Popen
 from threading import Event, Thread
 
-CR = "\r"
-TAB = "\t"
-SPACE = " "
-BELL = '\x07'
-CTRL_U = "\x15"
-YES = "y"
-PROMPT_RE = re.compile(":\\) ")
-DISPLAY_ALL_RE = re.compile(r"Display all \d+ possibilities\? \(y or n\)")
-MORE_RE = re.compile("--More--")
-ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-CURSOR_MOVE_RE = re.compile(r"\x1b\[\d+[GHF]|\r(?!\n)")
-TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-QUIET_WINDOW = 0.5
 
 class TimeoutError(Exception):
     def __init__(self, timeout):
@@ -42,11 +29,10 @@ class TimeoutError(Exception):
 
 
 class ExpectTimeoutError(Exception):
-    def __init__(self, pattern, timeout, buffer, suggestions = None):
+    def __init__(self, pattern, timeout, buffer):
         self.pattern = pattern
         self.timeout = timeout
         self.buffer = buffer
-        self.suggestions = suggestions
 
     def __str__(self):
         s = "Timeout %.3fs " % float(self.timeout)
@@ -55,9 +41,6 @@ class ExpectTimeoutError(Exception):
         if self.buffer:
             s += "buffer %s " % repr(self.buffer[:])
             s += "or '%s'" % ",".join(["%x" % ord(c) for c in self.buffer[:]])
-        if self.suggestions:
-            s += "suggestions %s " %repr(self.suggestions[:])
-            s += "or '%s'" % ",".join(["%x" % ord(c) for c in self.suggestions[:]])
         return s
 
 
@@ -178,55 +161,6 @@ class IO(object):
             self.buffer = None
             raise exception
         return self.match
-
-    def fetch_suggestions(self, prefix, timeout=None):
-        """Returns ClickHouse client suggestions as a list, handling both single inline suggestions and multiple lines paginated suggestions"""
-        word_to_complete = prefix.split(" ")[-1]
-        timeout = self._timeout if timeout is None else timeout
-        timeleft = timeout
-
-        self.send(prefix, eol='')
-        self.expect(re.escape(prefix), timeout=QUIET_WINDOW)
-        self.send(TAB, eol='')
-
-        self.buffer = None
-        suggestions = ""
-        while True:
-            start_time = time.time()
-            if timeleft < 0 :
-                break
-
-            data = self.read(timeout=QUIET_WINDOW)
-            if data:
-                self.buffer = (self.buffer + data) if self.buffer else data
-
-            if m := DISPLAY_ALL_RE.search(self.buffer):
-                suggestions += self.buffer[:m.start()]
-                self.buffer = self.buffer[m.end():]
-                self.send(YES, eol='')
-            elif m := MORE_RE.search(self.buffer):
-                suggestions += self.buffer[:m.start()]
-                self.buffer = self.buffer[m.end():]
-                self.send(SPACE, eol='')
-            elif m:= PROMPT_RE.search(self.buffer):
-                suggestions += self.buffer[:m.start()]
-                self.buffer = None
-                return [token for token in TOKEN_RE.findall(ANSI_RE.sub("", suggestions)) if token.startswith(word_to_complete)]
-            elif CURSOR_MOVE_RE.search(self.buffer) and (time.time() - start_time) >= QUIET_WINDOW:
-                inline_suggestion = TOKEN_RE.findall(ANSI_RE.sub("", self.buffer))[0]
-                if len(inline_suggestion) > len(word_to_complete):
-                    # Clean up the edited line and return to a fresh prompt
-                    self.send(CTRL_U, eol="")
-                    self.send(CR, eol="")
-                    self.expect(PROMPT_RE)
-                    self.buffer = None
-                    return [inline_suggestion]
-            elif BELL in self.buffer:
-                time.sleep(0.05)
-
-            timeleft -= time.time() - start_time
-
-        raise ExpectTimeoutError(PROMPT_RE, timeout, self.buffer, suggestions)
 
     def read(self, timeout=0, raise_exception=False):
         data = ""
