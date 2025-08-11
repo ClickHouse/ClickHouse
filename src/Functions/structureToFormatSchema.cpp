@@ -130,7 +130,7 @@ REGISTER_FUNCTION(StructureToProtobufSchema)
 Function that converts ClickHouse table structure to Protobuf format schema
 )",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
+                {"random", "SELECT structureToProtobufSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
 "\n"
 "message MessageName\n"
 "{\n"
