@@ -21,7 +21,7 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(const Block & header)
+    explicit PushingAsyncSource(SharedHeader header)
         : ISource(header)
     {}
 
@@ -124,7 +124,7 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }

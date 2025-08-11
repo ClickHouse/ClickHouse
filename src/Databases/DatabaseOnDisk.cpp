@@ -167,7 +167,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
@@ -898,7 +898,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();

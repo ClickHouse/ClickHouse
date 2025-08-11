@@ -37,6 +37,8 @@
 namespace DB
 {
 
+static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
+
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
@@ -51,8 +53,6 @@ public:
 class GinIndexPostingsBuilder
 {
 public:
-    explicit GinIndexPostingsBuilder(UInt64 limit);
-
     /// Check whether a row_id is already added
     bool contains(UInt32 row_id) const;
 
@@ -66,32 +66,17 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+    static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
 
-    /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
-    /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
-    std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> rowid_lst;
+    static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
 
-    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, roaring bitmap 'rowid_bitmap' is used
-    roaring::Roaring rowid_bitmap;
+    static constexpr size_t ARRAY_CONTAINER_MASK = 0x1;
 
-    /// rowid_lst_length stores the number of row IDs in 'rowid_lst' array, can also be a flag(0xFF) indicating that roaring bitmap is used
-    UInt8 rowid_lst_length = 0;
+    static constexpr size_t ROARING_CONTAINER_MASK = 0x0;
+    static constexpr size_t ROARING_COMPRESSED_MASK = 0x1;
+    static constexpr size_t ROARING_UNCOMPRESSED_MASK = 0x0;
 
-    /// Indicates that all rowids are contained, see 'rowid_lst'
-    static constexpr UInt32 CONTAINS_ALL = std::numeric_limits<UInt32>::max();
-
-    /// Indicates that roaring bitmap is used, see 'rowid_lst_length'.
-    static constexpr UInt8 USES_BIT_MAP = 0xFF;
-
-    /// Clear the postings list and reset it with MATCHALL flags when the size of the postings list is beyond the limit
-    UInt64 size_limit;
-
-    /// Check whether the builder is using roaring bitmap
-    bool useRoaring() const { return rowid_lst_length == USES_BIT_MAP; }
-
-    /// Check whether the postings list has been flagged to contain all row ids
-    bool containsAllRows() const { return rowid_lst[0] == CONTAINS_ALL; }
+    roaring::Roaring rowids;
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
@@ -131,19 +116,20 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
-    /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
     enum class Format : uint8_t
     {
-        v0 = 0,
-        v1 = 1, /// Initial version
-        v2 = 2, /// Supports adaptive compression
+        v1 = 1, /// Initial version, supports adaptive compression
     };
 
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
-    GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
+    GinIndexStore(
+        const String & name_,
+        DataPartStoragePtr storage_,
+        MutableDataPartStoragePtr data_part_storage_builder_,
+        UInt64 segment_digestion_threshold_bytes_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -167,7 +153,7 @@ public:
     void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
-    bool needToWrite() const;
+    bool needToWriteCurrentSegment() const;
 
     /// Accumulate the size of text data which has been digested
     void incrementCurrentSizeBy(UInt64 sz) { current_size += sz; }
@@ -187,7 +173,7 @@ private:
     /// FST size less than 100KiB does not worth to compress.
     static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
     /// Current version of GinIndex to store FST
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v2;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 
     friend class GinIndexStoreDeserializer;
 
@@ -226,7 +212,7 @@ private:
     /// For the segmentation of Gin indexes
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
-    const UInt64 max_digestion_size = 0;
+    const UInt64 segment_digestion_threshold_bytes = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

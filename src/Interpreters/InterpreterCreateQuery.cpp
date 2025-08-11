@@ -349,7 +349,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+        IAST::FormatSettings format_settings(/*one_line=*/false);
         create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
@@ -947,7 +947,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -958,7 +958,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1095,7 +1095,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    Block input_block;
+    SharedHeader input_block;
 
     if (check_columns)
     {
@@ -1131,7 +1131,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         ColumnsWithTypeAndName input_columns;
         ColumnsWithTypeAndName output_columns;
-        for (const auto & input_column : input_block)
+        for (const auto & input_column : *input_block)
         {
             auto it = output_types.find(input_column.name);
             if (it != output_types.end())

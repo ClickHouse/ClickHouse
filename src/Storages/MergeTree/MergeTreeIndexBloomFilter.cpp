@@ -872,7 +872,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 
 static void assertIndexColumnsType(const Block & header)
 {
-    if (!header || !header.columns())
+    if (header.empty() || !header.columns())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index must have columns.");
 
     const DataTypes & columns_data_types = header.getDataTypes();

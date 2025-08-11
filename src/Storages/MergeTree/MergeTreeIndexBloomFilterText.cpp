@@ -637,22 +637,18 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
-        String required_substring;
-        bool dummy_is_trivial;
-        bool dummy_required_substring_is_prefix;
-        std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
+        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
-        if (required_substring.empty() && alternatives.empty())
+        if (result.required_substring.empty() && result.alternatives.empty())
             return false;
 
         /// out.set_bloom_filters means alternatives exist
         /// out.bloom_filter means required_substring exists
-        if (!alternatives.empty())
+        if (!result.alternatives.empty())
         {
             std::vector<std::vector<BloomFilter>> bloom_filters;
             bloom_filters.emplace_back();
-            for (const auto & alternative : alternatives)
+            for (const auto & alternative : result.alternatives)
             {
                 bloom_filters.back().emplace_back(params);
                 token_extractor->substringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back(), false, false);
@@ -660,7 +656,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.set_bloom_filters = std::move(bloom_filters);
         }
         else
-            token_extractor->substringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter, false, false);
+        {
+            token_extractor->substringToBloomFilter(
+                result.required_substring.data(), result.required_substring.size(), *out.bloom_filter, false, false);
+        }
 
         return true;
     }

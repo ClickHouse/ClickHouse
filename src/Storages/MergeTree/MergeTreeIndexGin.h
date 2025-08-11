@@ -10,9 +10,7 @@ namespace DB
 
 struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleGin(
-        const String & index_name_,
-        const GinFilterParameters & gin_filter_params_);
+    explicit MergeTreeIndexGranuleGin(const String & index_name_);
 
     ~MergeTreeIndexGranuleGin() override = default;
 
@@ -23,7 +21,6 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override;
 
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     GinFilter gin_filter;
     bool has_elems;
 };
@@ -36,7 +33,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
-        const GinFilterParameters & gin_filter_params_,
         TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
@@ -49,7 +45,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     GinIndexStorePtr store;
     Names index_columns;
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
 };
@@ -90,7 +85,6 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
-            FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
             FUNCTION_SEARCH_ANY,
             FUNCTION_SEARCH_ALL,
@@ -113,7 +107,7 @@ private:
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<GinFilter> gin_filter;
 
-        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
+        /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<GinFilters> set_gin_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN

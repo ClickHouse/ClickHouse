@@ -101,19 +101,6 @@ SELECT read_rows==4 from system.query_log
         AND result_rows==2
     LIMIT 1;
 
--- search text index with multiSearch
-SELECT * FROM tab_x WHERE multiSearchAny(s, [' a01 ', ' b01 ']) ORDER BY k;
-
--- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS query_log;
-SELECT read_rows==4 from system.query_log
-    WHERE query_kind ='Select'
-        AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE multiSearchAny(s, [\' a01 \', \' b01 \']) ORDER BY k;')
-        AND type='QueryFinish'
-        AND result_rows==2
-    LIMIT 1;
-
 ----------------------------------------------------
 SELECT 'Test text(tokenizer = "ngram", ngram_size = 2) on a column with two parts';
 
@@ -170,32 +157,3 @@ SELECT read_rows==2 from system.query_log
         AND type='QueryFinish'
         AND result_rows==1
     LIMIT 1;
-
-
-----------------------------------------------------
-
-SELECT 'Test max_rows_per_postings_list';
-DROP TABLE IF EXISTS tab;
-
--- create table 'tab' with text index parameter (ngrams, max_rows_per_most_list) which is (0, 10240)
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default', max_rows_per_postings_list = 12040) GRANULARITY 1)
-                     Engine=MergeTree
-                     ORDER BY (k)
-                     AS
-                         (SELECT
-                             number,
-                             format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
-                         FROM numbers(1024));
-SELECT count(s) FROM tab WHERE hasToken(s, '4C4B4B4B4B4B5040');
-DROP TABLE IF EXISTS tab;
-
--- create table 'tab' with GINindex parameter (ngrams, max_rows_per_most_list) which is (0, 123)
--- it should throw exception since max_rows_per_most_list(123) is less than its minimum value(8196)
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(3, 123) GRANULARITY 1)
-                     Engine=MergeTree
-                     ORDER BY (k)
-                     AS
-                         (SELECT
-                            number,
-                            format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
-                         FROM numbers(1024));  -- { serverError INCORRECT_QUERY }

@@ -43,11 +43,11 @@ static Block addWindowFunctionResultColumns(const Block & block,
 }
 
 WindowStep::WindowStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_)
-    : ITransformingStep(input_header_, addWindowFunctionResultColumns(input_header_, window_functions_), getTraits(!streams_fan_out_))
+    : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
@@ -70,10 +70,10 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         pipeline.resize(1);
 
     pipeline.addSimpleTransform(
-        [&](const Block & /*header*/)
+        [&](const SharedHeader & /*header*/)
         {
             return std::make_shared<WindowTransform>(
-                input_headers.front(), *output_header, window_description, window_functions);
+                input_headers.front(), output_header, window_description, window_functions);
         });
 
     if (streams_fan_out)
@@ -145,7 +145,7 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void WindowStep::updateOutputHeader()
 {
-    output_header = addWindowFunctionResultColumns(input_headers.front(), window_functions);
+    output_header = std::make_shared<const Block>(addWindowFunctionResultColumns(*input_headers.front(), window_functions));
 
     window_description.checkValid();
 }

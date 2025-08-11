@@ -25,11 +25,10 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
+        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -65,11 +64,18 @@ private:
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
+    const bool enable_expression_visitor_logging;
 
-    mutable KernelExternEngine engine;
-    mutable KernelSnapshot snapshot;
-    mutable KernelScan scan;
-    mutable size_t snapshot_version;
+    struct KernelSnapshotState : private boost::noncopyable
+    {
+        explicit KernelSnapshotState(const IKernelHelper & helper_);
+
+        KernelExternEngine engine;
+        KernelSnapshot snapshot;
+        KernelScan scan;
+        size_t snapshot_version;
+    };
+    mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
 
     using TableSchema = DB::NamesAndTypesList;
     using ReadSchema = DB::NamesAndTypesList;

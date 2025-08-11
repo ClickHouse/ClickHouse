@@ -16,9 +16,11 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 
 ## Description {#description}
 
-`AvroConfluent` supports decoding single-object, Avro-encoded Kafka messages serialized using the [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (or API-compatible services).
+[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `AvroConfluent` format supports decoding single-object, Avro-encoded Kafka messages serialized using the [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (or API-compatible services).
+
 Each Avro message embeds a schema ID that ClickHouse automatically resolves by querying the configured schema registry. Once resolved, schemas are cached for optimal performance.
 
+<a id="data-types-matching"></a>
 ## Data type mapping {#data-type-mapping}
 
 <DataTypesMatching/>
@@ -29,13 +31,15 @@ Each Avro message embeds a schema ID that ClickHouse automatically resolves by q
 
 | Setting                                     | Description                                                                                         | Default |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
-| `input_format_avro_allow_missing_fields`    | For `Avro`/`AvroConfluent`: whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
-| `input_format_avro_null_as_default`         | For `Avro`/`AvroConfluent`: whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
-| `format_avro_schema_registry_url`           | For `Avro`/`AvroConfluent`: the Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
+| `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
+| `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `format_avro_schema_registry_url`           | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
 
-## Example {#example}
+## Examples {#examples}
 
-To read an Avro-encoded Kafka topic using the [Kafka table engine](/engines/table-engines/integrations/kafka.md), use the `format_avro_schema_registry_url` setting to provide the URL of the Confluent Schema Registry.
+### Using a schema registry {#using-a-schema-registry}
+
+To read an Avro-encoded Kafka topic using the [Kafka table engine](/engines/table-engines/integrations/kafka.md), use the `format_avro_schema_registry_url` setting to provide the URL of the schema registry.
 
 ```sql
 CREATE TABLE topic1_stream
@@ -53,6 +57,8 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 
 SELECT * FROM topic1_stream;
 ```
+
+#### Using basic authentication {#using-basic-authentication}
 
 If your schema registry requires basic authentication (e.g., if you're using Confluent Cloud), you can provide URL-encoded credentials in the `format_avro_schema_registry_url` setting.
 
