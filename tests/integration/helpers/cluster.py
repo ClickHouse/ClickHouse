@@ -455,7 +455,7 @@ class ClickHouseCluster:
         with_spark=False,
         custom_keeper_configs=[],
         enable_thread_fuzzer=False,
-        thread_fuzzer_settings=None,
+        thread_fuzzer_settings={},
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -516,8 +516,8 @@ class ClickHouseCluster:
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
         if enable_thread_fuzzer:
-            if thread_fuzzer_settings is None:
-                thread_fuzzer_settings = DEFAULT_THREAD_FUZZER_SETTINGS
+            for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():
+                thread_fuzzer_settings.setdefault(key, value)
             for key, value in thread_fuzzer_settings.items():
                 self.env_variables[key] = value
 
