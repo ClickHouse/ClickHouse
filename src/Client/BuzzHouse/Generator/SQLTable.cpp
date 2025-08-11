@@ -1071,7 +1071,7 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextBool())
         {
             b.file_comp = rg.pickRandomly(compression);
-            te->add_params()->set_svalue(b.file_comp);
+            te->add_params()->set_svalue(b.file_comp.value());
         }
     }
     else if (te->has_engine() && b.isJoinEngine())
@@ -1296,7 +1296,7 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextBool())
         {
             b.file_comp = rg.pickRandomly(compression);
-            te->add_params()->set_svalue(b.file_comp);
+            te->add_params()->set_svalue(b.file_comp.value());
         }
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
@@ -1328,7 +1328,7 @@ void StatementGenerator::generateEngineDetails(
     {
         /// Set arrow flight params
         b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
-        te->add_params()->set_svalue(b.host_params);
+        te->add_params()->set_svalue(b.host_params.value());
         te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
     }
 

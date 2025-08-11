@@ -486,12 +486,14 @@ private:
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format = rg.nextMediumNumber() < 91;
-        const uint32_t toadd_compression = rg.nextMediumNumber() < 51;
+        const uint32_t toadd_format
+            = (std::is_same_v<U, TableEngine> || b.file_format.has_value() || allow_chaos) && rg.nextMediumNumber() < 91;
+        const uint32_t toadd_compression
+            = (std::is_same_v<U, TableEngine> || b.file_comp.has_value() || allow_chaos) && rg.nextMediumNumber() < 51;
         const uint32_t toadd_partition_strategy
-            = std::is_same_v<U, TableEngine> && (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 31;
+            = (!std::is_same_v<U, TableEngine> || b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
         const uint32_t toadd_partition_columns_in_data_file
-            = std::is_same_v<U, TableEngine> && (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 31;
+            = (!std::is_same_v<U, TableEngine> || b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_structure;
@@ -521,8 +523,9 @@ private:
             }
             if (add_path && nopt < (add_path + 1))
             {
-                bool no_change = false;
                 /// Path to the bucket
+                bool no_change = false;
+
                 next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
@@ -534,7 +537,7 @@ private:
             else if (add_format && nopt < (add_path + add_format + 1))
             {
                 /// Format
-                const InOutFormat next_format = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
+                const InOutFormat next_format = (b.file_format.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
                     : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
@@ -549,8 +552,8 @@ private:
             else if (add_compression && nopt < (add_path + add_format + add_compression + 1))
             {
                 /// Compression
-                const String next_compression = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
-                    ? b.file_comp
+                const String next_compression = (b.file_comp.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
+                    ? b.file_comp.value()
                     : rg.pickRandomly(compression);
 
                 if constexpr (std::is_same_v<U, TableEngine>)
@@ -564,16 +567,16 @@ private:
             else if (add_partition_strategy && nopt < (add_path + add_format + add_compression + add_partition_strategy + 1))
             {
                 /// Partition strategy
-                const String next_strategy = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
-                    ? b.partition_strategy
+                const String next_ps = (b.partition_strategy.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
+                    ? b.partition_strategy.value()
                     : (rg.nextBool() ? "wildcard" : "hive");
 
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    b.partition_strategy = next_strategy;
+                    b.partition_strategy = next_ps;
                 }
                 next->set_key("partition_strategy");
-                next->set_value(next_strategy);
+                next->set_value(next_ps);
                 added_partition_strategy++;
             }
             else if (
@@ -581,16 +584,16 @@ private:
                 && nopt < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + 1))
             {
                 /// Partition columns in data file
-                const String next_partition_columns_in_data_file
-                    = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21) ? b.partition_columns_in_data_file
-                                                                                                     : (rg.nextBool() ? "1" : "0");
+                const String next_pcdf = (b.partition_columns_in_data_file.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
+                    ? b.partition_columns_in_data_file.value()
+                    : (rg.nextBool() ? "1" : "0");
 
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    b.partition_columns_in_data_file = next_partition_columns_in_data_file;
+                    b.partition_columns_in_data_file = next_pcdf;
                 }
                 next->set_key("partition_columns_in_data_file");
-                next->set_value(next_partition_columns_in_data_file);
+                next->set_value(next_pcdf);
                 added_partition_columns_in_data_file++;
             }
             else if (

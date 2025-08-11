@@ -59,7 +59,7 @@ static const constexpr String PARTITION_STR = "{_partition_id}";
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    chassert(bucket_path.empty() && catalog == CatalogTable::None);
+    chassert(!bucket_path.has_value() && catalog == CatalogTable::None);
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
@@ -71,6 +71,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
+        String next_bucket_path;
 
         if (glue_cat && (nopt < glue_cat + 1))
         {
@@ -87,7 +88,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
 
         if (isS3QueueEngine() || isAzureQueueEngine())
         {
-            bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
+            next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
         }
         else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || catalog != CatalogTable::None)
         {
@@ -108,7 +109,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
                 default:
                     break;
             }
-            bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
+            next_bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
         }
         else
         {
@@ -120,27 +121,28 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
             if (rg.nextBool())
             {
                 /// Use a subdirectory
-                bucket_path += "subdir";
-                bucket_path += rg.nextBool() ? std::to_string(tname) : "";
+                next_bucket_path += "subdir";
+                next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
                 if (has_partition_by && rg.nextBool())
                 {
-                    bucket_path += PARTITION_STR;
+                    next_bucket_path += PARTITION_STR;
                     used_partition = true;
                 }
-                bucket_path += "/";
+                next_bucket_path += "/";
             }
-            bucket_path += "file";
-            bucket_path += add_before ? std::to_string(tname) : "";
+            next_bucket_path += "file";
+            next_bucket_path += add_before ? std::to_string(tname) : "";
             if (has_partition_by && !used_partition && rg.nextBool())
             {
-                bucket_path += PARTITION_STR;
+                next_bucket_path += PARTITION_STR;
             }
-            bucket_path += !add_before ? std::to_string(tname) : "";
+            next_bucket_path += !add_before ? std::to_string(tname) : "";
             if (rg.nextBool())
             {
-                bucket_path += ".data";
+                next_bucket_path += ".data";
             }
         }
+        bucket_path = next_bucket_path;
     }
     else
     {
@@ -152,9 +154,8 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        String res = bucket_path;
+        String res = bucket_path.value();
 
-        chassert(!bucket_path.empty());
         if (!isS3QueueEngine() && !isAzureQueueEngine() && catalog == CatalogTable::None && !no_change && rg.nextSmallNumber() < 8)
         {
             /// Replace PARTITION BY str

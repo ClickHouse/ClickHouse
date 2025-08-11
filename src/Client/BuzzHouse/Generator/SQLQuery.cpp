@@ -348,9 +348,9 @@ void StatementGenerator::setTableFunction(
             {
                 ffunc->set_inoutformat(t.file_format.value());
             }
-            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
+            if (t.file_comp.has_value() || rg.nextSmallNumber() < 5)
             {
-                ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
+                ffunc->set_fcomp(t.file_comp.has_value() ? t.file_comp.value() : "none");
             }
             structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
         }
@@ -427,7 +427,7 @@ void StatementGenerator::setTableFunction(
         {
             ArrowFlightFunc * affunc = tfunc->mutable_flight();
 
-            affunc->set_address(t.host_params);
+            affunc->set_address(t.host_params.value());
             affunc->set_dataset(t.getTablePath(rg, fc, true));
         }
         else
