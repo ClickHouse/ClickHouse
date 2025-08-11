@@ -282,10 +282,11 @@ private:
 
     union
     {
-        char * large_data; /// Always allocated in an arena
+        char * large_data; /// Always allocated in arena
         char small_data[MAX_SMALL_STRING_SIZE];
     };
 
+    bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
     const char * getData() const;
     StringRef getStringRef() const;

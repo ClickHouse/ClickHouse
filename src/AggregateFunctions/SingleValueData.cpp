@@ -15,6 +15,7 @@
 #include <cstring>
 #include <type_traits>
 
+
 namespace DB
 {
 
@@ -1079,12 +1080,12 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 
 char * SingleValueDataString::getDataMutable()
 {
-    return size <= MAX_SMALL_STRING_SIZE + 1 ? small_data : large_data;
+    return isSmall() ? small_data : large_data;
 }
 
 const char * SingleValueDataString::getData() const
 {
-    return size <= MAX_SMALL_STRING_SIZE + 1 ? small_data : large_data;
+    return isSmall() ? small_data : large_data;
 }
 
 StringRef SingleValueDataString::getStringRef() const
@@ -1116,7 +1117,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
 
     UInt32 value_size = static_cast<UInt32>(value.size);
 
-    if (value_size <= MAX_SMALL_STRING_SIZE)
+    if (value_size <= MAX_SMALL_STRING_SIZE && isSmall())
     {
         /// Don't free large_data here.
         size = value_size + 1;
@@ -1127,6 +1128,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
+
         size = value_size + 1;
         memcpy(large_data, value.data, value.size);
     }
@@ -1181,7 +1183,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     char last_char;
 
     UInt32 rhs_size = rhs_size_signed;
-    if (rhs_size <= MAX_SMALL_STRING_SIZE + 1)
+    if (rhs_size <= MAX_SMALL_STRING_SIZE + 1 && isSmall())
     {
         /// Don't free large_data here.
         size = rhs_size;
@@ -1199,11 +1201,11 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     /// Compatibility with an invalid format in certain old versions.
     if (last_char != 0)
     {
-        if (size < MAX_SMALL_STRING_SIZE + 1)
+        if (size < MAX_SMALL_STRING_SIZE + 1 && isSmall())
         {
             small_data[size - 1] = last_char;
         }
-        else if (size == MAX_SMALL_STRING_SIZE + 1)
+        else if (size == MAX_SMALL_STRING_SIZE + 1 && isSmall())
         {
             String tmp;
             tmp.reserve(size);
