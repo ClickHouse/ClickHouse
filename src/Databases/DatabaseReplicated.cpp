@@ -43,7 +43,6 @@
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
-#include "Common/ZooKeeper/WithRetries.h"
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -53,6 +52,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/WithRetries.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/threadPoolCallbackRunner.h>

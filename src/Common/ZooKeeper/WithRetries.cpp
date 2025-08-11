@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 WithRetries::WithRetries(
     LoggerPtr log_,
     zkutil::GetZooKeeper get_zookeeper_,
