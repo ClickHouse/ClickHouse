@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -33,10 +32,10 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isVariadic() const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -72,11 +71,9 @@ public:
         auto filter_lookup = query_context->getRuntimeFilterLookup();
         auto filter = filter_lookup->find(filter_name.toString());
 
-        /// FIXME: properly handle
-//        if (!filter)
-//            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-//                            "Filter '{}' not found",
-//                            filter_name.toString());
+        /// If filter is not present all rows pass
+        if (!filter)
+            return DataTypeUInt8().createColumnConst(input_rows_count, true);
 
         auto data_column = arguments[1].column;
 
@@ -88,7 +85,7 @@ public:
         {
             /// TODO: implement efficiently
             const auto & value = data_column->getDataAt(row);
-            dst_data[row] = filter ? filter->find(value.data, value.size) : true;
+            dst_data[row] = filter->find(value.data, value.size);
         }
 
         return dst;
