@@ -34,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
+    extern const int AVRO_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -81,19 +82,21 @@ static size_t handle_error_code(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string format_string_)
     : msg(std::move(msg_))
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
@@ -108,6 +111,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -118,6 +122,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -135,8 +140,17 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 #endif
 }
 
+static int getCodeForSTDException(const std::exception & exc)
+{
+    /// This looks strange, but avoids a direct dependency on the external library.
+    std::string name = demangle(typeid(exc).name());
+    if (name.starts_with("avro::"))
+        return ErrorCodes::AVRO_EXCEPTION;
+    return ErrorCodes::STD_EXCEPTION;
+}
+
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), getCodeForSTDException(exc))
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
