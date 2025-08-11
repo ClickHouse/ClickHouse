@@ -332,7 +332,8 @@ ManifestFileContent::ManifestFileContent(
                 if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
                     continue;
 
-                if (name_and_type.type->getTypeId() == DB::TypeIndex::Tuple || name_and_type.type->getTypeId() == DB::TypeIndex::Map || name_and_type.type->getTypeId() == DB::TypeIndex::Array)
+                if (const auto type_id = name_and_type.type->getTypeId();
+                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
                     continue;
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
