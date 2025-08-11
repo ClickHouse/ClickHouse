@@ -2636,16 +2636,28 @@ def test_optimize_background(started_cluster, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
 
-    time.sleep(10)
+    time.sleep(5)
 
-    files = default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
+    files = []
+    max_retries_count = 25
+    while True:
+        try:
+            files = default_download_directory(
+                started_cluster,
+                storage_type,
+                f"/iceberg_data/default/{TABLE_NAME}/",
+                f"/iceberg_data/default/{TABLE_NAME}/",
+            )
+            break
+        except:
+            # Catching exception means that compaction is in progress and we should wait a bit.
+            max_retries_count -= 1
+            if max_retries_count < 0:
+                raise ValueError("Compaction took too much time.")
+            time.sleep(2)
+            continue
 
-    assert len(initial_files) - len(files) == 5
+    assert len(initial_files) - len(files) == 6
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
         "SELECT number FROM numbers(20, 80)"

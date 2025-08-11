@@ -435,40 +435,24 @@ String writeMetadataFiles(
     return generated_metadata_name.path_in_storage;
 }
 
-void clearOldFiles(
+std::vector<String> getOldFiles(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    const String & new_metadata_path,
-    ContextPtr context,
-    const Plan & plan)
+    StorageObjectStorageConfigurationPtr configuration)
 {
-    const auto metadata_files = listFiles(*object_storage, *configuration, "metadata", ".metadata.json");
-    for (const auto & metadata_file : metadata_files)
+    auto metadata_files = listFiles(*object_storage, *configuration, "metadata", "");
+    auto data_files = listFiles(*object_storage, *configuration, "data", "");
+
+    for (auto && data_file : data_files)
+        metadata_files.push_back(data_file);
+
+    return metadata_files;
+}
+
+void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+{
+    for (const auto & metadata_file : old_files)
     {
-        if (metadata_file == new_metadata_path)
-            continue;
         object_storage->removeObjectIfExists(StoredObject(metadata_file));
-    }
-
-    for (const auto & snapshot : plan.history)
-    {
-        auto manifest_list = plan.iceberg_metadata->getManifestList(context, snapshot.manifest_list_path);
-        for (const auto & manifest_file : manifest_list)
-        {
-            auto manifest_file_content = plan.iceberg_metadata->tryGetManifestFile(
-            context, manifest_file.manifest_file_path, manifest_file.added_sequence_number, manifest_file.added_snapshot_id);
-
-            auto data_files = manifest_file_content->getFiles(FileContentType::DATA);
-            auto positional_delete_files = manifest_file_content->getFiles(FileContentType::POSITION_DELETE);
-
-            for (const auto & data_file : data_files)
-                object_storage->removeObjectIfExists(StoredObject(data_file.file_path));
-
-            for (const auto & delete_file : positional_delete_files)
-                object_storage->removeObjectIfExists(StoredObject(delete_file.file_path));
-            object_storage->removeObjectIfExists(StoredObject(manifest_file.manifest_file_path));
-        }
-        object_storage->removeObjectIfExists(StoredObject(snapshot.manifest_list_path));
     }
 }
 
@@ -518,9 +502,10 @@ void compactIcebergTable(
         }
         if (need_merge)
         {
+            auto old_files = getOldFiles(object_storage_, configuration_);
             writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
             auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
-            clearOldFiles(object_storage_, configuration_, metadata_file, context_, plan);
+            clearOldFiles(object_storage_, old_files);
             unlock(object_storage_, configuration_);
         }
     }
