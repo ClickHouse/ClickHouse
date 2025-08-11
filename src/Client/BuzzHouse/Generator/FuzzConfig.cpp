@@ -225,6 +225,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         = {{"bool", allow_bool},
            {"uint", allow_unsigned_int},
            {"int8", allow_int8},
+           {"int16", allow_int16},
            {"int64", allow_int64},
            {"int128", allow_int128},
            {"float", allow_floating_points},

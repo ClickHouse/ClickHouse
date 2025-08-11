@@ -1201,7 +1201,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         {
             this->ids.emplace_back(1);
         }
-        this->ids.emplace_back(2);
+        if ((allowed_types & allow_int16))
+        {
+            this->ids.emplace_back(2);
+        }
         this->ids.emplace_back(3);
         if ((allowed_types & allow_int64))
         {
@@ -1217,7 +1220,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     {
         this->ids.emplace_back(7);
     }
-    this->ids.emplace_back(8);
+    if ((allowed_types & allow_int16))
+    {
+        this->ids.emplace_back(8);
+    }
     this->ids.emplace_back(9);
     if ((allowed_types & allow_int64))
     {

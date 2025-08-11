@@ -45,7 +45,8 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_tuple = (UINT64_C(1) << 20), allow_variant = (UINT64_C(1) << 21), allow_nested = (UINT64_C(1) << 22),
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
-                         allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30);
+                         allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
+                         allow_int16 = (UINT64_C(1) << 31);
 
 const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
                          allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
