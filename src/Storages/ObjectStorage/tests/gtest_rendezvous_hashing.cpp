@@ -9,7 +9,7 @@ namespace
     class TestIterator : public IObjectIterator
     {
     public:
-        TestIterator(const std::vector<std::string> & paths)
+        explicit TestIterator(const std::vector<std::string> & paths)
         {
             for (const auto & path : paths)
                 objects.push_back(std::make_shared<ObjectInfo>(path));
