@@ -97,12 +97,6 @@ public:
         , list_batch_size(list_batch_size_)
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
-        , thread([&, thread_group = DB::CurrentThread::getGroup()] {
-            /// Attach to current query thread group, to be able to
-            /// have query id in logs and metrics from scanDataFunc.
-            DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
-            scanDataFunc();
-        })
     {
         if (filter_dag_)
         {
@@ -128,14 +122,23 @@ public:
             for (auto & name : partition_columns)
                 name = getPhysicalName(name, physical_names_map_);
         }
+
+        thread = std::make_unique<ThreadFromGlobalPool>(
+            [&, thread_group = DB::CurrentThread::getGroup()]
+            {
+                /// Attach to current query thread group, to be able to
+                /// have query id in logs and metrics from scanDataFunc.
+                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                scanDataFunc();
+            });
     }
 
     ~Iterator() override
     {
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
-        if (thread.joinable())
-            thread.join();
+        if (thread && thread->joinable())
+            thread->join();
     }
 
     void initScanState()
@@ -293,7 +296,11 @@ public:
 
         if (transform && !context->partition_columns.empty())
         {
-            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema, context->enable_expression_visitor_logging);
+            auto parsed_transform = visitScanCallbackExpression(
+                transform,
+                context->expression_schema,
+                context->enable_expression_visitor_logging);
+
             object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
 
             LOG_TEST(
@@ -352,7 +359,7 @@ private:
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
 
@@ -412,7 +419,9 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(kernel_snapshot_state->snapshot.get());
-    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
+    LOG_TRACE(
+        log, "Table logical schema: {}, physical names map size: {}",
+        fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
