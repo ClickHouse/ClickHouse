@@ -80,9 +80,7 @@ class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 public:
     Iterator(
-        const KernelExternEngine & engine_,
-        const KernelSnapshot & snapshot_,
-        KernelScan & scan_,
+        std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
         const std::string & data_prefix_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
@@ -91,14 +89,11 @@ public:
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
-        UInt64 snapshot_version_,
         bool enable_expression_visitor_logging_,
         bool throw_on_engine_predicate_error_,
         bool enable_engine_predicate_,
         LoggerPtr log_)
-        : engine(engine_)
-        , snapshot(snapshot_)
-        , scan(scan_)
+        : kernel_snapshot_state(kernel_snapshot_state_)
         , filter(filter_)
         , data_prefix(data_prefix_)
         , expression_schema(table_schema_)
@@ -110,7 +105,6 @@ public:
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
-        , snapshot_version(snapshot_version_)
     {
         if (filter)
         {
@@ -169,15 +163,19 @@ public:
         if (filter && enable_engine_predicate)
         {
             auto predicate = getEnginePredicate(*filter, engine_predicate_exception);
-            scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), predicate.get()), "scan");
+            scan = KernelUtils::unwrapResult(
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
+                "scan");
         }
         else
         {
-            scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), nullptr), "scan");
+            scan = KernelUtils::unwrapResult(
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
+                "scan");
         }
 
         scan_data_iterator = KernelUtils::unwrapResult(
-            ffi::scan_metadata_iter_init(engine.get(), scan.get()),
+            ffi::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
             "scan_metadata_iter_init");
     }
 
@@ -238,7 +236,7 @@ public:
 
     std::optional<UInt64> getSnapshotVersion() const override
     {
-        return snapshot_version;
+        return kernel_snapshot_state->snapshot_version;
     }
 
     DB::ObjectInfoPtr next(size_t) override
@@ -347,7 +345,11 @@ public:
 
         if (transform && !context->partition_columns.empty())
         {
-            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema, context->enable_expression_visitor_logging);
+            auto parsed_transform = visitScanCallbackExpression(
+                transform,
+                context->expression_schema,
+                context->enable_expression_visitor_logging);
+
             object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
 
             LOG_TEST(
@@ -375,9 +377,8 @@ private:
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
     using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
 
-    const KernelExternEngine & engine;
-    const KernelSnapshot & snapshot;
-    KernelScan & scan;
+    std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
     const DB::ActionsDAG * filter;
@@ -392,7 +393,6 @@ private:
     const bool enable_expression_visitor_logging;
     const bool throw_on_engine_predicate_error;
     const bool enable_engine_predicate;
-    const UInt64 snapshot_version;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -433,7 +433,7 @@ TableSnapshot::TableSnapshot(
 size_t TableSnapshot::getVersion() const
 {
     initSnapshot();
-    return snapshot_version;
+    return kernel_snapshot_state->snapshot_version;
 }
 
 void TableSnapshot::updateSettings(const DB::ContextPtr & context)
@@ -447,7 +447,7 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
 bool TableSnapshot::update(DB::ContextPtr context)
 {
     updateSettings(context);
-    if (!snapshot.get())
+    if (!kernel_snapshot_state)
     {
         /// Snapshot is not yet created,
         /// so next attempt to create it would return the latest snapshot.
@@ -459,33 +459,38 @@ bool TableSnapshot::update(DB::ContextPtr context)
 
 void TableSnapshot::initSnapshot() const
 {
-    if (snapshot.get())
+    if (kernel_snapshot_state)
         return;
     initSnapshotImpl();
+}
+
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_)
+{
+    auto * engine_builder = helper_.createBuilder();
+    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    snapshot = KernelUtils::unwrapResult(
+        ffi::snapshot(KernelUtils::toDeltaString(helper_.getTableLocation()), engine.get()), "snapshot");
+    snapshot_version = ffi::version(snapshot.get());
+    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
 
-    auto * engine_builder = helper->createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot(KernelUtils::toDeltaString(helper->getTableLocation()), engine.get()), "snapshot");
-    snapshot_version = ffi::version(snapshot.get());
-    LOG_TRACE(log, "Snapshot version: {}", snapshot_version);
+    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper);
 
-    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+    LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
 
-    LOG_TRACE(log, "Initialized scan state");
+    std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(kernel_snapshot_state->snapshot.get());
+    LOG_TRACE(
+        log, "Table logical schema: {}, physical names map size: {}",
+        fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
 
-    std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
-    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
-
-    read_schema = getReadSchemaFromSnapshot(scan.get());
+    read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
-    partition_columns = getPartitionColumnsFromSnapshot(snapshot.get());
+    partition_columns = getPartitionColumnsFromSnapshot(kernel_snapshot_state->snapshot.get());
     LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
 }
 
@@ -496,9 +501,7 @@ DB::ObjectIterator TableSnapshot::iterate(
 {
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
-        engine,
-        snapshot,
-        scan,
+        kernel_snapshot_state,
         helper->getDataPath(),
         getTableSchema(),
         getPhysicalNamesMap(),
@@ -508,7 +511,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         callback,
         list_batch_size,
         enable_expression_visitor_logging,
-        snapshot_version,
         throw_on_engine_visitor_error,
         enable_engine_predicate,
         log);

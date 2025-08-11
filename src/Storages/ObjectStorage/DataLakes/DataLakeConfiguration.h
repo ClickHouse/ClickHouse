@@ -39,7 +39,7 @@ namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
     extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
-    extern DataLakeStorageSettingsString storage_storage_endpoint;
+    extern DataLakeStorageSettingsString object_storage_endpoint;
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
@@ -153,6 +153,24 @@ public:
         return current_metadata->getSchemaTransformer(local_context, data_path);
     }
 
+    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
+    {
+        if (!current_metadata)
+            return false;
+        return current_metadata->hasPositionDeleteTransformer(object_info);
+    }
+
+    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & object_info,
+        const SharedHeader & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
+    }
+
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
@@ -217,7 +235,7 @@ public:
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
             auto catalog_parameters = DataLake::CatalogSettings{
-                .storage_endpoint = (*settings)[DataLakeStorageSetting::storage_storage_endpoint].value,
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::object_storage_endpoint].value,
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,

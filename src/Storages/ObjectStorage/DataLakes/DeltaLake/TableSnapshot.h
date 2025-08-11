@@ -69,10 +69,16 @@ private:
     bool throw_on_engine_visitor_error;
     bool enable_engine_predicate;
 
-    mutable KernelExternEngine engine;
-    mutable KernelSnapshot snapshot;
-    mutable KernelScan scan;
-    mutable size_t snapshot_version;
+    struct KernelSnapshotState : private boost::noncopyable
+    {
+        explicit KernelSnapshotState(const IKernelHelper & helper_);
+
+        KernelExternEngine engine;
+        KernelSnapshot snapshot;
+        KernelScan scan;
+        size_t snapshot_version;
+    };
+    mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
 
     using TableSchema = DB::NamesAndTypesList;
     using ReadSchema = DB::NamesAndTypesList;

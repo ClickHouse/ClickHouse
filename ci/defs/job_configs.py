@@ -689,7 +689,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_release)"],
             )
-            for total_batches in (6,)
+            for total_batches in (5,)
             for batch in range(1, total_batches + 1)
         ],
         *[

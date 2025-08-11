@@ -71,6 +71,18 @@ namespace Iceberg
 
 using namespace DB;
 
+void writeMessageToFile(
+    const String & data,
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+    buffer_metadata->write(data.data(), data.size());
+    buffer_metadata->finalize();
+}
+
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
@@ -336,15 +348,19 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
             Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
             result->set(Iceberg::f_type, "struct");
             Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            size_t iter_names = 1;
+            size_t iter_fields = iter;
+            iter += type_tuple->getElements().size();
             for (const auto & element : type_tuple->getElements())
             {
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-                field->set(Iceberg::f_id, ++iter);
-                field->set(Iceberg::f_name, element->getName());
+                field->set(Iceberg::f_id, ++iter_fields);
+                field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 field->set(Iceberg::f_required, false);
                 auto child_type = getIcebergType(element->getNormalizedType(), iter);
                 field->set(Iceberg::f_type, child_type);
                 fields->add(field);
+                ++iter_names;
             }
             result->set(Iceberg::f_fields, fields);
             return result;
@@ -369,11 +385,11 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_type, "map");
             field->set(Iceberg::f_key_id, ++iter);
-            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
-
-            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             field->set(Iceberg::f_value_id, ++iter);
-            field->set(Iceberg::f_value_requires, false);
+            field->set(Iceberg::f_value_required, false);
+
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
+            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             return field;
         }
         case TypeIndex::Nullable:
@@ -533,15 +549,16 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
-    Int32 iter = 0;
+    Int32 iter = static_cast<Int32>(columns.size());
+    Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_id, ++iter);
+        field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
         field->set(Iceberg::f_required, false);
         field->set(Iceberg::f_type, getIcebergType(column.type, iter));
-        column_name_to_source_id[column.name] = iter;
+        column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
     schema_representation->set(Iceberg::f_fields, schema_fields);

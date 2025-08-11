@@ -328,7 +328,7 @@ namespace ServerSetting
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
-    extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
+    extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
@@ -4999,18 +4999,6 @@ std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
 
     return shared->system_logs->transposed_metric_log;
 }
-
-
-std::shared_ptr<LatencyLog> Context::getLatencyLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->latency_log;
-}
-
 
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 {

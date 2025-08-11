@@ -54,6 +54,7 @@ public:
     Result generateManifestEntryName();
     Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
     Result generateMetadataName();
+    Result generateVersionHint();
 
     String convertMetadataPathToStoragePath(const String & metadata_path) const;
 
