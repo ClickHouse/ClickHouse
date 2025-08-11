@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: If parallel replicas are on, the optimization (no rescoring) may not work.
 
 -- Test for setting 'vector_search_with_rescoring'
 

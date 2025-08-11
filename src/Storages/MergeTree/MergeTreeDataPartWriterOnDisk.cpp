@@ -6,7 +6,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
-#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 
 namespace ProfileEvents
@@ -21,7 +20,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
 }
 
 namespace ErrorCodes
@@ -302,9 +300,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_index) != nullptr)
+        if (const auto * gin_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_index != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(
+                stream_name, data_part_storage, data_part_storage, gin_index->gin_filter_params.segment_digestion_threshold_bytes);
             gin_index_stores[stream_name] = store;
         }
 
@@ -599,31 +598,6 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
                 new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
-            }
-        }
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
-{
-    if (codec->needsVectorDimensionUpfront())
-    {
-        Field sample_field;
-        column->get(0, sample_field);
-        if (sample_field.getType() == Field::Types::Array)
-        {
-            for (size_t j = 0; j < column->size(); ++j)
-            {
-                column->get(j, sample_field);
-                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
-            }
-        }
-        if (sample_field.getType() == Field::Types::Tuple)
-        {
-            for (size_t j = 0; j < column->size(); ++j)
-            {
-                column->get(j, sample_field);
-                codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
             }
         }
     }

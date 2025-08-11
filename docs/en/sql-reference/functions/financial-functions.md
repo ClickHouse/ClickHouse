@@ -64,7 +64,6 @@ SELECT financialInternalRateOfReturn([-100, 60, 60], 0.2);
 - The function uses Newton-Raphson and TOMS748 methods for finding the root.
 - At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
 
-
 ## financialInternalRateOfReturnExtended {#financialInternalRateOfReturnExtended}
 
 Calculates the Extended Internal Rate of Return (XIRR) for a series of cash flows occurring at irregular intervals. XIRR is the discount rate at which the net present value (NPV) of all cash flows equals zero.

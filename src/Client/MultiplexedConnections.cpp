@@ -186,6 +186,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)
@@ -362,7 +363,7 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
 
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         return current_connection->receivePacketType();
     }
     catch (Exception & e)
@@ -393,7 +394,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)

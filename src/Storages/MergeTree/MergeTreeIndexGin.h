@@ -85,7 +85,6 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
-            FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
             FUNCTION_SEARCH_ANY,
             FUNCTION_SEARCH_ALL,
@@ -108,7 +107,7 @@ private:
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<GinFilter> gin_filter;
 
-        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
+        /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<GinFilters> set_gin_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
