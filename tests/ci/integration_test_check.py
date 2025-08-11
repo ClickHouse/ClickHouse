@@ -48,7 +48,7 @@ def get_json_params_dict(
         "docker_images_with_versions": {d.name: d.version for d in docker_images},
         "shuffle_test_groups": False,
         "use_tmpfs": False,
-        "disable_net_host": True,
+        "disable_net_host": False,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
         "pr_updated_at": pr_info.updated_at,
