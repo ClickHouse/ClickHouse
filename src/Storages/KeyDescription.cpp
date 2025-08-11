@@ -1,6 +1,7 @@
 #include <Storages/KeyDescription.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -9,7 +10,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -75,22 +78,23 @@ void KeyDescription::recalculateWithNewAST(
     const ColumnsDescription & columns,
     ContextPtr context)
 {
-    *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
+    *this = getSortingKeyFromAST(new_ast, columns, LoadingStrictnessLevel::CREATE, context, additional_column);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
     ContextPtr context)
 {
-    *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
+    *this = getSortingKeyFromAST(definition_ast, new_columns, LoadingStrictnessLevel::ATTACH, context, additional_column);
 }
 
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
+    LoadingStrictnessLevel loading_strictness_level,
     ContextPtr context)
 {
-    return getSortingKeyFromAST(definition_ast, columns, context, {});
+    return getSortingKeyFromAST(definition_ast, columns, loading_strictness_level, context, {});
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
@@ -120,6 +124,7 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 KeyDescription KeyDescription::getSortingKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
+    LoadingStrictnessLevel loading_strictness_level,
     ContextPtr context,
     const std::optional<String> & additional_column)
 {
@@ -165,6 +170,25 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+    }
+
+    if (loading_strictness_level <= LoadingStrictnessLevel::CREATE)
+    {
+        /// Forbid IN (subquery). It leads to "Not-ready Set".
+        for (const auto & node : result.expression->getActionsDAG().getNodes())
+        {
+            if (node.column)
+            {
+                const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+                if (!column_set)
+                    column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+                auto future_set = column_set->getData();
+                if (!future_set || !future_set->get())
+                    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                        "IN function is not allowed in key expression");
+            }
+        }
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
@@ -227,7 +251,7 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getKeyFromAST(ast, columns, context);
+    return getKeyFromAST(ast, columns, LoadingStrictnessLevel::ATTACH, context);
 }
 
 }

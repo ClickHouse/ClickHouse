@@ -178,7 +178,7 @@ ManifestFileContent::ManifestFileContent(
     }
 
     if (!partition_columns_description.empty())
-        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
+        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), LoadingStrictnessLevel::CREATE, context));
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {

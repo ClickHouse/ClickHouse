@@ -202,7 +202,7 @@ private:
 }
 
 ProjectionDescription
-ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, LoadingStrictnessLevel loading_strictness_level, ContextPtr query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -276,8 +276,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
                 order_expression = function_node;
             }
             auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
-            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
-            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, loading_strictness_level, query_context, {});
+            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, loading_strictness_level, query_context);
             metadata.primary_key.definition_ast = nullptr;
         }
         else
@@ -291,8 +291,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, loading_strictness_level, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, loading_strictness_level, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -429,7 +429,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
 void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
 {
-    *this = getProjectionFromAST(definition_ast, new_columns, query_context);
+    *this = getProjectionFromAST(definition_ast, new_columns, LoadingStrictnessLevel::ATTACH, query_context);
 }
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
@@ -542,7 +542,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, LoadingStrictnessLevel::CREATE, query_context);
         result.add(std::move(projection));
     }
 
