@@ -2226,10 +2226,14 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else
             insert->select = create.select->clone();
 
+        /// If the query is a CREATE AS SELECT, we need to create a new context for the insert query
+        auto insert_context = Context::createCopy(getContext());
+        insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+
         return InterpreterInsertQuery(
                    insert,
-                   getContext(),
-                   getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+                   insert_context,
+                   insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
                    /* no_squash */ false,
                    /* no_destination */ false,
                    /* async_isnert */ false)
