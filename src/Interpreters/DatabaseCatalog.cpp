@@ -15,8 +15,6 @@
 #include <Disks/IDisk.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
@@ -83,11 +81,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -246,7 +239,7 @@ void DatabaseCatalog::startupBackgroundTasks()
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
+void DatabaseCatalog::shutdownImpl()
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
@@ -285,9 +278,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
-
-    LOG_TRACE(log, "Shutting down system logs");
-    shutdown_system_logs();
 
     LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
@@ -698,7 +688,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
     ast_create_query->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
@@ -942,13 +932,13 @@ DatabaseCatalog & DatabaseCatalog::instance()
     return *database_catalog;
 }
 
-void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
+void DatabaseCatalog::shutdown()
 {
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
     {
-        database_catalog->shutdownImpl(std::move(shutdown_system_logs));
+        database_catalog->shutdownImpl();
     }
 }
 
@@ -1466,29 +1456,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    /// Check if we are interested in a particular disk
-    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
-    {
-        bool is_disk_eligible = !disk->isReadOnly();
-
-        /// Disk is not actually used by MergeTree table
-        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-        {
-            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
-        }
-
-        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
-        return is_disk_eligible;
-    };
-
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);

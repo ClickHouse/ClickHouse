@@ -463,7 +463,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
-
+    
     {
         ReadSettings read_settings;
         read_settings.local_fs_buffer_size = 1;

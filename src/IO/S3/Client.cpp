@@ -1,12 +1,8 @@
 #include <IO/S3/Client.h>
-
-#if USE_AWS_S3
-
-#include <algorithm>
-#include <aws/core/utils/crypto/Hash.h>
-#include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+
+#if USE_AWS_S3
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
@@ -35,8 +31,6 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-#include <Common/thread_local_rng.h>
-#include <random>
 
 
 namespace ProfileEvents
@@ -788,13 +782,6 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
             break;
         UInt64 sleep_ms = next_time_ms - current_time_ms;
-
-        /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
-        /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
-        std::uniform_real_distribution<double> dist(1.0, 1.1);
-        double jitter = dist(thread_local_rng);
-        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
-
         LOG_WARNING(log, "Some request failed, now waiting {} ms before executing a request", sleep_ms);
         sleepForMilliseconds(sleep_ms);
     }
@@ -1047,25 +1034,12 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
-
-    // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud
-    credentials_configuration.use_environment_credentials =
-        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
-
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
             credentials_configuration);
 
-    if (!credentials_configuration.role_arn.empty())
-        credentials_provider = std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(credentials_configuration.role_arn,
-            credentials_configuration.role_session_name, credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider), client_configuration, credentials_configuration.sts_endpoint_override);
-
-    /// Disable per-thread retry loops if global retry coordination is in use.
-    uint32_t retry_attempts = client_configuration.s3_slow_all_threads_after_retryable_error ? 0 : client_configuration.s3_retry_attempts;
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_attempts);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())

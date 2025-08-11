@@ -108,7 +108,7 @@ class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStr
 {
 public:
     ColumnGathererTransform(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,

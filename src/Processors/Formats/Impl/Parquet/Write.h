@@ -23,7 +23,6 @@ struct WriteOptions
     bool output_string_as_string = false;
     bool output_fixed_string_as_fixed_byte_array = true;
     bool output_datetime_as_uint32 = false;
-    bool output_enum_as_byte_array = false;
 
     CompressionMethod compression = CompressionMethod::Lz4;
     int compression_level = 3;
@@ -62,8 +61,6 @@ struct WriteOptions
     ///  * In general, if set to N, bloom filters for written row groups are accumulated in memory
     ///    and flushed to the file when they become bigger than N bytes (to limit memory usage).
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
-
-    bool write_geometadata = true;
 };
 
 struct ColumnChunkIndexes
@@ -182,10 +179,6 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
-void writeFileFooter(FileWriteState & file,
-    SchemaElements schema,
-    const WriteOptions & options,
-    WriteBuffer & out,
-    const Block & header);
+void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out);
 
 }

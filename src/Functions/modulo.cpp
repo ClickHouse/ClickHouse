@@ -170,7 +170,7 @@ REGISTER_FUNCTION(Modulo)
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
     FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"The remainder of a % b"};
+    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b";
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT modulo(5, 2)", "1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
@@ -201,19 +201,18 @@ Calculates the remainder when dividing `x` by `y`. Similar to function
 `modulo` except that `positiveModulo` always return non-negative number.
     )";
     FunctionDocumentation::Syntax syntax = "positiveModulo(x, y)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "The dividend.", {"(U)Int*", "Float*", "Decimal"}},
-        {"y", "The divisor (modulus).", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {R"(
+    FunctionDocumentation::Argument argument1 = {"x", "The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."};
+    FunctionDocumentation::Argument argument2 = {"y", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = R"(
 Returns the difference between `x` and the nearest integer not greater than
 `x` divisible by `y`.
-    )"};
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT positiveModulo(-1, 10)", "9"}};
+    )";
+    FunctionDocumentation::Example example1 = {"Usage example", "SELECT positiveModulo(-1, 10)", "9"};
+    FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, categories};
-
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);
 

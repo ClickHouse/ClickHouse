@@ -26,11 +26,6 @@ struct ListNode
         uint64_t version : 62;
     } node_metadata{false, false, 0};
 
-    ListNode copyFromSnapshotNode()
-    {
-        return {key, value.copyFromSnapshotNode(), node_metadata};
-    }
-
     void setInactiveInMap()
     {
         node_metadata.active_in_map = false;
@@ -209,15 +204,14 @@ public:
         clear();
     }
 
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, V value)
+    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
 
         if (!it)
         {
-            auto value_size = value.sizeInBytes();
-            ListElem elem{copyStringInArena(arena, key), std::move(value)};
+            ListElem elem{copyStringInArena(arena, key), value};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
@@ -226,14 +220,17 @@ public:
             chassert(inserted);
 
             it->getMapped() = itr;
-            updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
+            updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), 0);
             return std::make_pair(it, true);
         }
 
         return std::make_pair(it, false);
     }
 
-    void reserve(size_t node_num) { map.reserve(node_num); }
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+    }
 
     void insertOrReplace(const std::string & key, V value)
     {
@@ -316,8 +313,7 @@ public:
             /// snapshot and we don't need to copy it.
             if (list_itr->getVersion() <= snapshot_up_to_version)
             {
-                auto elem_copy = list_itr->copyFromSnapshotNode();
-                updateDataSize(UPDATE, key.size, list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
+                auto elem_copy = *(list_itr);
                 list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
