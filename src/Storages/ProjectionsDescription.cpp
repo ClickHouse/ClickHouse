@@ -44,6 +44,11 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_projection_with_parent_part_offset;
+}
+
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
@@ -245,6 +250,13 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = *select.getSampleBlock();
+
+    auto allow_projection_with_parent_part_offset = query_context->getSettingsRef()[Setting::allow_projection_with_parent_part_offset];
+    if (!allow_projection_with_parent_part_offset && can_hold_parent_part_offset && result.sample_block.has("_part_index"))
+        throw Exception(
+            ErrorCodes::ILLEGAL_PROJECTION,
+            "Projection {} cannot be created because the parent table has physical column `_part_index` which is used to build part offset mapping during merge",
+            result.name);
 
     StorageInMemoryMetadata metadata;
     metadata.partition_key = KeyDescription::buildEmptyKey();
