@@ -17,9 +17,14 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
         return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
     if (left.projection_names != right.projection_names)
+    {
         return std::unexpected(PreformattedMessage::create(
-                "Parts have different projection sets: {{}} in {} and {{}} in {}",
-                fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
+            "Parts have different projection sets: {{{}}} in {} and {{{}}} in {}",
+            fmt::join(left.projection_names, ", "),
+            left.name,
+            fmt::join(right.projection_names, ", "),
+            right.name));
+    }
 
     {
         uint64_t left_mutation_version = storage.getCurrentMutationVersion(left.info, merge_mutate_lock);
