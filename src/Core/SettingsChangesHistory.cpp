@@ -58,13 +58,18 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
+            {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
+            {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
+            {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
