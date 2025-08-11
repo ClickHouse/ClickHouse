@@ -84,9 +84,9 @@ def test_suggestions_backwards_compatibility_for_unique_suggestions_prefix(start
             for unique_suggestions_token in unique_suggestions_tokens:
                 unique_suggestions_prefix = unique_suggestions_token[:-2]
                 backward_server_completions = backward_cl.fetch_suggestions(unique_suggestions_prefix)
-                system_completions_based_suggestions_server_server_completions = forward_cl.fetch_suggestions(unique_suggestions_prefix)
+                forward_server_completions = forward_cl.fetch_suggestions(unique_suggestions_prefix)
                 assert backward_server_completions == [unique_suggestions_token]
-                assert system_completions_based_suggestions_server_server_completions == [unique_suggestions_token]
+                assert forward_server_completions == [unique_suggestions_token]
 
 def test_suggestions_backwards_compatibility_for_multiple_suggestions_prefix(start_cluster):
     multiple_suggestions_prefix = "SET se"
@@ -100,7 +100,7 @@ def test_suggestions_backwards_compatibility_for_multiple_suggestions_prefix(sta
     with client(command=start_client_command(start_cluster, system_completions_based_suggestions_server)) as cl:
         cl.expect(prompt)
 
-        system_completions_based_suggestions_server_server_completions = cl.fetch_suggestions(multiple_suggestions_prefix)
+        forward_server_completions = cl.fetch_suggestions(multiple_suggestions_prefix)
     # In the new server suggestions logic exclude from suggestions aggregate function with "Null" combinator as well as other combinators with internal only usage
     # https://github.com/ClickHouse/ClickHouse/blob/master/src/AggregateFunctions/Combinators/AggregateFunctionNull.cpp#L27
     extra_backward_server_completions = [
@@ -109,5 +109,5 @@ def test_suggestions_backwards_compatibility_for_multiple_suggestions_prefix(sta
         "sequenceNextNodeNull",
         "sequenceMatchNull"
     ]
-    assert len(backward_server_completions) == len(system_completions_based_suggestions_server_server_completions) + len(extra_backward_server_completions)
-    assert set(backward_server_completions) == set(system_completions_based_suggestions_server_server_completions).union(extra_backward_server_completions)
+    assert len(backward_server_completions) == len(forward_server_completions) + len(extra_backward_server_completions)
+    assert set(backward_server_completions) == set(forward_server_completions).union(extra_backward_server_completions)

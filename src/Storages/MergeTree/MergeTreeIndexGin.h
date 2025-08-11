@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/HashTable/HashSet.h>
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -34,8 +35,7 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
-        TokenExtractorPtr token_extractor_,
-        const MergeTreeWriterSettings & settings);
+        TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
 
@@ -49,9 +49,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     const String index_name;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
-
-    const size_t sampling_threshold;
-    const float sampling_rate;
 };
 
 
@@ -90,7 +87,6 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
-            FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
             FUNCTION_SEARCH_ANY,
             FUNCTION_SEARCH_ALL,
@@ -113,7 +109,7 @@ private:
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<GinFilter> gin_filter;
 
-        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
+        /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<GinFilters> set_gin_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN

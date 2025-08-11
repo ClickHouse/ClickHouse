@@ -65,9 +65,6 @@ namespace ErrorCodes
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
     )", 0) \
-    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
-    Max number of bytes to digest per segment to build GIN index.
-    )", 0) \
     \
     /** Data storing format settings. */ \
     DECLARE(UInt64, min_bytes_for_wide_part, default_min_bytes_for_wide_part, R"(
@@ -1695,12 +1692,6 @@ namespace ErrorCodes
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, text_index_sampling_threshold, 1000, R"(
-    Enable cardinality sampling in text index for index granules with more than this number of rows.
-    )", EXPERIMENTAL) \
-    DECLARE(Float, text_index_sampling_rate, 0.1f, R"(
-    Ratio of sampled rows in text index compared to all rows.
-    )", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \
@@ -1733,6 +1724,9 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
@@ -1835,6 +1829,17 @@ namespace ErrorCodes
         2. Compression codec defined in `default_compression_codec` (this setting)
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
+    )", 0) \
+    DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
+    ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
+    in order to not allow to miss data parts at undefined (not included in policy) disks.
+    Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
+    This setting limits scope of disks to search by traits of the disks.
+
+    Possible values:
+    - any - scope is not limited.
+    - local - scope is limited by local disks .
+    - none - empty scope, do not search
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

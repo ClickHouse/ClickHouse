@@ -264,6 +264,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
+    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 namespace ServerSetting
@@ -1222,12 +1223,22 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     {
         NameSet columns_ttl_forbidden;
 
+        // Check old metadata keys
         if (old_metadata.hasPartitionKey())
             for (const auto & col : old_metadata.getColumnsRequiredForPartitionKey())
                 columns_ttl_forbidden.insert(col);
 
         if (old_metadata.hasSortingKey())
             for (const auto & col : old_metadata.getColumnsRequiredForSortingKey())
+                columns_ttl_forbidden.insert(col);
+
+        // Check new metadata keys (fix for issue #84442)
+        if (new_metadata.hasPartitionKey())
+            for (const auto & col : new_metadata.getColumnsRequiredForPartitionKey())
+                columns_ttl_forbidden.insert(col);
+
+        if (new_metadata.hasSortingKey())
+            for (const auto & col : new_metadata.getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
         for (const auto & [name, ttl_description] : new_column_ttls)
@@ -2072,6 +2083,14 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
+bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
+{
+    SearchOrphanedPartsDisks mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
+    bool is_disk_eligible = !disk->isBroken() && !disk->isCustomDisk() && (mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote()));
+
+    LOG_TRACE(log, "is disk {} eligible for search: {} (mode {})", disk->getName(), is_disk_eligible, mode);
+    return is_disk_eligible;
+}
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
@@ -2085,7 +2104,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
-        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2119,14 +2138,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken() || disk->isCustomDisk())
+            if (!isDiskEligibleForOrphanedPartsSearch(disk))
             {
                 skip_check_disks.insert(disk_name);
                 continue;
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
-
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 /// There still a chance that underlying disk is defined in storage policy
@@ -3560,7 +3578,7 @@ size_t MergeTreeData::clearEmptyParts()
 
     for (auto & name : parts_names_to_drop)
     {
-        LOG_INFO(log, "Will drop empty part {}", name);
+        LOG_TRACE(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
     }
 
@@ -5522,10 +5540,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
-
-            /// Move parts are non replicated operations, so we take lock here.
-            /// All other locks are taken in StorageReplicatedMergeTree
-            lockSharedData(*part_copy, /* replace_existing_lock */ true);
 
             return;
         }
