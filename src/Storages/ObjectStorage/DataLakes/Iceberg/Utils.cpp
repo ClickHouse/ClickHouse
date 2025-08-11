@@ -66,6 +66,11 @@ namespace ProfileEvents
     extern const Event IcebergVersionHintUsed;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsUInt64 output_format_compression_level;
+}
+
 namespace Iceberg
 {
 
@@ -75,12 +80,23 @@ void writeMessageToFile(
     const String & data,
     const String & filename,
     ObjectStoragePtr object_storage,
-    ContextPtr context)
+    ContextPtr context,
+    CompressionMethod compression_method)
 {
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-    buffer_metadata->write(data.data(), data.size());
-    buffer_metadata->finalize();
+    if (compression_method != CompressionMethod::None)
+    {
+        auto settings = context->getSettingsRef();
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        compressed_buffer_metadata->write(data.data(), data.size());
+        compressed_buffer_metadata->finalize();
+    }
+    else
+    {
+        buffer_metadata->write(data.data(), data.size());
+        buffer_metadata->finalize();
+    }
 }
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
