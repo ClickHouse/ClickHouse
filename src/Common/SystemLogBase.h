@@ -33,7 +33,7 @@
     M(BlobStorageLogElement) \
     M(QueryMetricLogElement) \
     M(DeadLetterQueueElement) \
-    M(ZooKeeperConnectionLogElement)
+    M(ZooKeeperConnectionLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \
