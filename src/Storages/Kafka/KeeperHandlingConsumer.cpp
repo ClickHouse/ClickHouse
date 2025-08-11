@@ -73,7 +73,6 @@ const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::c
     return kafka_consumer.currentHeaderList();
 }
 
-
 KeeperHandlingConsumer::OffsetGuard::OffsetGuard(KeeperHandlingConsumer & consumer_, const int64_t new_offset_)
     : consumer(&consumer_)
     , new_offset(new_offset_)
