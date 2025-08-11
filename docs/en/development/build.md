@@ -45,7 +45,7 @@ sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-rel
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
 ```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)" _ 19
 ```
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
