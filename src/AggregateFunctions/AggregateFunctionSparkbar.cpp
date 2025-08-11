@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
     /// TODO: calculate histogram instead of storing all points
@@ -129,7 +129,7 @@ struct AggregateFunctionSparkbarData
     }
 };
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 class AggregateFunctionSparkbar final
     : public IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar<X, Y>>
 {
