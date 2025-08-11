@@ -2359,8 +2359,7 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
 {
     checkConsistency(require_part_metadata);
     for (const auto & [_, proj_part] : projection_parts)
-        if (!proj_part->is_broken)
-            proj_part->checkConsistency(require_part_metadata);
+        proj_part->checkConsistency(require_part_metadata);
 }
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const

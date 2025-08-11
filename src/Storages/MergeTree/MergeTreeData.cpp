@@ -6260,8 +6260,13 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        if (backup_settings.check_projection_parts)
-            part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
+        if (backup_settings.check_parts)
+        {
+            if (backup_settings.check_projection_parts)
+                part->checkConsistencyWithProjections(/*require_part_metadata=*/true);
+            else
+                part->checkConsistency(/*require_part_metadata=*/true);
+        }
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
@@ -6294,11 +6299,8 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
 
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
-            if (!projection_part->is_broken)
-            {
-                defined_projections.emplace(projection_name);
-                backup_projection(projection_part->getDataPartStorage(), *projection_part);
-            }
+            defined_projections.emplace(projection_name);
+            backup_projection(projection_part->getDataPartStorage(), *projection_part);
         }
 
         /// It is possible that the part has a written but not loaded projection,
