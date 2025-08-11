@@ -106,7 +106,7 @@ GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(R
 std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
 {
     static thread_local FastPForLib::CODECFactory factory;
-    static std::shared_ptr<FastPForLib::IntegerCODEC> codec = factory.getFromName(FASTPFOR_CODEC_NAME);
+    static thread_local std::shared_ptr<FastPForLib::IntegerCODEC> codec = factory.getFromName(FASTPFOR_CODEC_NAME);
     return codec;
 }
 
