@@ -19,3 +19,27 @@ SELECT number IN (SELECT number FROM numbers(2) WHERE number IN (SELECT * FROM n
 1
 0
 0
+-- NOT IN
+SELECT number NOT IN (SELECT * FROM numbers(2)) FROM numbers(3);
+0
+0
+1
+SELECT * FROM numbers(3) WHERE number NOT IN (SELECT number FROM numbers(2));
+2
+SELECT number NOT IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS}
+SELECT number NOT IN (SELECT number IN (SELECT * FROM numbers(1)) FROM numbers(2)) FROM numbers(3);
+0
+0
+1
+SELECT number IN (SELECT number NOT IN (SELECT * FROM numbers(1)) FROM numbers(2)) FROM numbers(3);
+1
+1
+0
+SELECT number NOT IN (SELECT number NOT IN (SELECT * FROM numbers(1)) FROM numbers(2)) FROM numbers(3);
+0
+0
+1
+SELECT number IN (SELECT number FROM numbers(2) WHERE number NOT IN (SELECT * FROM numbers(1))) FROM numbers(3);
+0
+1
+0
