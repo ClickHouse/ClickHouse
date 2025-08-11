@@ -119,7 +119,7 @@ struct PositionCaseSensitiveUTF8
             {
                 if (n == 0)
                     return it;
-                n--;
+                --n;
             }
         }
         return end;
@@ -134,7 +134,7 @@ struct PositionCaseSensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string &) { }
+    static void toLowerIfNeed(std::string &) {}
 };
 
 
