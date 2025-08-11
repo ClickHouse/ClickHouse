@@ -183,6 +183,9 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
                 if (!column_set)
                     column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
 
+                if (!column_set)
+                    continue;
+
                 auto future_set = column_set->getData();
                 if (!future_set || !future_set->get())
                     throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
