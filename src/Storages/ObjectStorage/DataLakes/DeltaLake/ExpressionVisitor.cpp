@@ -495,7 +495,7 @@ private:
     {
         UNUSED(sibling_list_id);
         UNUSED(child_list_id);
-        UNUSED(op);
+        ffi::free_kernel_opaque_expression_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
@@ -514,7 +514,7 @@ private:
     {
         UNUSED(sibling_list_id);
         UNUSED(child_list_id);
-        UNUSED(op);
+        ffi::free_kernel_opaque_predicate_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
