@@ -596,8 +596,6 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 
 void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_dictionary)
 {
-    std::scoped_lock lock(segment_dictionary->mutex_fst);
-
     /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
     dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
@@ -646,22 +644,27 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     {
         auto segment_id = seg_dict.first;
 
-        if (seg_dict.second->fst == nullptr)
+        FST::FiniteStateTransducer::Output fst_output;
         {
-            /// Segment dictionary is not loaded, first check the term in bloom filter
-            if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
-                continue;
+            std::lock_guard guard(seg_dict.second->fst_mutex);
 
-            /// Term might be in segment dictionary
-            readSegmentFST(seg_dict.second);
+            if (seg_dict.second->fst == nullptr)
+            {
+                /// Segment dictionary is not loaded, first check the term in bloom filter
+                if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
+                    continue;
+
+                /// Term might be in segment dictionary
+                readSegmentFST(seg_dict.second);
+            }
+
+            fst_output = seg_dict.second->fst->getOutput(term);
+            if (!fst_output.found)
+                continue;
         }
 
-        auto [offset, found] = seg_dict.second->fst->getOutput(term);
-        if (!found)
-            continue;
-
         // Set postings file pointer for reading postings list
-        postings_file_stream->seek(seg_dict.second->postings_start_offset + offset, SEEK_SET);
+        postings_file_stream->seek(seg_dict.second->postings_start_offset + fst_output.offset, SEEK_SET);
 
         // Read posting list
         auto postings_list = GinIndexPostingsBuilder::deserialize(*postings_file_stream);
