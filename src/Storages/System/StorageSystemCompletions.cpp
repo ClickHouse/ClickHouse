@@ -296,7 +296,7 @@ void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & conte
 void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    if (access->isGranted(AccessType::SHOW_DICTIONARIES))
+    if (!access->isGranted(AccessType::SHOW_DICTIONARIES))
         return;
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
