@@ -5265,9 +5265,9 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
-    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
-)", EXPERIMENTAL) \
+)", BETA) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -6867,7 +6867,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If set to true, allow using the experimental text index.
+If it is set to true, allow to use experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
