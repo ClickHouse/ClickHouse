@@ -229,8 +229,6 @@ void StructureToCapnProtoSchema::writeSchema(WriteBuffer & buf, const String & m
     size_t field_index = 0;
     for (const auto & [column_name, data_type] : names_and_types)
         writeField(buf, data_type, column_name, field_index, 1);
-
-    endNested(buf, 0);
 }
 
 }
