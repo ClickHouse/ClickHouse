@@ -928,15 +928,15 @@ void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
     checkTableNameLengthUnlocked(database_name, table_name, getContext());
 }
 
-void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & the_database_name, const String & table_name, ContextPtr the_context)
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_)
 {
-    const size_t allowed_max_length = computeMaxTableNameLength(the_database_name, the_context);
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, context_);
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "The max length of table name for database {} is {}, current length is {}",
-            the_database_name, allowed_max_length, escaped_name_length);
+            database_name_, allowed_max_length, escaped_name_length);
     }
 }
 
