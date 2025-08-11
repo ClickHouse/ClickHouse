@@ -6929,7 +6929,7 @@ Allow to execute `insert` queries into iceberg.
     DECLARE(Milliseconds, iceberg_period_compaction, 5000, R"(
 Period of compaction in iceberg.
 )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, iceberg_compaction_backoff_time, 5000, R"(
+    DECLARE(Milliseconds, iceberg_compaction_backoff_time, 500, R"(
 Backoff time wait in iceberg compaction.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(

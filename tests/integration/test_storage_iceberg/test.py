@@ -2636,7 +2636,7 @@ def test_optimize_background(started_cluster, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
 
-    time.sleep(6)
+    time.sleep(10)
 
     files = default_download_directory(
         started_cluster,
