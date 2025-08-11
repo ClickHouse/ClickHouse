@@ -88,7 +88,11 @@ def test_zookeeper_connection_log(started_cluster):
 
             node.query("SYSTEM RELOAD CONFIG")
 
-            node.query_with_retry(f"SELECT count() FROM system.zookeeper_connection_log WHERE event_time_microseconds >= '{test_start_time}'", check_callback=lambda res: res == "8\n",)
+            def check_8_rows(res):
+                logging.debug(f"Checking for 8 rows in zookeeper_connection_log, got: {res}")
+                return res == "8\n"
+
+            node.query_with_retry(f"SELECT count() FROM system.zookeeper_connection_log WHERE event_time_microseconds >= '{test_start_time}'", check_callback=check_8_rows)
 
             node.query(
                 "ALTER TABLE simple2 FETCH PARTITION '2020-08-29' FROM 'zk_conn_log_test_4:/clickhouse/tables/0/simple';"
@@ -98,15 +102,15 @@ def test_zookeeper_connection_log(started_cluster):
 
             logging.debug(node.query("""SELECT event_time_microseconds, hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
                                FROM system.zookeeper_connection_log  ORDER BY event_time_microseconds"""))
-            expected = TSV("""node	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Removed from config
-node	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization""")
+            expected = TSV("""node	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Removed from config
+node	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization""")
 
             assert TSV(
                 node.query(f"""SELECT hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
