@@ -12,7 +12,6 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 <ExperimentalBadge/>
 
-
 The table function allows to read data from the YTsaurus cluster.
 
 ## Syntax {#syntax}
@@ -28,9 +27,7 @@ with [allow_experimental_ytsaurus_table_function](/operations/settings/settings#
 Input the command `set allow_experimental_ytsaurus_table_function = 1`.
 :::
 
-
 ## Arguments {#arguments}
-
 
 - `http_proxy_url` — URL to the YTsaurus http proxy.
 - `cypress_path` — Cypress path to the data source.

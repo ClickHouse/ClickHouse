@@ -34,13 +34,11 @@ with [allow_experimental_ytsaurus_table_engine](/operations/settings/settings#al
 Input the command `set allow_experimental_ytsaurus_table_engine = 1`.
 :::
 
-
 **Engine Parameters**
 
 - `http_proxy_url` — URL to the YTsaurus http proxy.
 - `cypress_path` — Cypress path to the data source.
 - `oauth_token` — OAuth token.
-
 
 ## Usage Example {#usage-example}
 
@@ -116,8 +114,6 @@ SELECT * FROM yt_saurus;
 | `variant`          | `Variant`            |
 | `dict`             | `Array(Tuple(...))   |
 | `tagged`           | `T`                  |
-
-
 
 **See Also**
 
