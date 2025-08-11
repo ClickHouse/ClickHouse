@@ -1,3 +1,5 @@
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -78,6 +80,31 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsMilliseconds iceberg_compaction_backoff_time;
+}
+
+namespace
+{
+
+void waitUntilCompressionIsDone(
+    StorageObjectStorageConfigurationPtr configuration,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    while (true)
+    {
+        auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
+        if (object_storage->exists(key))
+        {
+            auto backoff_time_ms = context->getSettingsRef()[Setting::iceberg_compaction_backoff_time];
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_time_ms));
+
+            continue;
+        }
+        return;
+    }
+}
+
 }
 
 using namespace Iceberg;
@@ -223,6 +250,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
     std::lock_guard lock(mutex);
 
     const auto [metadata_version, metadata_file_path, compression_method]
@@ -349,6 +377,8 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed)
 {
     auto configuration_ptr = configuration.lock();
+    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
+
     std::optional<String> manifest_list_file;
 
     bool timestamp_changed = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].changed;
