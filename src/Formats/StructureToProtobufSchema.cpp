@@ -208,6 +208,7 @@ void StructureToProtobufSchema::writeSchema(WriteBuffer & buf, const String & me
     size_t field_index = 1;
     for (const auto & [column_name, data_type] : names_and_types)
         writeProtobufField(buf, data_type, column_name, field_index, 1);
+    endNested(buf, 0);
 }
 
 }
