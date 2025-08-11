@@ -68,9 +68,13 @@ std::vector<Iceberg::ManifestFileEntry> SingleThreadIcebergKeysIterator::getPosi
             std::optional<ManifestFilesPruner> pruner;
             auto manifest_file_ptr = getManifestFile(
                 object_storage,
-                configuration.lock(),
+                configuration,
                 iceberg_metadata_cache,
+                schema_processor,
+                format_version,
+                table_location,
                 local_context,
+                log,
                 manifest_list_entry.manifest_file_path,
                 manifest_list_entry.added_sequence_number,
                 manifest_list_entry.added_snapshot_id);
@@ -83,7 +87,7 @@ std::vector<Iceberg::ManifestFileEntry> SingleThreadIcebergKeysIterator::getPosi
                     previous_entry_schema_delete_objects = manifest_file_entry.schema_id;
                     if (previous_entry_schema_delete_objects > manifest_file_entry.schema_id)
                     {
-                        // LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
+                        LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
                     }
                     pruner.emplace(
                         *schema_processor,
@@ -121,9 +125,13 @@ IcebergDataObjectInfoPtr SingleThreadIcebergKeysIterator::next()
         {
             current_manifest_file_content = getManifestFile(
                 object_storage,
-                configuration.lock(),
+                configuration,
                 iceberg_metadata_cache,
+                schema_processor,
+                format_version,
+                table_location,
                 local_context,
+                log,
                 data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
@@ -132,12 +140,20 @@ IcebergDataObjectInfoPtr SingleThreadIcebergKeysIterator::next()
         while (internal_data_index < current_manifest_file_content->getFiles(FileContentType::DATA).size())
         {
             const auto & manifest_file_entry = current_manifest_file_content->getFiles(FileContentType::DATA)[internal_data_index++];
+            if (manifest_file_entry.status == ManifestEntryStatus::DELETED)
+            {
+                continue;
+            }
+
             if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry.schema_id;
                 if (previous_entry_schema > manifest_file_entry.schema_id)
                 {
-                    // LOG_WARNING(log, "Manifest entries in file {} are not sorted by schema id", manifest_list_entry.manifest_file_path);
+                    LOG_WARNING(
+                        log,
+                        "Manifest entries in file {} are not sorted by schema id",
+                        current_manifest_file_content->getPathToManifestFile());
                 }
                 current_pruner.emplace(
                     *schema_processor,
@@ -147,13 +163,11 @@ IcebergDataObjectInfoPtr SingleThreadIcebergKeysIterator::next()
                     *current_manifest_file_content,
                     local_context);
             }
-
-            if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
+            if (!current_pruner || !current_pruner->canBePruned(manifest_file_entry))
             {
-                if (!use_partition_pruning || !current_pruner->canBePruned(manifest_file_entry))
-                {
-                    return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
-                }
+                return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files);
+            } else {
+                
             }
         }
         current_manifest_file_content = nullptr;

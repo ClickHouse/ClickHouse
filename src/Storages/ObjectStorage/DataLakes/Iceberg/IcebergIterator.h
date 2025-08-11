@@ -50,19 +50,25 @@ class SingleThreadIcebergKeysIterator
 {
 public:
     SingleThreadIcebergKeysIterator(
+        ContextPtr local_context_,
         ObjectStoragePtr object_storage_,
         const ActionsDAG * filter_dag_,
-        ContextPtr local_context_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
         IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-        IDataLakeMetadata::FileProgressCallback callback_)
+        IcebergSchemaProcessorPtr schema_processor_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        IDataLakeMetadata::FileProgressCallback callback_,
+        Int32 format_version_,
+        String table_location_)
         : object_storage(object_storage_)
         , filter_dag(filter_dag_)
         , local_context(local_context_)
         , table_snapshot(table_snapshot_)
         , data_snapshot(data_snapshot_)
         , iceberg_metadata_cache(iceberg_metadata_cache_)
+        , schema_processor(schema_processor_)
+        , configuration(std::move(configuration_))
         , callback(std::move(callback_))
         , use_partition_pruning(
               [this]()
@@ -75,6 +81,9 @@ public:
                   }
                   return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
               }())
+        , format_version(format_version_)
+        , table_location(std::move(table_location_))
+        , log(getLogger("IcebergIterator"))
     {
     }
 
@@ -87,8 +96,13 @@ private:
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     IcebergMetadataFilesCachePtr iceberg_metadata_cache;
+    IcebergSchemaProcessorPtr schema_processor;
+    StorageObjectStorageConfigurationPtr configuration;
     IDataLakeMetadata::FileProgressCallback callback;
     bool use_partition_pruning;
+    Int32 format_version;
+    String table_location;
+    LoggerPtr log;
 
 
     // By Iceberg design it is difficult to avoid storing position deletes in memory.
@@ -99,9 +113,6 @@ private:
     Int32 previous_entry_schema = -1;
     std::optional<Iceberg::ManifestFilesPruner> current_pruner;
 
-
-    StorageObjectStorageConfigurationWeakPtr configuration;
-    std::shared_ptr<IcebergSchemaProcessor> schema_processor;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
@@ -162,16 +173,9 @@ private:
 class IcebergIterator : public IObjectIterator 
 {
 public:
-    IcebergIterator(
-        ObjectStoragePtr object_storage_,
-        const ActionsDAG * filter_dag_,
-        ContextPtr local_context_,
-        Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
-        Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-        IDataLakeMetadata::FileProgressCallback callback_)
-        : single_thread_iterator(
-              object_storage_, filter_dag_, local_context_, table_snapshot_, data_snapshot_, iceberg_metadata_cache_, std::move(callback_))
+    template <typename... Args>
+    explicit IcebergIterator(ContextPtr local_context_, Args &&... args)
+        : single_thread_iterator(local_context_, std::forward<Args>(args)...)
         , blocking_queue(100)
         , producer_task(local_context_->getSchedulePool().createTask(
               "IcebergMetaReaderThread",

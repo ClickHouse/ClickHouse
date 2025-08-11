@@ -60,16 +60,17 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
+    StorageObjectStorageConfigurationPtr configuration,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,
-    IcebergSchemaProcessor schema_processor,
+    IcebergSchemaProcessorPtr schema_processor,
     Int32 format_version,
     String table_location,
-    ContextPtr local_context, 
+    ContextPtr local_context,
     LoggerPtr log,
-    const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id)
+    const String & filename,
+    Int64 inherited_sequence_number,
+    Int64 inherited_snapshot_id)
 {
-    auto configuration_ptr = configuration.lock();
     auto create_fn = [&]()
     {
         RelativePathWithMetadata manifest_object_info(filename);
@@ -86,18 +87,19 @@ Iceberg::ManifestFilePtr getManifestFile(
             manifest_file_deserializer,
             filename,
             format_version,
-            configuration_ptr->getPathForRead().path,
-            schema_processor,
+            configuration->getPathForRead().path,
+            *schema_processor,
             inherited_sequence_number,
             inherited_snapshot_id,
             table_location,
-            local_context);
+            local_context,
+            filename);
     };
 
     if (iceberg_metadata_cache)
     {
         auto manifest_file
-            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
         return manifest_file;
     }
     return create_fn();

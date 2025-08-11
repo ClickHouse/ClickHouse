@@ -95,7 +95,7 @@ IcebergMetadata::IcebergMetadata(
     IcebergMetadataFilesCachePtr cache_ptr)
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
-    , schema_processor(IcebergSchemaProcessor())
+    , schema_processor(std::make_shared<IcebergSchemaProcessor>())
     , log(getLogger("IcebergMetadata"))
     , manifest_cache(cache_ptr)
     , last_metadata_version(metadata_version_)
@@ -106,52 +106,9 @@ IcebergMetadata::IcebergMetadata(
     updateState(context_, metadata_object_);
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
-{
-    Poco::JSON::Object::Ptr schema;
-    if (!metadata_object->has(f_current_schema_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
-    auto current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
-    if (!metadata_object->has(f_schemas))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schemas);
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    if (schemas->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is empty", f_schemas);
-    for (uint32_t i = 0; i != schemas->size(); ++i)
-    {
-        auto current_schema = schemas->getObject(i);
-        if (!current_schema->has(f_schema_id))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-        }
-        if (current_schema->getValue<int>(f_schema_id) == current_schema_id)
-        {
-            schema = current_schema;
-        }
-    }
-
-    if (!schema)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "{}" that matches "{}" in metadata)", f_schema_id, f_current_schema_id);
-    if (schema->getValue<int>(f_schema_id) != current_schema_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "{}" of the schema doesn't match "{}" in metadata)", f_schema_id, f_current_schema_id);
-    return {schema, current_schema_id};
-}
-
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
-{
-    if (!metadata_object->has(f_schema))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
-    Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!metadata_object->has(f_schema_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-    auto current_schema_id = schema->getValue<int>(f_schema_id);
-    return {schema, current_schema_id};
-}
-
-
 void IcebergMetadata::addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object)
 {
-    if (schema_processor.hasClickhouseTableSchemaById(schema_id))
+    if (schema_processor->hasClickhouseTableSchemaById(schema_id))
         return;
     if (!metadata_object->has(f_schemas))
     {
@@ -164,7 +121,7 @@ void IcebergMetadata::addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Pt
         auto current_schema = schemas->getObject(i);
         if (current_schema->has(f_schema_id) && current_schema->getValue<int>(f_schema_id) == schema_id)
         {
-            schema_processor.addIcebergTableSchema(current_schema);
+            schema_processor->addIcebergTableSchema(current_schema);
             return;
         }
     }
@@ -266,7 +223,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        schema_processor.addIcebergTableSchema(schema);
+        schema_processor->addIcebergTableSchema(schema);
     }
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     bool successfully_found_snapshot = false;
@@ -275,7 +232,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor.registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
+        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == relevant_snapshot_id)
         {
             successfully_found_snapshot = true;
@@ -403,7 +360,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
         {
             updateSnapshot(local_context, metadata_object);
         }
-        relevant_snapshot_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+        relevant_snapshot_schema_id = parseTableSchema(metadata_object, *schema_processor, log);
     }
 }
 
@@ -418,7 +375,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
 
     SharedLockGuard lock(mutex);
     auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-    return version_if_outdated.has_value() ? schema_processor.getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
+    return version_if_outdated.has_value() ? schema_processor->getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
 }
 
 std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr local_context, const String & data_path) const
@@ -433,7 +390,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
     SharedLockGuard lock(mutex);
     auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
     return version_if_outdated.has_value()
-        ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), relevant_snapshot_schema_id)
+        ? schema_processor->getSchemaTransformationDagByIds(version_if_outdated.value(), relevant_snapshot_schema_id)
         : nullptr;
 }
 
@@ -532,7 +489,11 @@ void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context
             object_storage,
             configuration.lock(),
             manifest_cache,
+            schema_processor,
+            format_version,
+            table_location,
             local_context,
+            log,
             manifest_list_entry.manifest_file_path,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id);
@@ -716,7 +677,11 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             object_storage,
             configuration.lock(),
             manifest_cache,
+            schema_processor,
+            format_version,
+            table_location,
             local_context,
+            log,
             manifest_list_entry.manifest_file_path,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id);
@@ -755,7 +720,11 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
             object_storage,
             configuration.lock(),
             manifest_cache,
+            schema_processor,
+            format_version,
+            table_location,
             local_context,
+            log,
             manifest_list_entry.manifest_file_path,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id);
@@ -776,21 +745,27 @@ ObjectIterator IcebergMetadata::iterate(
      ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
+
+    auto table_snapshot
+        = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
     return std::make_shared<IcebergIterator>(
+        local_context,
         object_storage,
         filter_dag,
-        local_context,
+        table_snapshot,
         relevant_snapshot,
-        std::make_shared<IcebergTableStateSnapshot>(
-            last_metadata_version, relevant_snapshot_id, relevant_snapshot_schema_id),
         manifest_cache,
-        callback);
+        schema_processor,
+        configuration.lock(),
+        callback,
+        format_version,
+        table_location);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
 {
     SharedLockGuard lock(mutex);
-    return *schema_processor.getClickhouseTableSchemaById(relevant_snapshot_schema_id);
+    return *schema_processor->getClickhouseTableSchemaById(relevant_snapshot_schema_id);
 }
 
 std::tuple<Int64, Int32> IcebergMetadata::getVersion() const

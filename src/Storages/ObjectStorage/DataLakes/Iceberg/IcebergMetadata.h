@@ -124,7 +124,7 @@ protected:
 private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
-    mutable IcebergSchemaProcessor schema_processor;
+    mutable IcebergSchemaProcessorPtr schema_processor;
     LoggerPtr log;
 
     IcebergMetadataFilesCachePtr manifest_cache;

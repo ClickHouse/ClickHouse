@@ -29,7 +29,11 @@ Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,
+    IcebergSchemaProcessorPtr schema_processor,
+    Int32 format_version,
+    String table_location,
     ContextPtr local_context,
+    LoggerPtr log,
     const String & filename,
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id);

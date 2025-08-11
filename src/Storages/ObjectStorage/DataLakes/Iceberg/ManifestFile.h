@@ -107,7 +107,8 @@ public:
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        const String & path_to_manifest_file_);
 
     const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
 
@@ -124,6 +125,7 @@ public:
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
+    const String & getPathToManifestFile() const { return path_to_manifest_file; }
 
     ManifestFileContent(ManifestFileContent &&) = delete;
     ManifestFileContent & operator=(ManifestFileContent &&) = delete;
@@ -140,7 +142,7 @@ private:
     std::vector<ManifestFileEntry> position_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
-
+    String path_to_manifest_file;
 };
 
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
