@@ -59,7 +59,7 @@ static const constexpr String PARTITION_STR = "{_partition_id}";
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    chassert(bucket_path == "" && catalog == CatalogTable::None);
+    chassert(bucket_path.empty() && catalog == CatalogTable::None);
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
@@ -154,7 +154,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
     {
         String res = bucket_path;
 
-        chassert(bucket_path != "");
+        chassert(!bucket_path.empty());
         if (!isS3QueueEngine() && !isAzureQueueEngine() && catalog == CatalogTable::None && !no_change && rg.nextSmallNumber() < 8)
         {
             /// Replace PARTITION BY str

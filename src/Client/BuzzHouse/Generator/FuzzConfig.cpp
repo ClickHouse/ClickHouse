@@ -59,7 +59,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String user = "test";
     String password;
     String database = "test";
-    String named_collection = "";
+    String named_collection;
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
     std::optional<Catalog> glue_catalog;
