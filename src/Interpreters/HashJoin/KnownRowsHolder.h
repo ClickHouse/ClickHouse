@@ -28,8 +28,8 @@ private:
         size_t operator()(const Type & p) const
         {
             UInt64 crc = -1ULL;
-            crc = _mm_crc32_u64(crc, reinterpret_cast<UInt64>(p.first));
-            crc = _mm_crc32_u64(crc, p.second);
+            crc = intHashCRC32(reinterpret_cast<UInt64>(p.first), crc);
+            crc = intHashCRC32(p.second, crc);
             return crc;
         }
     };
