@@ -1025,7 +1025,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); }, {}, false)}};
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); }, {}, false)},
+    {"kill_throw_if_noop", trueOrFalseSettingNoOracle},};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 
