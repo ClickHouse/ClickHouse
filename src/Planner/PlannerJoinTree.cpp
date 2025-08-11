@@ -2433,6 +2433,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
 
+    LOG_DEBUG(getLogger("PlannerJoinTree"), "Table expressions stack size: {}", table_expressions_stack_size);
+
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];

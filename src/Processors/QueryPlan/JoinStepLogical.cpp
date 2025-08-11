@@ -84,7 +84,7 @@ void formatJoinCondition(const JoinCondition & join_condition, WriteBuffer & buf
     auto quote_string = std::views::transform([](const auto & s) { return fmt::format("({})", s.getColumnName()); });
     auto format_predicate = std::views::transform([](const auto & p) { return fmt::format("{} {} {}", p.left_node.getColumnName(), toString(p.op), p.right_node.getColumnName()); });
     buf << "[";
-    buf << fmt::format("Predcates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
+    buf << fmt::format("Predicates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
     if (!join_condition.left_filter_conditions.empty())
         buf << " " << fmt::format("Left filter: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
     if (!join_condition.right_filter_conditions.empty())
@@ -340,7 +340,7 @@ bool canPushDownFromOn(const JoinInfo & join_info, std::optional<JoinTableSide> 
         || (side == JoinTableSide::Right && join_info.kind == JoinKind::Left);
 
     return is_suitable_kind
-        && join_info.expression.disjunctive_conditions.empty()
+        // && join_info.expression.disjunctive_conditions.empty()
         && join_info.strictness == JoinStrictness::All;
 }
 
@@ -415,6 +415,7 @@ std::tuple<const ActionsDAG::Node *, const ActionsDAG::Node *> leftAndRightNodes
 bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::JoinOnClause & table_join_clause, JoinExpressionActions & expression_actions, JoinPlanningContext join_context)
 {
     std::vector<JoinPredicate> new_predicates;
+    LOG_TRACE(getLogger("DEBUGGING!"), "join_condition: {}", formatJoinCondition(join_condition));
     for (size_t i = 0; i < join_condition.predicates.size(); ++i)
     {
         auto & predicate = join_condition.predicates[i];
@@ -502,6 +503,7 @@ JoinActionRef buildSingleActionForJoinCondition(const JoinCondition & join_condi
 
 JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_expression, JoinExpressionActions & expression_actions)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "buildSingleActionForJoinExpression: {}", join_expression.condition.predicates.size());
     std::vector<JoinActionRef> all_conditions;
 
     if (auto condition = buildSingleActionForJoinCondition(join_expression.condition, expression_actions))
@@ -605,6 +607,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
             join_expression.condition, table_join_clauses.emplace_back(),
             expression_actions, join_context);
 
+        LOG_TRACE(getLogger("DEBUGGING!"), "has_keys: {}", has_keys);
+
         if (!has_keys)
         {
             if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH))
@@ -617,9 +621,11 @@ JoinPtr JoinStepLogical::convertToPhysical(
                 && join_expression.condition.left_filter_conditions.empty()
                 && join_expression.condition.right_filter_conditions.empty();
 
+            LOG_TRACE(getLogger("DEBUGGING!"), "can_convert_to_cross: {}", can_convert_to_cross);
+
             if (!can_convert_to_cross)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                    formatJoinCondition(join_expression.condition));
+                        formatJoinCondition(join_expression.condition));
             join_info.kind = JoinKind::Cross;
         }
     }
@@ -728,10 +734,12 @@ JoinPtr JoinStepLogical::convertToPhysical(
 
     if (residual_filter_condition && canPushDownFromOn(join_info))
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "convertToPhysical: residual_filter_condition: {}, canPushDownFromOn: {}", residual_filter_condition.getNode()->result_name, canPushDownFromOn(join_info));
         post_filter = residual_filter_condition;
     }
     else if (residual_filter_condition)
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "convertToPhysical: residual_filter_condition: {}, canPushDownFromOn: {}", residual_filter_condition.getNode()->result_name, canPushDownFromOn(join_info));
         ActionsDAG dag;
         if (is_explain_logical)
         {
@@ -802,21 +810,27 @@ bool JoinStepLogical::hasPreparedJoinStorage() const
 
 std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, String & filter_column_name)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "getFilterActions");
     if (join_info.strictness != JoinStrictness::All)
         return {};
 
     auto & join_expression = join_info.expression;
-    if (!join_expression.disjunctive_conditions.empty())
-        return {};
+    // if (!join_expression.disjunctive_conditions.empty())
+    //     return {};
 
     if (!canPushDownFromOn(join_info, side))
         return {};
 
+    LOG_TRACE(getLogger("DEBUGGING!"), "getFilterActions: canPushDownFromOn");
+
     const ActionsDAGPtr & actions_dag = side == JoinTableSide::Left ? expression_actions.left_pre_join_actions : expression_actions.right_pre_join_actions;
     std::vector<JoinActionRef> & conditions = side == JoinTableSide::Left ? join_expression.condition.left_filter_conditions : join_expression.condition.right_filter_conditions;
 
-    if (auto filter_condition = concatMergeConditions(conditions, actions_dag))
+    LOG_TRACE(getLogger("DEBUGGING!"), "getFilterActions: conditions size: {}", conditions.size());
+
+    if (auto filter_condition = concatMergeConditions(conditions, actions_dag, !join_expression.disjunctive_conditions.empty()))
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "getFilterActions: filter_condition: {}", filter_condition.getColumnName());
         filter_column_name = filter_condition.getColumnName();
         conditions.clear();
         ActionsDAG new_dag(actions_dag->getResultColumns());
