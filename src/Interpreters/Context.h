@@ -1199,7 +1199,7 @@ public:
 
     void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
-    void setSystemZooKeeperLogAfterInitializationIfNeeded();
+    void handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
 

@@ -4226,10 +4226,6 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
-static constexpr auto keeper_init_reason = "Initialization";
-static constexpr auto keeper_removed_from_config = "Removed from config";
-static constexpr auto keeper_expired_reason = "Session expired";
-
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -4240,7 +4236,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     {
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, keeper_init_reason);
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
     }
 
     if (shared->zookeeper->expired())
@@ -4254,8 +4251,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
-            zookeeper_connection_log->addDisconnected(ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, keeper_expired_reason);
-            zookeeper_connection_log->addConnected(ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, keeper_expired_reason);
+            zookeeper_connection_log->addDisconnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
         }
 
         if (isServerCompletelyStarted())
@@ -4335,36 +4334,50 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
-void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+void Context::handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded()
 {
     /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
     /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
-    /// instead of pointer to system table and it logs nothing.
-    /// This method explicitly sets correct pointer to system log after its initialization.
+    /// instead of pointer to system table and it logs nothing. Furthermore, ZooKeeperConnectionLog will also miss
+    /// entries for connections that were established before initializeSystemLogs() was called.
+    /// This method explicitly sets correct pointer to system log after its initialization and also adds connected
+    /// entries for ZooKeeperConnectionLog.
     /// TODO get rid of this if possible
 
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
+    std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
     {
         SharedLockGuard lock(shared->mutex);
         if (!shared->system_logs)
             return;
 
         zookeeper_log = shared->system_logs->zookeeper_log;
+        zookeeper_connection_log = shared->system_logs->zookeeper_connection_log;
     }
 
-    if (!zookeeper_log)
+    if (!zookeeper_log && !zookeeper_connection_log)
         return;
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
         if (shared->zookeeper)
+        {
             shared->zookeeper->setZooKeeperLog(zookeeper_log);
+            if (zookeeper_connection_log)
+                zookeeper_connection_log->addConnected(
+                    ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        }
     }
 
     {
         std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
         for (auto & zk : shared->auxiliary_zookeepers)
+        {
             zk.second->setZooKeeperLog(zookeeper_log);
+            if (zookeeper_connection_log)
+                zookeeper_connection_log->addConnected(
+                    zk.first, *zk.second, ZooKeeperConnectionLog::keeper_init_reason);
+        }
     }
 }
 
@@ -4464,8 +4477,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                         zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog())).first;
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, keeper_init_reason);
-
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
     }
     else if (zookeeper->second->expired())
     {
@@ -4474,8 +4486,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
-            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, keeper_expired_reason);
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, keeper_expired_reason);
+            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
         }
     }
 
@@ -4551,7 +4563,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         {
             LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
             if (zookeeper_connection_log)
-                zookeeper_connection_log->addDisconnected(it->first, *it->second, keeper_removed_from_config);
+                zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
 
             it = shared->auxiliary_zookeepers.erase(it);
         }

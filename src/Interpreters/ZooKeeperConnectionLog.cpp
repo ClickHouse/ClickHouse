@@ -56,13 +56,13 @@ ColumnsDescription ZooKeeperConnectionLogElement::getColumnsDescription()
     };
 }
 
-
-void ZooKeeperConnectionLog::addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason)
+void ZooKeeperConnectionLog::addConnected(const std::string_view name, const zkutil::ZooKeeper & zookeeper, const std::string_view reason)
 {
     addWithEventType(ZooKeeperConnectionLogElement::EventType::Connected, name, zookeeper, reason);
 }
 
-void ZooKeeperConnectionLog::addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason)
+void ZooKeeperConnectionLog::addDisconnected(
+    const std::string_view name, const zkutil::ZooKeeper & zookeeper, const std::string_view reason)
 {
     addWithEventType(ZooKeeperConnectionLogElement::EventType::Disconnected, name, zookeeper, reason);
 }
@@ -112,9 +112,9 @@ void ZooKeeperConnectionLogElement::appendToBlock(MutableColumns & columns) cons
 
 void ZooKeeperConnectionLog::addWithEventType(
     ZooKeeperConnectionLogElement::EventType type,
-    std::string_view name,
+    const std::string_view name,
     const zkutil::ZooKeeper & zookeeper,
-    const String & reason)
+    const std::string_view reason)
 {
     ZooKeeperConnectionLogElement element;
     element.event_type = type;

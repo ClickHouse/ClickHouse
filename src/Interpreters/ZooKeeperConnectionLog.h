@@ -38,16 +38,20 @@ struct ZooKeeperConnectionLogElement
 
 class ZooKeeperConnectionLog : public SystemLog<ZooKeeperConnectionLogElement>
 {
+public:
     using SystemLog<ZooKeeperConnectionLogElement>::SystemLog;
 
-public:
-    void addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason);
-    void addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason);
+    void addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
+    void addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
 
     static Array getEnabledFeatureFlags(const zkutil::ZooKeeper& zookeeper);
     constexpr static std::string_view default_zookeeper_name = "default";
+    constexpr static std::string_view keeper_init_reason = "Initialization";
+    constexpr static std::string_view keeper_removed_from_config = "Removed from config";
+    constexpr static std::string_view keeper_expired_reason = "Session expired";
+
 private:
-    void addWithEventType(ZooKeeperConnectionLogElement::EventType type, std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason);
+    void addWithEventType(ZooKeeperConnectionLogElement::EventType type, std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
 };
 
 }
