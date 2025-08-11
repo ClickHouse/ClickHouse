@@ -146,7 +146,7 @@ class PRInfo:
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str
         self.number = 0  # type: int
-        self.updated_at = None
+        self.updated_at = github_event.get('repository', {}).get('updated_at', None)
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
