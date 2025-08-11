@@ -343,6 +343,7 @@ private:
     ReadBuffer & getReadBuffer();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
+    // void observeOperationInLightweightZooKeeperLog(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
@@ -350,7 +351,8 @@ private:
 
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
-    std::shared_ptr<ZooKeeperLog> zk_log;
+    std::atomic<std::shared_ptr<ZooKeeperLog>> zk_log;
+    // std::shared_ptr<LightweightZooKeeperLog> lightweight_zookeeper_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

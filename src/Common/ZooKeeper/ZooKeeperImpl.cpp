@@ -397,7 +397,7 @@ ZooKeeper::ZooKeeper(
     : path_acls(args_.path_acls), args(args_)
 {
     log = getLogger("ZooKeeperClient");
-    std::atomic_store(&zk_log, std::move(zk_log_));
+    zk_log.store(std::move(zk_log_));
 
     if (!args.chroot.empty())
     {
@@ -1296,7 +1296,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
-        auto maybe_zk_log = std::atomic_load(&zk_log);
+        auto maybe_zk_log = zk_log.load();
         if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
@@ -1788,13 +1788,18 @@ int64_t ZooKeeper::getConnectionXid() const
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     /// logOperationIfNeeded(...) uses zk_log and can be called from different threads, so we have to use atomic shared_ptr
-    std::atomic_store(&zk_log, std::move(zk_log_));
+    zk_log.store(std::move(zk_log_));
 }
+
+// void ZooKeeper::observeOperationInLightweightZooKeeperLog(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0)
+// {
+
+// }
 
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
-    auto maybe_zk_log = std::atomic_load(&zk_log);
+    auto maybe_zk_log = zk_log.load();
     if (!maybe_zk_log)
         return;
 

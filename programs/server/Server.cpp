@@ -335,8 +335,6 @@ namespace ServerSetting
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
-    extern const ServerSettingsUInt64 lightweight_zookeeper_logger_flush_period_ms;
-    extern const ServerSettingsUInt64 lightweight_zookeeper_logger_max_entries;
 }
 
 namespace ErrorCodes
