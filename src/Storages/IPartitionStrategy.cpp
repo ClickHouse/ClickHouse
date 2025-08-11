@@ -121,7 +121,7 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File format can't be empty for hive style partitioning");
         }
 
-        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
+        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), LoadingStrictnessLevel::CREATE, context);
 
         for (const auto & partition_expression_column : partition_key_description.sample_block)
         {
@@ -178,7 +178,7 @@ namespace
         }
 
         return std::make_shared<WildcardPartitionStrategy>(
-            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context),
+            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), LoadingStrictnessLevel::CREATE, context),
             sample_block,
             context);
     }
