@@ -4,14 +4,14 @@ import time
 import pytest
 from kafka import KafkaAdminClient
 
+from helpers.kafka.common_direct import *
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
-    user_configs=["configs/users.xml"],
+    main_configs=["configs/kafka.xml"],
     with_kafka=True,
     with_zookeeper=True,
     macros={
@@ -23,7 +23,6 @@ instance = cluster.add_instance(
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
     },
-    clickhouse_path_dir="clickhouse_path",
 )
 
 
