@@ -21,7 +21,7 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
 {
     bool is_on_cluster = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_replicated_database = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+        DatabaseCatalog::instance().getDatabase(table_id.database_name, context)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
     /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
@@ -57,7 +57,7 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
     info.table_id = table_id;
     if (is_replicated_database)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
         info.shard = getReplicatedDatabaseShardName(database);
         info.replica = getReplicatedDatabaseReplicaName(database);
     }

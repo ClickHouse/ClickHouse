@@ -1442,7 +1442,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
             assert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name);
-            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
+            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name, getContext());
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;

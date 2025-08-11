@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include "Common/tests/gtest_global_context.h"
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -324,7 +325,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
 ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 {
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
     ASTPtr old_ast = database->getCreateTableQuery(table_id.table_name, context);
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
@@ -710,7 +711,7 @@ void SystemLog<LogElement>::prepareTable()
             auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
-            if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
+            if (DatabaseCatalog::instance().getDatabase(table_id.database_name, getContext())->getUUID() == UUIDHelpers::Nil)
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);

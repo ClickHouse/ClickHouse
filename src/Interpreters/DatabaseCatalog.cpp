@@ -1,42 +1,46 @@
-#include <algorithm>
-#include <string>
-#include <mutex>
-#include <utility>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/loadMetadata.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Storages/IStorage.h>
-#include <Databases/IDatabase.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseOnDisk.h>
-#include <Disks/IDisk.h>
-#include <Storages/MemorySettings.h>
-#include <Storages/StorageMemory.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Access/ContextAccess.h>
+
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <IO/ReadHelpers.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/TableNameHints.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
-#include <Common/assert_cast.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/noexcept_scope.h>
-#include <Common/checkStackSize.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <base/scope_guard.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/IStorage.h>
+#include <Storages/MemorySettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMemory.h>
+
+#include <algorithm>
+#include <mutex>
+#include <string>
+#include <utility>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
@@ -93,24 +97,36 @@ namespace MergeTreeSetting
 class DatabaseNameHints : public IHints<>
 {
 public:
-    explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
+    explicit DatabaseNameHints(
+        const DatabaseCatalog & database_catalog_,
+        ContextPtr context_
+    )
         : database_catalog(database_catalog_)
+        , context(std::move(context_))
     {
     }
     Names getAllRegisteredNames() const override
     {
+        const auto access = context->getAccess();
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+
         Names result;
         auto databases_list = database_catalog.getDatabases();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
+            if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+                continue;
+
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue;
+
             result.emplace_back(database_name);
         }
         return result;
     }
 private:
     const DatabaseCatalog & database_catalog;
+    ContextPtr context;
 };
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -370,7 +386,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 if (names.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
@@ -437,7 +453,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         if (exception)
         {
-            DatabaseNameHints hints(*this);
+            DatabaseNameHints hints(*this, context_);
             std::vector<String> names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
@@ -470,7 +486,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     if (!table && exception && !exception->has_value())
     {
-        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
@@ -542,18 +558,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     }
     if (!db)
     {
-        DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
-        if (names.empty())
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
-        }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
     }
 }
 
@@ -604,7 +609,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     }
     if (!db)
     {
-        DatabaseNameHints hints(*this);
+        DatabaseNameHints hints(*this, local_context);
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
@@ -725,7 +730,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
 {
     assert(!database_name.empty());
     DatabasePtr db;
@@ -737,7 +742,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 
     if (!db)
     {
-        DatabaseNameHints hints(*this);
+        DatabaseNameHints hints(*this, local_context);
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
@@ -816,12 +821,12 @@ void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, Context
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 {
-    return getDatabase(TEMPORARY_DATABASE);
+    return getDatabase(TEMPORARY_DATABASE, getContext());
 }
 
 DatabasePtr DatabaseCatalog::getSystemDatabase() const
 {
-    return getDatabase(SYSTEM_DATABASE);
+    return getDatabase(SYSTEM_DATABASE, getContext());
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
@@ -950,12 +955,6 @@ void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
     {
         database_catalog->shutdownImpl(std::move(shutdown_system_logs));
     }
-}
-
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
-{
-    String resolved_database = local_context->resolveDatabase(database_name);
-    return getDatabase(resolved_database);
 }
 
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
@@ -1139,7 +1138,7 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName());
+    auto database = getDatabase(table_id.getDatabaseName(), getContext());
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
 
     if (!database_ptr)
@@ -1237,7 +1236,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getDatabase(table_id.database_name)->getDisk();
+    auto db_disk = getDatabase(table_id.database_name, getContext())->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;

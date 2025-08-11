@@ -4,7 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
 
