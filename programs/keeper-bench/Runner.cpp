@@ -1264,7 +1264,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
     args.use_xid_64 = connection_info.use_xid_64;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr, nullptr);
 }
 
 std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()

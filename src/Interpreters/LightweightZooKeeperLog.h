@@ -21,7 +21,7 @@ struct LightweightZooKeeperLogElement
     /// Group statistics.
     UInt32 count;
     Coordination::ErrorCounter errors;
-    UInt64 total_latency_ms;
+    UInt64 total_latency_microseconds;
 
     static std::string name() { return "LightweightZooKeeperLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -45,7 +45,7 @@ protected:
                 .operation = entry_key.operation,
                 .count = entry_stats.count,
                 .errors = std::move(entry_stats.errors),
-                .total_latency_ms = entry_stats.total_latency_ms,
+                .total_latency_microseconds = entry_stats.total_latency_microseconds,
             };
             add(std::move(element));
         }
@@ -53,10 +53,10 @@ protected:
     }
 
 public:
-    void observe(Coordination::OpNum operation, const std::filesystem::path & path, UInt32 latency_ms, Coordination::Error error)
+    void observe(Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
     {
         std::lock_guard lock(stats_mutex);
-        stats[EntryKey{.operation = operation, .parent_path = path.parent_path()}].observe(latency_ms, error);
+        stats[EntryKey{.operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
     }
 
 private:
@@ -83,13 +83,13 @@ private:
     struct EntryStats
     {
         UInt32 count = 0;
-        UInt64 total_latency_ms = 0;
+        UInt64 total_latency_microseconds = 0;
         Coordination::ErrorCounter errors;
 
-        void observe(UInt32 latency_ms, Coordination::Error error)
+        void observe(UInt64 latency_microseconds, Coordination::Error error)
         {
             ++count;
-            total_latency_ms += latency_ms;
+            total_latency_microseconds += latency_microseconds;
             errors.increment(error);
         }
     };

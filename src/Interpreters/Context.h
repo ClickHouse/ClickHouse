@@ -1200,8 +1200,6 @@ public:
 
     void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
-    void setSystemZooKeeperLogAfterInitializationIfNeeded();
-
     /// --- Caches ------------------------------------------------------------------------------------------
 
     void setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);

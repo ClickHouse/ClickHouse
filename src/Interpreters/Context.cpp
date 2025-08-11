@@ -4232,7 +4232,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog(), getLightweightZooKeeperLog());
 
     if (shared->zookeeper->expired())
     {
@@ -4314,39 +4314,6 @@ UInt32 Context::getZooKeeperSessionUptime() const
     if (!shared->zookeeper || shared->zookeeper->expired())
         return 0;
     return shared->zookeeper->getSessionUptime();
-}
-
-void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
-{
-    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
-    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
-    /// instead of pointer to system table and it logs nothing.
-    /// This method explicitly sets correct pointer to system log after its initialization.
-    /// TODO get rid of this if possible
-
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (!shared->system_logs)
-            return;
-
-        zookeeper_log = shared->system_logs->zookeeper_log;
-    }
-
-    if (!zookeeper_log)
-        return;
-
-    {
-        std::lock_guard lock(shared->zookeeper_mutex);
-        if (shared->zookeeper)
-            shared->zookeeper->setZooKeeperLog(zookeeper_log);
-    }
-
-    {
-        std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
-        for (auto & zk : shared->auxiliary_zookeepers)
-            zk.second->setZooKeeperLog(zookeeper_log);
-    }
 }
 
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
@@ -4440,7 +4407,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 name);
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog(), getLightweightZooKeeperLog())).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -4471,6 +4438,7 @@ static void reloadZooKeeperIfChangedImpl(
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
+    std::shared_ptr<LightweightZooKeeperLog> lightweight_zk_log,
     bool server_started)
 {
     if (!zk || zk->configChanged(*config, config_name))
@@ -4478,7 +4446,7 @@ static void reloadZooKeeperIfChangedImpl(
         if (zk)
             zk->finalize("Config changed");
 
-        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
+        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log), std::move(lightweight_zk_log));
         if (server_started)
             zk->setServerCompletelyStarted();
     }
@@ -4489,7 +4457,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getLightweightZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -4505,7 +4473,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
             it = shared->auxiliary_zookeepers.erase(it);
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), server_started);
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), getLightweightZooKeeperLog(), server_started);
             ++it;
         }
     }

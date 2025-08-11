@@ -118,8 +118,11 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
 
     result.add({"total_latency",
                 std::make_shared<DataTypeUInt64>(),
-                "Sum of all latencies in (parent_path, operation) group, in milliseconds."});
+                "Sum of all latencies in (parent_path, operation) group, in microseconds."});
     
+    result.add({"average_latency",
+                std::make_shared<DataTypeFloat64>(),
+                "Average latency across all operations in (parent_path, operation) group, in microseconds."});
     return result;
 }
 
@@ -133,7 +136,8 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(operation);
     columns[i++]->insert(count);
     errors.dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
-    columns[i++]->insert(total_latency_ms);
+    columns[i++]->insert(total_latency_microseconds);
+    columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
 
 }

@@ -8,6 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Interpreters/LightweightZooKeeperLog.h>
 
 #include <future>
 #include <memory>
@@ -186,10 +187,10 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::LightweightZooKeeperLog> lightweight_zk_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::LightweightZooKeeperLog> lightweight_zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     /** Config of the form:
         <zookeeper>
@@ -213,7 +214,7 @@ class ZooKeeper
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::LightweightZooKeeperLog> lightweight_zk_log_ = nullptr);
 
     /// See addCheckSessionOp
     void initSession();
@@ -228,7 +229,8 @@ public:
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,
-                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_,
+                      std::shared_ptr<DB::LightweightZooKeeperLog> lightweight_zk_log_);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -605,8 +607,6 @@ public:
 
     void finalize(const String & reason);
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
@@ -713,6 +713,7 @@ private:
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
+    std::shared_ptr<DB::LightweightZooKeeperLog> lightweight_zk_log;
 
     AtomicStopwatch session_uptime;
 
