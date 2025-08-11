@@ -488,10 +488,10 @@ private:
         const uint32_t toadd_path = 1;
         const uint32_t toadd_format = rg.nextMediumNumber() < 91;
         const uint32_t toadd_compression = rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy
-            = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine() && !b.isAzureQueueEngine() && !b.isOnLocal() && rg.nextMediumNumber() < 31;
-        const uint32_t toadd_partition_columns_in_data_file
-            = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine() && !b.isAzureQueueEngine() && !b.isOnLocal() && rg.nextMediumNumber() < 31;
+        const uint32_t toadd_partition_strategy = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine() && !b.isAzureQueueEngine()
+            && !b.isOnLocal() && rg.nextMediumNumber() < 31;
+        const uint32_t toadd_partition_columns_in_data_file = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine()
+            && !b.isAzureQueueEngine() && !b.isOnLocal() && rg.nextMediumNumber() < 31;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_structure;
