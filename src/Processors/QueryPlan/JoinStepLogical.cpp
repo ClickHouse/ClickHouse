@@ -27,7 +27,6 @@
 #include <Storages/StorageJoin.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
-#include "Core/Block_fwd.h"
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsComparison.h>
