@@ -657,7 +657,7 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     if (is_null)
     {
         for (size_t i = 0; i < rows; ++i)
-            sizes[i] += !!is_null[i] + !is_null[i] * (element_size + 1 /* null byte */);
+            sizes[i] += 1 + !is_null[i] * (element_size + 1 /* null byte */);
     }
     else
     {
