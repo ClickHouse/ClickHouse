@@ -35,7 +35,7 @@ StoragePtr TableFunctionFileCluster::getStorage(
             context->getSettingsRef()[Setting::rename_files_after_processing],
             path_to_archive};
 
-        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), /*distributed_processing_*/ true, args);
+        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
     }
     else
     {

@@ -31,7 +31,6 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
-
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
