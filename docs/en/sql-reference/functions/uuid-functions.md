@@ -193,7 +193,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 ```
 
 **Result**
-```
+
+```response
    ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
 1. │ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
    └──────────────────────────────────────┘
