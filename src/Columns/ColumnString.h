@@ -246,7 +246,6 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        chars.resize_fill(chars.size() + length);
         auto last = offsets.back();
         for (size_t i = 0; i < length; ++i)
             offsets.push_back(last);
