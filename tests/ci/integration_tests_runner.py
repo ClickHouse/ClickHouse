@@ -36,7 +36,7 @@ CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
 CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
-NUM_WORKERS = 5
+NUM_WORKERS = 4
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
@@ -840,9 +840,10 @@ class ClickhouseIntegrationTestsRunner:
                 WHERE (check_name LIKE 'Integration%')
                     AND (check_name LIKE '%{self.job_configuration}%')
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
-                    AND (check_start_time <= ({start_time_filter}))
+                    AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
                     AND (test_name != '')
+                    AND (test_status != 'SKIPPED')
                 GROUP BY test_name
             )
             GROUP BY file
@@ -851,14 +852,13 @@ class ClickhouseIntegrationTestsRunner:
         """
         logging.info(query)
 
+        url = (
+            f"{CLICKHOUSE_PLAY_URL}/?user={CLICKHOUSE_PLAY_USER}"
+            f"&password={requests.compat.quote(CLICKHOUSE_PLAY_PASSWORD)}"
+            f"&query={requests.compat.quote(query)}"
+        )
         max_retries = 3
         retry_delay_seconds = 5
-
-        params = {
-            "database": CLICKHOUSE_PLAY_DB,
-            "user": CLICKHOUSE_PLAY_USER,
-            "password": CLICKHOUSE_PLAY_PASSWORD,
-        }
 
         for attempt in range(max_retries):
             try:
@@ -867,7 +867,7 @@ class ClickhouseIntegrationTestsRunner:
                     attempt + 1, max_retries
                 )
 
-                response = requests.post(CLICKHOUSE_PLAY_URL, params=params, data=query, timeout=120)
+                response = requests.get(url, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
@@ -918,8 +918,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_execution_times = self.get_tests_execution_time()
         assert len(tests_execution_times) > 400, \
             f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
-        # use median exec time for tests with unknown execution time
-        median_time = median(list(tests_execution_times.values()))
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
@@ -957,7 +955,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_parallel_tests:
             total_time, group_index, files = heapq.heappop(parallel_heap)
             files.append(file)
-            heapq.heappush(parallel_heap, (total_time + median_time, group_index, files))
+            heapq.heappush(parallel_heap, (total_time, group_index, files))
 
         test_file_groups = [[] for _ in range(num_groups)]
         parallel_group_times = [0.0] * num_groups
@@ -982,7 +980,7 @@ class ClickhouseIntegrationTestsRunner:
         for file in new_sequential_tests:
             total_time, group_index = heapq.heappop(sequential_heap)
             test_file_groups[group_index].append(file)
-            heapq.heappush(sequential_heap, (total_time + median_time, group_index))
+            heapq.heappush(sequential_heap, (total_time, group_index))
 
         # heap contains final total times
         total_group_times = [0.0] * num_groups
