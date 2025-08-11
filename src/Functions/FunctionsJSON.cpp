@@ -1119,11 +1119,153 @@ public:
 
 REGISTER_FUNCTION(JSON)
 {
-    factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>();
+    // JSONHas
+    {
+        FunctionDocumentation::Description description = R"(
+Checks for the existence of the provided value(s) in the JSON document.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONHas(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"(U)Int8/16/32/64"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example", 
+            R"(
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1;
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
+            )",
+            R"(
+1
+0
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>(documentation);
+    }
+    
+    // isValidJSON
+    {
+        FunctionDocumentation::Description description = R"(
+Checks that the string passed is valid JSON.
+)";
+        FunctionDocumentation::Syntax syntax = "isValidJSON(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to validate", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string is valid JSON, otherwise `0`.", {"UInt8"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1;
+SELECT isValidJSON('not JSON') = 0;
+            )",
+            R"(
+1
+0
+            )"
+        },
+        {
+            "Using integers to access both JSON arrays and JSON objects",
+            R"(
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 0);            
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 1);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 2);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', -1);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
+            )",
+            R"(
+0
+1
+1
+1
+1
+1
+0
+         
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>(documentation);
+    }
+    
+    // JSONLength
+    {
+        FunctionDocumentation::Description description = R"(
+Return the length of a JSON array or a JSON object.
+If the value does not exist or has the wrong type, `0` will be returned.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONLength(json [, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"[, indices_or_keys, ...]", "Optional. A list of zero or more arguments.", {"String", "(U)Int8/16/32/64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the length of the JSON array or JSON object, otherwise returns `0` if the value does not exist or has the wrong type.", {"UInt64"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3;
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2;
+            )",
+            R"(
+1
+1
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>(documentation);
+    }
     factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>();
+    
+    // JSONType
+    {
+        FunctionDocumentation::Description description = R"(
+Return the type of a JSON value. If the value does not exist, `Null=0` will be returned.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONType(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"json[, indices_or_keys, ...]", "A list of zero or more arguments, each of which can be either string or integer.", {"String", "(U)Int8/16/32/64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the type of a JSON value as a string, otherwise if the value doesn't exist it returns `Null=0`", {"Enum"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object';
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String';
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array';
+            )",
+            R"(
+1
+1
+1
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>(documentation);
+    }
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64Impl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64Impl>>();
