@@ -38,6 +38,14 @@ enum class PeerQuery
     AllPeers = 2
 };
 
+enum class CatalogTable
+{
+    None = 0,
+    Glue = 1,
+    Hive = 2,
+    REST = 3
+};
+
 struct SQLColumn
 {
 public:
@@ -112,8 +120,6 @@ public:
     uint32_t dname = 0;
     DatabaseEngineValues deng;
     uint32_t zoo_path_counter;
-    String backed_db;
-    String backed_disk;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -128,6 +134,8 @@ public:
     bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
 
     bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
+
+    bool isDataLakeCatalogDatabase() const { return deng == DatabaseEngineValues::DDataLakeCatalog; }
 
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
@@ -147,7 +155,7 @@ public:
 struct SQLBase
 {
 public:
-    bool is_temp = false, is_deterministic = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster;
@@ -155,8 +163,9 @@ public:
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    String file_comp;
+    String file_comp, partition_strategy, partition_columns_in_data_file;
     std::optional<InOutFormat> file_format;
+    CatalogTable catalog = CatalogTable::None;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
@@ -169,6 +178,8 @@ public:
     {
         return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
     }
+
+    bool isLogFamily() const { return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog; }
 
     bool isSharedMergeTree() const { return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared; }
 
@@ -237,6 +248,12 @@ public:
 
     bool isAnyIcebergEngine() const { return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal; }
 
+    bool isOnS3() const { return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine(); }
+
+    bool isOnAzure() const { return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine(); }
+
+    bool isOnLocal() const { return isIcebergLocalEngine() || isDeltaLakeLocalEngine(); }
+
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
     bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
@@ -275,7 +292,11 @@ public:
 
     bool isDettached() const;
 
+    String getDatabaseName() const;
+
     String getTablePath(const FuzzConfig & fc, bool client) const;
+
+    String getMetadataPath(const FuzzConfig & fc, bool client) const;
 };
 
 struct SQLTable : SQLBase
@@ -292,12 +313,6 @@ public:
     bool supportsFinal() const
     {
         return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
-    }
-
-    bool supportsOptimize() const
-    {
-        return isMergeTreeFamily() || isBufferEngine()
-            || (isDistributedEngine() && (SQLBase::supportsFinal(sub) || sub == TableEngineValues::MergeTree));
     }
 
     bool hasSignColumn() const
@@ -324,8 +339,8 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("t" + std::to_string(tname));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table(getTableName());
     }
 };
 
@@ -349,7 +364,7 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
         te->add_params()->mutable_table()->set_table("v" + std::to_string(tname));
     }
 
@@ -374,7 +389,7 @@ public:
 
     void setName(TableEngine * te) const
     {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
         te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
     }
 
