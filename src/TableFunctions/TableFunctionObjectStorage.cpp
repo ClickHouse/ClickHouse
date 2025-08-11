@@ -200,12 +200,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     /// NOTE: Automatic cluster functions are implemented at the wrong level of abstraction.
     /// We should replace ordinary "function" with "functionCluster" at AST level. For some reason
-    /// we don't do it and implement some parts "functionCluster" logic inside ordinary "function".
+    /// we don't do it and implement some parts of "functionCluster" logic inside ordinary "function".
     /// And now we have a problem because we cannot distinguish two cases:
     /// 1. Is it really a query which was initiated by clusterFunction?
     /// 2. Is it just an ordinary Distributed/remote which reads from object storage function?
     /// It's important to distinguish these cases because they use different packets in their protocols.
-    /// Distributed/remote initiator expect one protocol and functionCluster expect other protocol.
+    /// Distributed/remote initiator expect one protocol and "functionCluster" expect other protocol.
     ///
     /// HACK Fortunately distributed_depth is incremented only from Distributed/remote and that is the way
     /// how we can distinguish these cases.
