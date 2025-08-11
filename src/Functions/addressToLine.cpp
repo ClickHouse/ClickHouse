@@ -63,26 +63,22 @@ protected:
 REGISTER_FUNCTION(AddressToLine)
 {
     FunctionDocumentation::Description description = R"(
-Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
-
-If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
+Converts a virtual memory address inside the ClickHouse server process to a filename and line number in ClickHouse's source code.
 
 :::note
-These functions are slow and may impose security considerations.
+This function is slow and may impose security considerations.
 :::
 
-For proper operation of introspection functions:
+To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set the [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) setting to `1`.
-
-For security reasons introspection functions are disabled by default.
+- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLine(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
         {"address_of_binary_instruction", "Address of instruction in a running process.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the source code filename and the line number in this file delimited by a colon. For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number. Returns the name of a binary, if the function couldn't find the debug information, otherwise an empty string, if the address is not valid.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a source code filename and line number delimited by a colon, for example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. Returns the name of a binary, if no debug information could be found, otherwise an empty string, if the address is not valid.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Selecting the first string from the `trace_log` system table",

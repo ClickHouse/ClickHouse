@@ -95,7 +95,7 @@ public:
 REGISTER_FUNCTION(AddressToSymbol)
 {
     FunctionDocumentation::Description description = R"(
-Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
+Converts virtual memory address inside the ClickHouse server process to a symbol from ClickHouse's object files.
     )";
     FunctionDocumentation::Syntax syntax = "addressToSymbol(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {

@@ -96,15 +96,16 @@ REGISTER_FUNCTION(AddressToLineWithInlines)
 Similar to `addressToLine`, but returns an Array with all inline functions.
 As a result of this, it is slower than `addressToLine`.
 
-:::note
-If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
-:::
+To enable this introspection function:
+
+- Install the `clickhouse-common-static-dbg` package.
+- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLineWithInlines(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
         {"address_of_binary_instruction", "The address of an instruction in a running process.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn't find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array whose first element is the source code filename and line number delimited by a colon. The second, third, etc. element list inline functions' source code filenames, line numbers and function names. If no debug information could be found, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Applying the function to an address",

@@ -62,7 +62,7 @@ Emits a trace log message to the server log for each [Block](/development/archit
     )";
     FunctionDocumentation::Syntax syntax = "logTrace(message)";
     FunctionDocumentation::Arguments arguments = {
-        {"message", "Message that is emitted to the server log.", {"String"}}
+        {"message", "Message that is emitted to the server log.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` always.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
