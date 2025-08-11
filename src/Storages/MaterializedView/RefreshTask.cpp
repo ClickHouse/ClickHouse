@@ -326,7 +326,15 @@ void RefreshTask::startReplicated()
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
-    const auto zookeeper = view->getContext()->getZooKeeper();
+
+    const auto zookeeper = [this]()
+    {
+        std::lock_guard guard(mutex);
+        if (!view)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
+        return view->getContext()->getZooKeeper();
+    }();
+
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryRemove(path);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
@@ -337,7 +345,15 @@ void RefreshTask::stopReplicated(const String & reason)
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
-    const auto zookeeper = view->getContext()->getZooKeeper();
+
+    const auto zookeeper = [this]()
+    {
+        std::lock_guard guard(mutex);
+        if (!view)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
+        return view->getContext()->getZooKeeper();
+    }();
+
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryCreate(path, reason, zkutil::CreateMode::Persistent);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
@@ -1131,7 +1147,7 @@ void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution(Int64(-1e9), Int64(1e9))(thread_local_rng);
+    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
 String RefreshTask::CoordinationZnode::toString() const
