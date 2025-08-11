@@ -29,7 +29,6 @@ node = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
 )
 
@@ -43,7 +42,6 @@ node_secure = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
 )
 

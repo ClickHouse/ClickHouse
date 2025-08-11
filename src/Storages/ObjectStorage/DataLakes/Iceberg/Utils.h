@@ -55,7 +55,7 @@ struct MetadataFileWithInfo
 };
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
-String createEmptyMetadataFile(
+std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,

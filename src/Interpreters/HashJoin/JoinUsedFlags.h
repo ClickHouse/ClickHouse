@@ -21,7 +21,7 @@ private:
     const UsedFlagsForColumns * flags;
 
 public:
-    explicit UsedFlagsHolder(bool need_flags_, const UsedFlagsForColumns * flags_)
+    UsedFlagsHolder(bool need_flags_, const UsedFlagsForColumns * flags_)
         : need_flags(need_flags_)
         , flags(flags_)
     {

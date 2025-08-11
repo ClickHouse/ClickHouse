@@ -1726,14 +1726,8 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            build_opts = subprocess.check_output(
-                f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                stderr=subprocess.STDOUT,
-                shell=True,
-            ).decode()
-            with_remote_database_disk = ("NDEBUG" not in build_opts) and (
-                "-fsanitize=address" in build_opts
-            )
+            # Not enabled in public
+            with_remote_database_disk = False
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -2221,16 +2215,14 @@ class ClickHouseCluster:
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data)
-            encodedStr = str(encodedBytes, "utf-8")
+            encoded_payload = base64.b64encode(data)
+            encoded_payload = str(encoded_payload, "utf-8")
             self.exec_in_container(
                 container_id,
                 [
                     "bash",
                     "-c",
-                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(
-                        dest_path, encodedStr, dest_path
-                    ),
+                    f"mkdir -p $(dirname {dest_path}) && echo {encoded_payload} | base64 --decode > {dest_path}.tmp && mv {dest_path}.tmp {dest_path}",
                 ],
             )
 
@@ -2247,8 +2239,9 @@ class ClickHouseCluster:
         if result:
             decoded_data = base64.b64decode(result)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            with open(local_path, "wb") as f:
+            with open(local_path + ".tmp", "wb") as f:
                 f.write(decoded_data)
+            os.rename(local_path + ".tmp", local_path)
         else:
             raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
 
