@@ -137,7 +137,7 @@ public:
                 name = getPhysicalName(name, physical_names_map_);
         }
 
-        thread = std::make_unique<ThreadFromGlobalPool>(
+        thread = ThreadFromGlobalPool(
             [&, thread_group = DB::CurrentThread::getGroup()]
             {
                 /// Attach to current query thread group, to be able to
@@ -151,8 +151,8 @@ public:
     {
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
-        if (thread && thread->joinable())
-            thread->join();
+        if (thread.joinable())
+            thread.join();
     }
 
     void setScanException()
@@ -414,7 +414,7 @@ private:
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
-    std::unique_ptr<ThreadFromGlobalPool> thread;
+    ThreadFromGlobalPool thread;
 };
 
 
