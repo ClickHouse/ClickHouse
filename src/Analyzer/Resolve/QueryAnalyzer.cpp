@@ -2981,8 +2981,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Replace IN (subquery)
     /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
-    if (is_special_function_in && function_name == "in" && scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+    if (is_special_function_in &&
+        (function_name == "in" || function_name == "notIn") &&
+        scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
     {
+        const bool is_function_not_in = function_name == "notIn";
+
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
@@ -2997,11 +3001,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             true /*allow_table_expression*/
         );
 
-//        if (in_first_argument)
-//        {
-//            std::cerr << "AFTER:\n\n" << in_first_argument->dumpTree() << "\n\n\n";
-//        }
-
         if (!in_first_argument->as<ConstantNode>())
         {
             auto & in_second_argument = function_in_arguments_nodes[1];
@@ -3010,17 +3009,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
-//                std::cerr
-//                    << "\n======= BEFORE ===========\n"
-//                    << node->dumpTree()
-//                    << "\n==================\n\n\n";
-
-
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
                 /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = in_second_argument->clone();
-                String unique_column_name = "_unique_name_" + toString(UUIDHelpers::generateV4());
+                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
                 subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
 
                 /// SELECT * AS _unique_name_ FROM subquery
@@ -3031,15 +3024,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
                 auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-                auto constant_data_type = std::make_shared<DataTypeUInt64>();
-                new_exists_subquery->setIsSubquery(true);
-                new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
-
                 {
+                    auto constant_data_type = std::make_shared<DataTypeUInt64>();
+                    new_exists_subquery->setIsSubquery(true);
+                    new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+                    new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
+
                     auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
 
-                    auto & copy_of_in_first_parameter = function_in_arguments_nodes[0];//*/in_first_argument;
+                    auto & copy_of_in_first_parameter = function_in_arguments_nodes[0];
 
                     auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
 
@@ -3049,25 +3042,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     };
 
                     new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
+                    new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
                 }
-                new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
-                QueryTreeNodePtr new_exists_argument = new_exists_subquery;
-
-                function_node_ptr = std::make_shared<FunctionNode>("exists");
-                function_node_ptr->getArguments().getNodes() = {
-                    std::move(new_exists_argument)
+                auto exists_function_node_ptr = std::make_shared<FunctionNode>("exists");
+                exists_function_node_ptr->getArguments().getNodes() = {
+                    std::move(new_exists_subquery)
                 };
 
-                node = function_node_ptr;
-                function_name = "exists";
-                is_special_function_in = false;
-                is_special_function_exists = true;
+                if (is_function_not_in)
+                {
+                    /// NOT IN is rewritten to NOT EXISTS
+                    function_node_ptr = std::make_shared<FunctionNode>("not");
+                    function_node_ptr->getArguments().getNodes() = {
+                        std::move(exists_function_node_ptr)
+                    };
 
-//                std::cerr
-//                    << "\n======= AFTER  ===========\n"
-//                    << node->dumpTree()
-//                    << "\n==================\n\n\n";
+                    node = function_node_ptr;
+                    function_name = "not";
+                    is_special_function_in = false;
+                    is_special_function_exists = false;
+                }
+                else
+                {
+                    function_node_ptr = exists_function_node_ptr;
+                    node = function_node_ptr;
+                    function_name = "exists";
+                    is_special_function_in = false;
+                    is_special_function_exists = true;
+                }
             }
         }
     }
