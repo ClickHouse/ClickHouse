@@ -386,14 +386,10 @@ private:
     enum NotImplementedMethod
     {
         LT,
-        //LE,
         GT,
-        //GE,
         EQ,
-        //NE,
         DISTINCT,
         IN,
-        //NOT_IN,
         ADD,
         MINUS,
         MULTIPLY,
@@ -427,6 +423,10 @@ private:
 
         visitor.visit_column = &visitColumnExpression;
         visitor.visit_struct_expr = &visitStructExpression;
+
+        visitor.visit_opaque_expr = &throwNotImplementedOpaqueExpression;
+        visitor.visit_opaque_pred = &throwNotImplementedOpaquePredicate;
+        visitor.visit_unknown = &throwNotImplementedUnknown;
 
         visitor.visit_or = &visitFunction<DB::FunctionOr>;
         visitor.visit_and = &visitFunction<DB::FunctionAnd>;
@@ -484,6 +484,62 @@ private:
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Method {} not implemented", magic_enum::enum_name(method));
+        });
+    }
+
+    static void throwNotImplementedOpaqueExpression(
+        void * data,
+        uintptr_t sibling_list_id,
+        ffi::SharedOpaqueExpressionOp * op,
+        uintptr_t child_list_id)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(child_list_id);
+        ffi::free_kernel_opaque_expression_op(op);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method OpaqueExpr not implemented");
+        });
+    }
+
+    static void throwNotImplementedOpaquePredicate(
+        void * data,
+        uintptr_t sibling_list_id,
+        ffi::SharedOpaquePredicateOp * op,
+        uintptr_t child_list_id)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(child_list_id);
+        ffi::free_kernel_opaque_predicate_op(op);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method OpaquePred not implemented");
+        });
+    }
+
+    static void throwNotImplementedUnknown(
+        void * data,
+        uintptr_t sibling_list_id,
+        ffi::KernelStringSlice name)
+    {
+        UNUSED(data);
+        UNUSED(sibling_list_id);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method Unknown not implemented (name: {})",
+                KernelUtils::fromDeltaString(name));
         });
     }
 
