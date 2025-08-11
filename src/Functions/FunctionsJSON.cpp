@@ -1132,7 +1132,7 @@ Checks for the existence of the provided value(s) in the JSON document.
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"(U)Int8/16/32/64"}};
         FunctionDocumentation::Examples example = {
         {
-            "Usage example", 
+            "Usage example",
             R"(
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1;
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
@@ -1146,19 +1146,17 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>(documentation);
     }
-    
+
     // isValidJSON
     {
         FunctionDocumentation::Description description = R"(
 Checks that the string passed is valid JSON.
 )";
         FunctionDocumentation::Syntax syntax = "isValidJSON(json)";
-        FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to validate", {"String"}}
-        };
+        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate", {"String"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string is valid JSON, otherwise `0`.", {"UInt8"}};
         FunctionDocumentation::Examples example = {
         {
@@ -1175,7 +1173,7 @@ SELECT isValidJSON('not JSON') = 0;
         {
             "Using integers to access both JSON arrays and JSON objects",
             R"(
-SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 0);            
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 0);
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 1);
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 2);
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', -1);
@@ -1190,17 +1188,17 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 0
-         
+
             )"
         }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        
+        FunctionDocumentation documentation = {description, syntax, argument, returned_value, example, introduced_in, category};
+
         factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>(documentation);
     }
-    
+
     // JSONLength
     {
         FunctionDocumentation::Description description = R"(
@@ -1229,11 +1227,11 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2;
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>(documentation);
     }
     factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>();
-    
+
     // JSONType
     {
         FunctionDocumentation::Description description = R"(
@@ -1263,7 +1261,7 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array';
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        
+	
         factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>(documentation);
     }
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>();
@@ -1291,10 +1289,7 @@ Parses JSON and extracts a value of Int type using case-insensitive key matching
             {"json", "JSON string to parse", {"String"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the extracted Int value, 0 if not found or cannot be converted.",
-            {"Int64"}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted Int value, 0 if not found or cannot be converted.", {"Int64"}};
         FunctionDocumentation::Examples examples = {
             {"basic", R"(SELECT JSONExtractIntCaseInsensitive('{"Value": 123}', 'value'))", "123"},
             {"nested", R"(SELECT JSONExtractIntCaseInsensitive('{"DATA": {"COUNT": 42}}', 'data', 'Count'))", "42"}
@@ -1414,10 +1409,7 @@ Parses JSON and extracts a value of the given ClickHouse data type using case-in
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"return_type", "The ClickHouse data type to extract", {"String"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the extracted value in the specified data type.",
-            {}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted value in the specified data type.", {"Any"}};
         FunctionDocumentation::Examples examples = {
             {"int_type", R"(SELECT JSONExtractCaseInsensitive('{"Number": 123}', 'number', 'Int32'))", "123"},
             {"array_type", R"(SELECT JSONExtractCaseInsensitive('{"List": [1, 2, 3]}', 'list', 'Array(Int32)'))", "[1,2,3]"}
@@ -1440,10 +1432,7 @@ Parses key-value pairs from JSON using case-insensitive key matching. This funct
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"value_type", "The ClickHouse data type of the values", {"String"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns an array of tuples containing key-value pairs.",
-            {"Array(Tuple(String, T))"}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples containing key-value pairs.", {"Array(Tuple(String, T))"}};
         FunctionDocumentation::Examples examples = {
             {"basic", R"(SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', 'String'))", "[('Name','Alice'),('AGE','30')]"}
         };

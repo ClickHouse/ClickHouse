@@ -31,11 +31,12 @@ The result is `UInt8`.
         {"field_name", "The name of the field to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        R"(Returns `1` if the value of the field is `true`, `0` otherwise. This means this function will return `0` including (and not only) in the following cases:
- - If the field doesn't exists.
- - If the field contains `true` as a string, e.g.: `{"field":"true"}`.
- - If the field contains `1` as a numerical value.)", 
-        {"UInt8"}
+    R"(
+Returns `1` if the value of the field is `true`, `0` otherwise. This means this function will return `0` including (and not only) in the following cases:
+- If the field doesn't exists.
+- If the field contains `true` as a string, e.g.: `{"field":"true"}`.
+- If the field contains `1` as a numerical value.)",
+    {"UInt8"}
     };
     FunctionDocumentation::Examples example = {
     {
@@ -65,7 +66,7 @@ SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-    
+
     factory.registerFunction<FunctionSimpleJSONExtractBool>(documentation);
     factory.registerAlias("visitParamExtractBool", "simpleJSONExtractBool");
 }
