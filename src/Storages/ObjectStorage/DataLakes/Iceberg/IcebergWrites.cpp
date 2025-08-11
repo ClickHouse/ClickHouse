@@ -138,7 +138,9 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
-    auto compression_suffix = "." + toContentEncodingName(compression_method);
+    auto compression_suffix = toContentEncodingName(compression_method);
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
     if (!use_uuid_in_metadata)
     {
         return Result{
