@@ -40,6 +40,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -1015,6 +1016,19 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
 
         return std::make_shared<IcebergDataObjectInfo>(std::move(object_metadata), std::move(info));
     }
+}
+
+SinkToStoragePtr createIcebergStorageSink(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    return std::make_shared<IcebergStorageSink>(
+        object_storage, configuration, format_settings, sample_block, context, catalog, table_id);
 }
 }
 

@@ -2328,3 +2328,88 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     select(0)
+
+
+def test_writes(started_cluster):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_writes")
+    result_file = f"{table_name}_data"
+
+    spark = started_cluster.spark_session
+    # We cannot just do
+    # spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '/{result_file}'")
+    # because a table must have non-empty schema.
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    empty_df = spark.createDataFrame([], schema)
+    empty_df.write.format("delta").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance_disabled_kernel.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
+    )
+
+    s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+    file_name = None
+    for obj in s3_objects:
+        print(f"File: {obj.object_name}")
+        if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+            "snappy.parquet"
+        ):
+            file_name = obj.object_name
+
+    assert (
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9"
+        == instance.query(
+            f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_name}', 'minio', '{minio_secret_key}')"
+        ).strip()
+    )
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    def check_count(expected):
+        assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
+        assert expected == int(
+            instance_disabled_kernel.query(f"SELECT count() FROM {table_name}")
+        )
+        assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    def check_data(expected):
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+        )
+        assert (
+            expected
+            == instance_disabled_kernel.query(
+                f"SELECT * FROM {table_name} ORDER BY all"
+            ).strip()
+        )
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        )
+
+    check_count(10)
+    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
+    )
+    check_count(20)
+    check_data(
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
+    )

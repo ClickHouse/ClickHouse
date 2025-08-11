@@ -1,3 +1,4 @@
+#include <Interpreters/Context_fwd.h>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
@@ -422,6 +423,9 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(
         log, "Table logical schema: {}, physical names map size: {}",
         fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
+
+    if (table_schema.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table schema is emtpy");
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));

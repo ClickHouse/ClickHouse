@@ -7,6 +7,7 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Databases/DataLake/ICatalog.h>
+#include "config.h"
 
 #if USE_AVRO
 

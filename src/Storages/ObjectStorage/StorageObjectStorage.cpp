@@ -27,7 +27,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
 #include <Interpreters/StorageID.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -42,7 +41,6 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool allow_experimental_insert_into_iceberg;
 }
 
 namespace ErrorCodes
@@ -455,27 +453,8 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    /// Delta lake does not support writes yet.
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-    {
-#if USE_AVRO
-        if (local_context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
-        {
-            return std::make_shared<IcebergStorageSink>(
-                object_storage,
-                configuration,
-                format_settings,
-                sample_block,
-                local_context,
-                catalog,
-                storage_id);
-        }
-        else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Insert into iceberg is experimental. "
-                "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
-#endif
-    }
+        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 

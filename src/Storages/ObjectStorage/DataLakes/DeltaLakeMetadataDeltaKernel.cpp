@@ -4,22 +4,64 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeStorageSink.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+static void tracingCallback(struct ffi::Event event)
+{
+    /// Do not pollute logs.
+    if (event.message.len > 100)
+        return;
+
+    const auto message = fmt::format(
+        "Message: {}, code line: {}:{}, target: {}",
+        std::string_view(event.message.ptr, event.message.len),
+        DeltaLake::KernelUtils::fromDeltaString(event.file),
+        event.line,
+        DeltaLake::KernelUtils::fromDeltaString(event.target));
+
+    auto log = getLogger("DeltaKernelTracing");
+    if (event.level == ffi::Level::ERROR)
+    {
+        LOG_ERROR(log, "{}", message);
+    }
+    else if (event.level == ffi::Level::WARN)
+    {
+        LOG_WARNING(log, "{}", message);
+    }
+    else if (event.level == ffi::Level::INFO)
+    {
+        LOG_INFO(log, "{}", message);
+    }
+    else if (event.level == ffi::Level::DEBUG)
+    {
+        LOG_DEBUG(log, "{}", message);
+    }
+    else if (event.level == ffi::Level::TRACE)
+    {
+        LOG_TRACE(log, "{}", message);
+    }
+}
+
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     ContextPtr context)
     : log(getLogger("DeltaLakeMetadata"))
+    , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage))
     , table_snapshot(std::make_shared<DeltaLake::TableSnapshot>(
-            getKernelHelper(configuration_.lock(), object_storage),
+            kernel_helper,
             object_storage,
             context,
             log))
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
+#endif
 }
 
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
@@ -102,6 +144,15 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     return info;
 }
 
+SinkToStoragePtr createDeltaLakeStorageSink(
+    const DeltaLakeMetadataDeltaKernel & metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    SharedHeader sample_block,
+    const FormatSettings & format_settings)
+{
+    return std::make_shared<DeltaLakeStorageSink>(metadata, object_storage, context, sample_block, format_settings);
+}
 }
 
 #endif

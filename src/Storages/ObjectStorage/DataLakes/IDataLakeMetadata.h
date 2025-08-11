@@ -4,11 +4,17 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/StorageID.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+
+namespace DataLake
+{
+class ICatalog;
+}
 
 namespace DB
 {
@@ -18,6 +24,8 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 class IDataLakeMetadata : boost::noncopyable
 {

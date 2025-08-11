@@ -15,6 +15,8 @@ namespace DB
 {
 
 class NamedCollection;
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 namespace ErrorCodes
 {
@@ -185,6 +187,17 @@ public:
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
+
+    virtual SinkToStoragePtr write(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
+    }
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
