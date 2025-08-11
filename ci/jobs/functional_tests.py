@@ -376,7 +376,7 @@ def main():
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
-                if not r.is_ok():
+                if r.status == Result.StatusExtended.FAIL:
                     has_failure = True
                     break
             if not has_failure:

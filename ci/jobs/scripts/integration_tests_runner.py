@@ -1,5 +1,6 @@
 import csv
 import glob
+import heapq
 import json
 import logging
 import os
@@ -9,7 +10,6 @@ import shlex
 import shutil
 import subprocess
 import time
-import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
 from statistics import median
@@ -61,9 +61,8 @@ def has_test(tests: List[str], test_to_match: str) -> bool:
     return False
 
 
-def get_changed_tests_to_run(pr_info, repo_path):
+def get_changed_tests_to_run(changed_files, repo_path):
     result = set()
-    changed_files = pr_info["changed_files"]
 
     if changed_files is None:
         return []
@@ -662,16 +661,16 @@ class ClickhouseIntegrationTestsRunner:
         return counters, tests_times, log_paths
 
     def run_flaky_check(self, should_fail=False):
-        pr_info = self.params["pr_info"]
-
-        tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
+        tests_to_run = get_changed_tests_to_run(
+            self.params["changed_files"], self.repo_path
+        )
         if not tests_to_run:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
-        description_prefix = "No flaky tests: "
+        description_prefix = "No failed tests: "
         logging.info("Starting check with retries")
         final_retry = 0
         counters = {
@@ -807,7 +806,6 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_name LIKE '%{self.job_configuration}%')
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
                     AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
@@ -852,13 +850,18 @@ class ClickhouseIntegrationTestsRunner:
             except requests.exceptions.RequestException as e:
                 logging.warning(
                     "Attempt %s/%s failed to fetch test times via HTTP: %s",
-                    attempt + 1, max_retries, e
+                    attempt + 1,
+                    max_retries,
+                    e,
                 )
                 if attempt < max_retries - 1:
                     logging.info("Retrying in %s seconds...", retry_delay_seconds)
                     time.sleep(retry_delay_seconds)
                 else:
-                    logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
+                    logging.error(
+                        "All %s attempts failed. Could not fetch test times.",
+                        max_retries,
+                    )
                     raise
 
     def group_tests_by_execution_time(self) -> List[List[str]]:
@@ -1215,6 +1218,3 @@ timeout_expired = False
 
 if __name__ == "__main__":
     run()
-
-
-# docker run --rm --name clickhouse_integration_tests_c6o8k4 --privileged --dns-search='.' --memory=64183418880 --security-opt seccomp=unconfined --cap-add=SYS_PTRACE --volume=./tests/ci/tmp/build/clickhouse:/clickhouse --volume=./programs/server:/clickhouse-config  --volume=./tests/integration:/ClickHouse/tests/integration --volume=./utils/backupview:/ClickHouse/utils/backupview --volume=./utils/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 --volume=/run:/run/host:ro --volume=clickhouse_integration_tests_volume:/var/lib/docker -e DOCKER_DOTNET_CLIENT_TAG=e7a502a8ddfb733e8385_amd -e DOCKER_HELPER_TAG=634724fd9222266fa470_amd -e DOCKER_BASE_TAG=d3293a3d3930868fc6ed_amd -e DOCKER_KERBEROS_KDC_TAG=310561e6eb756c8311b1_amd -e DOCKER_MYSQL_GOLANG_CLIENT_TAG=39a23040cfe9d3812ed6_amd -e DOCKER_MYSQL_JAVA_CLIENT_TAG=b4115cf4c3aca56554c7_amd -e DOCKER_MYSQL_JS_CLIENT_TAG=5b36e32bc9986c0450b2_amd -e DOCKER_MYSQL_PHP_CLIENT_TAG=eea6d6b26729e3dd1966_amd -e DOCKER_NGINX_DAV_TAG=aa33b6ad5665b723c6e4_amd -e DOCKER_POSTGRESQL_JAVA_CLIENT_TAG=d9f9b9f1e1e0ad109355_amd -e DOCKER_PYTHON_BOTTLE_TAG=99f2b69441b7f2d22ecd_amd -e DOCKER_BASE_WITH_UNITY_CATALOG_TAG=0c418778395b14610072_amd -e DOCKER_BASE_WITH_HMS_TAG=b74680d8502d49f1a62a_amd   -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600   -e PYTHONUNBUFFERED=1 -e PYTEST_ADDOPTS="--dist=loadfile -n 5  -rfEps --run-id=0 --color=no --durations=0 --report-log=test_storage_kafka_test_batch_slow_1_py_0.jsonl --report-log-exclude-logs-on-passed-tests test_storage_kafka/test_batch_slow_1.py  -vvv " clickhouse/integration-tests-runner:307fc9a680c19fcae0ac_amd

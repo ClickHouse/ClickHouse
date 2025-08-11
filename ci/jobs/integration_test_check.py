@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import csv
 import json
 import logging
@@ -23,20 +24,21 @@ def get_json_params_dict(
     docker_images,
     run_by_hash_total: int,
     run_by_hash_num: int,
-    job_configuration: str
+    job_configuration: str,
+    need_changed_files: bool,
 ) -> dict:
     return {
         "context_name": check_name,
         "commit": info.sha,
         "pull_request": info.pr_number,
-        "changed_files": info.get_changed_files(),
+        "changed_files": info.get_changed_files() if need_changed_files else [],
         "docker_images_with_versions": {d.name: d.version for d in docker_images},
         "shuffle_test_groups": False,
         "use_tmpfs": False,
         "disable_net_host": True,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
-        "pr_updated_at": pr_info.updated_at,
+        "pr_updated_at": info.event_time,
         "job_configuration": job_configuration,
     }
 
@@ -110,9 +112,9 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> List[Re
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually
-                    result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
+                    result.info = line[3].replace("\\t", "\t").replace("\\n", "\n")
                 else:
-                    result.set_files(line[3])
+                    result.files = ast.literal_eval(line[3])
 
             results.append(result)
     return results
@@ -178,12 +180,6 @@ def parse_args():
         action="store_true",
         help="Check that added tests failed on latest stable",
     )
-    parser.add_argument(
-        "--report-to-file",
-        type=str,
-        default="",
-        help="Path to write script report to (for --validate-bugfix)",
-    )
     return parser.parse_args()
 
 
@@ -205,6 +201,7 @@ def main():
 
     match = re.search(r"\(.*?\)", check_name)
     options = match.group(0)[1:-1].split(",") if match else []
+    run_by_hash_num, run_by_hash_total = 0, 1
     for option in options:
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1
@@ -215,10 +212,6 @@ def main():
     job_configuration = options[0].strip()
 
     is_flaky_check = "flaky" in check_name
-
-    assert (
-        not validate_bugfix_check or args.report_to_file
-    ), "--report-to-file must be provided for --validate-bugfix"
 
     images = [get_docker_image(image_) for image_ in IMAGES]
 
@@ -247,15 +240,12 @@ def main():
                 verbose=True,
                 strict=True,
             )
-    else:
-        pass
-        # Shell.check(f"cp {temp_path}/clickhouse {build_path}/", verbose=True, strict=True)
 
     binary_path = build_path / "clickhouse"
 
     # Set executable bit and run it for self extraction
     os.chmod(binary_path, 0o755)
-    # Shell.check(f"{binary_path} local 'SELECT version()'", verbose=True, strict=True)
+    Shell.check(f"{binary_path} local 'SELECT version()'", verbose=True, strict=True)
 
     my_env = get_env_for_runner(
         check_name, binary_path, repo_path, result_path, work_path
@@ -270,7 +260,8 @@ def main():
                 images,
                 run_by_hash_total,
                 run_by_hash_num,
-                job_configuration
+                job_configuration,
+                is_flaky_check or validate_bugfix_check,
             )
         )
         json_params.write(params_text)
@@ -289,11 +280,16 @@ def main():
         runner.run()
     except Exception as e:
         logging.error("Exception: %s", e)
-        state, description, test_results, additional_logs = Result.Status.ERROR, "infrastructure error", [], []
+        state, description, test_results, additional_logs = (
+            Result.Status.ERROR,
+            "infrastructure error",
+            [],
+            [],
+        )
     else:
         state, description, test_results, additional_logs = process_results(result_path)
 
-    Result(
+    res = Result(
         name=info.job_name,
         info=description,
         results=test_results,
@@ -301,7 +297,22 @@ def main():
         start_time=stopwatch.start_time,
         duration=stopwatch.duration,
         files=additional_logs,
-    ).complete_job()
+    )
+
+    if validate_bugfix_check:
+        has_failure = False
+        for r in res.results:
+            if r.status == Result.StatusExtended.FAIL:
+                has_failure = True
+                break
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            res.set_failed()
+            res.set_info("Failed to reproduce the bug")
+        else:
+            res.set_success()
+
+    res.complete_job()
 
 
 if __name__ == "__main__":

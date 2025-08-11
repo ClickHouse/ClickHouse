@@ -507,8 +507,7 @@ class JobConfigs:
     bugfix_validation_it_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_IT,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=["Build (amd_debug)"],
+        command="python3 ./ci/jobs/integration_test_check.py --validate-bugfix",
     )
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
