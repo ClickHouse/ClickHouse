@@ -596,6 +596,8 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 
 void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_dictionary)
 {
+    std::scoped_lock lock(segment_dictionary->mutex_fst);
+
     /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
     dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
