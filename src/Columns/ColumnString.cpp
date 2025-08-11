@@ -130,7 +130,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
