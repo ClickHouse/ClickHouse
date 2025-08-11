@@ -59,7 +59,7 @@ void SerializationObjectDeprecated<Parser>::deserializeTextImpl(IColumn & column
     assert(paths.size() == values.size());
 
     size_t old_column_size = column_object.size();
-    for (size_t i = 0; i < paths.size(); ++i)
+    for (size_t i = 0, size = paths.size(); i < size; ++i)
     {
         auto field_info = getFieldInfo(values[i]);
         if (field_info.need_fold_dimension)
