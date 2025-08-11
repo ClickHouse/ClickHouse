@@ -6294,8 +6294,11 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
 
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
-            defined_projections.emplace(projection_name);
-            backup_projection(projection_part->getDataPartStorage(), *projection_part);
+            if (!projection_part->is_broken)
+            {
+                defined_projections.emplace(projection_name);
+                backup_projection(projection_part->getDataPartStorage(), *projection_part);
+            }
         }
 
         /// It is possible that the part has a written but not loaded projection,
