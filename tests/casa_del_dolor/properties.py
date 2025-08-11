@@ -230,7 +230,7 @@ possible_properties = {
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 1, 1000),
     "prefetch_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "prefixes_deserialization_thread_pool_thread_pool_queue_size": threshold_generator(
         0.2, 0.2, 0, 1000
