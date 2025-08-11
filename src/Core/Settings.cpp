@@ -6979,6 +6979,10 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
+    DECLARE(Bool, rewrite_in_to_join, false, R"(
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query when join reordering is implemented.
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

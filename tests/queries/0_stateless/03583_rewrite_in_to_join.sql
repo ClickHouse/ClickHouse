@@ -1,7 +1,13 @@
 SET enable_analyzer=1;
+SET rewrite_in_to_join=1;
 SET allow_experimental_correlated_subqueries=1;
 
 -- {echoOn}
+-- Check that with these settings the plan contains a join
+SELECT explain FROM (
+    EXPLAIN SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
+) WHERE explain ILIKE '%join%';
+
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
 
 SELECT number IN (SELECT number FROM numbers(2)) FROM numbers(3);

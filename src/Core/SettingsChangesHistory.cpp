@@ -69,6 +69,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"rewrite_in_to_join", false, false, "New experimental setting"},
+
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

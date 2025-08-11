@@ -1,4 +1,9 @@
 -- {echoOn}
+-- Check that with these settings the plan contains a join
+SELECT explain FROM (
+    EXPLAIN SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
+) WHERE explain ILIKE '%join%';
+    Join (JOIN to generate result stream)
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
 1
 1

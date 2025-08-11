@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool rewrite_in_to_join;
 }
 
 
@@ -154,6 +155,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -2983,8 +2985,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
     if (is_special_function_in &&
         (function_name == "in" || function_name == "notIn") &&
-        scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+        scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
     {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
         const bool is_function_not_in = function_name == "notIn";
 
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
