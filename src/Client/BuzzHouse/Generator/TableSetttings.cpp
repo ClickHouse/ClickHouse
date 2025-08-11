@@ -192,6 +192,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"replicated_max_mutations_in_one_entry",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); }, {}, false)},
        {"replicated_max_ratio_of_wrong_parts", probRangeSetting},
+       {"search_orphaned_parts_drives",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'none'", "'local'", "'any'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'none'", "'local'", "'any'"},
+            false)},
        /// ClickHouse cloud setting
        {"shared_merge_tree_merge_coordinator_factor", highRangeSetting},
        /// ClickHouse cloud setting

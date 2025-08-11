@@ -53,6 +53,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"count_distinct_optimization", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
+       {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
        {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
        {"join_algorithm",
@@ -1014,7 +1015,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {"'auto'", "'postfilter'", "'prefilter'"},
          false)},
-    {"vector_search_postfilter_multiplier",
+    {"vector_search_index_fetch_multiplier",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
          {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},

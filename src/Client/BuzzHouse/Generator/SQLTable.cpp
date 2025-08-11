@@ -1682,7 +1682,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(0, 4194304);
-                static const DB::Strings & QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8"};
+                static const DB::Strings & QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8", "b1"};
 
                 idef->add_params()->set_sval(rg.pickRandomly(QuantitizationVals));
                 idef->add_params()->set_ival(next_dist(rg.generator));

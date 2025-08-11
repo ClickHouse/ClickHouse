@@ -1254,6 +1254,7 @@ keeper_settings = {
         "create_if_not_exists": true_false_lambda,
         "filtered_list": true_false_lambda,
         "multi_read": true_false_lambda,
+        "multi_watches": true_false_lambda,
         "remove_recursive": true_false_lambda,
     },
     "force_recovery": true_false_lambda,
