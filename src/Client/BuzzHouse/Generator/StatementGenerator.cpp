@@ -3387,13 +3387,13 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     if (out_to_disk && (nopt2 < out_to_disk + 1))
     {
         outf = BackupRestore_BackupOutput_Disk;
-        br->add_out_params(rg.pickRandomly(fc.disks));
-        br->add_out_params(std::move(backup_file));
+        br->mutable_params()->add_out_params()->set_svalue(rg.pickRandomly(fc.disks));
+        br->mutable_params()->add_out_params()->set_svalue(std::move(backup_file));
     }
     else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
     {
         outf = BackupRestore_BackupOutput_File;
-        br->add_out_params((fc.server_file_path / std::move(backup_file)).generic_string());
+        br->mutable_params()->add_out_params()->set_svalue((fc.server_file_path / std::move(backup_file)).generic_string());
     }
     else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
     {
@@ -3408,7 +3408,7 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + 1))
     {
         outf = BackupRestore_BackupOutput_Memory;
-        br->add_out_params(std::move(backup_file));
+        br->mutable_params()->add_out_params()->set_svalue(std::move(backup_file));
     }
     else if (out_to_null && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null + 1))
     {
@@ -3569,10 +3569,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         br->mutable_cluster()->set_cluster(cluster.value());
     }
     br->set_out(backup.outf);
-    for (const auto & entry : backup.out_params)
-    {
-        br->add_out_params(entry);
-    }
+    br->mutable_params()->CopyFrom(backup.out_params);
     if (backup.out_format.has_value())
     {
         br->set_informat(
@@ -3611,18 +3608,7 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
 
         sv->set_property("base_backup");
         info += BackupRestore_BackupOutput_Name(backup.outf);
-        info += "(";
-        for (size_t i = 0; i < backup.out_params.size(); i++)
-        {
-            if (i != 0)
-            {
-                info += ", ";
-            }
-            info += "'";
-            info += backup.out_params[i];
-            info += "'";
-        }
-        info += ")";
+        BackupParamsToString(info, backup.out_params);
         sv->set_value(std::move(info));
     }
     if (rg.nextSmallNumber() < 4)
@@ -4667,10 +4653,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 newb.out_format = br.outformat();
             }
-            for (int i = 0; i < br.out_params_size(); i++)
-            {
-                newb.out_params.push_back(br.out_params(i));
-            }
+            newb.out_params.CopyFrom(br.params());
             if (bre.has_all())
             {
                 newb.tables = this->tables;

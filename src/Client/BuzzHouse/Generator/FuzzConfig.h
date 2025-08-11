@@ -108,7 +108,7 @@ class ServerCredentials
 public:
     String client_hostname, server_hostname, container;
     uint32_t port, mysql_port;
-    String unix_socket, user, password, database;
+    String unix_socket, user, password, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
     std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog;
 
@@ -131,6 +131,7 @@ public:
         const String & user_,
         const String & password_,
         const String & database_,
+        const String & named_collection_,
         const std::filesystem::path & user_files_dir_,
         const std::filesystem::path & query_log_file_,
         const std::optional<Catalog> glue_catalog_,
@@ -145,6 +146,7 @@ public:
         , user(user_)
         , password(password_)
         , database(database_)
+        , named_collection(named_collection_)
         , user_files_dir(user_files_dir_)
         , query_log_file(query_log_file_)
         , glue_catalog(glue_catalog_)

@@ -97,7 +97,7 @@ public:
     bool everything = false;
     BackupRestore_BackupOutput outf;
     std::optional<OutFormat> out_format;
-    DB::Strings out_params;
+    BackupParams out_params;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
@@ -479,22 +479,27 @@ private:
     template <typename T, typename U>
     void setObjectStoreParams(RandomGenerator & rg, T & b, bool allow_chaos, U * source)
     {
+        uint32_t added_path = 0;
         uint32_t added_format = 0;
         uint32_t added_compression = 0;
         uint32_t added_partition_strategy = 0;
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
+        const uint32_t toadd_path = 1;
         const uint32_t toadd_format = rg.nextMediumNumber() < 91;
         const uint32_t toadd_compression = rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy = !b.isS3QueueEngine() && !b.isAzureQueueEngine() && rg.nextMediumNumber() < 31;
-        const uint32_t toadd_partition_columns_in_data_file = !b.isS3QueueEngine() && !b.isAzureQueueEngine() && rg.nextMediumNumber() < 31;
+        const uint32_t toadd_partition_strategy
+            = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine() && !b.isAzureQueueEngine() && !b.isOnLocal() && rg.nextMediumNumber() < 31;
+        const uint32_t toadd_partition_columns_in_data_file
+            = std::is_same_v<U, TableEngine> && !b.isS3QueueEngine() && !b.isAzureQueueEngine() && !b.isOnLocal() && rg.nextMediumNumber() < 31;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
-        const uint32_t total_to_add
-            = toadd_format + toadd_compression + toadd_partition_strategy + toadd_partition_columns_in_data_file + toadd_structure;
+        const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
+            + toadd_partition_columns_in_data_file + toadd_structure;
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
             KeyValuePair * next = nullptr;
+            const uint32_t add_path = 4 * static_cast<uint32_t>(added_path < toadd_path);
             const uint32_t add_format = 4 * static_cast<uint32_t>(added_format < toadd_format);
             const uint32_t add_compression = 4 * static_cast<uint32_t>(added_compression < toadd_compression);
             const uint32_t add_partition_strategy = 2 * static_cast<uint32_t>(added_partition_strategy < toadd_partition_strategy);
@@ -502,7 +507,7 @@ private:
                 = 2 * static_cast<uint32_t>(added_partition_columns_in_data_file < toadd_partition_columns_in_data_file);
             const uint32_t add_structure = 4 * static_cast<uint32_t>(added_structure < toadd_structure);
             const uint32_t prob_space
-                = add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure;
+                = add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
@@ -514,7 +519,19 @@ private:
             {
                 next = source->add_params();
             }
-            if (add_format && nopt < (add_format + 1))
+            if (add_path && nopt < (add_path + 1))
+            {
+                bool no_change = false;
+                /// Path to the bucket
+                next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    no_change = true;
+                }
+                next->set_value(b.getTablePath(rg, fc, no_change));
+                added_path++;
+            }
+            else if (add_format && nopt < (add_path + add_format + 1))
             {
                 /// Format
                 const InOutFormat next_format = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
@@ -529,7 +546,7 @@ private:
                 next->set_value(InOutFormat_Name(next_format).substr(6));
                 added_format++;
             }
-            else if (add_compression && nopt < (add_format + add_compression + 1))
+            else if (add_compression && nopt < (add_path + add_format + add_compression + 1))
             {
                 /// Compression
                 const String next_compression = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
@@ -544,7 +561,7 @@ private:
                 next->set_value(next_compression);
                 added_compression++;
             }
-            else if (add_partition_strategy && nopt < (add_format + add_compression + add_partition_strategy + 1))
+            else if (add_partition_strategy && nopt < (add_path + add_format + add_compression + add_partition_strategy + 1))
             {
                 /// Partition strategy
                 const String next_strategy = (!std::is_same_v<U, TableEngine> && allow_chaos && rg.nextMediumNumber() < 21)
@@ -561,7 +578,7 @@ private:
             }
             else if (
                 add_partition_columns_in_data_file
-                && nopt < (add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + 1))
+                && nopt < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + 1))
             {
                 /// Partition columns in data file
                 const String next_partition_columns_in_data_file
@@ -578,7 +595,9 @@ private:
             }
             else if (
                 add_structure
-                && nopt < (add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure + 1))
+                && nopt
+                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure
+                       + 1))
             {
                 /// Structure for table function
                 next->set_key("structure");

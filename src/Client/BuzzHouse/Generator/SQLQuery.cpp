@@ -264,7 +264,7 @@ void StatementGenerator::setTableFunction(
     {
         Expr * structure = nullptr;
         S3Func * sfunc = nullptr;
-        FileFunc * ffunc = nullptr;
+        LocalFunc * lfunc = nullptr;
         AzureBlobStorageFunc * afunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
@@ -287,9 +287,7 @@ void StatementGenerator::setTableFunction(
             {
                 sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
-            sfunc->set_resource(t.getTablePath(fc, false) + ((!allow_chaos && t.isS3QueueEngine() && rg.nextBool()) ? "*" : ""));
-            sfunc->set_user(sc.user);
-            sfunc->set_password(sc.password);
+            sfunc->set_credential(sc.named_collection);
         }
         else if (t.isOnAzure())
         {
@@ -311,43 +309,50 @@ void StatementGenerator::setTableFunction(
             {
                 afunc->set_fname(val);
             }
-            afunc->set_connection_string(sc.server_hostname);
-            afunc->set_container(sc.container);
-            afunc->set_blobpath(t.getTablePath(fc, false) + ((allow_chaos && t.isAzureQueueEngine() && rg.nextBool()) ? "*" : ""));
-            afunc->set_user(sc.user);
-            afunc->set_password(sc.password);
+            afunc->set_credential(sc.named_collection);
         }
-        else if (t.isOnLocal() || t.isFileEngine())
+        else if (t.isOnLocal())
         {
-            ffunc = tfunc->mutable_file();
-            const FileFunc_FName val = (allow_chaos && rg.nextLargeNumber() < 11)
-                ? static_cast<FileFunc_FName>(rg.randomInt<uint32_t>(1, 3))
-                : (t.isFileEngine() ? FileFunc_FName::FileFunc_FName_file
-                                    : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal
-                                                                : FileFunc_FName::FileFunc_FName_deltaLakeLocal));
+            lfunc = tfunc->mutable_local();
+            const LocalFunc_FName val = (allow_chaos && rg.nextLargeNumber() < 11)
+                ? static_cast<LocalFunc_FName>(rg.randomInt<uint32_t>(1, 2))
+                : (t.isIcebergLocalEngine() ? LocalFunc_FName::LocalFunc_FName_icebergLocal
+                                            : LocalFunc_FName::LocalFunc_FName_deltaLakeLocal);
 
             if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
-                ffunc->set_fname(static_cast<FileFunc_FName>(static_cast<uint32_t>(val) + 3));
+                lfunc->set_fname(static_cast<LocalFunc_FName>(static_cast<uint32_t>(val) + 3));
+                lfunc->mutable_cluster()->set_cluster(cluster.value());
+            }
+            else
+            {
+                lfunc->set_fname(val);
+            }
+            lfunc->set_credential("local");
+        }
+        else if (t.isFileEngine())
+        {
+            FileFunc * ffunc = tfunc->mutable_file();
+
+            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
+            {
+                ffunc->set_fname(FileFunc_FName::FileFunc_FName_fileCluster);
                 ffunc->mutable_cluster()->set_cluster(cluster.value());
             }
             else
             {
-                ffunc->set_fname(val);
+                ffunc->set_fname(FileFunc_FName::FileFunc_FName_file);
             }
-            ffunc->set_path(t.getTablePath(fc, false));
-            if (t.isFileEngine())
+            ffunc->set_path(t.getTablePath(rg, fc, true));
+            if (t.file_format.has_value())
             {
-                if (t.file_format.has_value())
-                {
-                    ffunc->set_inoutformat(t.file_format.value());
-                }
-                structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
-                if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
-                {
-                    ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
-                }
+                ffunc->set_inoutformat(t.file_format.value());
             }
+            if (!t.file_comp.empty() || rg.nextSmallNumber() < 5)
+            {
+                ffunc->set_fcomp(t.file_comp.empty() ? "none" : t.file_comp);
+            }
+            structure = rg.nextMediumNumber() < 96 ? ffunc->mutable_structure() : nullptr;
         }
         else if (t.isURLEngine())
         {
@@ -362,7 +367,7 @@ void StatementGenerator::setTableFunction(
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl(t.getTablePath(fc, false));
+            ufunc->set_uurl(t.getTablePath(rg, fc, true));
             if (t.file_format.has_value())
             {
                 ufunc->set_inoutformat(t.file_format.value());
@@ -423,7 +428,7 @@ void StatementGenerator::setTableFunction(
             ArrowFlightFunc * affunc = tfunc->mutable_flight();
 
             affunc->set_address(t.host_params);
-            affunc->set_dataset(t.getTablePath(fc, false));
+            affunc->set_dataset(t.getTablePath(rg, fc, true));
         }
         else
         {
@@ -433,7 +438,7 @@ void StatementGenerator::setTableFunction(
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, allow_chaos, false));
         }
-        if (sfunc || afunc || t.isOnLocal())
+        if (sfunc || afunc || lfunc)
         {
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
@@ -446,13 +451,13 @@ void StatementGenerator::setTableFunction(
             {
                 setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, afunc);
             }
-            else if (t.isOnLocal())
+            else if (lfunc)
             {
-                setObjectStoreParams<SQLTable, FileFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, ffunc);
+                setObjectStoreParams<SQLTable, LocalFunc>(rg, const_cast<SQLTable &>(t), allow_chaos, lfunc);
             }
             if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
             {
-                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : ffunc->mutable_setting_values());
+                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values());
                 generateSettingValues(rg, engineSettings, svs);
             }
         }

@@ -8,7 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
-
+from integration.helpers.config_cluster import minio_secret_key
 
 def generate_xml_safe_string(length: int = 10) -> str:
     """
@@ -983,6 +983,29 @@ def modify_server_settings(
             name_xml.text = random.choice(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
+
+    if root.find("named_collections") is None:
+        modified = True
+        named_collections_xml = ET.SubElement(root, "named_collections")
+        if args.with_minio:
+            s3_xml = ET.SubElement(named_collections_xml, "s3")
+            url_xml = ET.SubElement(s3_xml, "url")
+            url_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+            access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
+            access_key_id_xml.text = "minio"
+            secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
+            secret_access_key_xml.text = minio_secret_key
+        if args.with_azurite:
+            azure_xml = ET.SubElement(named_collections_xml, "azure")
+            account_name_xml = ET.SubElement(azure_xml, "account_name")
+            account_name_xml.text = "devstoreaccount1"
+            account_key_xml = ET.SubElement(azure_xml, "account_key")
+            account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            container_xml = ET.SubElement(azure_xml, "container")
+            container_xml.text = "cont"
+            storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
+            storage_account_url_xml.text = f"http://azurite1:{cluster.azurite_port}/devstoreaccount1"
+        ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:
         possible_timezones = get_system_timezones()

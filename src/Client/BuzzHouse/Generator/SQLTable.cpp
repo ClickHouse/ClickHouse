@@ -967,8 +967,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Don't use on CLUSTER with ReplicatedMergeTrees or SharedMergeTrees
-    if (!fc.clusters.empty() && !b.isSharedMergeTree() && (!b.db || !b.db->isSharedDatabase())
-        && (b.db || !supports_cloud_features) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    if (!fc.clusters.empty() && !b.isSharedMergeTree() && (!b.db || !b.db->isSharedDatabase()) && (b.db || !supports_cloud_features)
+        && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
         {
@@ -1035,6 +1035,15 @@ void StatementGenerator::generateEngineDetails(
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
+    if (te->has_engine()
+        && (b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine() || b.isAnyIcebergEngine() || b.isAzureEngine()
+            || b.isS3Engine())
+        && rg.nextSmallNumber() < 5)
+    {
+        /// Optional PARTITION BY
+        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
+        b.has_partition_by = true;
+    }
     if (b.isMergeTreeFamily())
     {
         if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)
@@ -1058,7 +1067,7 @@ void StatementGenerator::generateEngineDetails(
     {
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
-        te->add_params()->set_svalue(b.getTablePath(fc, false));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
         if (rg.nextBool())
         {
             b.file_comp = rg.pickRandomly(compression);
@@ -1292,7 +1301,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
     {
-        te->add_params()->set_svalue(b.getTablePath(fc, false));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
@@ -1302,6 +1311,8 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
+        /// Set what the filename is going to be first
+        b.setTablePath(rg, fc);
         if (b.isOnS3() || b.isOnAzure())
         {
             connections.createExternalDatabaseTable(rg, b.isOnS3() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
@@ -1309,7 +1320,7 @@ void StatementGenerator::generateEngineDetails(
         else
         {
             chassert(b.isOnLocal());
-            te->add_params()->set_svalue(b.getTablePath(fc, false));
+            te->add_params()->set_rvalue("local");
         }
         setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
     }
@@ -1318,7 +1329,7 @@ void StatementGenerator::generateEngineDetails(
         /// Set arrow flight params
         b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
         te->add_params()->set_svalue(b.host_params);
-        te->add_params()->set_svalue(b.getTablePath(fc, false));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
     }
 
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
@@ -1330,14 +1341,6 @@ void StatementGenerator::generateEngineDetails(
         && add_pkey && !entries.empty())
     {
         colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
-    }
-    if (te->has_engine()
-        && (b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine() || b.isAnyIcebergEngine() || b.isAzureEngine()
-            || b.isS3Engine())
-        && rg.nextSmallNumber() < 5)
-    {
-        /// Optional PARTITION BY
-        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
     }
     if (te->has_engine())
     {

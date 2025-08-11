@@ -74,11 +74,12 @@ class BuzzHouseGenerator(Generator):
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
-                "database": "/" + cluster.minio_bucket + "/data",
+                "database": "/" + cluster.minio_bucket,
                 "server_hostname": cluster.minio_host,
                 "port": cluster.minio_port,
                 "user": "minio",
                 "password": minio_secret_key,
+                "named_collection": "s3",
             }
             if args.with_glue:
                 buzz_config["minio"]["glue"] = {
@@ -151,6 +152,7 @@ class BuzzHouseGenerator(Generator):
                 "container": "cont",
                 "user": "devstoreaccount1",
                 "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+                "named_collection": "azure",
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"

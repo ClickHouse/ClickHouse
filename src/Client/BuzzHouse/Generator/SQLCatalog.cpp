@@ -1,3 +1,4 @@
+#include <string>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 namespace BuzzHouse
@@ -54,51 +55,135 @@ String SQLBase::getDatabaseName() const
     return "d" + (db ? std::to_string(db->dname) : "efault");
 }
 
-String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
+static const constexpr String PARTITION_STR = "{_partition_id}";
+
+void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    if (isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine())
+    chassert(bucket_path == "" && catalog == CatalogTable::None);
+    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        const Catalog * cat = nullptr;
-        const ServerCredentials & sc = fc.minio_server.value();
+        /// Set catalog first if possible
+        const bool canUseCatalog = fc.minio_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine());
+        const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().glue_catalog.has_value());
+        const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().hive_catalog.has_value());
+        const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().rest_catalog.has_value());
+        const uint32_t no_cat = 15;
+        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
 
-        switch (catalog)
+        if (glue_cat && (nopt < glue_cat + 1))
         {
-            case CatalogTable::Glue:
-                cat = &sc.glue_catalog.value();
-                break;
-            case CatalogTable::Hive:
-                cat = &sc.hive_catalog.value();
-                break;
-            case CatalogTable::REST:
-                cat = &sc.rest_catalog.value();
-                break;
-            default:
-                break;
+            catalog = CatalogTable::Glue;
         }
-        return cat ? fmt::format("http://{}:{}/{}/t{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname)
-                   : fmt::format(
-                         "http://{}:{}{}/file{}{}",
-                         client ? sc.client_hostname : sc.server_hostname,
-                         sc.port,
-                         sc.database,
-                         tname,
-                         isS3Engine() ? "" : "/");
-    }
-    if (isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine())
-    {
-        return fmt::format("file{}{}", tname, isAzureEngine() ? "" : "/");
-    }
-    if (isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isFileEngine())
-    {
-        const std::filesystem::path & fpath = client ? fc.client_file_path : fc.server_file_path;
+        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+        {
+            catalog = CatalogTable::Hive;
+        }
+        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+        {
+            catalog = CatalogTable::REST;
+        }
 
-        return fmt::format("{}/data{}{}{}", fpath.generic_string(), isFileEngine() ? "file" : "lakefile", tname, isFileEngine() ? "" : "/");
+        if (isS3QueueEngine() || isAzureQueueEngine())
+        {
+            bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
+        }
+        else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || catalog != CatalogTable::None)
+        {
+            const Catalog * cat = nullptr;
+            const ServerCredentials & sc = fc.minio_server.value();
+
+            switch (catalog)
+            {
+                case CatalogTable::Glue:
+                    cat = &sc.glue_catalog.value();
+                    break;
+                case CatalogTable::Hive:
+                    cat = &sc.hive_catalog.value();
+                    break;
+                case CatalogTable::REST:
+                    cat = &sc.rest_catalog.value();
+                    break;
+                default:
+                    break;
+            }
+            bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
+        }
+        else
+        {
+            /// S3 and Azure engines point to files
+            bool used_partition = false;
+            const bool add_before = rg.nextBool();
+
+            chassert(isS3Engine() || isAzureEngine());
+            if (rg.nextBool())
+            {
+                /// Use a subdirectory
+                bucket_path += "subdir";
+                bucket_path += rg.nextBool() ? std::to_string(tname) : "";
+                if (has_partition_by && rg.nextBool())
+                {
+                    bucket_path += PARTITION_STR;
+                    used_partition = true;
+                }
+                bucket_path += "/";
+            }
+            bucket_path += "file";
+            bucket_path += add_before ? std::to_string(tname) : "";
+            if (has_partition_by && !used_partition && rg.nextBool())
+            {
+                bucket_path += PARTITION_STR;
+            }
+            bucket_path += !add_before ? std::to_string(tname) : "";
+            if (rg.nextBool())
+            {
+                bucket_path += ".data";
+            }
+        }
+    }
+    else
+    {
+        chassert(0);
+    }
+}
+
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool no_change) const
+{
+    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    {
+        String res = bucket_path;
+
+        chassert(bucket_path != "");
+        if (!isS3QueueEngine() && !isAzureQueueEngine() && catalog == CatalogTable::None && !no_change && rg.nextSmallNumber() < 8)
+        {
+            /// Replace PARTITION BY str
+            const size_t partition_pos = res.find(PARTITION_STR);
+            if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
+            {
+                res.replace(
+                    partition_pos,
+                    PARTITION_STR.length(),
+                    rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+            }
+            /// Use globs
+            const size_t slash_pos = res.rfind('/');
+            if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+            {
+                res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
+            }
+        }
+        return res;
+    }
+    if (isFileEngine())
+    {
+        return fmt::format("{}/file{}", fc.server_file_path.generic_string(), tname);
     }
     if (isURLEngine())
     {
         const ServerCredentials & sc = fc.http_server.value();
 
-        return fmt::format("http://{}:{}/file{}", client ? sc.client_hostname : sc.server_hostname, sc.port, tname);
+        return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
     }
     if (isKeeperMapEngine())
     {
@@ -112,11 +197,9 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
     return "";
 }
 
-String SQLBase::getMetadataPath(const FuzzConfig & fc, const bool client) const
+String SQLBase::getMetadataPath(const FuzzConfig & fc) const
 {
-    const std::filesystem::path & fpath = client ? fc.client_file_path : fc.server_file_path;
-
-    return has_metadata ? fmt::format("{}/metadatat{}", fpath.generic_string(), tname) : "";
+    return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
 size_t SQLTable::numberOfInsertableColumns() const

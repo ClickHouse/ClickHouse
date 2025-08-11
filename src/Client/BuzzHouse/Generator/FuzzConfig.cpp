@@ -59,6 +59,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String user = "test";
     String password;
     String database = "test";
+    String named_collection = "";
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
     std::optional<Catalog> glue_catalog;
@@ -75,6 +76,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
+           {"named_collection", [&](const JSONObjectType & value) { named_collection = String(value.getString()); }},
            {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
            {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
            {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
@@ -102,6 +104,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
         user,
         password,
         database,
+        named_collection,
         user_files_dir,
         query_log_file,
         glue_catalog,
