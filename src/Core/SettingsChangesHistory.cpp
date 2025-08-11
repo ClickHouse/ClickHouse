@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
