@@ -1204,7 +1204,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    Time makeTime(uint64_t hour, UInt8 minute, UInt8 second) const
+    Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const
     {
         Time time_offset = hour * 3600 + minute * 60 + second;
 
@@ -1315,12 +1315,14 @@ public:
             is_negative = true;
             t = -t;
         }
+
+        // Cap at 3599999 seconds (999:59:59)
+        if (unlikely(t > 3599999))
+            t = 3599999;
+
         res.second = t % 60;
         res.minute = t / 60 % 60;
         res.hour = t / 3600;
-
-        if (unlikely(res.hour > 999))
-            res.hour = 999;
 
         res.is_negative = is_negative;
 

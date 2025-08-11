@@ -1,6 +1,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -35,7 +36,6 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -66,8 +66,6 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (if_empty)
         ostr << "IF EMPTY ";
-
-    ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && !database_and_tables && database)
     {
@@ -109,11 +107,12 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     }
 
     if (!like.empty())
-        ostr << (settings.hilite ? hilite_keyword : "")
-                      << (not_like ? " NOT" : "")
-                      << (case_insensitive_like ? " ILIKE " : " LIKE")
-                      << (settings.hilite ? hilite_none : "")
-                      << DB::quote << like;
+    {
+        ostr
+            << (not_like ? " NOT" : "")
+            << (case_insensitive_like ? " ILIKE " : " LIKE")
+            << quoteString(like);
+    }
 
     formatOnCluster(ostr, settings);
 
@@ -121,7 +120,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << " PERMANENTLY";
 
     if (sync)
-        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        ostr << " SYNC";
 }
 
 ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()

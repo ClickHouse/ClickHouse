@@ -31,7 +31,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT : 1 -> value String : 0
@@ -53,7 +53,7 @@ Positions: 4 0 1 2
                    COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
                    FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
           Positions: 0 2
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT : 1 -> value String : 0
@@ -111,7 +111,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT : 1 -> value String : 0
@@ -133,7 +133,7 @@ Positions: 4 0 1 2
                    COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
                    FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
           Positions: 0 2
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT : 1 -> value String : 0
@@ -191,7 +191,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT : 1 -> value String : 0
@@ -215,7 +215,7 @@ Positions: 4 0 1 2
                    FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
                    FUNCTION and(notEquals(__table1.id, 0_UInt8) :: 3, notEquals(__table1.id, 0_UInt8) :: 2) -> and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) UInt8 : 1
           Positions: 0 1
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT : 1 -> value String : 0

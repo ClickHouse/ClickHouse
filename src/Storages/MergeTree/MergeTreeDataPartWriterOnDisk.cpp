@@ -20,7 +20,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
 }
 
 namespace ErrorCodes
@@ -301,9 +300,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_index) != nullptr)
+        if (const auto * gin_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_index != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(
+                stream_name, data_part_storage, data_part_storage, gin_index->gin_filter_params.segment_digestion_threshold_bytes);
             gin_index_stores[stream_name] = store;
         }
 
@@ -433,7 +433,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
 
     if (index_file_hashing_stream)
     {
-        if (write_final_mark && last_index_block)
+        if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
@@ -490,7 +490,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
-        /// Register additional files written only by the full-text index. Required because otherwise DROP TABLE complains about unknown
+        /// Register additional files written only by the text index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)

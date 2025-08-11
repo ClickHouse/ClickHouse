@@ -6,7 +6,7 @@ slug: /interfaces/third-party/proxy
 title: 'Proxy Servers from Third-party Developers'
 ---
 
-# Proxy Servers from Third-party Developers
+# Proxy servers from third-party developers
 
 ## chproxy {#chproxy}
 

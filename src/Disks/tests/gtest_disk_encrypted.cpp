@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
+#include <Core/Field.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>
@@ -462,7 +463,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
-    
+
     {
         ReadSettings read_settings;
         read_settings.local_fs_buffer_size = 1;

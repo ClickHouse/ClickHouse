@@ -1,0 +1,17 @@
+Check part formats
+tab_compact_full	Compact
+tab_wide_full	Wide
+Check tab_compact_full
+0	foo
+3	foo bar
+4	foo baz
+Granules: 3/3
+Description: text GRANULARITY 2
+Granules: 2/3
+Check tab_wide_full
+0	foo
+3	foo bar
+4	foo baz
+Granules: 3/3
+Description: text GRANULARITY 2
+Granules: 2/3

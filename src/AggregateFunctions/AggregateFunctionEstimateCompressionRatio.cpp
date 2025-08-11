@@ -247,7 +247,12 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
                     ErrorCodes::BAD_QUERY_PARAMETER,
                     "Multiple numeric type parameters specified for {}. Expected at most one numeric type (block_size_bytes) parameter",
                     name);
-            block_size_bytes = param.safeGet<UInt64>();
+
+            UInt64 new_block_size_bytes = param.safeGet<UInt64>();
+            if (new_block_size_bytes == 0)
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
+
+            block_size_bytes = new_block_size_bytes;
         }
         else
         {

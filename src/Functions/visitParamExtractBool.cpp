@@ -25,13 +25,13 @@ REGISTER_FUNCTION(VisitParamExtractBool)
         .description = "Parses a true/false value from the value of the field named field_name. The result is UInt8.",
         .syntax = "simpleJSONExtractBool(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
+        = {{"json", "The JSON in which the field is searched for.", {"String"}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value
-        = R"(It returns 1 if the value of the field is true, 0 otherwise. This means this function will return 0 including (and not only) in the following cases:
+        = {R"(It returns 1 if the value of the field is true, 0 otherwise. This means this function will return 0 including (and not only) in the following cases:
  - If the field doesn't exists.
  - If the field contains true as a string, e.g.: {"field":"true"}.
- - If the field contains 1 as a numerical value.)",
+ - If the field contains 1 as a numerical value.)"},
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons

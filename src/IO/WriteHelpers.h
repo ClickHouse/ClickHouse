@@ -996,8 +996,12 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
 
-    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= 10)
-        data[pos] += fractional % 10;
+    // Handle negative fractional part by using the absolute value for processing
+    bool is_negative = fractional < 0;
+    typename DecimalType::NativeType abs_fractional = is_negative ? -fractional : fractional;
+
+    for (Int32 pos = scale - 1; pos >= 0 && abs_fractional; --pos, abs_fractional /= 10)
+        data[pos] += abs_fractional % 10;
 
     if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
     {
@@ -1028,11 +1032,12 @@ inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & b
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<Time64>;
     scale = scale > MaxScale ? MaxScale : scale;
 
-    LocalTime local_time;
-    local_time.negative(time64.value < 0);
+    bool is_negative = time64.value < 0;
     const auto components = DecimalUtils::split(Time64(time64.value), scale);
 
-    local_time = LocalTime(components.whole);
+    LocalTime local_time(components.whole);
+    if (is_negative)
+        local_time.negative(true); // Keep negative sign even if whole part is 0
     writeTimeText<delimiter1>(local_time, buf);
 
     if (scale > 0)
@@ -1065,20 +1070,42 @@ inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
     if (local_time.negative())
         buf.write("-", 1);
 
-    char buffer[9] = {
-        static_cast<char>('0' + ((local_time.hour() / 100) % 10)), // H
-        static_cast<char>('0' + ((local_time.hour() / 10) % 10)),  // H
-        static_cast<char>('0' + (local_time.hour() % 10)),         // H
-        delimiter1,
-        static_cast<char>('0' + (local_time.minute() / 10)),      // M
-        static_cast<char>('0' + (local_time.minute() % 10)),      // M
-        delimiter1,
-        static_cast<char>('0' + (local_time.second() / 10)),      // S
-        static_cast<char>('0' + (local_time.second() % 10))       // S
-    };
+    const auto hour = local_time.hour();
+    const auto minute = local_time.minute();
+    const auto second = local_time.second();
 
-
-    buf.write(buffer, 9);
+    // Handle hours with variable digits
+    if (hour >= 100)
+    {
+        // 3-digit hours
+        char buffer[9] = {
+            static_cast<char>('0' + (hour / 100)),      // H
+            static_cast<char>('0' + ((hour / 10) % 10)), // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 9);
+    }
+    else
+    {
+        // 2 or 1-digit hours
+        char buffer[8] = {
+            static_cast<char>('0' + (hour / 10)),        // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 8);
+    }
 }
 
 inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)

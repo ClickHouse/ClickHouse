@@ -1,4 +1,4 @@
-#include "Databases/DataLake/Common.h"
+#include <Databases/DataLake/Common.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -18,6 +18,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int DATALAKE_DATABASE_ERROR;
 }
 
@@ -34,24 +35,31 @@ String trim(const String & str)
 std::vector<String> splitTypeArguments(const String & type_str)
 {
     std::vector<String> args;
-    int depth = 0;
+    int angle_depth = 0;
+    int paren_depth = 0;
     size_t start = 0;
-    for (size_t i = 0; i < type_str.size(); i++)
+
+    for (size_t i = 0; i < type_str.size(); ++i)
     {
-        if (type_str[i] == '<')
-            depth++;
-        else if (type_str[i] == '>')
-            depth--;
-        else if (type_str[i] == ',' && depth == 0)
+        char c = type_str[i];
+        if (c == '<')
+            angle_depth++;
+        else if (c == '>')
+            angle_depth--;
+        else if (c == '(')
+            paren_depth++;
+        else if (c == ')')
+            paren_depth--;
+        else if (c == ',' && angle_depth == 0 && paren_depth == 0)
         {
             args.push_back(trim(type_str.substr(start, i - start)));
             start = i + 1;
         }
     }
+
     args.push_back(trim(type_str.substr(start)));
     return args;
 }
-
 
 DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix)
 {
@@ -67,6 +75,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
     {
         String inner = name.substr(4, name.size() - 5);
         auto args = splitTypeArguments(inner);
+
         if (args.size() != 2)
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid data type {}", type_name);
 
@@ -98,6 +107,17 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
     }
 
     return nullable ? DB::makeNullable(DB::IcebergSchemaProcessor::getSimpleType(name)) : DB::IcebergSchemaProcessor::getSimpleType(name);
+}
+
+std::pair<std::string, std::string> parseTableName(const std::string & name)
+{
+    auto pos = name.rfind('.');
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+
+    auto table_name = name.substr(pos + 1);
+    auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
+    return {namespace_name, table_name};
 }
 
 }

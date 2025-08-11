@@ -8,13 +8,13 @@ title: 'EmbeddedRocksDB Engine'
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# EmbeddedRocksDB Engine
+# EmbeddedRocksDB engine
 
 <CloudNotSupportedBadge />
 
 This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -173,9 +173,9 @@ PRIMARY KEY key
 ```sql
 INSERT INTO rdb
     SELECT
-        toUInt32(sipHash64(number) % 10) as key,
-        [key, key+1] as value,
-        ('val2' || toString(key)) as value2
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
     FROM numbers_mt(10);
 ```
 

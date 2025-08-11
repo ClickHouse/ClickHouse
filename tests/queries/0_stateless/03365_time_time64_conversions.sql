@@ -1,8 +1,10 @@
 -- echoOn
 
 SET session_timezone = 'UTC';
+SET allow_experimental_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 
--- Conversion from String to Time
+-- Conversion from Time to String 
 SELECT toTime(0)::String;
 SELECT toTime(12)::String;
 SELECT toTime(3600)::String;

@@ -228,7 +228,7 @@ class TablesBlockSource : public ISource
 public:
     TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -390,16 +390,17 @@ protected:
                                 try
                                 {
                                     if (auto total_rows = table.second->totalRows(context))
-                                        res_columns[res_index++]->insert(*total_rows);
+                                        res_columns[res_index]->insert(*total_rows);
                                     else
-                                        res_columns[res_index++]->insertDefault();
+                                        res_columns[res_index]->insertDefault();
                                 }
                                 catch (const Exception &)
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index++]->insertDefault();
+                                    res_columns[res_index]->insertDefault();
                                 }
+                                ++res_index;
                             }
                             // total_bytes
                             else if (src_index == 21 && columns_mask[src_index])
@@ -407,9 +408,9 @@ protected:
                                 try
                                 {
                                     if (auto total_bytes = table.second->totalBytes(context))
-                                        res_columns[res_index++]->insert(*total_bytes);
+                                        res_columns[res_index]->insert(*total_bytes);
                                     else
-                                        res_columns[res_index++]->insertDefault();
+                                        res_columns[res_index]->insertDefault();
                                 }
                                 catch (const Exception &)
                                 {
@@ -417,6 +418,7 @@ protected:
                                     tryLogCurrentException("StorageSystemTables");
                                     res_columns[res_index++]->insertDefault();
                                 }
+                                ++res_index;
                             }
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
@@ -643,16 +645,17 @@ protected:
                     {
                         auto total_rows = table ? table->totalRows(context) : std::nullopt;
                         if (total_rows)
-                            res_columns[res_index++]->insert(*total_rows);
+                            res_columns[res_index]->insert(*total_rows);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])
@@ -661,16 +664,17 @@ protected:
                     {
                         auto total_bytes = table->totalBytes(context_copy);
                         if (total_bytes)
-                            res_columns[res_index++]->insert(*total_bytes);
+                            res_columns[res_index]->insert(*total_bytes);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])
@@ -679,16 +683,17 @@ protected:
                     {
                         auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
                         if (total_bytes_uncompressed)
-                            res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                            res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
@@ -842,7 +847,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

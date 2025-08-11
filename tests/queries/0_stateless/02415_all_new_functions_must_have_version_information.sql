@@ -15,7 +15,7 @@ AND name NOT IN (
     'geoToS2', 's2CapContains', 's2CapUnion', 's2CellsIntersect', 's2GetNeighbors', 's2RectAdd', 's2RectContains', 's2RectIntersection', 's2RectUnion', 's2ToGeo',
     'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD',
     'lemmatize', 'tokenize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc',
-    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality',
+    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality', 'bech32Encode', 'bech32Decode',
     'BLAKE3', 'JSONMergePatch', 'MD4', 'MD5', 'RIPEMD160', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'SHA512_256', 'ULIDStringToDateTime', 'generateULID', 'halfMD5',
     'idnaDecode', 'idnaEncode', 'keccak256', 'punycodeDecode', 'punycodeEncode', 'seriesPeriodDetectFFT', 'sqidDecode', 'sqidEncode', 'tryDecrypt', 'tryIdnaEncode', 'tryPunycodeDecode', 'uniqThetaIntersect',
     'uniqThetaNot', 'uniqThetaUnion'

@@ -1,3 +1,5 @@
+SET use_query_condition_cache = 0;
+
 DROP TABLE IF EXISTS t_skip_index_insert;
 
 CREATE TABLE t_skip_index_insert

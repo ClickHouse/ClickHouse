@@ -9,6 +9,8 @@
 
 #include <boost/noncopyable.hpp>
 
+class SipHash;
+
 namespace DB
 {
 
@@ -100,6 +102,9 @@ public:
     virtual TypeIndex getTypeId() const = 0;
     /// Storage type (e.g. Int64 for Interval)
     virtual TypeIndex getColumnType() const { return getTypeId(); }
+
+    void updateHash(SipHash & hash) const;
+    virtual void updateHashImpl(SipHash & hash) const = 0;
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
@@ -338,14 +343,14 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }

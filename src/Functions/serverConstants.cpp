@@ -11,6 +11,7 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Environment.h>
 
@@ -170,33 +171,57 @@ REGISTER_FUNCTION(TCPPort)
 
 REGISTER_FUNCTION(Timezone)
 {
-    factory.registerFunction<FunctionTimezone>(
-        FunctionDocumentation{
-        .description=R"(
-Returns the default timezone for current session.
-Used as default timezone for parsing DateTime|DateTime64 without explicitly specified timezone.
-Can be changed with SET timezone = 'New/Tz'
+    FunctionDocumentation::Description description = R"(
+Returns the time zone name of the current session or converts a time zone
+offset or name to a canonical time zone name.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+timezone()
+    )";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the canonical time zone name as a", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get current session time zone", R"(
+SELECT timezone()
+        )",
+        R"(
+┌─timezone()───────┐
+│ Europe/Amsterdam │
+└──────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-[example:timezone]
-    )",
-    .examples{{"timezone", "SELECT timezone();", ""}},
-    .category = FunctionDocumentation::Category::Other
-});
-factory.registerAlias("timeZone", "timezone");
+    factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("timeZone", "timezone");
 }
 
 REGISTER_FUNCTION(ServerTimezone)
 {
-    factory.registerFunction<FunctionServerTimezone>(
-    FunctionDocumentation{
-        .description=R"(
-Returns the timezone name in which server operates.
+    FunctionDocumentation::Description description = R"(
+Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
+    )";
+    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get server time zone", R"(
+SELECT serverTimeZone()
+        )",
+        R"(
+┌─serverTimeZone()─┐
+│ UTC              │
+└──────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-[example:serverTimezone]
-    )",
-     .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
-     .category = FunctionDocumentation::Category::Other
-});
+    factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 

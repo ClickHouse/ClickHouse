@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "SystemZeros"; }
+    const char * getStorageEngineName() const override { return "SystemZeros"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 

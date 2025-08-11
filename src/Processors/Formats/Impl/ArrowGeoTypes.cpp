@@ -6,10 +6,12 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Functions/geometryConverters.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -93,102 +95,10 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::opti
     return geo_columns;
 }
 
-inline ArrowPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
-    double x;
-    double y;
-    readBinaryEndian(x, in_buffer, endian_to_read);
-    readBinaryEndian(y, in_buffer, endian_to_read);
-    return ArrowPoint{.x = x, .y = y};
-}
-
-inline ArrowLineString readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    int num_points;
-    readBinaryEndian(num_points, in_buffer, endian_to_read);
-
-    ArrowLineString line;
-    for (int i = 0; i < num_points; ++i)
-    {
-        line.push_back(readPointWKB(in_buffer, endian_to_read));
-    }
-    return line;
-}
-
-inline ArrowPolygon readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    int num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
-
-    ArrowPolygon polygon;
-    for (int i = 0; i < num_lines; ++i)
-    {
-        auto parsed_points = readLineWKB(in_buffer, endian_to_read);
-        polygon.push_back(std::move(parsed_points));
-    }
-    return polygon;
-}
-
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
-
-ArrowMultiLineString readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    ArrowMultiLineString multiline;
-
-    int num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
-
-    for (int i = 0; i < num_lines; ++i)
-        multiline.push_back(std::get<ArrowLineString>(parseWKBFormat(in_buffer)));
-
-    return multiline;
-}
-
-ArrowMultiPolygon readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    ArrowMultiPolygon multipolygon;
-
-    int num_polygons;
-    readBinaryEndian(num_polygons, in_buffer, endian_to_read);
-
-    for (int i = 0; i < num_polygons; ++i)
-        multipolygon.push_back(std::get<ArrowPolygon>(parseWKBFormat(in_buffer)));
-
-    return multipolygon;
-}
-
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer)
-{
-    char little_endian;
-    if (!in_buffer.read(little_endian))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
-
-    std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
-    int geom_type;
-
-    readBinaryEndian(geom_type, in_buffer, endian_to_read);
-
-    switch (geom_type)
-    {
-        case 1:
-            return readPointWKB(in_buffer, endian_to_read);
-        case 2:
-            return readLineWKB(in_buffer, endian_to_read);
-        case 3:
-            return readPolygonWKB(in_buffer, endian_to_read);
-        case 5:
-            return readMultiLineStringWKB(in_buffer, endian_to_read);
-        case 6:
-            return readMultiPolygonWKB(in_buffer, endian_to_read);
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect geometry type");
-    }
-}
-
-inline ArrowPoint parseWKTPoint(ReadBuffer & in_buffer)
-{
-    double x;
-    double y;
+    Float64 x;
+    Float64 y;
     char ch;
     while (true)
     {
@@ -229,9 +139,9 @@ inline bool readItemEnding(ReadBuffer & in_buffer)
     }
 }
 
-inline ArrowLineString parseWKTLine(ReadBuffer & in_buffer)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
 {
-    ArrowLineString ls;
+    LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
     while (true)
     {
@@ -242,22 +152,45 @@ inline ArrowLineString parseWKTLine(ReadBuffer & in_buffer)
     return ls;
 }
 
-inline ArrowPolygon parseWKTPolygon(ReadBuffer & in_buffer)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
 {
-    ArrowPolygon poly;
+    Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
     while (true)
     {
-        poly.push_back(parseWKTLine(in_buffer));
+        ring.push_back(parseWKTPoint(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return ring;
+}
+
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
+{
+    Polygon<CartesianPoint> poly;
+    readOpenBracket(in_buffer);
+    bool should_complete_outer = true;
+    while (true)
+    {
+        auto parsed_line = parseWKTRing(in_buffer);
+        if (should_complete_outer)
+        {
+            should_complete_outer = false;
+            poly.outer() = std::move(parsed_line);
+        }
+        else
+        {
+            poly.inners().push_back(std::move(parsed_line));
+        }
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-inline ArrowMultiPolygon parseWKTMultiPolygon(ReadBuffer & in_buffer)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
-    ArrowMultiPolygon poly;
+    MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     while (true)
     {
@@ -268,7 +201,7 @@ inline ArrowMultiPolygon parseWKTMultiPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
-ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
 {
     std::string type;
     while (true)
@@ -311,14 +244,20 @@ PointColumnBuilder::PointColumnBuilder(const String & name_)
 {
 }
 
-void PointColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void PointColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<ArrowPoint>(object))
+    if (!std::holds_alternative<CartesianPoint>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
 
-    const auto & point = std::get<ArrowPoint>(object);
-    point_column_data_x.push_back(point.x);
-    point_column_data_y.push_back(point.y);
+    const auto & point = std::get<CartesianPoint>(object);
+    point_column_data_x.push_back(point.x());
+    point_column_data_y.push_back(point.y());
+}
+
+void PointColumnBuilder::appendDefault()
+{
+    point_column_data_x.push_back(0);
+    point_column_data_y.push_back(0);
 }
 
 ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
@@ -327,10 +266,7 @@ ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
     ColumnPtr result_y = point_column_y->getPtr();
     auto column = ColumnTuple::create(Columns{result_x, result_y});
 
-    DataTypePtr type_x = std::make_shared<DataTypeFloat64>();
-    DataTypePtr type_y = std::make_shared<DataTypeFloat64>();
-
-    auto tuple_type = std::make_shared<DataTypeTuple>(std::vector{type_x, type_y});
+    auto tuple_type = DataTypeFactory::instance().get("Point");
     return {std::move(column), tuple_type, name};
 }
 
@@ -342,12 +278,12 @@ LineColumnBuilder::LineColumnBuilder(const String & name_)
 {
 }
 
-void LineColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void LineColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<ArrowLineString>(object))
+    if (!std::holds_alternative<LineString<CartesianPoint>>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
 
-    const auto & line = std::get<ArrowLineString>(object);
+    const auto & line = std::get<LineString<CartesianPoint>>(object);
     for (const auto & point : line)
     {
         point_column_builder.appendObject(point);
@@ -356,12 +292,17 @@ void LineColumnBuilder::appendObject(const ArrowGeometricObject & object)
     offsets.push_back(offset);
 }
 
+void LineColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
 {
     auto all_points_column = point_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("LineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -373,15 +314,22 @@ PolygonColumnBuilder::PolygonColumnBuilder(const String & name_)
 {
 }
 
-void PolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void PolygonColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<ArrowPolygon>(object))
+    if (!std::holds_alternative<Polygon<CartesianPoint>>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected polygon");
 
-    const auto & polygon = std::get<ArrowPolygon>(object);
-    for (const auto & inner_circle : polygon)
-        line_column_builder.appendObject(inner_circle);
-    offset += polygon.size();
+    const auto & polygon = std::get<Polygon<CartesianPoint>>(object);
+    line_column_builder.appendObject(LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end()));
+
+    for (const auto & inner_circle : polygon.inners())
+        line_column_builder.appendObject(LineString<CartesianPoint>(inner_circle.begin(), inner_circle.end()));
+    offset += polygon.inners().size() + 1;
+    offsets.push_back(offset);
+}
+
+void PolygonColumnBuilder::appendDefault()
+{
     offsets.push_back(offset);
 }
 
@@ -390,7 +338,7 @@ ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("Polygon");
     return {std::move(array_column), array_type, name};
 }
 
@@ -402,16 +350,21 @@ MultiLineStringColumnBuilder::MultiLineStringColumnBuilder(const String & name_)
 {
 }
 
-void MultiLineStringColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void MultiLineStringColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<ArrowMultiLineString>(object))
+    if (!std::holds_alternative<MultiLineString<CartesianPoint>>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
 
-    const auto & multilinestring = std::get<ArrowMultiLineString>(object);
+    const auto & multilinestring = std::get<MultiLineString<CartesianPoint>>(object);
     for (const auto & line : multilinestring)
         line_column_builder.appendObject(line);
 
     offset += multilinestring.size();
+    offsets.push_back(offset);
+}
+
+void MultiLineStringColumnBuilder::appendDefault()
+{
     offsets.push_back(offset);
 }
 
@@ -420,7 +373,7 @@ ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiLineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -432,16 +385,21 @@ MultiPolygonColumnBuilder::MultiPolygonColumnBuilder(const String & name_)
 {
 }
 
-void MultiPolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void MultiPolygonColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<ArrowMultiPolygon>(object))
+    if (!std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
 
-    const auto & multipolygon = std::get<ArrowMultiPolygon>(object);
+    const auto & multipolygon = std::get<MultiPolygon<CartesianPoint>>(object);
     for (const auto & polygon : multipolygon)
         polygon_column_builder.appendObject(polygon);
 
     offset += multipolygon.size();
+    offsets.push_back(offset);
+}
+
+void MultiPolygonColumnBuilder::appendDefault()
+{
     offsets.push_back(offset);
 }
 
@@ -450,7 +408,7 @@ ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
     auto all_points_column = polygon_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiPolygon");
     return {std::move(array_column), array_type, name};
 }
 
@@ -477,10 +435,16 @@ GeoColumnBuilder::GeoColumnBuilder(const String & name_, GeoType type_)
     }
 }
 
-void GeoColumnBuilder::appendObject(const ArrowGeometricObject & object)
+void GeoColumnBuilder::appendObject(const GeometricObject & object)
 {
     geomery_column_builder->appendObject(object);
 }
+
+void GeoColumnBuilder::appendDefault()
+{
+    geomery_column_builder->appendDefault();
+}
+
 
 ColumnWithTypeAndName GeoColumnBuilder::getResultColumn()
 {

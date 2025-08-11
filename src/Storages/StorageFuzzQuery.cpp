@@ -105,7 +105,7 @@ Pipe StorageFuzzQuery::read(
     auto query = parseQuery(parser, begin, end, "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, block_header, config, query));
+        pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, std::make_shared<const Block>(block_header), config, query));
 
     return Pipe::unitePipes(std::move(pipes));
 }

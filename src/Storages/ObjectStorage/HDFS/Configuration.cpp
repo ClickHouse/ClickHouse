@@ -41,19 +41,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
-    : Configuration(other)
-{
-    url = other.url;
-    path = other.path;
-    paths = other.paths;
-}
-
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
-    checkHDFSURL(fs::path(url) / path.substr(1));
-    Configuration::check(context);
+    checkHDFSURL(fs::path(url) / path.path.substr(1));
+    StorageObjectStorageConfiguration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
@@ -67,21 +59,10 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
 
-std::string StorageHDFSConfiguration::getPathWithoutGlobs() const
-{
-    /// Unlike s3 and azure, which are object storages,
-    /// hdfs is a filesystem, so it cannot list files by partual prefix,
-    /// only by directory.
-    auto first_glob_pos = path.find_first_of("*?{");
-    auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
-    if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
-        return "/";
-    return path.substr(0, end_of_path_without_globs);
-}
-StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
@@ -162,13 +143,13 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
 
     path = url_.substr(pos + 1);
-    if (!path.starts_with('/'))
-        path = '/' + path;
+    if (!path.path.starts_with('/'))
+        path = '/' + path.path;
 
     url = url_.substr(0, pos);
     paths = {path};
 
-    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
+    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
