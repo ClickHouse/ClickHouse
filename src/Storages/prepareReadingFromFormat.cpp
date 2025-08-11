@@ -306,23 +306,29 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     return res;
 }
 
-void ReadFromFormatInfo::serialize(WriteBuffer & out) const
+void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
-    source_header.getNamesAndTypesList().writeTextWithNamesInStorage(out);
-    format_header.getNamesAndTypesList().writeTextWithNamesInStorage(out);
-    writeStringBinary(columns_description.toString(), out);
-    requested_columns.writeTextWithNamesInStorage(out);
-    requested_virtual_columns.writeTextWithNamesInStorage(out);
-    serialization_hints.writeJSON(out);
-    out << "\n";
+    source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
+    format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
+    writeStringBinary(columns_description.toString(), ctx.out);
+    requested_columns.writeTextWithNamesInStorage(ctx.out);
+    requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
+    serialization_hints.writeJSON(ctx.out);
+
+    hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
+    writeBinary(prewhere_info != nullptr, ctx.out);
+    if (prewhere_info != nullptr)
+        prewhere_info->serialize(ctx);
+
+    ctx.out << "\n";
 }
 
-ReadFromFormatInfo ReadFromFormatInfo::deserialize(ReadBuffer & in)
+ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     ReadFromFormatInfo result;
 
     NamesAndTypesList source_header_names_and_type;
-    source_header_names_and_type.readTextWithNamesInStorage(in);
+    source_header_names_and_type.readTextWithNamesInStorage(ctx.in);
     for (const auto & name_and_type : source_header_names_and_type)
     {
         ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
@@ -330,7 +336,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(ReadBuffer & in)
     }
 
     NamesAndTypesList format_header_names_and_type;
-    format_header_names_and_type.readTextWithNamesInStorage(in);
+    format_header_names_and_type.readTextWithNamesInStorage(ctx.in);
     for (const auto & name_and_type : format_header_names_and_type)
     {
         ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
@@ -338,14 +344,21 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(ReadBuffer & in)
     }
 
     std::string columns_desc;
-    readStringBinary(columns_desc, in);
+    readStringBinary(columns_desc, ctx.in);
     result.columns_description = ColumnsDescription::parse(columns_desc);
-    result.requested_columns.readTextWithNamesInStorage(in);
-    result.requested_virtual_columns.readTextWithNamesInStorage(in);
+    result.requested_columns.readTextWithNamesInStorage(ctx.in);
+    result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
-    readString(json, in);
+    readString(json, ctx.in);
     result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
-    in >> "\n";
+
+    result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
+    bool has_prewhere_info;
+    readBinary(has_prewhere_info, ctx.in);
+    if (has_prewhere_info)
+        result.prewhere_info = PrewhereInfo::deserialize(ctx);
+
+    ctx.in >> "\n";
 
     return result;
 }
