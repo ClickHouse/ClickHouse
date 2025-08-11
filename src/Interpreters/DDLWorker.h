@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>
@@ -91,8 +90,9 @@ public:
 
 
     /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr tryGetZooKeeper() const;
+    ZooKeeperPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
+    /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:

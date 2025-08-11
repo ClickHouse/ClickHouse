@@ -10,7 +10,7 @@ namespace DB
 
 RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header_)
+    SharedHeader header_)
     : IRowOutputFormat(header_, out_)
 {
 }
@@ -33,7 +33,7 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
         const Block & sample,
         const FormatSettings &)
     {
-        return std::make_shared<RawBLOBRowOutputFormat>(buf, sample);
+        return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
     });
 }
 

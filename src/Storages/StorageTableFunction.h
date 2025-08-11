@@ -8,7 +8,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -107,8 +107,8 @@ public:
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header.getColumnsWithTypeAndName(),
-                    to_header.getColumnsWithTypeAndName(),
+                    from_header->getColumnsWithTypeAndName(),
+                    to_header->getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Name);
 
             auto step = std::make_unique<ExpressionStep>(

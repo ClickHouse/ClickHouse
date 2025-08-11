@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -177,7 +177,7 @@ public:
 
     Block getInputHeader() const;
 
-    const Block & getOutputHeader() const;
+    SharedHeader getOutputHeader() const;
 
 private:
     LoggerPtr log;

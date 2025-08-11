@@ -211,7 +211,9 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
+
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -287,7 +289,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;

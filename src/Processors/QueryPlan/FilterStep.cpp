@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include "Core/Block_fwd.h"
 #include <Interpreters/ActionsDAG.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -128,17 +129,17 @@ std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, c
 }
 
 FilterStep::FilterStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     ActionsDAG actions_dag_,
     String filter_column_name_,
     bool remove_filter_column_)
     : ITransformingStep(
         input_header_,
-        FilterTransform::transformHeader(
-            input_header_,
+        std::make_shared<const Block>(FilterTransform::transformHeader(
+            *input_header_,
             &actions_dag_,
             filter_column_name_,
-            remove_filter_column_),
+            remove_filter_column_)),
         getTraits())
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
@@ -163,7 +164,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
             return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals);
@@ -172,14 +173,10 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        if (condition_hash)
-            return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column,
-                on_totals, nullptr, condition_hash);
-
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -190,7 +187,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
@@ -248,15 +245,15 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void FilterStep::updateOutputHeader()
 {
-    output_header = FilterTransform::transformHeader(input_headers.front(), &actions_dag, filter_column_name, remove_filter_column);
+    output_header = std::make_shared<const Block>(FilterTransform::transformHeader(*input_headers.front(), &actions_dag, filter_column_name, remove_filter_column));
 
     if (!getDataStreamTraits().preserves_sorting)
         return;
 }
 
-void FilterStep::setQueryConditionKey(size_t condition_hash_)
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
 {
-    condition_hash = condition_hash_;
+    condition = {condition_hash_, condition_};
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
@@ -277,7 +274,7 @@ void FilterStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
@@ -312,7 +309,7 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
 
     const auto & input_header = input_headers.front();
     // Number of input columns that are not removed by actions
-    const auto pass_through_inputs = input_header.columns() - actions_dag_input_count_before;
+    const auto pass_through_inputs = input_header->columns() - actions_dag_input_count_before;
     const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
     const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
     const auto build_required_inputs_set = [this, &not_output_names = split_results.not_output_names]()
@@ -332,18 +329,18 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
     {
         const auto required_inputs_set = build_required_inputs_set();
 
-        for (const auto & name_and_type : input_header)
+        for (const auto & name_and_type : *input_header)
             if (!required_inputs_set.contains(name_and_type.name))
                 actions_dag.addInput(name_and_type);
 
         updated_actions = true;
     }
 
-    if (!updated_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
+    if (!updated_actions && output_header != nullptr && output_header->columns() == required_outputs.size())
         return UnusedColumnRemovalResult{false, false};
 
     // There cannot be more inputs in the DAG than columns in the input header
-    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0).columns());
+    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0)->columns());
 
     const auto update_inputs = remove_inputs
         && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
@@ -351,15 +348,16 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
     if (update_inputs)
     {
         const auto required_inputs_set = build_required_inputs_set();
-        Header new_input_header{};
+        Block new_input_header{};
 
-        for (const auto & col_type_and_name : input_header)
+        for (const auto & col_type_and_name : *input_header)
         {
             if (required_inputs_set.contains(col_type_and_name.name))
                 new_input_header.insert(col_type_and_name);
         }
 
-        updateInputHeader(std::move(new_input_header), 0);
+        SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
+        updateInputHeader(std::move(new_shared_input_header), 0);
         return UnusedColumnRemovalResult{true, true};
     }
 
@@ -370,11 +368,16 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
 
 bool FilterStep::canRemoveColumnsFromOutput() const
 {
-    if (!output_header.has_value())
+    if (output_header == nullptr)
         return true;
 
     const auto minimum_column_count = remove_filter_column ? 0u : 1u;
     return output_header->columns() > minimum_column_count;
+}
+
+QueryPlanStepPtr FilterStep::clone() const
+{
+    return std::make_unique<FilterStep>(*this);
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)

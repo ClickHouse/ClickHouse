@@ -1,8 +1,8 @@
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
-#include <IO/Operators.h>
 
 #include <fmt/format.h>
 
@@ -20,13 +20,13 @@ IQueryPlanStep::IQueryPlanStep()
     step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
-void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
+void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
 {
     input_headers = std::move(input_headers_);
     updateOutputHeader();
 }
 
-void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
+void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
 {
     if (idx >= input_headers.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -47,12 +47,22 @@ bool IQueryPlanStep::canRemoveColumnsFromOutput() const
     return false;
 }
 
-const Header & IQueryPlanStep::getOutputHeader() const
+bool IQueryPlanStep::hasCorrelatedExpressions() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+}
+
+const SharedHeader & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
-    return *output_header;
+    return output_header;
+}
+
+QueryPlanStepPtr IQueryPlanStep::clone() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const
@@ -73,7 +83,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
 
     settings.out << prefix;
 
-    if (!header)
+    if (header.empty())
     {
         settings.out << " empty\n";
         return;

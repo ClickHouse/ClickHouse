@@ -90,5 +90,5 @@ run_query_with_pure_parallel_replicas "${query_id_base}_1" "SELECT * FROM (SELEC
 #run_query_with_custom_key_parallel_replicas "${query_id_base}_3" "SELECT * FROM (SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), replicated_numbers)) LIMIT 20" "sipHash64(number)"
 
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 has_used_parallel_replicas "${query_id_base}"

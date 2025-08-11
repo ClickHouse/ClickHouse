@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for EXCEPT Clause'
+sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
-sidebar_label: EXCEPT
+title: 'EXCEPT Clause'
 ---
 
 # EXCEPT Clause
@@ -14,7 +16,7 @@ The `EXCEPT` clause returns only those rows that result from the first query wit
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 SELECT column1 [, column2 ]
 FROM table1
 [WHERE condition]
@@ -45,7 +47,7 @@ Here is a simple example that returns the numbers 1 to 10 that are _not_ a part 
 
 Query:
 
-``` sql
+```sql
 SELECT number
 FROM numbers(1, 10)
 EXCEPT
@@ -216,5 +218,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [INTERSECT](intersect.md#intersect-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [INTERSECT](/sql-reference/statements/select/intersect)

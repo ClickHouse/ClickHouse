@@ -33,10 +33,10 @@ static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
     };
 }
 
-ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_)
+ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_dag_)
     : ITransformingStep(
         input_header_,
-        ExpressionTransform::transformHeader(input_header_, actions_dag_),
+        std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_header_, actions_dag_)),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
@@ -46,7 +46,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
     });
@@ -59,7 +59,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
@@ -81,7 +81,7 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ExpressionStep::updateOutputHeader()
 {
-    output_header = ExpressionTransform::transformHeader(input_headers.front(), actions_dag);
+    output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
 void ExpressionStep::serialize(Serialization & ctx) const
@@ -105,7 +105,7 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(co
     auto updated_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
     const auto & input_header = input_headers.front();
     // Number of input columns that are not removed by actions
-    const auto pass_through_inputs = input_header.columns() - actions_dag_input_count_before;
+    const auto pass_through_inputs = input_header->columns() - actions_dag_input_count_before;
     const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
     const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
 
@@ -126,14 +126,14 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(co
     {
         const auto required_inputs_set = build_required_inputs_set();
 
-        for (const auto & name_and_type : input_header)
+        for (const auto & name_and_type : *input_header)
             if (!required_inputs_set.contains(name_and_type.name))
                 actions_dag.addInput(name_and_type);
 
         updated_actions = true;
     }
 
-    if (!updated_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
+    if (!updated_actions && output_header != nullptr && output_header->columns() == required_outputs.size())
         return UnusedColumnRemovalResult{false, false};
 
     const auto update_inputs = remove_inputs
@@ -142,13 +142,14 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(co
     if (update_inputs)
     {
         const auto required_inputs_set = build_required_inputs_set();
-        Header new_input_header{};
+        Block new_input_header{};
 
-        for (const auto & col_type_and_name : input_header)
+        for (const auto & col_type_and_name : *input_header)
             if (required_inputs_set.contains(col_type_and_name.name))
                 new_input_header.insert(col_type_and_name);
 
-        updateInputHeader(std::move(new_input_header), 0);
+        SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
+        updateInputHeader(std::move(new_shared_input_header), 0);
 
         return UnusedColumnRemovalResult{true, true};
     }
@@ -160,7 +161,12 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(co
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const
 {
-    return output_header.has_value() ? output_header->columns() > 0 : false;
+    return output_header != nullptr ? output_header->columns() > 0 : false;
+}
+
+QueryPlanStepPtr ExpressionStep::clone() const
+{
+    return std::make_unique<ExpressionStep>(*this);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

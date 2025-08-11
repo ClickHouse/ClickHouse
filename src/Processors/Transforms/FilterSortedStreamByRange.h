@@ -15,19 +15,19 @@ class FilterSortedStreamByRange : public ISimpleTransform
 {
 public:
     FilterSortedStreamByRange(
-        const Block & header_,
+        SharedHeader header_,
         ExpressionActionsPtr expression_,
         String filter_column_name_,
         bool remove_filter_column_,
         bool on_totals_ = false)
         : ISimpleTransform(
             header_,
-            FilterTransform::transformHeader(header_, &expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
+            std::make_shared<const Block>(FilterTransform::transformHeader(*header_, &expression_->getActionsDAG(), filter_column_name_, remove_filter_column_)),
             true)
         , filter_transform(header_, expression_, filter_column_name_, remove_filter_column_, on_totals_)
     {
         assertBlocksHaveEqualStructure(
-            header_, getOutputPort().getHeader(),
+            *header_, getOutputPort().getHeader(),
             "Expression for FilterSortedStreamByRange should not change header");
     }
 

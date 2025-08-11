@@ -1,4 +1,4 @@
-#include "ExecutableDictionarySource.h"
+#include <Dictionaries/ExecutableDictionarySource.h>
 
 #include <filesystem>
 
@@ -174,7 +174,8 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     String command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto header = std::make_shared<const Block>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(header);
     auto shell_input_pipe = Pipe(std::move(source));
 
     Pipes shell_input_pipes;
@@ -183,7 +184,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
 
     return QueryPipeline(std::move(pipe));
 }
@@ -215,7 +216,8 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -265,7 +267,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),

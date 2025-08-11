@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/odbc
+description: 'Allows ClickHouse to connect to external databases via ODBC.'
+sidebar_label: 'ODBC'
 sidebar_position: 150
-sidebar_label: ODBC
-title: "ODBC"
-description: "Allows ClickHouse to connect to external databases via ODBC."
+slug: /engines/table-engines/integrations/odbc
+title: 'ODBC'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -18,16 +18,16 @@ To safely implement ODBC connections, ClickHouse uses a separate program `clickh
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
     name2 [type2],
     ...
 )
-ENGINE = ODBC(connection_settings, external_database, external_table)
+ENGINE = ODBC(datasource, external_database, external_table)
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -40,11 +40,13 @@ The table structure can differ from the source table structure:
 
 **Engine Parameters**
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+- `datasource` — Name of the section with connection settings in the `odbc.ini` file.
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
-## Usage Example {#usage-example}
+These parameters can also be passed using [named collections](operations/named-collections.md).
+
+## Usage example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**
 
@@ -54,18 +56,18 @@ Ensure that unixODBC and MySQL Connector are installed.
 
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus, you need to create and configure this user in the MySQL server.
 
-``` bash
+```bash
 $ sudo mysql
 ```
 
-``` sql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-``` bash
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -78,7 +80,7 @@ PASSWORD = clickhouse
 
 You can check the connection using the `isql` utility from the unixODBC installation.
 
-``` bash
+```bash
 $ isql -v mysqlconn
 +-------------------------+
 | Connected!                            |
@@ -88,7 +90,7 @@ $ isql -v mysqlconn
 
 Table in MySQL:
 
-``` text
+```text
 mysql> CREATE DATABASE test;
 Query OK, 1 row affected (0,01 sec)
 
@@ -114,7 +116,7 @@ mysql> select * from test.test;
 
 Table in ClickHouse, retrieving data from the MySQL table:
 
-``` sql
+```sql
 CREATE TABLE odbc_t
 (
     `int_id` Int32,
@@ -123,17 +125,17 @@ CREATE TABLE odbc_t
 ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
 ```
 
-``` sql
+```sql
 SELECT * FROM odbc_t
 ```
 
-``` text
+```text
 ┌─int_id─┬─float_nullable─┐
 │      1 │           ᴺᵁᴸᴸ │
 └────────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## See also {#see-also}
 
 - [ODBC dictionaries](/sql-reference/dictionaries#mysql)
 - [ODBC table function](../../../sql-reference/table-functions/odbc.md)

@@ -1,10 +1,11 @@
 ---
-title: PrettySpace
-slug: /interfaces/formats/PrettySpace
-keywords: [PrettySpace]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettySpace format'
+input_format: false
+keywords: ['PrettySpace']
+output_format: true
+slug: /interfaces/formats/PrettySpace
+title: 'PrettySpace'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -18,8 +19,8 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that whitespace 
 (space characters) is used for displaying the table instead of a grid.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <PrettyFormatSettings/>

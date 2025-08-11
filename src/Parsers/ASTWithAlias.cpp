@@ -9,9 +9,8 @@ namespace DB
 
 static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
 {
-    ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
+    ostr << " AS ";
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
-    ostr << (settings.hilite ? IAST::hilite_none : "");
 }
 
 
@@ -19,11 +18,9 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
+    if (!alias.empty() && !frame.ignore_printed_asts_with_alias && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
-        ostr << (settings.hilite ? IAST::hilite_identifier : "");
         settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
-        ostr << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {

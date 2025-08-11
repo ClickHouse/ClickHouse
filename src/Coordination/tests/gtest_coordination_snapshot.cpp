@@ -17,6 +17,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
+    IntNode copyFromSnapshotNode() { return *this; }
     [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
@@ -195,7 +196,6 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 {
-
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -227,10 +227,10 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     manager.serializeSnapshotBufferToDisk(*buf, 2);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + this->extension));
 
-
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -284,9 +284,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     manager.serializeSnapshotBufferToDisk(*buf, 50);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
 
-
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
 
     EXPECT_EQ(restored_storage->container.size(), 54);
     for (size_t i = 0; i < 50; ++i)
@@ -332,7 +332,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + this->extension));
 
 
-    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
+    auto deser_result= manager.restoreFromLatestSnapshot();
+    const auto & restored_storage = deser_result.storage;
 
     EXPECT_EQ(restored_storage->container.size(), 254);
 
@@ -355,52 +356,53 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
 
     DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
     Storage storage(500, "", this->keeper_context);
+
     for (size_t i = 0; i < 50; ++i)
     {
-        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
+        addNode(storage, fmt::format("/hello_{}", i), fmt::format("world_{}", i));
     }
-
     {
         DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
         for (size_t i = 0; i < 50; ++i)
         {
-            addNode(storage, "/hello_" + std::to_string(i), "wlrd_" + std::to_string(i));
+            storage.container.updateValue(fmt::format("/hello_{}", i), [&](auto & node) { node.setData(fmt::format("wrld_{}", i)); });
         }
         for (size_t i = 0; i < 50; ++i)
         {
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
         }
         for (size_t i = 0; i < 50; ++i)
         {
             if (i % 2 == 0)
-                storage.container.erase("/hello_" + std::to_string(i));
+                storage.container.erase(fmt::format("/hello_{}", i));
         }
         EXPECT_EQ(storage.container.size(), 29);
         if constexpr (Storage::use_rocksdb)
             EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 54);
         else
-            EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 105);
+            EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 104);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
+    EXPECT_TRUE(fs::exists(fmt::format("./snapshots/snapshot_50.bin{}", this->extension)));
     EXPECT_EQ(storage.container.size(), 29);
     storage.clearGarbageAfterSnapshot();
     EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 29);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
         else
-            EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
+            EXPECT_FALSE(storage.container.contains(fmt::format("/hello_{}", i)));
     }
 
-    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
+    auto deser_result = manager.restoreFromLatestSnapshot();
+    const auto & restored_storage = deser_result.storage;
 
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("world_{}", i));
     }
 }
 
@@ -469,7 +471,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
+    auto deser_result = new_manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -489,7 +492,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 {
-
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -532,6 +534,48 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
         {
             EXPECT_EQ(*snapshot_hash, new_hash);
         }
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
+{
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    static constexpr StringRef path = "/hello";
+    static constexpr uint64_t acl_id = 42;
+    addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 50);
+
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
+    {
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
+        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+        const auto & restored_storage = deser_result.storage;
+
+        EXPECT_EQ(restored_storage->container.size(), 5);
+        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, acl_id);
+    }
+
+    {
+        this->keeper_context->setBlockACL(true);
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
+        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+        const auto & restored_storage = deser_result.storage;
+
+        EXPECT_EQ(restored_storage->container.size(), 5);
+        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, 0);
     }
 }
 

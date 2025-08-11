@@ -4,6 +4,8 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/CurrentThread.h>
+
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>

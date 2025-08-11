@@ -1,21 +1,24 @@
 ---
-description: "System table containing information for workloads residing on the local server."
+description: 'System table containing information for workloads residing on the local
+  server.'
+keywords: ['system table', 'workloads']
 slug: /operations/system-tables/workloads
-title: "system.workloads"
-keywords: ["system table", "workloads"]
+title: 'system.workloads'
 ---
+
+# system.workloads
 
 Contains information for [workloads](/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every workload.
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.workloads
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 name:         production

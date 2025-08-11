@@ -28,10 +28,10 @@ bool removeChildrenOutputs(const QueryPlan::Node & node)
         const auto & required_outputs = parent_inputs[child_id];
 
         // Here we never want to remove inputs because the grandchildren might cannot remove outputs`
-        const auto updated_anything = child_step->removeUnusedColumns(required_outputs.getNames(), false).updated_anything;
+        const auto updated_anything = child_step->removeUnusedColumns(required_outputs->getNames(), false).updated_anything;
 
         // TODO(antaljanosbenjamin): compare the header with name and types
-        if (updated_anything || !blocksHaveEqualStructure(child_step->getOutputHeader(), parent_inputs[child_id]))
+        if (updated_anything || !blocksHaveEqualStructure(*child_step->getOutputHeader(), *parent_inputs[child_id]))
             node.step->updateInputHeader(child_step->getOutputHeader(), child_id);
 
         if (updated_anything)
@@ -45,7 +45,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 {
     auto & parent = node->step;
 
-    if (parent->getOutputHeader().columns() == 0)
+    if (parent->getOutputHeader()->columns() == 0)
         return 0;
 
     bool updated_child = false;
@@ -63,7 +63,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
         const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
 
         const auto & required_outputs = parent_inputs[child_id];
-        const auto remove_result = child_step->removeUnusedColumns(required_outputs.getNames(), can_remove_inputs);
+        const auto remove_result = child_step->removeUnusedColumns(required_outputs->getNames(), can_remove_inputs);
 
         if (remove_result.updated_anything)
         {

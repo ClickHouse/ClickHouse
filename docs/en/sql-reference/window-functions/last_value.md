@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/window-functions/last_value
-sidebar_label: last_value
+description: 'Documentation for the last_value window function'
+sidebar_label: 'last_value'
 sidebar_position: 4
+slug: /sql-reference/window-functions/last_value
+title: 'last_value'
 ---
 
 # last_value

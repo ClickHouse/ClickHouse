@@ -3,8 +3,9 @@ import time
 import traceback
 
 import requests
-from praktika.info import Info
-from praktika.settings import Settings
+
+from ci.praktika.info import Info
+from ci.praktika.settings import Settings
 
 
 class CIDBCluster:
@@ -65,7 +66,50 @@ class CIDBCluster:
             return False
         return True
 
-    def do_query(self, query, data, db_name="", retries=1, timeout=5):
+    def do_select_query(self, query, db_name="", retries=1, timeout=5):
+        if not self.is_ready():
+            print("ERROR: LogCluster not ready")
+            return None
+
+        if not self._session:
+            self._session = requests.Session()
+
+        params = {
+            "query": query,
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+        if db_name:
+            params["database"] = db_name
+
+        for retry in range(retries):
+            try:
+                response = self._session.get(
+                    url=self.url,
+                    params=params,
+                    headers=self._auth,
+                    timeout=timeout,
+                )
+                print(response)
+                if response.ok:
+                    return response.text
+                else:
+                    print(
+                        f"WARNING: CIDB query failed with code {response.status_code}"
+                    )
+                    if response.status_code >= 500:
+                        time.sleep(2**retry)  # exponential backoff
+                        continue
+                    else:
+                        break
+            except requests.RequestException as ex:
+                print(f"WARNING: CIDB query failed with exception: {ex}")
+                traceback.print_exc()
+
+        print("ERROR: Failed to do select query CIDB")
+        return None
+
+    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5):
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -94,7 +138,7 @@ class CIDBCluster:
                     return True
                 else:
                     print(
-                        f"WARNING: CIDB query failed with code {response.status_code}"
+                        f"WARNING: CIDB query failed with code {response.status_code}, text {response.text}"
                     )
                 if response.status_code >= 500:
                     # A retryable error
@@ -102,16 +146,22 @@ class CIDBCluster:
                     continue
                 else:
                     break
+            # TODO
+            # except as ex:
+            #     print(f"WARNING: CIDB query failed with exception: {ex} - retry")
             except Exception as ex:
-                print(f"WARNING: CIDB query failed with exception")
+                print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
+                break
         print(f"ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):
         if isinstance(json_str, dict):
             json_str = json.dumps(json_str)
-        self.do_query(query=f"INSERT INTO {table} FORMAT JSONEachRow", data=json_str)
+        self.do_insert_query(
+            query=f"INSERT INTO {table} FORMAT JSONEachRow", data=json_str
+        )
         self.close_session()
 
 
