@@ -252,7 +252,7 @@ void writeDataFiles(
     }
 }
 
-String writeMetadataFiles(
+void writeMetadataFiles(
     Plan & plan,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
@@ -432,7 +432,6 @@ String writeMetadataFiles(
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
     }
-    return generated_metadata_name.path_in_storage;
 }
 
 std::vector<String> getOldFiles(
@@ -504,7 +503,7 @@ void compactIcebergTable(
         {
             auto old_files = getOldFiles(object_storage_, configuration_);
             writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-            auto metadata_file = writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
+            writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
             clearOldFiles(object_storage_, old_files);
             unlock(object_storage_, configuration_);
         }
