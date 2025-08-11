@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
+#include "ParquetMetadataInputFormat.h"
 
 #if USE_PARQUET
 
@@ -20,7 +20,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include "ArrowBufferedStreams.h"
 #include <DataTypes/NestedUtils.h>
 
 

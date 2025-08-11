@@ -17,6 +17,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
+    IntNode copyFromSnapshotNode() { return *this; }
     [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
@@ -230,8 +231,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -286,8 +286,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 54);
     for (size_t i = 0; i < 50; ++i)
@@ -333,8 +332,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + this->extension));
 
 
-    auto deser_result= manager.restoreFromLatestSnapshot();
-    const auto & restored_storage = deser_result.storage;
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     EXPECT_EQ(restored_storage->container.size(), 254);
 
@@ -398,8 +396,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
 
-    auto deser_result = manager.restoreFromLatestSnapshot();
-    const auto & restored_storage = deser_result.storage;
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     for (size_t i = 0; i < 50; ++i)
     {
@@ -472,8 +469,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto deser_result = new_manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -562,8 +558,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
     {
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-        const auto & restored_storage = deser_result.storage;
+        auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
         EXPECT_EQ(restored_storage->container.size(), 5);
         EXPECT_EQ(restored_storage->container.getValue(path).acl_id, acl_id);
@@ -572,8 +567,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     {
         this->keeper_context->setBlockACL(true);
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-        const auto & restored_storage = deser_result.storage;
+        auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
         EXPECT_EQ(restored_storage->container.size(), 5);
         EXPECT_EQ(restored_storage->container.getValue(path).acl_id, 0);

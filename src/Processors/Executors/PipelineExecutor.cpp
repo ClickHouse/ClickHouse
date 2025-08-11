@@ -336,7 +336,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            if (spawn_status == ExecutorTasks::SHOULD_SPAWN && pool)
             {
                 try
                 {

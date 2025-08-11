@@ -112,6 +112,12 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 char
 cityHash64
 coalesce
@@ -293,6 +299,7 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
+getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
@@ -603,6 +610,7 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
+reverse
 reverseUTF8
 revision
 right
@@ -777,6 +785,7 @@ toIntervalSecond
 toIntervalWeek
 toIntervalYear
 toJSONString
+toLastDayOfWeek
 toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -789,8 +798,18 @@ toRelativeQuarterNum
 toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
+toStartOfDay
+toStartOfFifteenMinutes
+toStartOfFiveMinutes
+toStartOfHour
 toStartOfInterval
+toStartOfMicrosecond
 toStartOfMillisecond
+toStartOfMinute
+toStartOfNanosecond
+toStartOfSecond
+toStartOfTenMinutes
+toStartOfWeek
 toString
 toStringCutToZero
 toTime

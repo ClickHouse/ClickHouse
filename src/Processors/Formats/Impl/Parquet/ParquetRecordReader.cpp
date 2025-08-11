@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
+#include "ParquetRecordReader.h"
 
 #include <bit>
 
@@ -22,7 +22,7 @@
 #include <parquet/column_reader.h>
 #include <parquet/properties.h>
 
-#include <Processors/Formats/Impl/Parquet/ParquetLeafColReader.h>
+#include "ParquetLeafColReader.h"
 
 namespace DB
 {

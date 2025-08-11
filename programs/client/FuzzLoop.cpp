@@ -1,5 +1,5 @@
 #include <base/scope_guard.h>
-#include <Client.h>
+#include "Client.h"
 
 #include <Core/Settings.h>
 
@@ -479,11 +479,50 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
+    ASTPtr orig_ast;
 
-    processQueryText(full_query);
-    if (error_code > 0)
+    have_error = false;
+    try
     {
-        if (fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
+        const char * begin = full_query.data();
+
+        if ((orig_ast = parseQuery(begin, begin + full_query.size(), client_context->getSettingsRef(), false)))
+        {
+            bool async_insert = false;
+            const String query_to_execute = orig_ast->formatWithSecretsOneLine();
+
+            processParsedSingleQuery(query_to_execute, orig_ast, async_insert);
+        }
+        else
+        {
+            have_error = true;
+        }
+    }
+    catch (...)
+    {
+        client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+        have_error = true;
+    }
+    if (have_error && orig_ast)
+    {
+        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+        fmt::print(
+            stderr,
+            "Error on processing query '{}': {}\n",
+            orig_ast->formatForErrorMessage(),
+            exception ? exception->message() : "no exception");
+    }
+    if (have_error)
+    {
+        // Query completed with error, keep the previous starting AST.
+        // Also discard the exception that we now know to be non-fatal,
+        // so that it doesn't influence the exit code.
+        const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
+        const int error_code = exception ? exception->code() : 0;
+
+        server_exception.reset();
+        client_exception.reset();
+        if (error_code > 0 && fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
         {
             throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
@@ -535,7 +574,7 @@ bool Client::buzzHouse()
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool replica_setup = true;
         bool has_cloud_features = true;
-        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
+        BuzzHouse::RandomGenerator rg(fuzz_config->seed);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;

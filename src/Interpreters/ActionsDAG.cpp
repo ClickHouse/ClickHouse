@@ -136,7 +136,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-UInt64 ActionsDAG::Node::getHash() const
+size_t ActionsDAG::Node::getHash() const
 {
     SipHash hash_state;
     updateHash(hash_state);

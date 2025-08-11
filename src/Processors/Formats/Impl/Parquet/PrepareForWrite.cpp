@@ -1,6 +1,4 @@
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Processors/Formats/Impl/Parquet/Write.h>
+#include "Processors/Formats/Impl/Parquet/Write.h"
 
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -11,8 +9,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Block.h>
-#include <Common/Exception.h>
-#include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,7 +17,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeCustom.h>
+
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -664,38 +660,6 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
     return schema;
 }
 
-void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
-{
-    if (!type->getCustomName())
-        return;
-
-    std::shared_ptr<IWKBTransform> transform;
-    if (type->getCustomName()->getName() == WKBPointTransform::name)
-        transform = std::make_shared<WKBPointTransform>();
-    if (type->getCustomName()->getName() == WKBLineStringTransform::name)
-        transform = std::make_shared<WKBLineStringTransform>();
-    if (type->getCustomName()->getName() == WKBPolygonTransform::name)
-        transform = std::make_shared<WKBPolygonTransform>();
-    if (type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
-        transform = std::make_shared<WKBMultiLineStringTransform>();
-    if (type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
-        transform = std::make_shared<WKBMultiPolygonTransform>();
-
-    if (!transform)
-        return;
-
-    auto transformed_column = ColumnString::create();
-    for (size_t i = 0; i < column->size(); ++i)
-    {
-        Field current_field;
-        column->get(i, current_field);
-        auto transformed_field = transform->dumpObject(current_field);
-        transformed_column->insert(transformed_field);
-    }
-    column = std::move(transformed_column);
-    type = std::make_shared<DataTypeString>();
-}
-
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema)
@@ -705,8 +669,6 @@ void prepareColumnForWrite(
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
-    if (options.write_geometadata)
-        prepareGeoColumn(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas);
 
     if (out_columns_to_write)

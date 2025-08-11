@@ -1,4 +1,4 @@
-#include <Dictionaries/ExecutablePoolDictionarySource.h>
+#include "ExecutablePoolDictionarySource.h"
 
 #include <filesystem>
 

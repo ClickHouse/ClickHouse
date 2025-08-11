@@ -112,12 +112,14 @@ private:
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
     Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
     Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const TSA_REQUIRES_SHARED(mutex);
+
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };

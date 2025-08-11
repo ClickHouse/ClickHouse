@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Processors/Sources/MongoDBSource.h>
+#include "MongoDBSource.h"
 
 #include <vector>
 

@@ -158,7 +158,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id) VALUES (1);
+INSERT INTO test (id) Values (1);
 
 SELECT * FROM test;
 ┌─id─┬──────────updated_at─┬─updated_at_date─┐
@@ -186,7 +186,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1);
+INSERT INTO test Values (1);
 
 SELECT * FROM test;
 ┌─id─┐
@@ -224,7 +224,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+INSERT INTO test (id, unhexed) Values (1, '5a90b714');
 
 SELECT
     id,
@@ -465,10 +465,6 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
-#### SZ3 {#sz3}
-
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). If the column type is of array type, then all inserted arrays must have the same length. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
-
 #### T64 {#t64}
 
 `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that do not differ between maximum and minimum values in the whole data part for which the compression is used.
@@ -529,7 +525,7 @@ If compression needs to be applied, it must be explicitly specified. Otherwise, 
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+    x String Codec(Delta, LZ4, AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```

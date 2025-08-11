@@ -65,11 +65,6 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
-uint32_t RandomGenerator::nextStrlen()
-{
-    return strlens(generator);
-}
-
 char RandomGenerator::nextDigit()
 {
     return static_cast<char>(digits(generator));
@@ -107,7 +102,7 @@ String RandomGenerator::nextTime()
 
 String RandomGenerator::nextTime64(const bool has_subseconds)
 {
-    const int32_t hour = time_hours(generator);
+    const uint32_t hour = time64_hours(generator);
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
 

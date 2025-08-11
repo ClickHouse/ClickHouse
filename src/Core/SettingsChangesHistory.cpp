@@ -1,15 +1,43 @@
+#include <Core/Defines.h>
 #include <Core/SettingsChangesHistory.h>
-
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <boost/algorithm/string.hpp>
 #include <Core/SettingsEnums.h>
 
-#include <Common/Exception.h>
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+ClickHouseVersion::ClickHouseVersion(std::string_view version)
+{
+    Strings split;
+    boost::split(split, version, [](char c){ return c == '.'; });
+    components.reserve(split.size());
+    if (split.empty())
+        throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
+
+    for (const auto & split_element : split)
+    {
+        size_t component;
+        ReadBufferFromString buf(split_element);
+        if (!tryReadIntText(component, buf) || !buf.eof())
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
+        components.push_back(component);
+    }
+}
+
+String ClickHouseVersion::toString() const
+{
+    return fmt::format("{}", fmt::join(components, "."));
 }
 
 static void addSettingsChanges(
@@ -39,19 +67,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.7",
-        {
-            {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
-            {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
-            {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
-            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
-            {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
-            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
-            {"table_engine_read_through_distributed_cache", false, false, "New setting"},
-        });
         addSettingsChanges(settings_changes_history, "25.6",
         {
-            /// RELEASE CLOSED
             {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
@@ -73,7 +90,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
-            /// RELEASE CLOSED
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -107,7 +125,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
             {"apply_patch_parts", false, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
-            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
+            {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
@@ -145,7 +163,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
-            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"},
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
@@ -407,7 +425,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
             {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
             {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
-            {"allow_experimental_full_text_index", false, false, "Enable experimental text index"},
+            {"allow_experimental_full_text_index", false, false, "Enable experimental full-text index"},
             {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
             {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
             {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
@@ -762,16 +780,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
-        {
-
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
-            /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
-            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {

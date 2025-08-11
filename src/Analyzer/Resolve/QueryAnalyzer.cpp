@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_scalar_subquery_optimization;
@@ -230,6 +231,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                             node->getNodeTypeName());
         }
     }
+
+    validateCorrelatedSubqueries(node);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -258,31 +261,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-}
 
-bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
-{
-    if (node_source == tree_node)
-        return true;
-
-    std::stack<const IQueryTreeNode *> stack;
-    stack.push(tree_node);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (node_source == current)
-            return true;
-
-        if (const auto * child_join_node = current->as<JoinNode>())
-        {
-            stack.push(child_join_node->getLeftTableExpression().get());
-            stack.push(child_join_node->getRightTableExpression().get());
-        }
-    }
-    return false;
+    validateCorrelatedSubqueries(node);
 }
 
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
@@ -314,9 +294,9 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 
     const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
 
-    if (isFromJoinTree(column_src, join_node.getLeftTableExpression().get()))
+    if (join_node.getLeftTableExpression().get() == column_src)
         return JoinTableSide::Left;
-    if (isFromJoinTree(column_src, join_node.getRightTableExpression().get()))
+    if (join_node.getRightTableExpression().get() == column_src)
         return JoinTableSide::Right;
     return {};
 }
@@ -2269,15 +2249,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
-          * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
-          * If it's on null side, we need to convert column type to Nullable.
+          * We are taking the nearest JoinNode to check to which table column belongs,
+          * because for LEFT/RIGHT join, we convert only the corresponding side.
           */
-        for (const auto & table_expression : scope.registered_table_expression_nodes)
+        const auto * nearest_query_scope = scope.getNearestQueryScope();
+        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
+        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
+        if (nearest_scope_join_node)
         {
-            const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
-            if (!nearest_scope_join_node)
-                continue;
-
             for (auto & [node, node_name] : matched_expression_nodes_with_names)
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
@@ -2961,35 +2941,50 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// Resolve function arguments
+    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
+        scope,
+        true /*allow_lambda_expression*/,
+        allow_table_expressions /*allow_table_expression*/);
+
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
-        const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
-
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-
-        new_exists_subquery->setIsSubquery(true);
-        new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        new_exists_subquery->getJoinTree() = exists_subquery_argument;
-        new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-        QueryTreeNodePtr new_exists_argument = new_exists_subquery;
-
-        auto exists_arguments_projection_names = resolveExpressionNode(
-            new_exists_argument,
-            scope,
-            true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/
-        );
-
-        if (new_exists_subquery->isCorrelated())
+        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+        bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
+            ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
+            : exists_subquery_argument->as<UnionNode>()->isCorrelated();
+        if (!correlated_exists_subquery)
         {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+            auto constant_data_type = std::make_shared<DataTypeUInt64>();
+
+            auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+            in_subquery->setIsSubquery(true);
+            in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+            in_subquery->getJoinTree() = exists_subquery_argument;
+            in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+            function_node_ptr = std::make_shared<FunctionNode>("in");
             function_node_ptr->getArguments().getNodes() = {
-                std::move(new_exists_argument)
+                std::make_shared<ConstantNode>(1UL, constant_data_type),
+                std::move(in_subquery)
             };
 
+            /// Resolve modified arguments
+            arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+                scope,
+                true /*allow_lambda_expression*/,
+                true /*allow_table_expression*/);
+
+            node = function_node_ptr;
+            function_name = "in";
+            is_special_function_in = true;
+        }
+        else
+        {
             /// Subquery is correlated and EXISTS can not be replaced by IN function.
             /// EXISTS function will be replated by JOIN during query planning.
             auto function_exists = std::make_shared<FunctionExists>();
@@ -2999,32 +2994,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 )
             );
 
-            return { calculateFunctionProjectionName(node, parameters_projection_names, exists_arguments_projection_names) };
-        }
-        else
-        {
-            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-            QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-            function_node_ptr = std::make_shared<FunctionNode>("in");
-            function_node_ptr->getArguments().getNodes() = {
-                constant,
-                std::move(new_exists_argument)
-            };
-
-            node = function_node_ptr;
-            function_name = "in";
-            is_special_function_in = true;
+            return { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
         }
     }
-
-    /// Resolve function arguments
-    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -4924,7 +4896,26 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                if (table_function_argument_function_name == "view")
+                {
+                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
+                    /// In the following example `users` table may be not available on the initiator:
+                    /// SELECT *
+                    /// FROM remoteSecure(<address>, view(
+                    ///     SELECT
+                    ///         t1.age,
+                    ///         t1.name,
+                    ///         t2.name
+                    ///     FROM users AS t1
+                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
+                    /// ), <user>, <password>)
+                    /// SETTINGS prefer_localhost_replica = 0
+                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                }
+                else
+                {
+                    resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                }
 
                 result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
                 continue;
@@ -5690,8 +5681,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
-    if (query_node_typed.hasWith())
+    if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+    {
         visitor.visit(query_node_typed.getWithNode());
+    }
+    else
+    {
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        alias_collector.visit(query_node_typed.getWithNode());
+
+        scope.aliases = scope.global_with_aliases;
+    }
 
     if (!query_node_typed.getProjection().getNodes().empty())
         visitor.visit(query_node_typed.getProjectionNode());

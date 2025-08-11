@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ProtobufListOutputFormat.h>
+#include "ProtobufListOutputFormat.h"
 
 #if USE_PROTOBUF
 #   include <Formats/FormatFactory.h>

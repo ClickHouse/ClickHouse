@@ -12,7 +12,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/sql-reference/statements/create/view#window-view).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
 ## Normal View {#normal-view}
 

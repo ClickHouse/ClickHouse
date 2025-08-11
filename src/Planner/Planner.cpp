@@ -52,7 +52,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -228,11 +227,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
-        {
-            collect_filters = true;
-            break;
-        }
-        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
         {
             collect_filters = true;
             break;
@@ -1070,16 +1064,6 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
-    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
-    /// as it may break `rows_before_limit_at_least` value during the second stage in
-    /// case it also contains LIMIT BY
-    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-
-    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
-    {
-        return;
-    }
-
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
@@ -1566,11 +1550,10 @@ void Planner::buildPlanForQueryNode()
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        auto & query_node_typed = query_tree->as<QueryNode &>();
-        const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTree(), true, true);
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
+            auto * table_node = it.first->as<TableNode>();
             if (!table_node)
                 continue;
 
@@ -1583,7 +1566,6 @@ void Planner::buildPlanForQueryNode()
                 LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                break;
             }
         }
     }

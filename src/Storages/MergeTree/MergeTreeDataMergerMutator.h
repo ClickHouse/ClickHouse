@@ -31,7 +31,6 @@ struct SelectMergeFailure
  */
 class MergeTreeDataMergerMutator
 {
-private:
     void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:

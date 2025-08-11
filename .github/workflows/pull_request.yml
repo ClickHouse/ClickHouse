@@ -285,7 +285,7 @@ jobs:
 
   build_arm_tidy:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
     name: "Build (arm_tidy)"
     outputs:
@@ -323,7 +323,7 @@ jobs:
 
   build_amd_debug:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
     outputs:
@@ -361,7 +361,7 @@ jobs:
 
   build_amd_release:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
     name: "Build (amd_release)"
     outputs:
@@ -399,7 +399,7 @@ jobs:
 
   build_amd_asan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
     name: "Build (amd_asan)"
     outputs:
@@ -437,7 +437,7 @@ jobs:
 
   build_amd_tsan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
     outputs:
@@ -475,7 +475,7 @@ jobs:
 
   build_amd_msan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
     name: "Build (amd_msan)"
     outputs:
@@ -513,7 +513,7 @@ jobs:
 
   build_amd_ubsan:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF91YnNhbik=') }}
     name: "Build (amd_ubsan)"
     outputs:
@@ -551,7 +551,7 @@ jobs:
 
   build_amd_binary:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -589,7 +589,7 @@ jobs:
 
   build_arm_release:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
     name: "Build (arm_release)"
     outputs:
@@ -627,7 +627,7 @@ jobs:
 
   build_arm_asan:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9hc2FuKQ==') }}
     name: "Build (arm_asan)"
     outputs:
@@ -665,7 +665,7 @@ jobs:
 
   build_arm_coverage:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9jb3ZlcmFnZSk=') }}
     name: "Build (arm_coverage)"
     outputs:
@@ -703,7 +703,7 @@ jobs:
 
   build_arm_binary:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_arm_tidy]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9iaW5hcnkp') }}
     name: "Build (arm_binary)"
     outputs:

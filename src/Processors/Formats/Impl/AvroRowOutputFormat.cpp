@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include "AvroRowOutputFormat.h"
 #if USE_AVRO
 
 #include <Core/Field.h>

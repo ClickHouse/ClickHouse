@@ -68,10 +68,6 @@ Int64 WorkloadSettings::getSemaphoreMaxCost() const
     }
 }
 
-Int64 WorkloadSettings::getQueueSize() const {
-    return max_waiting_queries;
-}
-
 void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
 {
     // Set resource unit
@@ -89,7 +85,6 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
         std::optional<Int64> max_concurrent_threads;
         std::optional<Float64> max_concurrent_threads_ratio_to_cores;
         std::optional<Int64> max_concurrent_queries;
-        std::optional<Int64> max_waiting_queries;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -163,8 +158,6 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 max_concurrent_threads_ratio_to_cores = getNotNegativeFloat64(name, value);
             else if (name == "max_concurrent_queries")
                 max_concurrent_queries = getNotNegativeInt64(name, value);
-            else if (name == "max_waiting_queries")
-                max_waiting_queries = getNotNegativeInt64(name, value);
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -243,9 +236,6 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
 
     // Concurrent queries limit
     max_concurrent_queries = get_value(specific.max_concurrent_queries, regular.max_concurrent_queries, max_concurrent_queries, unlimited);
-
-    // Concurrent query queue size limit
-    max_waiting_queries = get_value(specific.max_waiting_queries, regular.max_waiting_queries, max_waiting_queries, unlimited);
 }
 
 }

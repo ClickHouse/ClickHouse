@@ -454,6 +454,15 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     cached_digest = other.cached_digest;
 }
 
+KeeperMemNode KeeperMemNode::copyFromSnapshotNode()
+{
+    KeeperMemNode node_copy;
+    node_copy.shallowCopy(*this);
+    node_copy.children = std::move(children);
+    children.clear();
+    return node_copy;
+}
+
 struct CreateNodeDelta
 {
     Coordination::Stat stat;
@@ -1334,7 +1343,7 @@ bool KeeperStorage<Container>::createNode(
     }
     else
     {
-        auto [map_key, _] = container.insert(path, created_node);
+        auto [map_key, _] = container.insert(path, std::move(created_node));
         /// Take child path from key owned by map.
         auto child_path = getBaseNodeName(map_key->getKey());
         container.updateValue(
@@ -3037,7 +3046,7 @@ bool KeeperStorageBase::isFinalized() const
 }
 
 template<typename Container>
-void KeeperStorage<Container>::preprocessRequest(
+KeeperDigest KeeperStorage<Container>::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,
@@ -3090,7 +3099,7 @@ void KeeperStorage<Container>::preprocessRequest(
                 /// initially leader preprocessed without knowing the log idx
                 /// on the second call we have that information and can set the log idx for the correct transaction
                 last_transaction.log_idx = log_idx;
-                return;
+                return current_digest;
             }
 
             if (new_last_zxid <= last_zxid)
@@ -3105,7 +3114,11 @@ void KeeperStorage<Container>::preprocessRequest(
     }
 
     std::list<Delta> new_deltas;
-    SCOPE_EXIT({
+    bool finalized = false;
+    const auto finalize = [&]
+    {
+        if (finalized)
+            return;
         uncommitted_state.applyDeltas(new_deltas, keeper_context->digestEnabled() ? &new_digest : nullptr);
         uncommitted_state.addDeltas(std::move(new_deltas));
 
@@ -3128,6 +3141,11 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         uncommitted_state.cleanup(getZXID());
+        finalized = true;
+    };
+
+    SCOPE_EXIT({
+        chassert(finalized, "Finalize not called before returning");
     });
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -3203,7 +3221,9 @@ void KeeperStorage<Container>::preprocessRequest(
         }
 
         new_deltas.emplace_back(transaction->zxid, CloseSessionDelta{session_id});
-        return;
+
+        finalize();
+        return transaction->nodes_digest;
     }
 
     const auto preprocess_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
@@ -3231,6 +3251,8 @@ void KeeperStorage<Container>::preprocessRequest(
     };
 
     callOnConcreteRequestType(*zk_request, preprocess_request);
+    finalize();
+    return transaction->nodes_digest;
 }
 
 template<typename Container>
@@ -3310,6 +3332,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
                 auto responses = processWatchesImpl(delta.path, watches, list_watches, sessions_and_watchers, Coordination::Event::DELETED);
+                total_watches_count -= responses.size();
                 results.insert(results.end(), responses.begin(), responses.end());
             }
         }
@@ -3596,24 +3619,13 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
 
     for (const auto [watch_path, is_list_watch] : watches_it->second)
     {
-        if (is_list_watch)
-        {
-            auto list_watch = list_watches.find(watch_path);
-            chassert(list_watch != list_watches.end());
-            auto & list_watches_for_path = list_watch->second;
-            list_watches_for_path.erase(session_id);
-            if (list_watches_for_path.empty())
-                list_watches.erase(list_watch);
-        }
-        else
-        {
-            auto watch = watches.find(watch_path);
-            chassert(watch != watches.end());
-            auto & watches_for_path = watch->second;
-            watches_for_path.erase(session_id);
-            if (watches_for_path.empty())
-                watches.erase(watch);
-        }
+        auto & current_watches = is_list_watch ? list_watches : watches;
+        auto watch = current_watches.find(watch_path);
+        chassert(watch != current_watches.end());
+        auto & watches_for_path = watch->second;
+        watches_for_path.erase(session_id);
+        if (watches_for_path.empty())
+            current_watches.erase(watch);
     }
 
     total_watches_count -= watches_it->second.size();

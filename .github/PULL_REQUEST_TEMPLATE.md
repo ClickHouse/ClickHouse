@@ -18,7 +18,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 - Not for changelog (changelog entry is not required)
 
 
-### Changelog entry (a [user-readable short description](../docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 ...
 
 ### Documentation entry for user-facing changes

@@ -1621,8 +1621,6 @@ def test_create_alter_sleeping(started_cluster, engine):
     assert "n_idx" in dummy_node.query(
         """
         SYSTEM SYNC DATABASE REPLICA create_alter_sleeping;
-        -- In case DDL task has been executed on another replica we need to sync the table
-        SYSTEM SYNC REPLICA create_alter_sleeping.t;
         SHOW CREATE TABLE create_alter_sleeping.t;
         """,
         timeout=10,
@@ -1706,4 +1704,18 @@ def test_lag_after_recovery(started_cluster):
             "select unsynced_after_recovery from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
         )
         == "0\n"
+    )
+
+def test_implicit_index(started_cluster):
+    competing_node.query("DROP DATABASE IF EXISTS implicit_index")
+    dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
+
+    competing_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica1');"
+        "CREATE TABLE implicit_index.t0 (c0 Int) ENGINE = ReplicatedMergeTree() ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;"
+        "ALTER TABLE implicit_index.t0 MODIFY SETTING replicated_can_become_leader = 0;"
+    )
+    dummy_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
+        "SYSTEM SYNC DATABASE REPLICA implicit_index;"
     )

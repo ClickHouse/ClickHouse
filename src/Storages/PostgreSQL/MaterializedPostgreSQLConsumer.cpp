@@ -1,6 +1,6 @@
-#include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
+#include "MaterializedPostgreSQLConsumer.h"
 
-#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>

@@ -3,8 +3,8 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 #include <Core/Block.h>
 #include <Storages/StorageMongoDB.h>

@@ -1,4 +1,4 @@
-#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include "CachedOnDiskWriteBufferFromFile.h"
 
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCache.h>

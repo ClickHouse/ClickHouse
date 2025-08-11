@@ -6,8 +6,6 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/KVStorageUtils.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/RocksDB/RocksDBSettings.h>
 
 #include <Parsers/ASTCreateQuery.h>
 
@@ -31,9 +29,9 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
-
+#include <Storages/AlterCommands.h>
+#include <Storages/RocksDB/RocksDBSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskLocal.h>
 #include <base/sort.h>
@@ -568,8 +566,6 @@ public:
     std::string getName() const override { return "ReadFromEmbeddedRocksDB"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void describeActions(FormatSettings & format_settings) const override;
-    void describeActions(JSONBuilder::JSONMap & map) const override;
 
     ReadFromEmbeddedRocksDB(
         const Names & column_names_,
@@ -668,29 +664,6 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
     const auto & sample_block = getOutputHeader();
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
-}
-
-void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const
-{
-    std::string prefix(format_settings.offset, format_settings.indent_char);
-    if (!all_scan)
-    {
-        format_settings.out << prefix << "ReadType: GetKeys\n";
-        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
-    }
-    else
-        format_settings.out << prefix << "ReadType: FullScan\n";
-}
-
-void ReadFromEmbeddedRocksDB::describeActions(JSONBuilder::JSONMap & map) const
-{
-    if (!all_scan)
-    {
-        map.add("Read Type", "GetKeys");
-        map.add("Keys", keys->size());
-    }
-    else
-        map.add("Read Type", "FullScan");
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(

@@ -2,7 +2,6 @@ import glob
 import json
 import logging
 import os
-import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
@@ -360,6 +359,19 @@ def default_upload_directory(
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
+def execute_spark_query_general(
+    spark, started_cluster, storage_type: str, table_name: str, query: str
+):
+    spark.sql(query)
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+    return
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_single_iceberg_file(started_cluster, format_version, storage_type):
@@ -654,7 +666,6 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
@@ -759,14 +770,13 @@ def test_evolved_schema_simple(
     )
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -1168,14 +1178,13 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
     )
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -1487,14 +1496,13 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     )
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -1717,7 +1725,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})ReadStep"],
+            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})Source"],
         ]
 
         assert res == expected
@@ -2037,25 +2045,20 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     )
 
 
-@pytest.mark.parametrize(
-    "storage_type, run_on_cluster",
-    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
-)
-def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_partition_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -2090,7 +2093,7 @@ def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=run_on_cluster
+        storage_type, TABLE_NAME, started_cluster, table_function=True
     )
 
     def check_validity_and_get_prunned_files(select_expression):
@@ -2233,14 +2236,13 @@ def test_schema_evolution_with_time_travel(
     )
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -2299,7 +2301,6 @@ def test_schema_evolution_with_time_travel(
     error_message = instance.query_and_get_error(f"SELECT * FROM {table_select_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {first_timestamp_ms}")
     assert "No snapshot found in snapshot log before requested timestamp" in error_message
 
-
     second_timestamp_ms = int(datetime.now().timestamp() * 1000)
 
     time.sleep(0.5)
@@ -2335,7 +2336,6 @@ def test_schema_evolution_with_time_travel(
     third_timestamp_ms = int(datetime.now().timestamp() * 1000)
 
     time.sleep(0.5)
-
 
     execute_spark_query(
         f"""
@@ -2646,14 +2646,13 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -2840,7 +2839,6 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
         f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'kek', 10, decimal(-8888.999))"
     )
 
-
     assert (
         check_validity_and_get_prunned_files(
             f"SELECT * FROM {creation_expression} WHERE ddd >= 100 ORDER BY ALL"
@@ -2907,14 +2905,13 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
     TABLE_NAME = "test_minmax_pruning_with_null" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -3005,14 +3002,13 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -3059,7 +3055,7 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
     creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
-    
+
     queries = [
         f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
         f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
@@ -3089,14 +3085,13 @@ def test_cluster_table_function_with_partition_pruning(
     )
 
     def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
+        return execute_spark_query_general(
+            spark,
             started_cluster,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            TABLE_NAME,
+            query,
         )
-        return
 
     execute_spark_query(
         f"""
@@ -3126,34 +3121,55 @@ def test_cluster_table_function_with_partition_pruning(
         run_on_cluster=True,
     )
 
-    instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
-
-@pytest.mark.parametrize("storage_type", ["local", "s3"])
-def test_compressed_metadata(started_cluster, storage_type):
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_compressed_metadata_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = (
+        "test_disable_minmax_pruning_for_arrays_and_maps_subfields_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
-    table_properties = {
-        "write.metadata.compression": "gzip"
-    }
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster,
+            storage_type,
+            TABLE_NAME,
+            query,
+        )
 
-    df = spark.createDataFrame([
-        (1, "Alice"),
-        (2, "Bob")
-    ], ["id", "name"])
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
 
-    # for some reason write.metadata.compression is not working :(
-    df.writeTo(TABLE_NAME) \
-        .tableProperty("write.metadata.compression", "gzip") \
-        .using("iceberg") \
-        .create()
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+            id BIGINT,
+            measurements ARRAY<DOUBLE>
+            ) USING iceberg
+            TBLPROPERTIES (
+            'write.metadata.metrics.max' = 'measurements.element',
+            'write.metadata.metrics.min' = 'measurements.element'
+            );
+        """
+    )
 
-    # manual compression of metadata file before upload, still test some scenarios
-    subprocess.check_output(f"gzip /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json", shell=True)
-
-    # Weird but compression extension is really in the middle of the file name, not in the end...
-    subprocess.check_output(f"mv /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json.gz /iceberg_data/default/{TABLE_NAME}/metadata/v1.gz.metadata.json", shell=True)
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES
+            (1, array(23.5, 24.1, 22.8, 25.3, 23.9)),
+            (2, array(18.2, 19.5, 17.8, 20.1, 19.3, 18.7)),
+            (3, array(30.0, 31.2, 29.8, 32.1, 30.5, 29.9, 31.0)),
+            (4, array(15.5, 16.2, 14.8, 17.1, 16.5)),
+            (5, array(27.3, 28.1, 26.9, 29.2, 28.5, 27.8, 28.3, 27.6));
+        """
+    )
 
     default_upload_directory(
         started_cluster,
@@ -3162,6 +3178,14 @@ def test_compressed_metadata(started_cluster, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
+    )
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE not ignore(*)") == "1\tAlice\n2\tBob\n"
+    table_select_expression = table_creation_expression
+
+    instance.query(f"SELECT * FROM {table_select_expression} ORDER BY ALL")

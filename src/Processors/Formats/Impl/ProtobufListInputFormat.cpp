@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ProtobufListInputFormat.h>
+#include "ProtobufListInputFormat.h"
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>

@@ -1,4 +1,4 @@
-#include <Server/PostgreSQLHandler.h>
+#include "PostgreSQLHandler.h"
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>

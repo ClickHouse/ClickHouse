@@ -50,5 +50,3 @@
 - test_user_ip_restrictions/
 - test_zookeeper_config_load_balancing/
 - test_zookeeper_fallback_session/
-# Creates too much servers
-- test_backup_restore_on_cluster/test_concurrency.py

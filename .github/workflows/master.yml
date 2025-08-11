@@ -205,44 +205,6 @@ jobs:
             python3 -m praktika run 'Build (amd_tidy)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_arm_tidy:
-    runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
-    name: "Build (arm_tidy)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_masterci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_amd_debug:
     runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
@@ -2257,11 +2219,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (arm_binary)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_arm_asan_azure_1_3:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIDEvMyk=') }}
-    name: "Stateless tests (arm_asan, azure, 1/3)"
+  stateless_tests_azure_arm_asan_1_3:
+    runs-on: [..params..]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXJtX2FzYW4sIDEvMyk=') }}
+    name: "Stateless tests (azure, arm_asan, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2290,16 +2252,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_arm_asan_azure_2_3:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIDIvMyk=') }}
-    name: "Stateless tests (arm_asan, azure, 2/3)"
+  stateless_tests_azure_arm_asan_2_3:
+    runs-on: [..params..]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXJtX2FzYW4sIDIvMyk=') }}
+    name: "Stateless tests (azure, arm_asan, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2328,16 +2290,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_arm_asan_azure_3_3:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIDMvMyk=') }}
-    name: "Stateless tests (arm_asan, azure, 3/3)"
+  stateless_tests_azure_arm_asan_3_3:
+    runs-on: [..params..]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXJtX2FzYW4sIDMvMyk=') }}
+    name: "Stateless tests (azure, arm_asan, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2366,9 +2328,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_asan_old_analyzer_1_6:

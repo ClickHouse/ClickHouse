@@ -335,6 +335,8 @@ void BackgroundSchedulePool::threadFunction()
     {
         TaskInfoPtr task;
 
+        current_thread->flushUntrackedMemory();
+
         {
             UniqueLock tasks_lock(tasks_mutex);
 
@@ -354,6 +356,8 @@ void BackgroundSchedulePool::threadFunction()
 
         if (task)
             task->execute(*this);
+
+        current_thread->flushUntrackedMemory();
     }
 }
 

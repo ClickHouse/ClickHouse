@@ -117,8 +117,7 @@ public:
 
     void flushImpl() override
     {
-        if (!auto_flush)
-            need_flush = true;
+        need_flush = true;
     }
 
     void writePrefix() override

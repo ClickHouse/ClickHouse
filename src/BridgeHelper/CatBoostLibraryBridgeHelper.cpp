@@ -1,4 +1,4 @@
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include "CatBoostLibraryBridgeHelper.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/escapeForFileName.h>

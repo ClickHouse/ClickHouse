@@ -10,7 +10,7 @@
 #include <base/types.h>
 #include <base/defines.h>
 #include <rapidjson/document.h>
-#include <Common/JSONParsers/ElementTypes.h>
+#include "ElementTypes.h"
 
 namespace DB
 {

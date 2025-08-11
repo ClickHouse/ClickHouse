@@ -430,7 +430,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -457,7 +457,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -484,7 +484,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -675,6 +675,16 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
 
     wait_commit_upto_idx.reset();
     return success;
+}
+
+bool KeeperContext::shouldLogRequests() const
+{
+    return log_requests.load(std::memory_order_relaxed);
+}
+
+void KeeperContext::setLogRequests(bool log_requests_)
+{
+    log_requests.store(log_requests_, std::memory_order_relaxed);
 }
 
 }

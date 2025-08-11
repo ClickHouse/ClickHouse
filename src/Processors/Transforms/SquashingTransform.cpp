@@ -1,7 +1,7 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Interpreters/Squashing.h>
-#include <Processors/Chunk.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {

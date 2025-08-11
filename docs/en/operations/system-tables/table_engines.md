@@ -26,7 +26,7 @@ Example:
 ```sql
 SELECT *
 FROM system.table_engines
-WHERE name IN ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```
 
 ```text

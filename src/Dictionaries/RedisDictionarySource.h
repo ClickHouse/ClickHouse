@@ -3,8 +3,8 @@
 #include <Core/Block.h>
 #include <base/BorrowedObjectPool.h>
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 #include <Storages/RedisCommon.h>
 
 namespace DB

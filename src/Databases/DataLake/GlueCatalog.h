@@ -7,10 +7,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/LRUCache.h>
-
-#include <Common/CacheBase.h>
-#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 
 namespace Aws::Glue
 {
@@ -24,10 +20,11 @@ class GlueCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     GlueCatalog(
+        const String & access_key_id,
+        const String & secret_access_key,
+        const String & region,
         const String & endpoint,
-        DB::ContextPtr context_,
-        const DB::DatabaseDataLakeSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ContextPtr context_);
 
     ~GlueCatalog() override;
 
@@ -63,18 +60,10 @@ private:
     const LoggerPtr log;
     Aws::Auth::AWSCredentials credentials;
     std::string region;
-    DB::DatabaseDataLakeSettings settings;
-    DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
-
-    /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
-    /// This method allows to clarify the actual type of the timestamp column.
-    bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
-
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
 
 }

@@ -70,9 +70,6 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
-    if (all_mark_ranges.getNumberOfMarks() == 0)
-        return;
-
     try
     {
         /// Start prefetches for all columns. But don't deserialize prefixes, because it can be a heavy operation

@@ -6,13 +6,10 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include <Common/DimensionalMetrics.h>
-#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -83,6 +80,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForMerge;
+    extern const Metric NonAbortedMergeFailures;
+    extern const Metric TotalMergeFailures;
 }
 
 namespace DB
@@ -151,24 +150,6 @@ ColumnsStatistics getStatisticsForColumns(
     }
     return all_statistics;
 }
-
-std::vector<DimensionalMetrics::LabelValues> getInitialLabelValuesForAllErrorCodes()
-{
-    std::vector<DimensionalMetrics::LabelValues> result;
-    for (ErrorCodes::ErrorCode i = 0, end = ErrorCodes::end(); i < end; ++i)
-    {
-        const std::string_view name = ErrorCodes::getName(i);
-        result.push_back({String(name)});
-    }
-    return result;
-}
-
-DimensionalMetrics::MetricFamily & merge_failures = DimensionalMetrics::Factory::instance().registerMetric(
-    "merge_failures",
-    "Number of all failed merges since startup.",
-    {"error_name"},
-    getInitialLabelValuesForAllErrorCodes()
-);
 
 }
 
@@ -388,7 +369,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         // projection parts have different prefix and suffix compared to normal parts.
         // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
+        local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
     }
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
@@ -553,26 +534,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
     auto merge_tree_settings = global_ctx->data->getSettings();
-
-    if (!patch_parts.empty())
-    {
-        LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
-
-        for (const auto & patch : patch_parts)
-            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getSourcePartsSet().getMaxDataVersion());
-
-        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
-        mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
-    }
 
     SerializationInfo::Settings info_settings =
     {
@@ -1155,7 +1120,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             Names{column_name},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
-            /*filter=*/ std::nullopt,
+            std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
             global_ctx->context,
@@ -1318,7 +1283,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
         ctx->delayed_streams.pop_front();
     }
 
-    if (!global_ctx->isCancelled() && global_ctx->rows_written != ctx->column_elems_written)
+    if (global_ctx->rows_written != ctx->column_elems_written)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Written {} elements of column {}, but {} rows of PK columns",
                         toString(ctx->column_elems_written), column_name, toString(global_ctx->rows_written));
@@ -1404,7 +1369,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             });
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {});
+        projection_future_part->assign(std::move(projection_parts));
         projection_future_part->name = projection->name;
         // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
         // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
@@ -1633,7 +1598,12 @@ try
 }
 catch (...)
 {
-    merge_failures.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).increment();
+    const auto error_code = getCurrentExceptionCode();
+    if (error_code != ErrorCodes::ABORTED)
+    {
+        CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+    }
+    CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
     throw;
 }
 

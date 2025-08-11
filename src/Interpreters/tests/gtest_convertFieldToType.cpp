@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <gtest/gtest.h>
-#include <base/Decimal.h>
-#include <base/types.h>
+#include "base/Decimal.h"
+#include "base/types.h"
 
 using namespace DB;
 

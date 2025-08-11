@@ -280,7 +280,7 @@ bool Exception::isErrorCodeImportant() const
 Exception::~Exception()
 try
 {
-    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant() && isLoggingEnabled())
     {
         LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
@@ -291,6 +291,9 @@ catch (...) // NOLINT(bugprone-empty-catch)
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
+    if (!isLoggingEnabled())
+        return;
+
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
@@ -330,6 +333,9 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
+    if (!isLoggingEnabled())
+        return;
+
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///

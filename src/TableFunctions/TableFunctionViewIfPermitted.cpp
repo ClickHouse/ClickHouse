@@ -14,7 +14,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

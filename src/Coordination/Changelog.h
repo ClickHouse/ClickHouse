@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <future>
 #include <vector>
-#include <filesystem>
 
 namespace nuraft
 {
@@ -122,7 +121,9 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t latest_logs_cache_entry_count_threshold = 0;
     uint64_t commit_logs_cache_size_threshold = 0;
+    uint64_t commit_logs_cache_entry_count_threshold = 0;
 };
 
 struct FlushSettings
@@ -229,7 +230,7 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_);
+        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
         void addEntry(uint64_t index, size_t size, CacheEntry log_entry);
         void addEntry(IndexToCacheEntryNode && node);
@@ -254,6 +255,8 @@ private:
         bool hasSpaceAvailable(size_t log_entry_size) const;
         void clear();
 
+        bool hasUnlimitedSpace() const;
+
         /// Mapping log_id -> log_entry
         mutable IndexToCacheEntry cache;
         size_t cache_size = 0;
@@ -261,6 +264,7 @@ private:
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
+        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
@@ -391,12 +395,6 @@ public:
     bool isInitialized() const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
-
-    static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
-
-    static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
-    static void spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog);
-    static std::string formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension);
 
     /// Fsync log to disk
     ~Changelog();

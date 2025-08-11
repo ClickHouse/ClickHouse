@@ -1039,19 +1039,9 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
-    bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
     for (auto & elem : catalog.getDatabases())
     {
-        if (!elem.second->canContainMergeTreeTables())
-            continue;
-
-        if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
-        {
-            LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
-            continue;
-        }
-
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
@@ -1151,9 +1141,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
-                    storage_replicated->getStatus(status);
-                    if (status.replica_path == remote_replica_path)
+                    if (storage_replicated->getReplicaPath() == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1192,11 +1180,10 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
-    storage_replicated->getStatus(status);
+    const auto & replica_name = storage_replicated->getReplicaName();
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == status.zookeeper_info.replica_name)
+    if (query.replica == replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");

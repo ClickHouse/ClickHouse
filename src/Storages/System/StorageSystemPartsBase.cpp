@@ -68,18 +68,16 @@ MergeTreeData::DataPartsVector
 StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
     using State = MergeTreeData::DataPartState;
-    using Kind = MergeTreeData::DataPartKind;
-
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
 
         return data->getAllDataPartsVector(&state);
     }
 
-    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, &state);
 }
 
 MergeTreeData::ProjectionPartsVector

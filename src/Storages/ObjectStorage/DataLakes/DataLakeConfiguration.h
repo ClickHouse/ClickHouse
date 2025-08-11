@@ -13,7 +13,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
-#include <Storages/ColumnsDescription.h>
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
 #include <string>

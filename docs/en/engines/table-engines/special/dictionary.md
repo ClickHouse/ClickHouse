@@ -81,7 +81,7 @@ CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 Usage example:
 
 ```sql
-CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
+create table products (product_id UInt64, title String) Engine = Dictionary(products);
 ```
 
       Ok
@@ -89,7 +89,7 @@ CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(prod
 Take a look at what's in the table.
 
 ```sql
-SELECT * FROM products LIMIT 1;
+select * from products limit 1;
 ```
 
 ```text

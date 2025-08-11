@@ -248,7 +248,7 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
+void FilterStep::setConditionForQueryConditionCache(size_t condition_hash_, const String & condition_)
 {
     condition = {condition_hash_, condition_};
 }

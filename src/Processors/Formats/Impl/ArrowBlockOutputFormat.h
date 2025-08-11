@@ -5,7 +5,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include "ArrowBufferedStreams.h"
 
 namespace arrow { class Schema; }
 namespace arrow::ipc { class RecordBatchWriter; }

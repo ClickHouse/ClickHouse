@@ -202,7 +202,7 @@ void StatementGenerator::setTableRemote(
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable("t" + std::to_string(t.tname));
         mfunc->set_user(sc.user);
@@ -213,7 +213,7 @@ void StatementGenerator::setTableRemote(
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
 
-        pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+        pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
         pfunc->set_rdatabase(sc.database);
         pfunc->set_rtable("t" + std::to_string(t.tname));
         pfunc->set_user(sc.user);
@@ -249,7 +249,7 @@ void StatementGenerator::setTableRemote(
                 sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
             }
             sfunc->set_resource(
-                "http://" + sc.server_hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
+                "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
                 + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
@@ -274,7 +274,7 @@ void StatementGenerator::setTableRemote(
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl("http://" + sc.server_hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
+            ufunc->set_uurl("http://" + sc.hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
             ufunc->set_inoutformat(t.file_format);
             structure = ufunc->mutable_structure();
         }
@@ -292,7 +292,7 @@ void StatementGenerator::setTableRemote(
             {
                 afunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage);
             }
-            afunc->set_connection_string(sc.server_hostname);
+            afunc->set_connection_string(sc.hostname);
             afunc->set_container(sc.container);
             afunc->set_blobpath("file" + std::to_string(t.tname));
             afunc->set_user(sc.user);
@@ -330,7 +330,7 @@ void StatementGenerator::setTableRemote(
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
-            rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+            rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
             rfunc->set_user(sc.user);
             rfunc->set_password(sc.password);
         }
@@ -511,7 +511,7 @@ bool StatementGenerator::joinedTableOrFunction(
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, entry.path));
+            rel.cols.push_back(entry);
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -865,7 +865,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
@@ -1044,13 +1044,14 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
             if (!intersect.empty())
             {
-                UsingExpr * uexpr = jc->mutable_using_expr();
-                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size()));
+                ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
+                const uint32_t nclauses
+                    = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size())) + 1);
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    ColumnPath * cp = uexpr->add_columns()->mutable_path();
+                    ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
                     const DB::Strings & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
@@ -1273,7 +1274,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
         }
         else
         {
@@ -1881,10 +1882,8 @@ void StatementGenerator::generateSelect(
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
         setq->set_set_op(static_cast<SetQuery_SetOp>(set_range(rg.generator)));
-        if (rg.nextSmallNumber() < 8)
-        {
-            setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
-        }
+        setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
+
         this->depth++;
         this->current_level++;
         if (ncols == 1 && rg.nextMediumNumber() < 6)

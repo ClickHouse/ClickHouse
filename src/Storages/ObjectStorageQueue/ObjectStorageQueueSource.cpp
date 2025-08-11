@@ -405,7 +405,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (shutdown_called)
         {
-            LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
+            LOG_TEST(log, "Shutdown was called, stopping file iterator");
             return {};
         }
 
@@ -513,7 +513,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         log, "Current processor: {}, acquired bucket: {}",
         processor, current_bucket_holder ? toString(current_bucket_holder->getBucket()) : "None");
 
-    while (true)
+    while (!shutdown_called)
     {
         /// Each processing thread gets next path
         /// and checks if corresponding bucket is already acquired by someone.
@@ -711,6 +711,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         if (listed_keys_cache.empty())
             return {};
     }
+    return {};
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueSource(
@@ -795,11 +796,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
-                LOG_DEBUG(
-                    log, "Reader was cancelled "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -817,16 +813,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called"); /// test_drop_table depends on this log message
+            LOG_TEST(log, "Shutdown was called");
 
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
-                LOG_DEBUG(
-                    log, "Shutdown was called "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -864,11 +855,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             if (shutdown_called)
             {
-                LOG_DEBUG(
-                    log, "Shutdown was called "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
+                LOG_TEST(log, "Shutdown called");
                 /// Stop processing.
                 break;
             }
