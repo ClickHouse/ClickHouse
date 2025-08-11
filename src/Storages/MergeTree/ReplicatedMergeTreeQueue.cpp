@@ -331,7 +331,7 @@ bool ReplicatedMergeTreeQueue::isDropOfPatchPartBlocked(const LogEntry & entry, 
 
         if (new_part_info.getPartitionId() == original_partition_id && new_part_info.getDataVersion() > dropped_info.getDataVersion())
         {
-            constexpr auto fmt_string = "Not executing log entry {} for patch part {} because merge or mutation (with result part {}) which triggered drop of patch part is not executed yet.";
+            constexpr auto fmt_string = "Not executing log entry {} for patch part {} because the merge or mutation (with result part {}) that triggered the drop of the patch part has not been executed yet.";
             LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, merge_mutate_entry->new_part_name);
             return true;
         }
