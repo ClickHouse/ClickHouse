@@ -1,8 +1,10 @@
 #pragma once
+#include <boost/noncopyable.hpp>
+
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <boost/noncopyable.hpp>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
@@ -46,6 +48,16 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
 
+    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & /* object_info */,
+        const SharedHeader & /* header */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
+
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
@@ -65,10 +77,16 @@ public:
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
 protected:
-    ObjectIterator createKeysIterator(
+    virtual ObjectIterator createKeysIterator(
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_) const;
+
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_,
+        UInt64 snapshot_version_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

@@ -58,9 +58,9 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const override;
+    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
 private:
     void createNamespaceIfNotExists(const String & namespace_name) const;
