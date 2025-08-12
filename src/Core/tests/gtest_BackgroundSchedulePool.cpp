@@ -30,6 +30,8 @@ TEST(BackgroundSchedulePool, Schedule)
     condvar.wait(lock, [&] { return counter == ITERATIONS; });
 
     ASSERT_EQ(counter, ITERATIONS);
+
+    pool->join();
 }
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
@@ -56,6 +58,8 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     condvar.wait(lock, [&] { return counter == ITERATIONS; });
 
     ASSERT_EQ(counter, ITERATIONS);
+
+    pool->join();
 }
 
 /// Previously leads to UB
@@ -69,6 +73,7 @@ TEST(BackgroundSchedulePool, ActivateAfterTerminitePool)
 
         task = pool->createTask("test", [&] {});
         delayed_task = pool->createTask("delayed_test", [&] {});
+        pool->join();
     }
 
     ASSERT_EQ(task->activateAndSchedule(), false);
@@ -91,6 +96,7 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
         ASSERT_EQ(task->activate(), true);
         ASSERT_EQ(delayed_task->activate(), true);
+        pool->join();
     }
 
     ASSERT_EQ(task->schedule(), false);

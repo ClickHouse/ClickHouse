@@ -20,7 +20,7 @@ namespace DB
         RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
             const RedisConfiguration & configuration_,
-            const Block & sample_block_);
+            SharedHeader sample_block_);
 
         RedisDictionarySource(const RedisDictionarySource & other);
 
@@ -52,6 +52,6 @@ namespace DB
         const RedisConfiguration configuration;
 
         RedisPoolPtr pool;
-        Block sample_block;
+        SharedHeader sample_block;
     };
 }

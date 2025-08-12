@@ -1,19 +1,16 @@
 #include <IO/UncompressedCache.h>
 #include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric UncompressedCacheBytes;
-    extern const Metric UncompressedCacheCells;
-}
 
 namespace DB
 {
 template class CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
-UncompressedCache::UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-    : Base(cache_policy, CurrentMetrics::UncompressedCacheBytes, CurrentMetrics::UncompressedCacheCells, max_size_in_bytes, 0, size_ratio)
+UncompressedCache::UncompressedCache(const String & cache_policy,
+    CurrentMetrics::Metric size_in_bytes_metric,
+    CurrentMetrics::Metric count_metric,
+    size_t max_size_in_bytes,
+    double size_ratio)
+    : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, 0, size_ratio)
 {
 }
 

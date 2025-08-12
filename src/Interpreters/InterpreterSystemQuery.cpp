@@ -13,6 +13,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -536,7 +537,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
 
             size_t num_rows = res_columns[0]->size();
-            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
@@ -799,6 +800,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
+        case Type::RESTORE_DATABASE_REPLICA:
+            restoreDatabaseReplica(query);
+            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -950,6 +954,24 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
         false);
+}
+
+void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
+{
+    const String database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
+
+    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
+
+    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
+    if (!replicated_db)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
+    }
+
+    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+
+    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1164,9 +1186,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
-                    storage_replicated->getStatus(status);
-                    if (status.replica_path == remote_replica_path)
+                    if (storage_replicated->getReplicaPath() == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1205,11 +1225,10 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
-    storage_replicated->getStatus(status);
+    const auto & replica_name = storage_replicated->getReplicaName();
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == status.zookeeper_info.replica_name)
+    if (query.replica == replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
@@ -1550,7 +1569,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1733,6 +1751,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTORE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::SYNC_REPLICA:

@@ -854,7 +854,7 @@ void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicat
 
     execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
-    if (!block)
+    if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 

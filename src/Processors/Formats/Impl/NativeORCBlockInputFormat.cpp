@@ -44,6 +44,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/memory.h>
+#include <Common/AllocationInterceptors.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
@@ -53,12 +54,13 @@
 namespace
 {
 
+/// FIXME: Remove this since we have proper interceptors
 class MemoryPool : public orc::MemoryPool
 {
 public:
     char * malloc(uint64_t size) override
     {
-        void * ptr = ::malloc(size);
+        void * ptr = __real_malloc(size);
         if (ptr)
         {
             AllocationTrace trace;
@@ -76,7 +78,7 @@ public:
         AllocationTrace trace;
         size_t actual_size = Memory::untrackMemory(ptr, trace);
         trace.onFree(ptr, actual_size);
-        ::free(ptr);
+        __real_free(ptr);
     }
 };
 
@@ -958,7 +960,12 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
-    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_)
+    ReadBuffer & in_,
+    SharedHeader header_,
+    const FormatSettings & format_settings_,
+    bool use_prefetch_,
+    size_t min_bytes_for_seek_,
+    FormatFilterInfoPtr format_filter_info_)
     : IInputFormat(std::move(header_), &in_)
     , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
@@ -966,7 +973,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     , skip_stripes(format_settings.orc.skip_stripes)
     , use_prefetch(use_prefetch_)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , parser_group(std::move(parser_group_))
+    , format_filter_info(std::move(format_filter_info_))
 {
 }
 
@@ -976,10 +983,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (is_stopped)
         return;
 
-    parser_group->initOnce([&]
-        {
-            parser_group->initKeyCondition(getPort().getHeader());
-        });
+    if (format_filter_info)
+        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1005,8 +1010,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
-    if (format_settings.orc.filter_push_down && parser_group->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*parser_group->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+    if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
+        sargs = buildORCSearchArgument(*format_filter_info->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
