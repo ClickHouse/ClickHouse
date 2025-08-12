@@ -8,6 +8,7 @@ namespace DB
 
 static constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
+static constexpr auto DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001; /// 0.1%
 
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 
@@ -22,12 +23,15 @@ struct GinFilterParameters
     GinFilterParameters(
         String tokenizer_,
         UInt64 segment_digestion_threshold_bytes_,
+        double bloom_filter_false_positive_rate_,
         std::optional<UInt64> ngram_size_,
         std::optional<std::vector<String>> separators_);
 
     String tokenizer;
     /// Digestion threshold to split a segment. By default, it is 0 (zero) which means unlimited.
     UInt64 segment_digestion_threshold_bytes;
+    /// Bloom filter false positive rate, by default it's 0.1%.
+    double bloom_filter_false_positive_rate;
     /// for ngram tokenizer
     std::optional<UInt64> ngram_size;
     /// for split tokenizer

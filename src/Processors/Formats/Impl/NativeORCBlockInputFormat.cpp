@@ -44,6 +44,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/memory.h>
+#include <Common/AllocationInterceptors.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
@@ -53,12 +54,13 @@
 namespace
 {
 
+/// FIXME: Remove this since we have proper interceptors
 class MemoryPool : public orc::MemoryPool
 {
 public:
     char * malloc(uint64_t size) override
     {
-        void * ptr = ::malloc(size);
+        void * ptr = __real_malloc(size);
         if (ptr)
         {
             AllocationTrace trace;
@@ -76,7 +78,7 @@ public:
         AllocationTrace trace;
         size_t actual_size = Memory::untrackMemory(ptr, trace);
         trace.onFree(ptr, actual_size);
-        ::free(ptr);
+        __real_free(ptr);
     }
 };
 

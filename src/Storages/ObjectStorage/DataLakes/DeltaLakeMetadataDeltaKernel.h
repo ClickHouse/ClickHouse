@@ -63,6 +63,7 @@ public:
 private:
     const LoggerPtr log;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
+    mutable std::mutex table_snapshot_mutex;
 };
 
 }

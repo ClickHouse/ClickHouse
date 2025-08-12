@@ -6,22 +6,30 @@ namespace DB
 
 REGISTER_FUNCTION(IsNotDistinctFrom)
 {
-    factory.registerFunction<FunctionIsNotDistinctFrom>(
-        FunctionDocumentation{
-        .description = R"(
-Performs a null-safe comparison between two values. This function will consider
+    FunctionDocumentation::Description description = R"(
+Performs a null-safe comparison between two `JOIN` keys. This function will consider
 two `NULL` values as identical and will return `true`, which is distinct from the usual
 equals behavior where comparing two `NULL` values would return `NULL`.
 
-Currently, this function can only be used in the `JOIN ON` section of a query.
-[example:join_on_is_not_distinct_from]
-)",
-        .examples{
-            {"join_on_is_not_distinct_from", "SELECT * FROM (SELECT NULL AS a) AS t1 JOIN (SELECT NULL AS b) AS t2 ON isNotDistinctFrom(t1.a, t2.b)", "NULL\tNULL"},
-        },
-        .category = FunctionDocumentation::Category::Nullable,
-    });
+:::info
+This function is an internal function used by the implementation of `JOIN ON`.
+Please do not use it manually in queries.
+:::
 
+For a complete example see: [`NULL` values in `JOIN` keys](/sql-reference/statements/select/join#null-values-in-join-keys).
+    )";
+    FunctionDocumentation::Syntax syntax = "isNotDistinctFrom(x, y)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "First `JOIN` key to compare.", {"Any"}},
+        {"y", "Second `JOIN` key to compare.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `true` when `x` and `y` are both `NULL`, otherwise `false`.", {"Bool"}};
+    FunctionDocumentation::Examples examples = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
 }
 
 }

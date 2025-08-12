@@ -67,7 +67,7 @@ target_link_libraries (executable_udf PRIVATE clickhouse_common_io clickhouse_co
 
 if (ENABLE_HIVE)
     clickhouse_add_executable (hive_metastore_client hive_metastore_client.cpp)
-    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift)
+    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift clickhouse_common_config)
 endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
@@ -83,5 +83,5 @@ target_link_libraries (check_pointer_valid PRIVATE clickhouse_common_io clickhou
 
 if (TARGET ch_contrib::icu)
     clickhouse_add_executable (utf8_upper_lower utf8_upper_lower.cpp)
-    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu)
+    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu clickhouse_common_io clickhouse_common_config)
 endif ()

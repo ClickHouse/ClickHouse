@@ -64,7 +64,7 @@ class Result(MetaClasses.Serializable):
     start_time: Optional[float] = None
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
-    files: List[str] = dataclasses.field(default_factory=list)
+    files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -488,10 +488,8 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        if with_log:
+        if with_log or with_info or with_info_on_failure:
             log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info or with_info_on_failure:
-            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
         else:
             log_file = None
 
@@ -553,7 +551,9 @@ class Result(MetaClasses.Serializable):
                 ]
                 + info_lines[-MAX_LINES_IN_INFO:]
             ),
-            files=[log_file] if with_log else None,
+            files=(
+                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
+            ),
         )
 
     def skip_dependee_jobs_dropping(self):

@@ -130,6 +130,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_respect_aliases", trueOrFalseSetting},
        {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
        {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
+       {"optimize_rewrite_regexp_functions", trueOrFalseSetting},
        {"optimize_rewrite_sum_if_to_count_if", trueOrFalseSetting},
        {"optimize_skip_merged_partitions", trueOrFalseSetting},
        {"optimize_skip_unused_shards", trueOrFalseSetting},
@@ -429,15 +430,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"filesystem_cache_enable_background_download_during_fetch", trueOrFalseSettingNoOracle},
     {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", trueOrFalseSettingNoOracle},
-    {"filesystem_cache_name",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'cache_for_s3'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
     {"filesystem_cache_prefer_bigger_buffer_size", trueOrFalseSetting},
     {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", trueOrFalseSettingNoOracle},
     {"filesystem_cache_segments_batch_size",
@@ -1030,6 +1022,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     /// {"wait_for_async_insert", trueOrFalseSettingNoOracle},
+    {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); }, {}, false)}};
@@ -1050,6 +1043,12 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"cluster_for_parallel_replicas",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
+    }
+    if (!fc.caches.empty())
+    {
+        serverSettings.insert(
+            {{"filesystem_cache_name",
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.caches) + "'"; }, {}, false)}});
     }
     for (const auto & [key, value] : hotSettings)
     {
@@ -1110,6 +1109,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry :
          {"aggregation_in_order_max_block_bytes",
           "async_insert_max_data_size",
+          "azure_max_single_part_upload_size",
           "cross_join_min_bytes_to_compress",
           "default_max_bytes_in_join",
           "distributed_cache_alignment",
@@ -1169,7 +1169,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_block_size",
           "max_compress_block_size",
           "max_insert_block_size",
-          "min_compress_block_size"})
+          "min_compress_block_size"/*,
+          "output_format_orc_compression_block_size" can give std::exception */})
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
         serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false)}});

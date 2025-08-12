@@ -38,6 +38,12 @@
 
         <!-- <stream_compress>0</stream_compress> -->
 
+        <!-- By default logging happens in different threads so it does not block the execution
+             If the amount of messages waiting to be flushed is too large, new messages will be dropped.
+        -->
+        <!-- <async>1</async> -->
+        <!-- <async_queue_max_size>100000</async_queue_max_size> -->
+
         <!-- Per level overrides (legacy):
 
         For example to suppress logging of the ConfigReloader you can use:
@@ -1235,18 +1241,6 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
-
-    <!-- Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval. -->
-    <latency_log>
-        <database>system</database>
-        <table>latency_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
-    </latency_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>

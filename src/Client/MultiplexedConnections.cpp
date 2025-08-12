@@ -186,6 +186,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)

@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-object-storage
+-- Tags: long, no-parallel, no-object-storage, no-msan, no-tsan
 
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select=2;
@@ -14,6 +14,9 @@ INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.nu
 SELECT count() FROM system.parts WHERE database = currentDatabase() and table = 't_mt_source';
 
 SET cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_mark_segment_size=128;
+
+-- we do not want concurrency control to limit the number of threads
+SET use_concurrency_control=0;
 
 -- reduce block size to ensure that all threads will be used
 INSERT INTO t_rmt_target SELECT * FROM t_mt_source SETTINGS allow_experimental_parallel_reading_from_replicas=1, max_threads=8, max_insert_threads=4, max_block_size=1000, min_insert_block_size_rows=1000, parallel_replicas_local_plan=0;

@@ -2047,7 +2047,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
 String strBuildJSONElement(RandomGenerator & rg)
 {
     String ret;
-    std::uniform_int_distribution<int> opts(1, 22);
+    std::uniform_int_distribution<int> opts(1, 23);
 
     switch (opts(rg.generator))
     {
@@ -2127,6 +2127,10 @@ String strBuildJSONElement(RandomGenerator & rg)
         case 22:
             /// IPv6
             ret = '"' + rg.nextIPv6() + '"';
+            break;
+        case 23:
+            /// Floating-point
+            ret = nextFloatingPoint(rg, true);
             break;
         default:
             chassert(0);

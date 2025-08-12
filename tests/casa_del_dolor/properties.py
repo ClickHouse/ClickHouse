@@ -1065,7 +1065,7 @@ def modify_server_settings(
         distributed_ddl_xml = root.find("distributed_ddl")
         if distributed_ddl_xml is not None and distributed_ddl_xml.find("path") is None:
             path_xml = ET.SubElement(distributed_ddl_xml, "path")
-            path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+            path_xml.text = "/clickhouse/task_queue/ddl"
         # Make sure `zookeeper_path` in transaction_log is set
         transaction_log_xml = root.find("transaction_log")
         if (
@@ -1073,12 +1073,12 @@ def modify_server_settings(
             and transaction_log_xml.find("zookeeper_path") is None
         ):
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
-            zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+            zookeeper_path_xml.text = "/clickhouse/txn"
 
     # Get number of clusters if generated, to be used in `users.xml` if needed
     remote_servers = root.find("remote_servers")
     if remote_servers is not None:
-        number_clusters = len(list(remote_servers))
+        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
@@ -1212,7 +1212,7 @@ keeper_settings = {
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
         "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
         "rocksdb_load_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
-        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 0, 100000),
+        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
         "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
         "snapshots_to_keep": threshold_generator(0.2, 0.2, 0, 5),
         "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),

@@ -48,7 +48,8 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, UInt64)
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, SearchOrphanedPartsDisks)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 

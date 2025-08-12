@@ -24,6 +24,11 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+
+#if USE_ARROWFLIGHT
+void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
+#endif
+
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);

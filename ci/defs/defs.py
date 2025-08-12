@@ -209,6 +209,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/arrowflight-server-test",
+        path="./ci/docker/integration/arrowflight",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/dotnet-client",
         path="./ci/docker/integration/dotnet_client",
         platforms=Docker.Platforms.arm_amd,
@@ -265,6 +271,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/sqlancer-test",
         path="./ci/docker/sqlancer-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/mysql_dotnet_client",
+        path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),

@@ -23,7 +23,8 @@ bool SQLBase::isNotTruncableEngine() const
 bool SQLBase::isEngineReplaceable() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine();
+        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
+        || isNullEngine() || isGenerateRandomEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -47,19 +48,40 @@ bool SQLBase::isDettached() const
     return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED;
 }
 
+String SQLBase::getDatabaseName() const
+{
+    return "d" + (db ? std::to_string(db->dname) : "efault");
+}
+
 String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
 {
     if (isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine())
     {
+        const Catalog * cat = nullptr;
         const ServerCredentials & sc = fc.minio_server.value();
 
-        return fmt::format(
-            "http://{}:{}{}/file{}{}",
-            client ? sc.client_hostname : sc.server_hostname,
-            sc.port,
-            sc.database,
-            tname,
-            isS3Engine() ? "" : "/");
+        switch (catalog)
+        {
+            case CatalogTable::Glue:
+                cat = &sc.glue_catalog.value();
+                break;
+            case CatalogTable::Hive:
+                cat = &sc.hive_catalog.value();
+                break;
+            case CatalogTable::REST:
+                cat = &sc.rest_catalog.value();
+                break;
+            default:
+                break;
+        }
+        return cat ? fmt::format("http://{}:{}/{}/t{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, cat->endpoint, tname)
+                   : fmt::format(
+                         "http://{}:{}{}/file{}{}",
+                         client ? sc.client_hostname : sc.server_hostname,
+                         sc.port,
+                         sc.database,
+                         tname,
+                         isS3Engine() ? "" : "/");
     }
     if (isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine())
     {
@@ -85,6 +107,13 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
     return "";
 }
 
+String SQLBase::getMetadataPath(const FuzzConfig & fc, const bool client) const
+{
+    const std::filesystem::path & fpath = client ? fc.client_file_path : fc.server_file_path;
+
+    return has_metadata ? fmt::format("{}/metadatat{}", fpath.generic_string(), tname) : "";
+}
+
 size_t SQLTable::numberOfInsertableColumns() const
 {
     size_t res = 0;
@@ -107,9 +136,9 @@ String SQLTable::getFullName(const bool setdbname) const
 
     if (db || setdbname)
     {
-        res += "d" + (db ? std::to_string(db->dname) : "efault") + ".";
+        res += getDatabaseName() + ".";
     }
-    res += "t" + std::to_string(tname);
+    res += getTableName();
     return res;
 }
 
