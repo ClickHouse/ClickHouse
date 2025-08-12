@@ -946,17 +946,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     for (const auto * action : actions_after_join)
     {
-        //bool remove_right_nullable = prepared_join_storage && use_nulls && isLeftOrFull(join_operator.kind);
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
             if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
             {
-                // if (prepared_join_storage.storage_join)
-                {
-                    /// x (Alias) -> toNullable(x) -> x (Input)
-                    action = action->children.at(0)->children.at(0);
-                    /// toNullable(x) -> x (Input)
-                }
+                /// x (Alias) -> toNullable(x) -> x (Input)
+                action = action->children.at(0)->children.at(0);
+                /// toNullable(x) -> x (Input)
             }
             else
                 action = action->children.at(0);
@@ -967,16 +963,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
-    // std::cerr << expression_actions.getActionsDAG()->dumpDAG() << std::endl;
-
-    for (const auto * child : children)
-    {
-        for (const auto & column : *child->step->getOutputHeader())
-        {
-            auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
-            used_expressions.push_back(std::move(input_node));
-        }
-    }
+    // for (const auto * child : children)
+    // {
+    //     for (const auto & column : *child->step->getOutputHeader())
+    //     {
+    //         auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
+    //         used_expressions.push_back(std::move(input_node));
+    //     }
+    // }
 
     {
         std::unordered_set<const ActionsDAG::Node *> seen_used_expressions;
@@ -997,9 +991,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     | std::views::filter([](const auto & action) { return action.fromRight(); })));
     }
 
-    // std::cerr << left_dag.dumpDAG() << std::endl;
-    // std::cerr << right_dag.dumpDAG() << std::endl;
-
     auto common_dag = expression_actions.getActionsDAG();
 
     bool can_remove_residual_filter = false;
@@ -1011,8 +1002,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     ActionsDAG residual_dag = ActionsDAG::foldActionsByProjection(actions_after_join_fold, required_output_nodes);
-
-    // std::cerr << "Residual \n" << residual_dag.dumpDAG() << std::endl;
 
     table_join->setInputColumns(
         left_dag.getNamesAndTypesList(),
