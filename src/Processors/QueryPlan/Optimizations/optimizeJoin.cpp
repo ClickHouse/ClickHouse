@@ -425,7 +425,7 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
     }
 }
 
-void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
 static String dumpStatsForLogs(const RelationStats & stats)
 {
@@ -452,16 +452,16 @@ static bool isTrivialStep(const QueryPlan::Node * node)
     return isPassthroughActions(expression_step->getExpression());
 }
 
-size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label = {})
+size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label, int join_steps_limit)
 {
     if (isTrivialStep(node))
         node = node->children[0];
 
     auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && !child_join_step->isOptimized() && graph.hasCompatibleSettings(*child_join_step))
+    if (child_join_step && !child_join_step->isOptimized() && graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1)
     {
         QueryGraphBuilder child_graph(graph.context);
-        buildQueryGraph(child_graph, *node, nodes);
+        buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
         size_t count = child_graph.inputs.size();
         uniteGraphs(graph, std::move(child_graph));
         return count;
@@ -481,7 +481,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     return 1;
 }
 
-void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
@@ -492,8 +492,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     QueryPlan::Node * lhs_plan = node.children[0];
     QueryPlan::Node * rhs_plan = node.children[1];
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label);
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label);
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, join_steps_limit - 1);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, join_steps_limit - lhs_count);
     size_t total_inputs = query_graph.inputs.size();
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
@@ -989,7 +989,7 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    buildQueryGraph(query_graph_builder, node, nodes);
+    buildQueryGraph(query_graph_builder, node, nodes, 64);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes);
 }
 
