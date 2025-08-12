@@ -94,6 +94,7 @@ def started_cluster():
             with_azurite=True,
             stay_alive=True,
             with_zookeeper=True,
+            macros={"shard": 0, "replica": 1},
         )
         cluster.add_instance(
             "node2",
@@ -106,6 +107,7 @@ def started_cluster():
             stay_alive=True,
             with_zookeeper=True,
             with_remote_database_disk=False,  # Disable `with_remote_database_disk` as in `test_replicated_database_and_unavailable_s3``, minIO rejects node2 connections
+            macros={"shard": 0, "replica": 2},
         )
         cluster.add_instance(
             "node_with_environment_credentials",
@@ -2313,7 +2315,6 @@ def test_concurrent_queries(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) > 0
     print(f"Uploaded files: {files}")
-
     instance.query(
         f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
@@ -2328,3 +2329,36 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     select(0)
+
+def test_join_with_distributed(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_join_with_distributed")
+    result_file = f"{TABLE_NAME}"
+
+    df = spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e'), (6, 'f',), (7, 'g'), (8, 'h'), (9, 'i')], ['id', 'val'])
+
+    df.write.format("delta").save(f"/{TABLE_NAME}")
+
+    clickhouse_table_name = f"test_join_with_distributed_{uuid.uuid4().hex}"
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    instance.query(f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id")
+    instance.query(f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())")
+    instance.query(f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');")
+
+    table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    # All cases which were reproted as faulty
+    assert int(instance.query(f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0").strip()) == 9
+    assert int(instance.query(f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1").strip()) == 9
+
+    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
+    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
+    assert int(instance.query(f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0").strip()) == 9
+

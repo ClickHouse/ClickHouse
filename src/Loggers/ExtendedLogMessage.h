@@ -32,13 +32,4 @@ public:
     std::string query_id;
 };
 
-
-/// Interface extension of Poco::Channel
-class ExtendedLogChannel
-{
-public:
-    virtual void logExtended(const ExtendedLogMessage & msg) = 0;
-    virtual ~ExtendedLogChannel() = default;
-};
-
 }
