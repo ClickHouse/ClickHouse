@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
 SET cross_to_inner_join_rewrite = 1;
+SET allow_experimental_correlated_subqueries = 0;
 
 CREATE TABLE part
 (
