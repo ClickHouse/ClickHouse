@@ -308,40 +308,65 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 {
     if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
     {
-        auto zookeeper = getZooKeeper();
+        const auto & settings = context->getSettingsRef();
+        auto with_retries = WithRetries(
+            log,
+            [&] { return getAndSetZooKeeper()->getKeeper(); },
+            {
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                context->getProcessListElement()
+            },
+            settings[Setting::keeper_fault_injection_probability],
+            settings[Setting::keeper_fault_injection_seed]
+            );
 
         String active_path = fs::path(database->replica_path) / "active";
         String active_id = toString(ServerUUID::get());
 
-        LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
+        auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicatedDDLWorker::markReplicasActive");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper);
 
-        zookeeper->deleteEphemeralNodeIfContentMatches(
-            active_path,
-            [&active_id](const std::string & actual_content)
-            {
-                if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
-                    return active_id
-                        == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
-                return active_id == actual_content;
-            });
-        if (active_node_holder)
-            active_node_holder->setAlreadyRemoved();
-        active_node_holder.reset();
+            LOG_TRACE(log, "Trying to delete ephemeral active node: active_path={}, active_id={}", active_path, active_id);
 
-        if (unsynced_after_recovery)
-            active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
+            zookeeper->deleteEphemeralNodeIfContentMatches(
+                active_path,
+                [&active_id](const std::string & actual_content)
+                {
+                    if (actual_content.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+                        return active_id
+                            == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
+                    return active_id == actual_content;
+                });
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            active_node_holder.reset();
 
-        LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+            if (unsynced_after_recovery)
+                active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
 
-        zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-        active_node_holder_zookeeper = zookeeper->getKeeper();
-        active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+            LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+
+            zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+            active_node_holder_zookeeper = zookeeper->getKeeper();
+            active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+        });
     }
 }
 
-String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
+String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & info)
 {
-    return enqueueQueryImpl(getZooKeeper(), entry, database);
+    const auto & settings = context->getSettingsRef();
+    auto with_retries = WithRetries(
+        log,
+        [&] { return getAndSetZooKeeper()->getKeeper(); },
+        info,
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed]);
+    return enqueueQueryImpl(with_retries, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
@@ -385,7 +410,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
 }
 
 
-String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperWithFaultInjectionPtr & zookeeper, DDLLogEntry & entry,
+String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const WithRetries & with_retries, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed, Coordination::Requests additional_checks)
 {
     const String query_path_prefix = database->zookeeper_path + "/log/query-";
@@ -394,59 +419,66 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperWithFaultInj
     String counter_prefix = database->zookeeper_path + "/counter/cnt-";
     String counter_lock_path = database->zookeeper_path + "/counter_lock";
 
-    String counter_path;
-    size_t iters = 1000;
-    while (--iters)
+    Coordination::Requests ops_lock;
+    ops_lock.emplace_back(zkutil::makeCreateRequest(counter_lock_path, database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
+    ops_lock.emplace_back(zkutil::makeCreateRequest(counter_prefix, "", zkutil::CreateMode::EphemeralSequential));
+    ops_lock.insert(ops_lock.end(), additional_checks.begin(), additional_checks.end());
+
+    String node_path;
+    auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCreateRequest(counter_lock_path, database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
-        ops.emplace_back(zkutil::makeCreateRequest(counter_prefix, "", zkutil::CreateMode::EphemeralSequential));
-        ops.insert(ops.end(), additional_checks.begin(), additional_checks.end());
-        Coordination::Responses res;
+        with_retries.renewZooKeeper(zookeeper);
 
-        Coordination::Error code = zookeeper->tryMulti(ops, res);
-        if (code == Coordination::Error::ZOK)
+        String counter_path;
+        size_t iters = 1000;
+        while (--iters)
         {
-            counter_path = dynamic_cast<const Coordination::CreateResponse &>(*res[1]).path_created;
-            break;
+            Coordination::Responses res;
+
+            Coordination::Error code = zookeeper->tryMulti(ops_lock, res);
+            if (code == Coordination::Error::ZOK)
+            {
+                counter_path = dynamic_cast<const Coordination::CreateResponse &>(*res[1]).path_created;
+                break;
+            }
+            if (res[0]->error != Coordination::Error::ZNODEEXISTS)
+                zkutil::KeeperMultiException::check(code, ops_lock, res);
+
+            sleepForMilliseconds(50);
         }
-        if (res[0]->error != Coordination::Error::ZNODEEXISTS)
-            zkutil::KeeperMultiException::check(code, ops, res);
 
-        sleepForMilliseconds(50);
-    }
+        if (counter_path.empty())
+            throw Exception(ErrorCodes::UNFINISHED,
+                            "Cannot enqueue query, because some replica are trying to enqueue another query. "
+                            "It may happen on high queries rate or, in rare cases, after connection loss. Client should retry.");
 
-    if (counter_path.empty())
-        throw Exception(ErrorCodes::UNFINISHED,
-                        "Cannot enqueue query, because some replica are trying to enqueue another query. "
-                        "It may happen on high queries rate or, in rare cases, after connection loss. Client should retry.");
+        node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
-    String node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
-
-    /// Now create task in queue
-    Coordination::Requests ops;
-    /// Query is not committed yet, but we have to write it into log to avoid reordering
-    ops.emplace_back(zkutil::makeCreateRequest(node_path, entry.toString(), zkutil::CreateMode::Persistent));
-    /// '/try' will be replaced with '/committed' or will be removed due to expired session or other error
-    if (committed)
-        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/committed", database->getFullReplicaName(), zkutil::CreateMode::Persistent));
-    else
-        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
-    /// We don't need it anymore
-    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
-    /// Unlock counters
-    ops.emplace_back(zkutil::makeRemoveRequest(counter_lock_path, -1));
-    /// Create status dirs
-    ops.emplace_back(zkutil::makeCreateRequest(node_path + "/active", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(node_path + "/finished", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(node_path + "/synced", "", zkutil::CreateMode::Persistent));
-    zookeeper->multi(ops);
-
+        /// Now create task in queue
+        Coordination::Requests ops;
+        /// Query is not committed yet, but we have to write it into log to avoid reordering
+        ops.emplace_back(zkutil::makeCreateRequest(node_path, entry.toString(), zkutil::CreateMode::Persistent));
+        /// '/try' will be replaced with '/committed' or will be removed due to expired session or other error
+        if (committed)
+            ops.emplace_back(zkutil::makeCreateRequest(node_path + "/committed", database->getFullReplicaName(), zkutil::CreateMode::Persistent));
+        else
+            ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
+        /// We don't need it anymore
+        ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+        /// Unlock counters
+        ops.emplace_back(zkutil::makeRemoveRequest(counter_lock_path, -1));
+        /// Create status dirs
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/active", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/finished", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/synced", "", zkutil::CreateMode::Persistent));
+        zookeeper->multi(ops);
+    });
 
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries & with_retries, DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -455,72 +487,83 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = getZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
 
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-
-    if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
-        throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
-                        "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
-
-    String entry_path = enqueueQueryImpl(zookeeper, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
-    auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper->getKeeper());
-    String entry_name = entry_path.substr(entry_path.rfind('/') + 1);
-    auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
-    task->entry = entry;
-    task->parseQueryFromEntry(context);
-    chassert(!task->entry.query.empty());
-    assert(!zookeeper->exists(task->getFinishedNodePath()));
-    task->is_initial_query = true;
-
-    UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
-    StopToken cancellation = query_context->getDDLQueryCancellation();
-    StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
-    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {} (timeout: {}s{})", entry_name, timeout, cancellation.stop_possible() ? ", cancellable" : "");
-
+    auto holder = with_retries.createRetriesControlHolderForOperations("max_log_ptr::check");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
+        with_retries.renewZooKeeper(zookeeper);
+
+        UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+
+        if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
+            throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
+                            "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
+    });
+
+    String entry_path = enqueueQueryImpl(with_retries, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
+
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+
+        auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper->getKeeper());
+        String entry_name = entry_path.substr(entry_path.rfind('/') + 1);
+        auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
+        task->entry = entry;
+        task->parseQueryFromEntry(context);
+        chassert(!task->entry.query.empty());
+        assert(!zookeeper->exists(task->getFinishedNodePath()));
+        task->is_initial_query = true;
+
+        UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
+        StopToken cancellation = query_context->getDDLQueryCancellation();
+        StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
+        LOG_DEBUG(log, "Waiting for worker thread to process all entries before {} (timeout: {}s{})", entry_name, timeout, cancellation.stop_possible() ? ", cancellable" : "");
+
         {
-            assert(zookeeper->expired() || current_task <= entry_name);
-
-            if (zookeeper->expired() || stop_flag)
+            std::unique_lock lock{mutex};
+            bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
             {
-                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
-                throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
-            }
+                chassert(zookeeper->expired() || current_task <= entry_name);
 
-            if (cancellation.stop_requested())
-            {
-                LOG_TRACE(log, "DDL query was cancelled");
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
-            }
+                if (zookeeper->expired() || stop_flag)
+                {
+                    LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
+                    throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
+                }
 
-            return current_task == entry_name;
-        });
+                if (cancellation.stop_requested())
+                {
+                    LOG_TRACE(log, "DDL query was cancelled");
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
+                }
 
-        if (!processed)
-            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
-                            "most likely because replica is busy with previous queue entries");
-    }
+                return current_task == entry_name;
+            });
 
-    if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
+            if (!processed)
+                throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
+                                "most likely because replica is busy with previous queue entries");
+        }
 
-    processTask(*task, zookeeper, internal_query);
+        if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    if (!task->was_executed)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Entry {} was executed, but was not committed: code {}: {}",
-            task->entry_name,
-            task->execution_status.code,
-            task->execution_status.message);
-    }
+        processTask(*task, zookeeper, internal_query);
 
-    try_node->setAlreadyRemoved();
+        if (!task->was_executed)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Entry {} was executed, but was not committed: code {}: {}",
+                task->entry_name,
+                task->execution_status.code,
+                task->execution_status.message);
+        }
+
+        try_node->setAlreadyRemoved();
+    });
 
     return entry_path;
 }

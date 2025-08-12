@@ -65,8 +65,11 @@ namespace Setting
 {
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
     extern const SettingsBool database_replicated_always_detach_permanently;
+    extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsFloat keeper_fault_injection_probability;
     extern const SettingsUInt64 keeper_fault_injection_seed;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -487,96 +490,114 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
         }
 
-        auto current_zookeeper = getZooKeeper();
-
-        if (!current_zookeeper->exists(zookeeper_path))
-        {
-            /// Create new database, multiple nodes can execute it concurrently
-            createDatabaseNodesInZooKeeper(current_zookeeper);
-        }
-
-        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
-        bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
-
-        String replica_host_id;
-        bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);
-
-        LOG_TEST(log, "Replica {} exists in Keeper {}", replica_path, replica_exists_in_zk);
-
-        if (replica_exists_in_zk)
-        {
-            if (replica_host_id == DROPPED_MARK && !is_create_query)
+        const auto & settings = getContext()->getSettingsRef();
+        auto with_retries = WithRetries(
+            log,
+            [&] { return getContext()->getZooKeeper(); },
             {
-                LOG_WARNING(log, "Database {} exists locally, but marked dropped in ZooKeeper ({}). "
-                                 "Will not try to start it up", getDatabaseName(), replica_path);
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                getContext()->getProcessListElement()
+            },
+            settings[Setting::keeper_fault_injection_probability],
+            settings[Setting::keeper_fault_injection_seed]
+            );
+
+        auto holder = with_retries.createRetriesControlHolderForOperations("tryConnectToZooKeeperAndInitDatabase");
+        holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(current_zookeeper);
+
+            if (!current_zookeeper->exists(zookeeper_path))
+            {
+                /// Create new database, multiple nodes can execute it concurrently
+                createDatabaseNodesInZooKeeper(current_zookeeper);
+            }
+
+            replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
+            bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
+
+            String replica_host_id;
+            bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);
+
+            LOG_TEST(log, "Replica {} exists in Keeper {}", replica_path, replica_exists_in_zk);
+
+            if (replica_exists_in_zk)
+            {
+                if (replica_host_id == DROPPED_MARK && !is_create_query)
+                {
+                    LOG_WARNING(log, "Database {} exists locally, but marked dropped in ZooKeeper ({}). "
+                                     "Will not try to start it up", getDatabaseName(), replica_path);
+                    is_probably_dropped = true;
+                    return;
+                }
+
+                String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+                String host_id_default = getHostID(getContext(), db_uuid, false);
+
+                if (replica_host_id != host_id && replica_host_id != host_id_default)
+                {
+                    throw Exception(
+                        ErrorCodes::REPLICA_ALREADY_EXISTS,
+                        "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                        replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+                }
+
+                /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
+                /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
+                if (host_id != host_id_default && replica_host_id == host_id_default)
+                {
+                    current_zookeeper->set(replica_path, host_id, -1);
+                    createEmptyLogEntry(with_retries);
+                }
+
+                /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
+                String zk_replica_group_name;
+                if (!current_zookeeper->tryGet(replica_path + "/replica_group", zk_replica_group_name))
+                {
+                    /// Replica groups were introduced in 23.10, so the node might not exist
+                    current_zookeeper->create(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent);
+                    if (!replica_group_name.empty())
+                        createEmptyLogEntry(with_retries);
+                }
+                else if (zk_replica_group_name != replica_group_name)
+                {
+                    current_zookeeper->set(replica_path + "/replica_group", replica_group_name, -1);
+                    createEmptyLogEntry(with_retries);
+                }
+
+                /// Needed to mark all the queries
+                /// in the range (max log ptr at replica ZooKeeper nodes creation, max log ptr after replica recovery] as successful.
+                String max_log_ptr_at_creation_str;
+                if (current_zookeeper->tryGet(replica_path + "/max_log_ptr_at_creation", max_log_ptr_at_creation_str))
+                    max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_at_creation_str);
+            }
+
+            if (is_create_query)
+            {
+                /// Create replica nodes in ZooKeeper. If newly initialized nodes already exist, reuse them.
+                createReplicaNodesInZooKeeper(with_retries);
+            }
+            else if (!replica_exists_in_zk)
+            {
+                /// It's not CREATE query, but replica does not exist. Probably it was dropped.
+                /// Do not create anything, continue as readonly.
+                LOG_WARNING(log, "Database {} exists locally, but its replica does not exist in ZooKeeper ({}). "
+                                 "Assuming it was dropped, will not try to start it up", getDatabaseName(), replica_path);
                 is_probably_dropped = true;
                 return;
             }
 
-            String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-            String host_id_default = getHostID(getContext(), db_uuid, false);
+            /// If not exist, create a node with the database name for introspection.
+            /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
+            auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
+            auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
+            if (error_code == Coordination::Error::ZNONODE)
+                current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
-            if (replica_host_id != host_id && replica_host_id != host_id_default)
-            {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                    replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
-            }
-
-            /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
-            /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
-            if (host_id != host_id_default && replica_host_id == host_id_default)
-            {
-                current_zookeeper->set(replica_path, host_id, -1);
-                createEmptyLogEntry(current_zookeeper);
-            }
-
-            /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
-            String zk_replica_group_name;
-            if (!current_zookeeper->tryGet(replica_path + "/replica_group", zk_replica_group_name))
-            {
-                /// Replica groups were introduced in 23.10, so the node might not exist
-                current_zookeeper->create(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent);
-                if (!replica_group_name.empty())
-                    createEmptyLogEntry(current_zookeeper);
-            }
-            else if (zk_replica_group_name != replica_group_name)
-            {
-                current_zookeeper->set(replica_path + "/replica_group", replica_group_name, -1);
-                createEmptyLogEntry(current_zookeeper);
-            }
-
-            /// Needed to mark all the queries
-            /// in the range (max log ptr at replica ZooKeeper nodes creation, max log ptr after replica recovery] as successful.
-            String max_log_ptr_at_creation_str;
-            if (current_zookeeper->tryGet(replica_path + "/max_log_ptr_at_creation", max_log_ptr_at_creation_str))
-                max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_at_creation_str);
-        }
-
-        if (is_create_query)
-        {
-            /// Create replica nodes in ZooKeeper. If newly initialized nodes already exist, reuse them.
-            createReplicaNodesInZooKeeper(current_zookeeper);
-        }
-        else if (!replica_exists_in_zk)
-        {
-            /// It's not CREATE query, but replica does not exist. Probably it was dropped.
-            /// Do not create anything, continue as readonly.
-            LOG_WARNING(log, "Database {} exists locally, but its replica does not exist in ZooKeeper ({}). "
-                             "Assuming it was dropped, will not try to start it up", getDatabaseName(), replica_path);
-            is_probably_dropped = true;
-            return;
-        }
-
-        /// If not exist, create a node with the database name for introspection.
-        /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
-        auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-        auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
-        if (error_code == Coordination::Error::ZNONODE)
-            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
-
-        is_readonly = false;
+            is_readonly = false;
+        });
     }
     catch (...)
     {
@@ -651,11 +672,11 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperWithFaul
     return maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK);
 }
 
-void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperWithFaultInjectionPtr & current_zookeeper)
+void DatabaseReplicated::createEmptyLogEntry(const WithRetries & with_retries)
 {
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};
-    DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
+    DatabaseReplicatedDDLWorker::enqueueQueryImpl(with_retries, entry, this, true);
 }
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
@@ -689,92 +710,103 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     }
 }
 
-void DatabaseReplicated::createReplicaNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper)
+void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_retries)
 {
-    if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add new database replica: provided path {} "
-                        "already contains some data and it does not look like Replicated database path.", zookeeper_path);
-
-    /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    const auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-
     const std::vector<String> check_paths = {
         replica_path,
         replica_path + "/replica_group",
         replica_path + "/digest",
     };
+
     bool nodes_exist = true;
-    auto check_responses = current_zookeeper->tryGet(check_paths);
-    for (size_t i = 0; i < check_responses.size(); ++i)
-    {
-        const auto response = check_responses[i];
+    String host_id;
+    zkutil::ZooKeeper::MultiTryGetResponse check_responses;
 
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            nodes_exist = false;
-            break;
-        }
-        if (response.error != Coordination::Error::ZOK)
-        {
-            throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
-        }
-    }
-
-    if (nodes_exist)
+    auto holder = with_retries.createRetriesControlHolderForOperations("createReplicaNodesInZooKeeper");
+    holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        const std::vector<String> expected_data = {
-            host_id,
-            replica_group_name,
-            "0",
-        };
-        for (size_t i = 0; i != expected_data.size(); ++i)
+        with_retries.renewZooKeeper(current_zookeeper);
+
+        if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add new database replica: provided path {} "
+                            "already contains some data and it does not look like Replicated database path.", zookeeper_path);
+
+        /// Write host name to replica_path, it will protect from multiple replicas with the same name
+        host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+
+        check_responses = current_zookeeper->tryGet(check_paths);
+        for (size_t i = 0; i < check_responses.size(); ++i)
         {
-            if (check_responses[i].data != expected_data[i])
+            const auto response = check_responses[i];
+
+            if (response.error == Coordination::Error::ZNONODE)
             {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica node {} in ZooKeeper already exists and contains unexpected value: {}",
-                    quoteString(check_paths[i]), quoteString(check_responses[i].data));
+                nodes_exist = false;
+                break;
+            }
+            if (response.error != Coordination::Error::ZOK)
+            {
+                throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
             }
         }
 
-        LOG_DEBUG(log, "Newly initialized replica nodes found in ZooKeeper, reusing them");
-        createEmptyLogEntry(current_zookeeper);
-        return;
-    }
-
-    for (int attempts = 10; attempts > 0; --attempts)
-    {
-        Coordination::Stat stat;
-        const String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
-
-        const Coordination::Requests ops = {
-            zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent),
-
-            /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.
-            /// we need to store max_log_ptr_at_creation in ZooKeeper to make this method idempotent during replica creation.
-            zkutil::makeCreateRequest(replica_path + "/max_log_ptr_at_creation", max_log_ptr_str, zkutil::CreateMode::Persistent),
-            zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
-        };
-
-        Coordination::Responses ops_responses;
-        const auto code = current_zookeeper->tryMulti(ops, ops_responses);
-
-        if (code == Coordination::Error::ZOK)
+        if (nodes_exist)
         {
-            max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
-            createEmptyLogEntry(current_zookeeper);
+            const std::vector<String> expected_data = {
+                host_id,
+                replica_group_name,
+                "0",
+            };
+            for (size_t i = 0; i != expected_data.size(); ++i)
+            {
+                if (check_responses[i].data != expected_data[i])
+                {
+                    throw Exception(
+                        ErrorCodes::REPLICA_ALREADY_EXISTS,
+                        "Replica node {} in ZooKeeper already exists and contains unexpected value: {}",
+                        quoteString(check_paths[i]), quoteString(check_responses[i].data));
+                }
+            }
+
+            LOG_DEBUG(log, "Newly initialized replica nodes found in ZooKeeper, reusing them");
+            createEmptyLogEntry(with_retries);
             return;
         }
 
-        if (attempts == 1)
+        for (int attempts = 10; attempts > 0; --attempts)
         {
-            zkutil::KeeperMultiException::check(code, ops, ops_responses);
+            Coordination::Stat stat;
+
+            const String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
+
+            const Coordination::Requests ops = {
+                zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent),
+
+                /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.
+                /// we need to store max_log_ptr_at_creation in ZooKeeper to make this method idempotent during replica creation.
+                zkutil::makeCreateRequest(replica_path + "/max_log_ptr_at_creation", max_log_ptr_str, zkutil::CreateMode::Persistent),
+                zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
+            };
+
+            Coordination::Responses ops_responses;
+            const auto code = current_zookeeper->tryMulti(ops, ops_responses);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
+                createEmptyLogEntry(with_retries);
+                return;
+            }
+
+            if (attempts == 1)
+            {
+                zkutil::KeeperMultiException::check(code, ops, ops_responses);
+            }
         }
-    }
+    });
 }
 
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
@@ -1243,23 +1275,42 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags.internal);
+
+    const auto & settings = getContext()->getSettingsRef();
+    auto with_retries = WithRetries(
+        log,
+        [&] { return getContext()->getZooKeeper(); },
+        {
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            getContext()->getProcessListElement()
+        },
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed]
+        );
+
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(with_retries, entry, query_context, flags.internal);
 
     Strings hosts_to_wait;
-    Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-
-    std::vector<String> paths;
-    for (const auto & host : unfiltered_hosts)
-        paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-    auto replica_groups = getZooKeeper()->tryGet(paths);
-
-    for (size_t i = 0; i < paths.size(); ++i)
+    auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
+    holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        if (replica_groups[i].data == replica_group_name)
-            hosts_to_wait.push_back(unfiltered_hosts[i]);
-    }
+        with_retries.renewZooKeeper(current_zookeeper);
 
+        Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+        std::vector<String> paths;
+        for (const auto & host : unfiltered_hosts)
+            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+        auto replica_groups = getZooKeeper()->tryGet(paths);
+
+        for (size_t i = 0; i < paths.size(); ++i)
+        {
+            if (replica_groups[i].data == replica_group_name)
+                hosts_to_wait.push_back(unfiltered_hosts[i]);
+        }
+    });
 
     return getQueryStatus(node_path, fs::path(zookeeper_path) / "replicas", query_context, hosts_to_wait);
 }
@@ -1792,44 +1843,57 @@ void DatabaseReplicated::dropReplica(
 
     auto const & context = Context::getGlobalContextInstance();
     const auto & settings = context->getSettingsRef();
-    auto zookeeper = ZooKeeperWithFaultInjection::createInstance(
+
+    auto with_retries = WithRetries(
+        nullptr,
+        [&] { return context->getZooKeeper(); },
+        {
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context->getProcessListElement()
+        },
         settings[Setting::keeper_fault_injection_probability],
-        settings[Setting::keeper_fault_injection_seed],
-        context->getZooKeeper(),
-        "DatabaseReplicated::dropReplica",
-        nullptr);
+        settings[Setting::keeper_fault_injection_seed]
+    );
 
-    String database_mark;
-    bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
-    if (!db_path_exists && !throw_if_noop)
-        return;
-    if (database_mark != REPLICATED_DATABASE_MARK)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
-
-    String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
-    if (!zookeeper->exists(database_replica_path))
+    auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicated::dropReplica");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        if (!throw_if_noop)
+        with_retries.renewZooKeeper(zookeeper);
+
+        String database_mark;
+        bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
+        if (!db_path_exists && !throw_if_noop)
             return;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} does not exist (database path: {})",
-                        full_replica_name, database_zookeeper_path);
-    }
+        if (database_mark != REPLICATED_DATABASE_MARK)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
 
-    if (zookeeper->exists(database_replica_path + "/active"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} is active, cannot drop it (database path: {})",
-                        full_replica_name, database_zookeeper_path);
+        String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
+        if (!zookeeper->exists(database_replica_path))
+        {
+            if (!throw_if_noop)
+                return;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} does not exist (database path: {})",
+                            full_replica_name, database_zookeeper_path);
+        }
 
-    zookeeper->set(database_replica_path, DROPPED_MARK, -1);
-    /// Notify other replicas that cluster configuration was changed (if we can)
-    if (database)
-        database->createEmptyLogEntry(zookeeper);
+        if (zookeeper->exists(database_replica_path + "/active"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} is active, cannot drop it (database path: {})",
+                            full_replica_name, database_zookeeper_path);
 
-    zookeeper->tryRemoveRecursive(database_replica_path);
-    if (zookeeper->tryRemove(database_zookeeper_path + "/replicas") == Coordination::Error::ZOK)
-    {
-        /// It was the last replica, remove all metadata
-        zookeeper->tryRemoveRecursive(database_zookeeper_path);
-    }
+        zookeeper->set(database_replica_path, DROPPED_MARK, -1);
+        /// Notify other replicas that cluster configuration was changed (if we can)
+        if (database)
+            database->createEmptyLogEntry(with_retries);
+
+        zookeeper->tryRemoveRecursive(database_replica_path);
+        if (zookeeper->tryRemove(database_zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+        {
+            /// It was the last replica, remove all metadata
+            zookeeper->tryRemoveRecursive(database_zookeeper_path);
+        }
+    });
 }
 
 void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
@@ -1865,19 +1929,41 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     waitDatabaseStarted();
 
-    auto current_zookeeper = getZooKeeper();
-    current_zookeeper->set(replica_path, DROPPED_MARK, -1);
-    createEmptyLogEntry(current_zookeeper);
+    const auto & settings = context_->getSettingsRef();
+    auto with_retries = WithRetries(
+        getLogger("DatabaseReplicated::drop"),
+        [&] { return context_->getZooKeeper(); },
+        {
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context_->getProcessListElement()
+        },
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed]
+    );
 
+    auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
+    holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(current_zookeeper);
+        current_zookeeper->set(replica_path, DROPPED_MARK, -1);
+    });
+
+    createEmptyLogEntry(with_retries);
     DatabaseAtomic::drop(context_);
 
-    current_zookeeper->tryRemoveRecursive(replica_path);
-    /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
-    if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+    holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        /// It was the last replica, remove all metadata
-        current_zookeeper->tryRemoveRecursive(zookeeper_path);
-    }
+        with_retries.renewZooKeeper(current_zookeeper);
+        current_zookeeper->tryRemoveRecursive(replica_path);
+        /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
+        if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+        {
+            /// It was the last replica, remove all metadata
+            current_zookeeper->tryRemoveRecursive(zookeeper_path);
+        }
+    });
 }
 
 void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)

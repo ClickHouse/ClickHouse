@@ -6,6 +6,7 @@ namespace DB
 {
 
 class DatabaseReplicated;
+class WithRetries;
 
 /// It's similar to DDLWorker, but has the following differences:
 /// 1. DDL queue in ZooKeeper is not shared between multiple clusters and databases,
@@ -26,14 +27,18 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
+    String tryEnqueueAndExecuteEntry(const WithRetries & with_retries, DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
 
     void shutdown() override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
-    static String enqueueQueryImpl(const ZooKeeperWithFaultInjectionPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
+    static String enqueueQueryImpl(
+        const WithRetries & with_retries,
+        DDLLogEntry & entry,
+        DatabaseReplicated * const database,
+        bool committed = false,
+        Coordination::Requests additional_checks = {}); /// NOLINT
 
     UInt32 getLogPointer() const;
 

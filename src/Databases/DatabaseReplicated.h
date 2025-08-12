@@ -121,7 +121,7 @@ private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
     static bool looksLikeReplicatedDatabasePath(const ZooKeeperWithFaultInjectionPtr & current_zookeeper, const String & path);
-    void createReplicaNodesInZooKeeper(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
+    void createReplicaNodesInZooKeeper(const WithRetries & with_retries);
     /// For Replicated database will return ATTACH for MVs with inner table
     ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
@@ -154,7 +154,7 @@ private:
     ClusterPtr getClusterImpl(bool all_groups = false) const;
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
-    void createEmptyLogEntry(const ZooKeeperWithFaultInjectionPtr & current_zookeeper);
+    void createEmptyLogEntry(const WithRetries & with_retries);
 
     bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
     {
