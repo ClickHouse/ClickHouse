@@ -617,18 +617,15 @@ protected:
         }
     }
 
-    // Prefetching keys will reduce cache misses and improve performance.
-    // Maybe reusing iterator_base is better
     template <typename Derived, bool is_const>
-    class prefetching_iterator_base
+    class iterator_base /// NOLINT
     {
-
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
 
-
         Container * container;
         cell_type * ptr;
+        bool enable_prefetch = false;
         cell_type * prefetch_ptr = nullptr;
         DB::PrefetchingHelper prefetching;
         size_t prefetch_ahead = 2;
@@ -638,17 +635,19 @@ protected:
         friend class HashTable;
 
     public:
-        prefetching_iterator_base() {} /// NOLINT
-        prefetching_iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
+        iterator_base() {} /// NOLINT
+        iterator_base(Container * container_, cell_type * ptr_, bool enable_prefetch_ = false)
+            : container(container_), ptr(ptr_)
+            , enable_prefetch(enable_prefetch_ && container_->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
+        {}
 
-        bool operator== (const prefetching_iterator_base & rhs) const { return ptr == rhs.ptr; }
-        bool operator!= (const prefetching_iterator_base & rhs) const { return ptr != rhs.ptr; }
+        bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
+        bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
 
         Derived & operator++()
         {
-            if (CouldPrefetchKey<cell_type>)
+            if (CouldPrefetchKey<cell_type> && enable_prefetch)
             {
-
                 if (ptr->isZero(*container)) [[unlikely]]
                 {
                     ptr = container->buf;
@@ -663,12 +662,6 @@ protected:
                     ++ptr;
 
                 prefetch();
-
-                /// Skip empty cells in the main buffer.
-                auto * buf_end = container->buf + container->grower.bufSize();
-                while (ptr < buf_end && ptr->isZero(*container))
-                    ++ptr;
-
                 if (prefetched_count > 0)
                     prefetched_count--;
             }
@@ -679,22 +672,45 @@ protected:
                     ptr = container->buf;
                 else
                     ++ptr;
-
-                /// Skip empty cells in the main buffer.
-                auto * buf_end = container->buf + container->grower.bufSize();
-                while (ptr < buf_end && ptr->isZero(*container))
-                    ++ptr;
             }
+
+            /// Skip empty cells in the main buffer.
+            auto * buf_end = container->buf + container->grower.bufSize();
+            while (ptr < buf_end && ptr->isZero(*container))
+                ++ptr;
+
             return static_cast<Derived &>(*this);
         }
 
-
         auto & operator* () const { return *ptr; }
         auto * operator->() const { return ptr; }
+
+        auto getPtr() const { return ptr; }
+        size_t getHash() const { return ptr->getHash(*container); }
+
+        size_t getCollisionChainLength() const
+        {
+            return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
+        }
+
+        /**
+          * A hack for HashedDictionary.
+          *
+          * The problem: std-like find() returns an iterator, which has to be
+          * compared to end(). On the other hand, HashMap::find() returns
+          * LookupResult, which is compared to nullptr. HashedDictionary has to
+          * support both hash maps with the same code, hence the need for this
+          * hack.
+          *
+          * The proper way would be to remove iterator interface from our
+          * HashMap completely, change all its users to the existing internal
+          * iteration interface, and redefine end() to return LookupResult for
+          * compatibility with std find(). Unfortunately, now is not the time to
+          * do this.
+          */
         operator Cell * () const { return nullptr; } /// NOLINT
 
     private:
-
         void prefetch()
         {
             auto * buf_end = container->buf + container->grower.bufSize();
@@ -731,82 +747,6 @@ protected:
                 }
             }
         }
-    };
-
-    class const_prefetching_iterator
-        : public prefetching_iterator_base<const const_prefetching_iterator, true>
-    {
-    public:
-        using prefetching_iterator_base<const const_prefetching_iterator, true>::prefetching_iterator_base;
-    };
-
-    class prefetching_iterator
-        : public prefetching_iterator_base<prefetching_iterator, false>
-    {
-    public:
-        using prefetching_iterator_base<prefetching_iterator, false>::prefetching_iterator_base;
-    };
-
-    template <typename Derived, bool is_const>
-    class iterator_base /// NOLINT
-    {
-        using Container = std::conditional_t<is_const, const Self, Self>;
-        using cell_type = std::conditional_t<is_const, const Cell, Cell>;
-
-        Container * container;
-        cell_type * ptr;
-
-        friend class HashTable;
-
-    public:
-        iterator_base() {} /// NOLINT
-        iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
-
-        bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
-        bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
-
-        Derived & operator++()
-        {
-            /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
-            if (unlikely(ptr->isZero(*container)))
-                ptr = container->buf;
-            else
-                ++ptr;
-
-            /// Skip empty cells in the main buffer.
-            auto * buf_end = container->buf + container->grower.bufSize();
-            while (ptr < buf_end && ptr->isZero(*container))
-                ++ptr;
-            return static_cast<Derived &>(*this);
-        }
-
-        auto & operator* () const { return *ptr; }
-        auto * operator->() const { return ptr; }
-
-        auto getPtr() const { return ptr; }
-        size_t getHash() const { return ptr->getHash(*container); }
-
-        size_t getCollisionChainLength() const
-        {
-            return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
-        }
-
-        /**
-          * A hack for HashedDictionary.
-          *
-          * The problem: std-like find() returns an iterator, which has to be
-          * compared to end(). On the other hand, HashMap::find() returns
-          * LookupResult, which is compared to nullptr. HashedDictionary has to
-          * support both hash maps with the same code, hence the need for this
-          * hack.
-          *
-          * The proper way would be to remove iterator interface from our
-          * HashMap completely, change all its users to the existing internal
-          * iteration interface, and redefine end() to return LookupResult for
-          * compatibility with std find(). Unfortunately, now is not the time to
-          * do this.
-          */
-        operator Cell * () const { return nullptr; } /// NOLINT
     };
 
 
@@ -963,74 +903,38 @@ public:
     };
 
 
-    const_iterator begin() const
+    const_iterator begin(bool enable_prefetch = false) const
     {
         if (!buf)
             return end();
 
         if (this->hasZero())
-            return iteratorToZero();
+            return iteratorToZero(enable_prefetch);
 
         const Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return const_iterator(this, ptr);
+        return const_iterator(this, ptr, enable_prefetch);
     }
 
-    const_prefetching_iterator prefetchingBegin() const
-    {
-        if (!buf)
-            return prefetchingEnd();
-        if (this->hasZero())
-            return const_prefetching_iterator(this, this->zeroValue());
-        const Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-        return const_prefetching_iterator(this, ptr);
-    }
+    const_iterator cbegin(bool enable_prefetch = false) const { return begin(enable_prefetch); }
 
-    prefetching_iterator prefetchingBegin()
-    {
-        if (!buf)
-            return prefetchingEnd();
-        if (this->hasZero())
-            return prefetching_iterator(this, this->zeroValue());
-        Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-        return prefetching_iterator(this, ptr);
-    }
-
-    const_prefetching_iterator prefetchingEnd() const
-    {
-        return const_prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-    }
-
-    prefetching_iterator prefetchingEnd()
-    {
-        return prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-    }
-
-    const_iterator cbegin() const { return begin(); }
-
-    iterator begin()
+    iterator begin(bool enable_prefetch = false)
     {
         if (!buf)
             return end();
 
         if (this->hasZero())
-            return iteratorToZero();
+            return iteratorToZero(enable_prefetch);
 
         Cell * ptr = buf;
         auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return iterator(this, ptr);
+        return iterator(this, ptr, enable_prefetch);
     }
 
     const_iterator end() const
@@ -1051,10 +955,10 @@ public:
 
 
 protected:
-    const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
-    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
-    const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
-    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
+    const_iterator iteratorTo(const Cell * ptr, bool enable_prefetch = false) const { return const_iterator(this, ptr, enable_prefetch); }
+    iterator iteratorTo(Cell * ptr, bool enable_prefetch = false)                   { return iterator(this, ptr, enable_prefetch); }
+    const_iterator iteratorToZero(bool enable_prefetch = false) const             { return iteratorTo(this->zeroValue(), enable_prefetch); }
+    iterator iteratorToZero(bool enable_prefetch = false)                         { return iteratorTo(this->zeroValue(), enable_prefetch); }
 
 
     /// If the key is zero, insert it into a special place and return true.
