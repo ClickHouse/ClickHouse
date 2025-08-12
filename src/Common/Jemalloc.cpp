@@ -119,7 +119,7 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
     {
         TraceSender::send(
             TraceType::JemallocSample,
-            StackTrace(NoCapture{}),
+            StackTrace(),
             TraceSender::Extras{.size = -static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
     }
     catch (...)
