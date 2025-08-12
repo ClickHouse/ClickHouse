@@ -2,7 +2,10 @@
 
 #include <memory>
 
+#include "Common/StackTrace.h"
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include "Interpreters/StorageID.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -171,7 +174,11 @@ private:
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 
-QueryTreePassManager::QueryTreePassManager(ContextPtr context_) : WithContext(context_) {}
+QueryTreePassManager::QueryTreePassManager(ContextPtr context_) : WithContext(context_)
+{
+    LOG_DEBUG(getLogger("QueryTreePassManager"), "Creating query tree pass manager with query kind: {}",
+        toString(getContext()->getClientInfo().query_kind));
+}
 
 void QueryTreePassManager::addPass(QueryTreePassPtr pass)
 {
@@ -181,6 +188,9 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 {
     auto current_context = getContext();
+    LOG_DEBUG(getLogger("QueryTreePassManager"), "Running query tree passes on query tree: {}, kind: {}",
+        query_tree_node->formatConvertedASTForErrorMessage(), toString(current_context->getClientInfo().query_kind));
+
     size_t passes_size = passes.size();
 
     for (size_t i = 0; i < passes_size; ++i)

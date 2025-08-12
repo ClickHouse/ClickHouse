@@ -2211,6 +2211,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
+    /// If the query is a CREATE AS SELECT, we need to create a new context for the insert query
+    auto insert_context = Context::createCopy(getContext());
+    insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    insert_context->makeQueryContext();
+
+    LOG_DEBUG(getLogger("InterpreterCreateQuery"), "Filling table {} with data from SELECT kind: {}",
+            create.getTable(),
+            toString(insert_context->getClientInfo().query_kind));
+
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach && !create.is_create_empty
         && !create.is_ordinary_view && !create.is_live_view
@@ -2220,17 +2229,11 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         if (create.is_window_view)
         {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+            auto table = DatabaseCatalog::instance().getTable(insert->table_id, insert_context);
             insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
         }
         else
             insert->select = create.select->clone();
-
-        /// If the query is a CREATE AS SELECT, we need to create a new context for the insert query
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-
-        LOG_DEBUG(getLogger("InterpreterCreateQuery"), "Filling table {} with data from SELECT", create.getTable());
 
         return InterpreterInsertQuery(
                    insert,
@@ -2246,7 +2249,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        String as_database_name =insert_context->resolveDatabase(create.as_database);
 
         auto partition = std::make_shared<ASTPartition>();
         partition->all = true;
@@ -2271,7 +2274,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
         alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
         alter->set(alter->command_list, command_list);
-        return InterpreterAlterQuery(query, getContext()).execute();
+        return InterpreterAlterQuery(query, insert_context).execute();
     }
 
     return {};

@@ -41,6 +41,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
@@ -562,6 +563,9 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "Building insert select pipeline for query: {}, table: {}, kind {}",
+        query.formatForLogging(), query.getTable(), toString(select_context->getClientInfo().query_kind));
+
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
     QueryPipelineBuilder pipeline;
@@ -842,6 +846,9 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorag
 BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "Executing insert query: {}, kind {}",
+        query_ptr->formatForLogging(), toString(context->getClientInfo().query_kind));
+
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 

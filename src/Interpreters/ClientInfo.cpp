@@ -8,6 +8,7 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
+#include "base/types.h"
 
 #include <boost/algorithm/string/trim.hpp>
 #include <fmt/format.h>
@@ -365,6 +366,20 @@ String toString(ClientInfo::HTTPMethod method)
         case ClientInfo::HTTPMethod::OPTIONS:
             return "OPTIONS";
     }
+}
+
+String toString(ClientInfo::QueryKind query_kind)
+{
+    switch (query_kind)
+    {
+        case ClientInfo::QueryKind::NO_QUERY:
+            return "NO_QUERY";
+        case ClientInfo::QueryKind::INITIAL_QUERY:
+            return "INITIAL_QUERY";
+        case ClientInfo::QueryKind::SECONDARY_QUERY:
+            return "SECONDARY_QUERY";
+    }
+    return fmt::format("Unknown query kind ({})", static_cast<int>(query_kind));
 }
 
 }

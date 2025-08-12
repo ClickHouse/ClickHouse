@@ -1,3 +1,4 @@
+#include "IO/WriteHelpers.h"
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -181,6 +182,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         && !context->isDistributed();
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    LOG_DEBUG(getLogger("TableFunctionObjectStorage"),
+        "Creating storage with configuration type: {} for table {}, context query kind: {}",
+        configuration->getTypeName(),
+        table_name,
+        toString(context->getClientInfo().query_kind));
 
     LOG_DEBUG(getLogger("TableFunctionObjectStorage"),
         "Creating storage with configuration type: {} for table {}, "

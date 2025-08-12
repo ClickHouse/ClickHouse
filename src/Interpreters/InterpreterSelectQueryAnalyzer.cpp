@@ -31,6 +31,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -107,6 +109,8 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 {
     auto result_context = Context::createCopy(context);
 
+
+
     if (select_query_options.shard_num)
         result_context->addSpecialScalar(
             "_shard_num",
@@ -115,6 +119,10 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         result_context->addSpecialScalar(
             "_shard_count",
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+
+    LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"),
+        "Building context for query kind: {}",
+        toString(result_context->getClientInfo().query_kind));
 
     return result_context;
 }
@@ -150,6 +158,10 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"),
+        "Building query tree for query: {}, kind: {}",
+        query->formatForLogging(), toString(context->getClientInfo().query_kind));
+
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);

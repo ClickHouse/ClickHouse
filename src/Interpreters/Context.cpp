@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include "Common/Logger.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -3064,6 +3065,8 @@ ContextMutablePtr Context::getBufferContext() const
 
 void Context::makeQueryContext()
 {
+    LOG_DEBUG(getLogger("Context"), "Creating query context for query {} query kind {}", client_info.current_query_id, toString(getClientInfo().query_kind));
+
     query_context = shared_from_this();
 
     /// Throttling should not be inherited, otherwise if you will set
@@ -5896,6 +5899,7 @@ void Context::setForwardedFor(const String & forwarded_for)
 
 void Context::setQueryKind(ClientInfo::QueryKind query_kind)
 {
+    LOG_DEBUG(getLogger("Context"), "Setting query kind to {}", toString(query_kind));
     client_info.query_kind = query_kind;
 }
 

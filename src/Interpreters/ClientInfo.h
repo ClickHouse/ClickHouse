@@ -169,4 +169,5 @@ private:
 
 String toString(ClientInfo::Interface interface);
 String toString(ClientInfo::HTTPMethod method);
+String toString(ClientInfo::QueryKind query_kind);
 }

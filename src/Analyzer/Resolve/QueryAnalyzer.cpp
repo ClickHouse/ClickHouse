@@ -1,3 +1,5 @@
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FieldVisitorToString.h>
 
 #include <Columns/ColumnNullable.h>
@@ -168,7 +170,12 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
     if (!scope.context)
+    {
+        LOG_DEBUG(getLogger("QueryAnalyzer"),
+            "Creating identifier resolve scope for query tree node: {}, context query kind: {}",
+            node->formatConvertedASTForErrorMessage(), toString(context->getClientInfo().query_kind));
         scope.context = context;
+    }
 
     auto node_type = node->getNodeType();
 
@@ -4822,6 +4829,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & scope_context = scope.context;
 
+    LOG_DEBUG(getLogger("QueryAnalyzer"),
+        "Resolving table function {} in scope {}, context query kind {}",
+        table_function_name,
+        scope.scope_node->formatASTForErrorMessage(),
+        toString(scope_context->getClientInfo().query_kind));
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
@@ -5144,7 +5157,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
+    auto context = scope_context->getQueryContext();
+
+    LOG_DEBUG(getLogger("QueryAnalyzer"),
+        "getting query context for table function {} in scope {}, context query kind {}",
+        table_function_name,
+        scope.scope_node->formatASTForErrorMessage(),
+        toString(context->getClientInfo().query_kind)
+    );
+
+    auto table_function_storage = context->executeTableFunction(table_function_ast, table_function_ptr);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
