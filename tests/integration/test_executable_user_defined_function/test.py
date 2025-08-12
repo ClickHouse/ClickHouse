@@ -298,7 +298,6 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_always_error_throw_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        print(ex)
         assert "Executable generates stderr: Fake error" in str(ex)
 
     query_id = uuid.uuid4().hex
