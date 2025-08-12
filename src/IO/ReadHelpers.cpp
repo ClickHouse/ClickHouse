@@ -2361,5 +2361,4 @@ String unescapeDotInJSONKey(const String & key)
     return boost::replace_all_copy(key, "%2E", ".");
 }
 
-
 }
