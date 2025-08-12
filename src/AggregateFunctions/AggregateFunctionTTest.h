@@ -44,7 +44,6 @@ class AggregateFunctionTTest final:
 private:
     bool need_confidence_interval = false;
     Float64 confidence_level;
-
 public:
     AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params, createResultType(!params.empty()))
@@ -114,7 +113,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        // Two-sample: binary input with group indicator
         Float64 value = columns[0]->getFloat64(row_num);
         UInt8 is_second = columns[1]->getUInt(row_num);
 
@@ -175,7 +173,6 @@ public:
 
         if (need_confidence_interval)
         {
-            // Two-sample: confidence intervals need degrees of freedom parameter
             auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
             auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
             auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
