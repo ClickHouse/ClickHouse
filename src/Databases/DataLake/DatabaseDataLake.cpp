@@ -5,6 +5,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include "Common/Exception.h"
 
 #if USE_AVRO && USE_PARQUET
 
@@ -457,6 +458,8 @@ void DatabaseDataLake::dropTable( /// NOLINT
     auto table = tryGetTable(name, context_);
     if (table)
         table->drop();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
