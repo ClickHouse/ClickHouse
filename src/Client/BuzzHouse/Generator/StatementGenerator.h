@@ -489,10 +489,8 @@ private:
             = (std::is_same_v<U, TableEngine> || b.file_format.has_value() || allow_chaos) && rg.nextMediumNumber() < 91;
         const uint32_t toadd_compression
             = (std::is_same_v<U, TableEngine> || b.file_comp.has_value() || allow_chaos) && rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy
-            = (!std::is_same_v<U, TableEngine> || b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_partition_columns_in_data_file
-            = (!std::is_same_v<U, TableEngine> || b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_partition_strategy = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_partition_columns_in_data_file = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_structure;
