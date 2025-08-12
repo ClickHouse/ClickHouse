@@ -1361,17 +1361,17 @@ void StatementGenerator::generateEngineDetails(
         if (b.isMergeTreeFamily() && rg.nextMediumNumber() < 26)
         {
             /// Use wide and vertical merge settings more often
-            static const DB::Strings & behavior_settings
+            static const DB::Strings & behaviorSettings
                 = {"min_rows_for_wide_part",
                    "min_bytes_for_wide_part",
                    "vertical_merge_algorithm_min_rows_to_activate",
                    "vertical_merge_algorithm_min_columns_to_activate",
                    "min_bytes_for_full_part_storage",
                    "min_rows_for_full_part_storage"};
-            const size_t nsets = (rg.nextLargeNumber() % behavior_settings.size()) + 1;
+            const size_t nsets = (rg.nextLargeNumber() % behaviorSettings.size()) + 1;
 
             chassert(this->ids.empty());
-            for (size_t i = 0; i < behavior_settings.size(); i++)
+            for (size_t i = 0; i < behaviorSettings.size(); i++)
             {
                 this->ids.emplace_back(i);
             }
@@ -1381,7 +1381,7 @@ void StatementGenerator::generateEngineDetails(
             {
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-                sv->set_property(behavior_settings[this->ids[i]]);
+                sv->set_property(behaviorSettings[this->ids[i]]);
                 sv->set_value(rg.nextBool() ? "1" : "0");
             }
             this->ids.clear();
