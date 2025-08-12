@@ -47,10 +47,10 @@ SELECT a, b, t2.b FROM t1 INNER JOIN t2 USING (a) ORDER BY (a);
 4	104	204
 5	105	205
 SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a); 
-0	0	-4
-0	0	-3
-0	0	-2
-0	0	-1
+-4	0	-4
+-3	0	-3
+-2	0	-2
+-1	0	-1
 0	0	0
 1	1	1
 2	2	2
@@ -293,11 +293,11 @@ SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 8	8	\N
 9	9	\N
 10	10	\N
-\N	\N	-4
-\N	\N	-3
-\N	\N	-2
-\N	\N	-1
-\N	\N	0
+-4	\N	-4
+-3	\N	-3
+-2	\N	-2
+-1	\N	-1
+0	\N	0
 SELECT a, t1.a, t2.a FROM t1 LEFT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
 1	1	1
 2	2	2
