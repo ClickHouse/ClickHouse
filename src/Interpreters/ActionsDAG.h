@@ -2,10 +2,11 @@
 
 #include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
-#include <Common/SipHash.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -51,6 +52,14 @@ struct DeserializedSetsRegistry;
 class ActionsDAG
 {
 public:
+    ~ActionsDAG()
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("ActionsDAG"),
+            "ActionsDAG destructor called, nodes count: {}, dag address: {}",
+            nodes.size(),
+            static_cast<void *>(this));
+    }
 
     enum class ActionType : uint8_t
     {
