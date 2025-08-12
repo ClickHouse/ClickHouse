@@ -772,7 +772,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
 
 void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
 {
-    if (!client_configuration.s3_slow_all_threads_after_network_error || !client_configuration.s3_slow_all_threads_after_retryable_error)
+    if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
 
     auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
