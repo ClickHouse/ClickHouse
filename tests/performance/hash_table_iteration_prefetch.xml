@@ -7,7 +7,7 @@
     </create_query>
 
     <fill_query>
-        insert into ht_prefetch select concat('key', toString(number)), concat('value', toString(rand())), rand() % 1000 from numbers(10000000)
+        insert into ht_prefetch select concat('key', toString(number)), concat('value', toString(rand())), rand() % 1000 from numbers(2e7)
     </fill_query>
 
     <query>
