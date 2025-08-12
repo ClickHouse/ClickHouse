@@ -773,7 +773,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
     if ((!is_join_without_expression && join_expression.empty()) ||
-        (join_expression.size() == 1 && join_expression[0].getType()->onlyNull()))
+        (join_expression.size() == 1
+            && join_expression[0].getType()->onlyNull()
+            && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
     {
         UInt8 rhs_value = join_expression.empty() ? 1 : 0;
         join_expression.clear();
