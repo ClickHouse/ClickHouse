@@ -1,4 +1,6 @@
 #include <Common/FieldVisitorToString.h>
+#include "Analyzer/ConstantValue.h"
+#include "Processors/QueryPlan/LimitStep.h"
 
 #include <Columns/ColumnNullable.h>
 
@@ -31,6 +33,10 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Planner/Utils.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -580,7 +586,7 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
-void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool execute_for_exists)
 {
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
@@ -609,7 +615,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
 
-    if (scalars_cache.contains(node_with_hash))
+    if (!execute_for_exists && scalars_cache.contains(node_with_hash))
     {
         if (can_use_global_scalars)
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
@@ -618,7 +624,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (!execute_for_exists && context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
@@ -703,21 +709,53 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
         else
         {
-            auto io = interpreter->execute();
-            PullingAsyncPipelineExecutor executor(io.pipeline);
-            io.pipeline.setProgressCallback(context->getProgressCallback());
-            io.pipeline.setProcessListElement(context->getProcessListElement());
-            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+            BlockIO io;
+            auto & query_plan = interpreter->getQueryPlan();
+            bool skip_execution_for_exists = false;
 
+            if (execute_for_exists)
+            {
+                if (optimizePlanForExists(query_plan))
+                    skip_execution_for_exists = true;
+                else
+                {
+                    auto limit_step = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), 1, 0);
+                    query_plan.addStep(std::move(limit_step));
+                }
+            }
+
+            if (!skip_execution_for_exists)
+            {
+                QueryPlanOptimizationSettings optimization_settings(subquery_context);
+                BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
+
+                query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
+
+                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+
+                io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+                io.pipeline.setQuota(subquery_context->getQuota());
+            }
+
+            std::optional<PullingAsyncPipelineExecutor> executor;
             Block block;
 
-            while (block.rows() == 0 && executor.pull(block))
+            if (!skip_execution_for_exists)
             {
+                io.pipeline.setProgressCallback(context->getProgressCallback());
+                io.pipeline.setProcessListElement(context->getProcessListElement());
+                io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+
+                executor.emplace(io.pipeline);
+                while (block.rows() == 0 && executor->pull(block))
+                {
+                }
             }
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock()->getDataTypes();
+                const auto & sample_block = interpreter->getSampleBlock();
+                auto types = sample_block->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -733,8 +771,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
 
                 auto scalar_column = type->createColumn();
-                scalar_column->insert(Null());
-                scalar_block.insert({std::move(scalar_column), type, "null"});
+                if (skip_execution_for_exists)
+                    scalar_column->insert(1);
+                else
+                    scalar_column->insert(Null());
+                scalar_block.insert({std::move(scalar_column), type, sample_block->getByPosition(0).name});
             }
             else
             {
@@ -742,7 +783,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                while (tmp_block.rows() == 0 && executor->pull(tmp_block))
                 {
                 }
 
@@ -3020,18 +3061,33 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-            QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
+            if (only_analyze)
+            {
+                /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+                QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
-            function_node_ptr = std::make_shared<FunctionNode>("in");
-            function_node_ptr->getArguments().getNodes() = {
-                constant,
-                std::move(new_exists_argument)
-            };
+                function_node_ptr = std::make_shared<FunctionNode>("in");
+                function_node_ptr->getArguments().getNodes() = {
+                    constant,
+                    std::move(new_exists_argument)
+                };
 
-            node = function_node_ptr;
-            function_name = "in";
-            is_special_function_in = true;
+                node = function_node_ptr;
+                function_name = "in";
+                is_special_function_in = true;
+            }
+            else
+            {
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                auto res_col = ColumnUInt8::create();
+                const auto * const_node = new_exists_argument->as<ConstantNode>();
+                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
+                ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+                auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+                auto res = tme_const_node->getValueStringRepresentation();
+                node = std::move(tme_const_node);
+                return {std::move(res)};
+            }
         }
     }
 
