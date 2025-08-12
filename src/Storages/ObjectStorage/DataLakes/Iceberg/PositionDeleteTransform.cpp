@@ -28,6 +28,7 @@ extern const SettingsNonZeroUInt64 max_block_size;
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
