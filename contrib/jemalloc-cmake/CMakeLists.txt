@@ -62,6 +62,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/arena.c"
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
+    "${LIBRARY_DIR}/src/batcher.c"
     "${LIBRARY_DIR}/src/bin.c"
     "${LIBRARY_DIR}/src/bin_info.c"
     "${LIBRARY_DIR}/src/bitmap.c"
@@ -106,6 +107,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/prof_recent.c"
     "${LIBRARY_DIR}/src/prof_stats.c"
     "${LIBRARY_DIR}/src/prof_sys.c"
+    "${LIBRARY_DIR}/src/prof_threshold.c"
     "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
     "${LIBRARY_DIR}/src/safety_check.c"
@@ -120,6 +122,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/thread_event.c"
     "${LIBRARY_DIR}/src/ticker.c"
     "${LIBRARY_DIR}/src/tsd.c"
+    "${LIBRARY_DIR}/src/util.c"
     "${LIBRARY_DIR}/src/witness.c"
 )
 if (OS_DARWIN)

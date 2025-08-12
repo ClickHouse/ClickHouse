@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
 
 #define STRINGIFY_HELPER(x) #x
@@ -90,6 +91,49 @@ void setJemallocBackgroundThreads(bool enabled)
 void setJemallocMaxBackgroundThreads(size_t max_threads)
 {
     setJemallocValue("max_background_threads", max_threads);
+}
+
+namespace
+{
+void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtrace, unsigned backtrace_length, size_t usize)
+{
+    try
+    {
+        StackTrace::FramePointers frame_pointers;
+        auto stacktrace_size = std::min<size_t>(backtrace_length, frame_pointers.size());
+        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *));
+        TraceSender::send(
+            TraceType::JemallocSample,
+            StackTrace(std::move(frame_pointers), stacktrace_size),
+            TraceSender::Extras{.size = static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("JemallocProfiler"));
+    }
+}
+
+void jemallocDeallocationTracker(const void * ptr, unsigned usize)
+{
+    try
+    {
+        TraceSender::send(
+            TraceType::JemallocSample,
+            StackTrace(NoCapture{}),
+            TraceSender::Extras{.size = -static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("JemallocProfiler"));
+    }
+}
+
+}
+
+void setupJemallocSampleCollecting()
+{
+    setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+    setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
 }
 
 }

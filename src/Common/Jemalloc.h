@@ -29,7 +29,9 @@ void setJemallocValue(const char * name, T value)
     T old_value;
     size_t old_value_size = sizeof(T);
     mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T));
-    LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
+
+    if constexpr (!std::is_pointer_v<T>)
+        LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
 }
 
 template <typename T>
@@ -40,6 +42,8 @@ T getJemallocValue(const char * name)
     mallctl(name, &value, &value_size, nullptr, 0);
     return value;
 }
+
+void setupJemallocSampleCollecting();
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)

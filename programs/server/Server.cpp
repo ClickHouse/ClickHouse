@@ -2587,6 +2587,10 @@ try
     if (has_trace_collector)
         global_context->initializeTraceCollector();
 
+#if USE_JEMALLOC
+    setupJemallocSampleCollecting();
+#endif
+
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
