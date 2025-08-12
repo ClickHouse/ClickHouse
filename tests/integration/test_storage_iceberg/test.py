@@ -2575,10 +2575,11 @@ def test_writes_drop_table(started_cluster, format_version, storage_type):
         drop_iceberg_table(instance, TABLE_NAME)
     drop_iceberg_table(instance, TABLE_NAME, True)
 
-    files = default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-    assert len(files) == 6
+    # table directory should be empty
+    with pytest.raises(Exception):
+        default_download_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )

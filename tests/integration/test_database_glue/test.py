@@ -230,7 +230,7 @@ def drop_clickhouse_glue_table(
 ):
     node.query(
         f"""
-DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
+DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`;
     """
     )
 
@@ -572,6 +572,7 @@ def test_drop_table(started_cluster):
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     assert len(catalog.list_tables(root_namespace)) == 1
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0

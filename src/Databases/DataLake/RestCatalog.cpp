@@ -714,16 +714,9 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
     String response_str;
     if (!ignore_result)
-    {
         readJSONObjectPossiblyInvalid(response_str, *wb);
-    }
     else
-    {
-        char c;
-        while (wb->read(c))
-        {
-        }
-    }
+        wb->ignoreAll();
 }
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const

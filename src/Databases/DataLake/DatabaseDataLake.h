@@ -63,8 +63,8 @@ public:
         const ASTPtr & /*query*/) override {}
 
     void dropTable( /// NOLINT
-        ContextPtr /*context*/,
-        const String & /*name*/,
+        ContextPtr context_,
+        const String & name,
         bool /*sync*/) override;
 
 protected:
