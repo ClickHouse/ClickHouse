@@ -1,5 +1,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -827,9 +828,23 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     }
 
     if constexpr (std::is_same_v<ReturnType, bool>)
-        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+    {
+        // For DateTime64, we need special handling for pre-epoch timestamps
+        // The fractional part should always be added as positive, regardless of whole sign
+        DateTime64::NativeType result_value;
+        if (!common::mulOverflow(DateTime64::NativeType(whole), DecimalUtils::scaleMultiplier<DateTime64>(scale), result_value) &&
+            !common::addOverflow(result_value, fractional, result_value))
+        {
+            res = DateTime64(result_value);
+            return true;
+        }
+        return false;
+    }
 
-    res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
+    // For DateTime64, we need special handling for pre-epoch timestamps
+    // The fractional part should always be added as positive, regardless of whole sign
+    DateTime64::NativeType result_value = DateTime64::NativeType(whole) * DecimalUtils::scaleMultiplier<DateTime64>(scale) + fractional;
+    res = DateTime64(result_value);
     return ReturnType(true);
 }
 
