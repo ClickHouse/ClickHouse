@@ -344,7 +344,8 @@ def test_select(started_cluster):
         )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -550,6 +551,6 @@ def test_create(started_cluster):
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE table ilike '%test_list_tables_%'").strip()) == 1
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE table ilike '%test_list_tables_%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE table ilike '%{test_ref}%'").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE table ilike '%{test_ref}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
 
