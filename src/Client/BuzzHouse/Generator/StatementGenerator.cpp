@@ -3359,12 +3359,9 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     String backup_file = "backup";
     BackupRestore_BackupOutput outf = BackupRestore_BackupOutput_Null;
 
-    br->set_backup_number(backup_counter++);
     /// Set backup file
-    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
-    {
-        backup_file += std::to_string(br->backup_number());
-    }
+    br->set_backup_number(backup_counter++);
+    backup_file += std::to_string(br->backup_number());
     if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
     {
         static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
