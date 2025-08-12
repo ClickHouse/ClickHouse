@@ -56,6 +56,8 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
+        /// Whether to wrap a result using full argument replacement in quotes.
+        bool quote_replacement = true;
 
         bool hasSecrets() const
         {
@@ -710,6 +712,7 @@ protected:
             result.start = 1;
             result.count = 1;
             result.replacement = std::move(replacement);
+            result.quote_replacement = false;
         }
     }
 
