@@ -501,13 +501,15 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
                             "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
     });
 
-    String entry_path = enqueueQueryImpl(with_retries, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
-
+    String entry_path;
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zookeeper);
 
-        auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper->getKeeper());
+        entry_path = enqueueQueryImpl(with_retries, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
+        String try_path = entry_path + "/try";
+
+        auto try_node = zkutil::EphemeralNodeHolder::existing(try_path, *zookeeper->getKeeper());
         String entry_name = entry_path.substr(entry_path.rfind('/') + 1);
         auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
         task->entry = entry;
@@ -550,7 +552,20 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
         if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-        processTask(*task, zookeeper, internal_query);
+        try
+        {
+            processTask(*task, zookeeper, internal_query);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// If the keeper transaction will have failed with a ZNONODE error, it might mean that the session has expired and the node
+            /// deleted. In that case, we can throw to try again
+            if (e.code == Coordination::Error::ZNONODE && zookeeper->expired() && e.message().contains(try_path))
+                throw Coordination::Exception::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Keeper session expired when enqueuing the task. Please try again");
+            LOG_WARNING(log, "Failed to process task {}: code {}: {}. Expired? {} Match? {}",
+                task->entry_name, e.code, e.message(), zookeeper->expired(), e.message().contains(try_path));
+            throw;
+        }
 
         if (!task->was_executed)
         {
