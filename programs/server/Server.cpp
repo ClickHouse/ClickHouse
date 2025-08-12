@@ -2340,8 +2340,15 @@ try
             async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
+    }
 
+#if USE_SSL
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
+    {
+        std::lock_guard lock(servers_lock);
         for (auto & server : servers_to_start_before_tables)
         {
             server.start();
