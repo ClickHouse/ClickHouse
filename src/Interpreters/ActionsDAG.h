@@ -52,15 +52,6 @@ struct DeserializedSetsRegistry;
 class ActionsDAG
 {
 public:
-    ~ActionsDAG()
-    {
-        LOG_DEBUG(
-            &Poco::Logger::get("ActionsDAG"),
-            "ActionsDAG destructor called, nodes count: {}, dag address: {}",
-            nodes.size(),
-            static_cast<void *>(this));
-    }
-
     enum class ActionType : uint8_t
     {
         /// Column which must be in input.
