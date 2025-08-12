@@ -109,8 +109,6 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 {
     auto result_context = Context::createCopy(context);
 
-
-
     if (select_query_options.shard_num)
         result_context->addSpecialScalar(
             "_shard_num",
