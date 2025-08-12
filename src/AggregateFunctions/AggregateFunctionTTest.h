@@ -35,34 +35,44 @@ namespace ErrorCodes
 }
 
 
-/// Returns tuple of (t-statistic, p-value)
+/// Returns tuple of (t-statistic, p-value) for both two-sample and one-sample t-tests
 /// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
-template <typename Data>
+template <typename Data, bool IsOneSample = false>
 class AggregateFunctionTTest final:
-    public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
+    public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data, IsOneSample>>
 {
 private:
     bool need_confidence_interval = false;
     Float64 confidence_level;
+    Float64 population_mean = 0.0;  // Only used for one-sample tests
+
 public:
     AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params, createResultType(!params.empty()))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data, IsOneSample>>({arguments}, params, createResultType(!params.empty()))
     {
-        if (!params.empty())
+        if constexpr (IsOneSample)
+        {
+            // One-sample: requires population_mean parameter
+            if (params.size() < 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires at least one parameter (population_mean).", Data::name);
+
+            population_mean = params.at(0).safeGet<Float64>();
+            if (!std::isfinite(population_mean))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite population mean.", Data::name);
+        }
+
+        // Handle confidence level parameter
+        size_t confidence_param_index = IsOneSample ? 1 : 0;
+        if (params.size() > confidence_param_index)
         {
             need_confidence_interval = true;
-            confidence_level = params.at(0).safeGet<Float64>();
+            confidence_level = params.at(confidence_param_index).safeGet<Float64>();
 
             if (!std::isfinite(confidence_level))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
-            }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite confidence level.", Data::name);
 
             if (confidence_level <= 0.0 || confidence_level >= 1.0 || fabs(confidence_level - 0.0) < DBL_EPSILON || fabs(confidence_level - 1.0) < DBL_EPSILON)
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
-            }
-
         }
     }
 
@@ -114,13 +124,28 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
-
-        if (is_second)
-            this->data(place).addY(value);
+        if constexpr (IsOneSample)
+        {
+            // One-sample: single value input with population mean setup
+            Float64 value = columns[0]->getFloat64(row_num);
+            auto & data = this->data(place);
+            
+            if (data.n == 0)  // First value, set population mean
+                data.setPopulationMean(population_mean);
+                
+            data.add(value);
+        }
         else
-            this->data(place).addX(value);
+        {
+            // Two-sample: binary input with group indicator
+            Float64 value = columns[0]->getFloat64(row_num);
+            UInt8 is_second = columns[1]->getUInt(row_num);
+
+            if (is_second)
+                this->data(place).addY(value);
+            else
+                this->data(place).addX(value);
+        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -174,11 +199,24 @@ public:
 
         if (need_confidence_interval)
         {
-            auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
-            auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
-            auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
-            column_ci_low.getData().push_back(ci_low);
-            column_ci_high.getData().push_back(ci_high);
+            if constexpr (IsOneSample)
+            {
+                // One-sample: confidence intervals don't need degrees of freedom parameter
+                auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level);
+                auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+                auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+                column_ci_low.getData().push_back(ci_low);
+                column_ci_high.getData().push_back(ci_high);
+            }
+            else
+            {
+                // Two-sample: confidence intervals need degrees of freedom parameter
+                auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
+                auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+                auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+                column_ci_low.getData().push_back(ci_low);
+                column_ci_high.getData().push_back(ci_high);
+            }
         }
     }
 };
