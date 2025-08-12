@@ -257,8 +257,7 @@ public:
     void forEachValue(Func && func)
     {
         // to small table we can iterate without prefetching
-        constexpr size_t prefetch_min_size = 10000;
-        if (CouldPrefetchKey<Cell> && this->size() > prefetch_min_size)
+        if (CouldPrefetchKey<Cell> && this->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
         {
             auto it = this->prefetchingBegin();
             auto end = this->prefetchingEnd();

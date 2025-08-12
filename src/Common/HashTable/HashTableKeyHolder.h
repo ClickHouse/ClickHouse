@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <base/StringRef.h>
 
 #include <Common/Arena.h>
@@ -136,8 +137,9 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 inline void KeyPrefetch(const StringRef & key)
 {
     const size_t cache_line_size = 64;
-    const size_t max_prefetch = 256;
-    const size_t n = key.size < max_prefetch ? key.size : max_prefetch;
+    // Prefetch up to 4 cache lines.
+    const size_t max_prefetch = cache_line_size * 4;
+    const size_t n = std::min(key.size, max_prefetch);
     const char * ptr = key.data;
     const char * end = ptr + n;
     for (; ptr < end; ptr += cache_line_size)

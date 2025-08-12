@@ -618,6 +618,7 @@ protected:
     }
 
     // Prefetching keys will reduce cache misses and improve performance.
+    // Maybe reusing iterator_base is better
     template <typename Derived, bool is_const>
     class prefetching_iterator_base
     {
@@ -625,50 +626,13 @@ protected:
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
 
-        struct RingBuffer
-        {
-            static constexpr size_t CAPACITY = 8;
-            cell_type * buf[CAPACITY];
-            size_t head;
-            size_t tail;
-            size_t count = 0;
-
-            RingBuffer() : head(0), tail(0), count(0) {}
-
-            size_t size() const { return count; }
-
-            size_t capacity() const { return CAPACITY; }
-
-            inline void push(cell_type * cell)
-            {
-                if (count < CAPACITY)
-                {
-                    buf[tail] = cell;
-                    tail = (tail + 1) % CAPACITY;
-                    ++count;
-                }
-                else
-                {
-                    buf[head] = cell;
-                    head = (head + 1) % CAPACITY;
-                }
-            }
-
-            inline cell_type * front() const { return buf[head]; }
-
-            inline void pop()
-            {
-                head = (head + 1) % CAPACITY;
-                --count;
-            }
-        };
 
         Container * container;
         cell_type * ptr;
-        cell_type * next_ptr = nullptr;
+        cell_type * prefetch_ptr = nullptr;
         DB::PrefetchingHelper prefetching;
-        RingBuffer prefetch_buffer; /// Buffer for prefetching next elements.
         size_t prefetch_ahead = 2;
+        size_t prefetched_count = 0;
         size_t iter_count = 0;
 
         friend class HashTable;
@@ -684,12 +648,29 @@ protected:
         {
             if (CouldPrefetchKey<cell_type>)
             {
-                if (ptr->isZero(*container)) [[unlikely]]
-                    next_ptr = container->buf;
-                else if (!next_ptr) [[unlikely]]
-                    next_ptr = ptr + 1;
 
-                prepareNext();
+                if (ptr->isZero(*container)) [[unlikely]]
+                {
+                    ptr = container->buf;
+                    prefetch_ptr = ptr;
+                }
+                else if (!prefetch_ptr) [[unlikely]]
+                {
+                    ++ptr;
+                    prefetch_ptr = ptr;
+                }
+                else
+                    ++ptr;
+
+                prefetch();
+
+                /// Skip empty cells in the main buffer.
+                auto * buf_end = container->buf + container->grower.bufSize();
+                while (ptr < buf_end && ptr->isZero(*container))
+                    ++ptr;
+
+                if (prefetched_count > 0)
+                    prefetched_count--;
             }
             else
             {
@@ -713,33 +694,34 @@ protected:
         operator Cell * () const { return nullptr; } /// NOLINT
 
     private:
-        void prepareNext()
+
+        void prefetch()
         {
             auto * buf_end = container->buf + container->grower.bufSize();
             iter_count++;
-            if (prefetch_buffer.size() <  prefetch_ahead && next_ptr < buf_end) [[likely]]
+            if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
             {
                 if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
-                    prefetch_ahead = std::min(prefetch_buffer.capacity(), prefetching.calcPrefetchLookAhead());
-
-                auto n = prefetch_ahead - prefetch_buffer.size();
+                    prefetch_ahead = prefetching.calcPrefetchLookAhead();
+                auto n = prefetch_ahead - prefetched_count;
                 cell_type * last_ptr = nullptr;
                 for (size_t i = 0; i < n; ++i)
                 {
-                    while (next_ptr < buf_end && next_ptr->isZero(*container))
+                    while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
                     {
-                        ++next_ptr;
+                        ++prefetch_ptr;
                     }
 
-                    if (next_ptr < buf_end) [[likely]]
+                    if (prefetch_ptr < buf_end) [[likely]]
                     {
-                        prefetch_buffer.push(next_ptr);
-                        last_ptr = next_ptr;
-                        next_ptr++;
+                        last_ptr = prefetch_ptr;
+                        prefetch_ptr++;
+                        prefetched_count++;
                     }
                     else
                         break;
                 }
+
                 if (last_ptr) [[likely]]
                 {
                     if constexpr (CouldPrefetchKey<cell_type>)
@@ -747,16 +729,6 @@ protected:
                         KeyPrefetch(last_ptr->getKey());
                     }
                 }
-            }
-
-            if (prefetch_buffer.size() > 0) [[likely]]
-            {
-                ptr = prefetch_buffer.front();
-                prefetch_buffer.pop();
-            }
-            else
-            {
-                ptr = buf_end;
             }
         }
     };
