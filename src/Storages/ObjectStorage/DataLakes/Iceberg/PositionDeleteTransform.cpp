@@ -110,6 +110,56 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", column_name);
 }
 
+void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    IColumn::Filter delete_vector(num_rows, true);
+    size_t num_rows_after_filtration = num_rows;
+
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
+    if (!chunk_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
+
+    size_t row_num_offset = chunk_info->row_num_offset;
+    for (size_t i = 0; i < num_rows; i++)
+    {
+        size_t row_idx = row_num_offset + i;
+        if (bitmap.rb_contains(row_idx))
+        {
+            delete_vector[i] = false;
+            num_rows_after_filtration--;
+        }
+    }
+
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->filter(delete_vector, -1);
+
+    chunk.setColumns(std::move(columns), num_rows_after_filtration);
+}
+
+void IcebergBitmapPositionDeleteTransform::initialize()
+{
+    for (auto & delete_source : delete_sources)
+    {
+        while (auto delete_chunk = delete_source->read())
+        {
+            int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
+
+            auto position_column = delete_chunk.getColumns()[position_index];
+            auto filename_column = delete_chunk.getColumns()[filename_index];
+
+            for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
+            {
+                auto position_to_delete = position_column->get64(i);
+                bitmap.add(position_to_delete);
+            }
+        }
+    }
+}
+
+
 void IcebergStreamingPositionDeleteTransform::initialize()
 {
     for (size_t i = 0; i < delete_sources.size(); ++i)

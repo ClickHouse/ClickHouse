@@ -6805,6 +6805,9 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+Use roaring bitmap for iceberg positional deletes.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
