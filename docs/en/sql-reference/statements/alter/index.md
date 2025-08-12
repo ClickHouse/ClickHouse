@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/
+description: 'Documentation for ALTER'
+sidebar_label: 'ALTER'
 sidebar_position: 35
-sidebar_label: ALTER
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
 ---
 
 # ALTER

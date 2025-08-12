@@ -1,12 +1,13 @@
 ---
-slug: /engines/table-engines/special/file
+description: 'The File table engine keeps the data in a file in one of the supported
+  file formats (`TabSeparated`, `Native`, etc.).'
+sidebar_label: 'File'
 sidebar_position: 40
-sidebar_label:  File
-title: "File Table Engine"
-description: "The File table engine keeps the data in a file in one of the supported file formats (`TabSeparated`, `Native`, etc.)."
+slug: /engines/table-engines/special/file
+title: 'File Table Engine'
 ---
 
-# File Table Engine
+# `File` table engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 
@@ -22,7 +23,7 @@ This engine is not currently available in ClickHouse Cloud, please [use the S3 t
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
-``` sql
+```sql
 File(Format)
 ```
 
@@ -45,7 +46,7 @@ Be careful with this functionality, because ClickHouse does not keep track of ex
 
 **1.** Set up the `file_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -53,7 +54,7 @@ By default ClickHouse will create folder `/var/lib/clickhouse/data/default/file_
 
 **2.** Manually create `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` containing:
 
-``` bash
+```bash
 $ cat data.TabSeparated
 one 1
 two 2
@@ -61,11 +62,11 @@ two 2
 
 **3.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM file_engine_table
 ```
 
-``` text
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
@@ -78,7 +79,7 @@ In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File en
 
 **Example:**
 
-``` bash
+```bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
@@ -88,10 +89,10 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 - Supported creating new file by `INSERT` query.
 - If file exists, `INSERT` would append new values in it.
 - Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - Indices
-    - Replication
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - Indices
+  - Replication
 
 ## PARTITION BY {#partition-by}
 
@@ -99,7 +100,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.

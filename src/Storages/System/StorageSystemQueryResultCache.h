@@ -8,7 +8,7 @@ namespace DB
 class StorageSystemQueryResultCache final : public IStorageSystemOneBlock
 {
 public:
-    explicit StorageSystemQueryResultCache(const StorageID & table_id_);
+    explicit StorageSystemQueryResultCache(const StorageID & table_id);
 
     std::string getName() const override { return "SystemQueryResultCache"; }
 

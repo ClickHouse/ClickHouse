@@ -70,7 +70,7 @@ String NameAndTypePair::dump() const
     return out.str();
 }
 
-void NamesAndTypesList::readText(ReadBuffer & buf)
+void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -91,7 +91,8 @@ void NamesAndTypesList::readText(ReadBuffer & buf)
         emplace_back(column_name, data_type_factory.get(type_name));
     }
 
-    assertEOF(buf);
+    if (check_eof)
+        assertEOF(buf);
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
@@ -168,6 +169,15 @@ NameSet NamesAndTypesList::getNameSet() const
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
         res.insert(column.name);
+    return res;
+}
+
+std::unordered_map<std::string, DataTypePtr> NamesAndTypesList::getNameToTypeMap() const
+{
+    std::unordered_map<std::string, DataTypePtr> res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.emplace(column.name, column.type);
     return res;
 }
 
@@ -296,6 +306,63 @@ String NamesAndTypesList::toNamesAndTypesDescription() const
         writeString(name_and_type.type->getName(), buf);
     }
     return buf.str();
+}
+
+void NamesAndTypesList::readTextWithNamesInStorage(ReadBuffer & buf)
+{
+    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+    assertString("columns format version: 1\n", buf);
+    size_t count;
+    DB::readText(count, buf);
+    assertString(" columns:\n", buf);
+
+    String column_name;
+    String type_name;
+    String name_in_storage;
+    String type_in_storage;
+    for (size_t i = 0; i < count; ++i)
+    {
+        buf >> "name: ";
+        readBackQuotedStringWithSQLStyle(column_name, buf);
+        buf >> "\n";
+
+        buf >> "type: " >> type_name >> "\n";
+
+        buf >> "name in storage: ";
+        readBackQuotedStringWithSQLStyle(name_in_storage, buf);
+        buf >> "\n";
+
+        buf >> "type in storage: " >> type_in_storage >> "\n";
+
+        emplace_back(
+            column_name,
+            name_in_storage,
+            data_type_factory.get(type_in_storage),
+            data_type_factory.get(type_name));
+    }
+
+}
+
+void NamesAndTypesList::writeTextWithNamesInStorage(WriteBuffer & buf) const
+{
+    writeString("columns format version: 1\n", buf);
+    DB::writeText(size(), buf);
+    writeString(" columns:\n", buf);
+    for (const auto & it : *this)
+    {
+        buf << "name: ";
+        writeBackQuotedString(it.getNameInStorage(), buf);
+        buf << "\n";
+
+        buf << "type: " << it.type->getName() << "\n";
+
+        buf << "name in storage: ";
+        writeBackQuotedString(it.getSubcolumnName(), buf);
+        buf << "\n";
+
+        buf << "type in storage: " << it.getTypeInStorage()->getName() << "\n";
+    }
 }
 
 }

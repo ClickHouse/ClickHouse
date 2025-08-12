@@ -1,16 +1,16 @@
 ---
-title: JSONAsString
-slug: /interfaces/formats/JSONAsString
-keywords: [JSONAsString]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the JSONAsString format'
+input_format: true
+keywords: ['JSONAsString']
+output_format: false
+slug: /interfaces/formats/JSONAsString
+title: 'JSONAsString'
 ---
 
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✔     | ✗       |       |
-
 
 ## Description {#description}
 
@@ -26,9 +26,9 @@ or be omitted.
 
 Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Basic Example {#basic-example}
+### Basic example {#basic-example}
 
 ```sql title="Query"
 DROP TABLE IF EXISTS json_as_string;
@@ -61,4 +61,4 @@ SELECT * FROM json_square_brackets;
 └────────────────────────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

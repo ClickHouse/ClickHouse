@@ -236,10 +236,6 @@ class WorkflowConfigParser:
                     assert (
                         False
                     ), f"Artifact [{artifact_name}] has unsupported type [{artifact.type}]"
-            if not artifact.required_by and artifact.type != Artifact.Type.PHONY:
-                print(
-                    f"WARNING: Artifact [{artifact_name}] provided by job [{artifact.provided_by}] in workflow [{self.workflow_name}] has no job that requires it"
-                )
             if artifact.type == Artifact.Type.GH:
                 self.workflow_yaml_config.job_to_config[
                     artifact.provided_by

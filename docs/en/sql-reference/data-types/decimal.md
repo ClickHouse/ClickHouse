@@ -1,7 +1,11 @@
 ---
-slug: /sql-reference/data-types/decimal
+description: 'Documentation for the Decimal data types in ClickHouse, which provide
+  fixed-point arithmetic with configurable precision'
+sidebar_label: 'Decimal'
 sidebar_position: 6
-sidebar_label: Decimal
+slug: /sql-reference/data-types/decimal
+title: 'Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S),
+  Decimal256(S)'
 ---
 
 # Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S)
@@ -23,6 +27,7 @@ Depending on P parameter value Decimal(P, S) is a synonym for:
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
+- Decimal(P, S) - ( -1 \* 10^(P - S), 1 \* 10^(P - S) )
 - Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
 - Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
 - Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
@@ -65,40 +70,40 @@ During calculations on Decimal, integer overflows might happen. Excessive digits
 Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
 :::
 
-``` sql
+```sql
 SELECT toDecimal32(2, 4) AS x, x / 3
 ```
 
-``` text
+```text
 ┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
 │ 2.0000 │                       0.6666 │
 └────────┴──────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT toDecimal32(4.2, 8) AS x, x * x
 ```
 
-``` text
+```text
 DB::Exception: Scale is out of bounds.
 ```
 
-``` sql
+```sql
 SELECT toDecimal32(4.2, 8) AS x, 6 * x
 ```
 
-``` text
+```text
 DB::Exception: Decimal math overflow.
 ```
 
 Overflow checks lead to operations slowdown. If it is known that overflows are not possible, it makes sense to disable checks using `decimal_check_overflow` setting. When checks are disabled and overflow happens, the result will be incorrect:
 
-``` sql
+```sql
 SET decimal_check_overflow = 0;
 SELECT toDecimal32(4.2, 8) AS x, 6 * x
 ```
 
-``` text
+```text
 ┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
 │ 4.20000000 │                     -17.74967296 │
 └────────────┴──────────────────────────────────┘
@@ -106,11 +111,11 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 
 Overflow checks happen not only on arithmetic operations but also on value comparison:
 
-``` sql
+```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
-``` text
+```text
 DB::Exception: Can't compare.
 ```
 

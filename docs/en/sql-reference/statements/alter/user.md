@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/alter/user
+description: 'Documentation for User'
+sidebar_label: 'USER'
 sidebar_position: 45
-sidebar_label: USER
-title: "ALTER USER"
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
 ---
 
 Changes ClickHouse user accounts.
 
 Syntax:
 
-``` sql
+```sql
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
     [ON CLUSTER cluster_name]
     [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
@@ -43,7 +44,7 @@ You can exclude any user or role by using the `EXCEPT` expression. For example, 
 
 Set assigned roles as default:
 
-``` sql
+```sql
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
@@ -51,7 +52,7 @@ If roles aren't previously assigned to a user, ClickHouse throws an exception.
 
 Set all the assigned roles to default:
 
-``` sql
+```sql
 ALTER USER user DEFAULT ROLE ALL
 ```
 
@@ -59,19 +60,19 @@ If a role is assigned to a user in the future, it will become default automatica
 
 Set all the assigned roles to default, excepting `role1` and `role2`:
 
-``` sql
+```sql
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
 Allows the user with `john` account to grant his privileges to the user with `jack` account:
 
-``` sql
+```sql
 ALTER USER john GRANTEES jack;
 ```
 
 Adds new authentication methods to the user while keeping the existing ones:
 
-``` sql
+```sql
 ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
@@ -80,7 +81,7 @@ Notes:
 2. `no_password` can not co-exist with other authentication methods for security reasons.
 Because of that, it is not possible to `ADD` a `no_password` authentication method. The below query will throw an error:
 
-``` sql
+```sql
 ALTER USER user1 ADD IDENTIFIED WITH no_password
 ```
 
@@ -88,12 +89,12 @@ If you want to drop authentication methods for a user and rely on `no_password`,
 
 Reset authentication methods and adds the ones specified in the query (effect of leading IDENTIFIED without the ADD keyword):
 
-``` sql
+```sql
 ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
 Reset authentication methods and keep the most recent added one:
-``` sql
+```sql
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 

@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for FROM Clause'
+sidebar_label: 'FROM'
 slug: /sql-reference/statements/select/from
-sidebar_label: FROM
+title: 'FROM Clause'
 ---
 
 # FROM Clause
@@ -28,7 +30,7 @@ SELECT *
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from from tables using the following table engines:
+It is applicable when selecting data from tables using the following table engines:
 - `ReplacingMergeTree`
 - `SummingMergeTree`
 - `AggregatingMergeTree`

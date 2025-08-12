@@ -1,11 +1,14 @@
 ---
-description: "System table containing a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk."
+description: 'System table containing a history of memory and metric values from table
+  `system.events` for individual queries, periodically flushed to disk.'
+keywords: ['system table', 'query_metric_log']
 slug: /operations/system-tables/query_metric_log
-title: "system.query_metric_log"
-keywords: ["system table", "query_metric_log"]
+title: 'system.query_metric_log'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.query_metric_log
 
 <SystemTableCloud/>
 
@@ -23,11 +26,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.query_metric_log LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 query_id:                                                        97c8ba04-b6d4-4bd7-b13e-6201c5c6e49d

@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 server_opts=(
-    "--config-file=$CUR_DIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
+    "--config-file=$CUR_DIR/01737_clickhouse_server_wait_server_pool_long.config.xml"
     "--"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"

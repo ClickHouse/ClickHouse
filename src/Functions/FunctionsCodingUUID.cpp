@@ -496,7 +496,7 @@ This function accepts a UUID and returns a FixedString(16) as its binary represe
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┴──────────────────┘
 )"}},
-            .category{"UUID"}});
+            .category = FunctionDocumentation::Category::UUID});
 
 
     factory.registerFunction<FunctionUUIDv7ToDateTime>(
@@ -509,7 +509,7 @@ An optional second argument can be passed to specify a timezone for the timestam
             .examples{
                 {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
                 {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
-            .category{"UUID"}});
+            .category = FunctionDocumentation::Category::UUID});
 }
 
 }

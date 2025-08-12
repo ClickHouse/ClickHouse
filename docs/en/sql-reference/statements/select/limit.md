@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for LIMIT Clause'
+sidebar_label: 'LIMIT'
 slug: /sql-reference/statements/select/limit
-sidebar_label: LIMIT
+title: 'LIMIT Clause'
 ---
 
 # LIMIT Clause
@@ -25,7 +27,7 @@ This modifier also can be combined with [ORDER BY ... WITH FILL modifier](/sql-r
 
 For example, the following query
 
-``` sql
+```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5
@@ -33,7 +35,7 @@ SELECT * FROM (
 
 returns
 
-``` text
+```text
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -45,7 +47,7 @@ returns
 
 but after apply `WITH TIES` modifier
 
-``` sql
+```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5 WITH TIES
@@ -53,7 +55,7 @@ SELECT * FROM (
 
 it returns another rows set
 
-``` text
+```text
 ┌─n─┐
 │ 0 │
 │ 0 │

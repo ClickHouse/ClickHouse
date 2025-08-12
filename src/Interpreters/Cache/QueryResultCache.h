@@ -4,8 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/Block.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,6 +15,8 @@
 namespace DB
 {
 
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?
@@ -46,7 +47,7 @@ public:
 
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        IAST::Hash ast_hash;
+        IASTHash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -56,7 +57,7 @@ public:
         /// Additional stuff data stored in the key, not hashed:
 
         /// Result metadata for constructing the pipe.
-        const Block header;
+        SharedHeader header;
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -97,7 +98,7 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            Block header_,
+            SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -127,7 +128,7 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct QueryResultCacheEntryWeight
+    struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
@@ -139,7 +140,7 @@ private:
 
 public:
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -251,7 +252,7 @@ private:
     using Cache = QueryResultCache::Cache;
 
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;

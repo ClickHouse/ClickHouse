@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for WHERE Clause'
+sidebar_label: 'WHERE'
 slug: /sql-reference/statements/select/where
-sidebar_label: WHERE
+title: 'WHERE Clause'
 ---
 
 # WHERE Clause
@@ -22,13 +24,13 @@ Otherwise an expression with `NULL` never passes.
 
 To find numbers that are multiples of 3 and are greater than 10 execute the following query on the [numbers table](../../../sql-reference/table-functions/numbers.md):
 
-``` sql
+```sql
 SELECT number FROM numbers(20) WHERE (number > 10) AND (number % 3 == 0);
 ```
 
 Result:
 
-``` text
+```text
 ┌─number─┐
 │     12 │
 │     15 │
@@ -38,7 +40,7 @@ Result:
 
 Queries with `NULL` values:
 
-``` sql
+```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE=MergeTree() ORDER BY x;
 INSERT INTO t_null VALUES (1, NULL), (2, 3);
 
@@ -48,7 +50,7 @@ SELECT * FROM t_null WHERE y != 0;
 
 Result:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘

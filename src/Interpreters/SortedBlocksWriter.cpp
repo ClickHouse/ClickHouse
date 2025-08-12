@@ -40,7 +40,7 @@ void updateProfileEvents(TemporaryDataBuffer::Stat stat)
 
 TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & block)
 {
-    TemporaryBlockStreamHolder stream_holder(block.cloneEmpty(), tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data.get());
     stream_holder->write(block);
 
     auto stat = stream_holder.finishWriting();
@@ -52,7 +52,7 @@ TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & 
 
 TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & header, QueryPipelineBuilder pipeline)
 {
-    TemporaryBlockStreamHolder stream_holder(header, tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data.get());
 
     auto exec_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     PullingPipelineExecutor executor(exec_pipeline);
@@ -68,7 +68,7 @@ TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_d
 }
 
 SortedBlocksWriter::SortedFiles flushToManyFiles(const TemporaryDataOnDiskScopePtr & tmp_data, QueryPipelineBuilder builder,
-                                                 std::function<void(const Block &)> callback = [](const Block &){})
+                                                 std::function<void(const Block &)> callback)
 {
     SortedBlocksWriter::SortedFiles files;
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -154,13 +154,13 @@ void SortedBlocksWriter::insert(Block && block)
     }
 }
 
-SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & blocks) const
+TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) const
 {
     Pipes pipes;
     pipes.reserve(blocks.size());
     for (const auto & block : blocks)
         if (auto num_rows = block.rows())
-            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), num_rows)));
+            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), Chunk(block.getColumns(), num_rows)));
 
     if (pipes.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty block");
@@ -171,7 +171,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
+            pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
@@ -182,6 +182,42 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     }
 
     return flushToFile(tmp_data, sample_block, std::move(pipeline));
+}
+
+class TemporaryFileLazySource : public ISource
+{
+public:
+    explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
+        : ISource(std::make_shared<const Block>(reader_->getHeader()), true)
+        , reader(std::move(reader_))
+        , done(false)
+    {}
+
+    String getName() const override { return "TemporaryFileLazySource"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (done)
+            return {};
+
+        auto block = reader->read();
+        if (block.empty())
+        {
+            done = true;
+            reader.reset();
+        }
+        return Chunk(block.getColumns(), block.rows());
+    }
+
+private:
+    TemporaryBlockStreamReaderHolder reader;
+    bool done;
+};
+
+Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
+{
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
 }
 
 SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
@@ -227,7 +263,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                     if (pipeline.getNumStreams() > 1)
                     {
                         auto transform = std::make_shared<MergingSortedTransform>(
-                            pipeline.getHeader(),
+                            pipeline.getSharedHeader(),
                             pipeline.getNumStreams(),
                             sort_description,
                             rows_in_block,
@@ -262,7 +298,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
     {
         ProfileEvents::increment(ProfileEvents::ExternalJoinMerge);
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
+            pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
@@ -275,43 +311,6 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
     return flushToManyFiles(tmp_data, std::move(pipeline), callback);
 }
 
-class TemporaryFileLazySource : public ISource
-{
-public:
-    explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
-        : ISource(reader_->getHeader(), true)
-        , reader(std::move(reader_))
-        , done(false)
-    {}
-
-    String getName() const override { return "TemporaryFileLazySource"; }
-
-protected:
-    Chunk generate() override
-    {
-        if (done)
-            return {};
-
-        auto block = reader->read();
-        if (!block)
-        {
-            done = true;
-            reader.reset();
-        }
-        return Chunk(block.getColumns(), block.rows());
-    }
-
-private:
-    TemporaryBlockStreamReaderHolder reader;
-    bool done;
-};
-
-Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
-{
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
-}
-
-
 Block SortedBlocksBuffer::exchange(Block && block)
 {
     static constexpr const double reserve_coefficient = 1.2;
@@ -322,7 +321,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
     {
         std::lock_guard lock(mutex);
 
-        if (block)
+        if (!block.empty())
         {
             current_bytes += block.bytes();
             buffer.emplace_back(std::move(block));
@@ -360,7 +359,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
         {
             num_rows += block.rows();
             Chunk chunk(block.getColumns(), block.rows());
-            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
+            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
         }
 
         Blocks tmp_blocks;
@@ -371,7 +370,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
         if (builder.getNumStreams() > 1)
         {
             auto transform = std::make_shared<MergingSortedTransform>(
-                builder.getHeader(),
+                builder.getSharedHeader(),
                 builder.getNumStreams(),
                 sort_description,
                 num_rows,
@@ -389,9 +388,6 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
 
         blocks.swap(tmp_blocks);
     }
-
-    if (blocks.size() == 1)
-        return blocks[0];
 
     return concatenateBlocks(blocks);
 }

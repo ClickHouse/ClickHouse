@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiledeterministic
+description: 'Computes an approximate quantile of a numeric data sequence.'
 sidebar_position: 172
-title: "quantileDeterministic"
-description: "Computes an approximate quantile of a numeric data sequence."
+slug: /sql-reference/aggregate-functions/reference/quantiledeterministic
+title: 'quantileDeterministic'
 ---
 
 # quantileDeterministic
@@ -15,7 +15,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileDeterministic(level)(expr, determinator)
 ```
 
@@ -41,7 +41,7 @@ Type:
 
 Input table:
 
-``` text
+```text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -52,13 +52,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileDeterministic(val, 1) FROM t
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileDeterministic(val, 1)─┐
 │                           1.5 │
 └───────────────────────────────┘

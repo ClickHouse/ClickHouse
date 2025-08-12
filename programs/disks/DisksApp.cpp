@@ -1,12 +1,13 @@
-#include "DisksApp.h"
+#include <DisksApp.h>
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include "Common/Exception.h"
-#include "Common/filesystemHelpers.h"
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
-#include "DisksClient.h"
-#include "ICommand.h"
-#include "ICommand_fwd.h"
+#include <Common/Macros.h>
+#include <DisksClient.h>
+#include <ICommand.h>
+#include <ICommand_fwd.h>
 
 #include <cstring>
 #include <exception>
@@ -21,13 +22,15 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
-#include "Loggers/OwnPatternFormatter.h"
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include "config.h"
 
-#include "Utils.h"
+#include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+
+#include <Poco/FileChannel.h>
 
 namespace DB
 {
@@ -221,7 +224,7 @@ bool DisksApp::processQueryText(const String & text)
         catch (DB::Exception & err)
         {
             int code = err.code();
-            error_string = getExceptionMessage(err, true, false);
+            error_string = getExceptionMessageForLogging(err, true, false);
             if (code == ErrorCodes::BAD_ARGUMENTS)
             {
                 if (command.get())
@@ -256,16 +259,19 @@ bool DisksApp::processQueryText(const String & text)
 
 void DisksApp::runInteractiveReplxx()
 {
-    ReplxxLineReader lr(
-        suggest,
-        history_file,
-        history_max_entries,
-        /* multiline= */ false,
-        /* ignore_shell_suspend= */ false,
-        query_extenders,
-        query_delimiters,
-        word_break_characters.c_str(),
-        /* highlighter_= */ {});
+    auto reader_options = ReplxxLineReader::Options
+    {
+        .suggest = suggest,
+        .history_file_path = history_file,
+        .history_max_entries = history_max_entries,
+        .multiline = false,
+        .ignore_shell_suspend = false,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = {},
+    };
+    ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)
@@ -488,6 +494,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
+    Poco::AutoPtr<Poco::FileChannel> log_file{nullptr};
+
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");
@@ -495,9 +503,19 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
+        log_file = new Poco::FileChannel;
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(log_path));
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, "100M");
+        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, "false");
+        log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, "false");
+        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, "true");
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+        log_file->open();
+
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
-        logger().setChannel(log);
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, log_file);
+        Poco::Logger::root().setChannel(log);
     }
     else
     {
@@ -523,6 +541,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
+    if (config().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
+
     String path = config().getString("path", DBMS_DEFAULT_PATH);
 
     global_context->setPath(path);
@@ -539,6 +560,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     {
         processQueryText(query.value());
     }
+
+    if (log_file)
+        log_file->close();
 
     return Application::EXIT_OK;
 }
@@ -580,9 +604,9 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
         app.init(common_arguments);
         return app.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for GROUP BY Clause'
+sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
-sidebar_label: GROUP BY
+title: 'GROUP BY Clause'
 ---
 
 # GROUP BY Clause
@@ -25,7 +27,7 @@ Here's an example to show what this means.
 
 Assume you have this table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -37,7 +39,7 @@ Assume you have this table:
 
 The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 
-``` text
+```text
 ┌─sum(x)─┬────y─┐
 │      4 │    2 │
 │      3 │    3 │
@@ -256,7 +258,7 @@ You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](/sql
 
 For example:
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -267,7 +269,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -280,7 +282,7 @@ For a special case that if there is a function having both aggregate functions a
 
 For example:
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -290,7 +292,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -302,7 +304,7 @@ GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 
 Example:
 
-``` sql
+```sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -314,7 +316,7 @@ As opposed to MySQL (and conforming to standard SQL), you can't get some value o
 
 Example:
 
-``` sql
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
@@ -373,12 +375,12 @@ The aggregation can be performed more effectively, if a table is sorted by some 
 ### GROUP BY in External Memory {#group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
-The [max_bytes_before_external_group_by](/operations/settings/query-complexity.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
-Alternatively, you can set [max_bytes_ratio_before_external_group_by](/operations/settings/query-complexity.md#settings-max_bytes_ratio_before_external_group_by), which allows to use `GROUP BY` in external memory only once the query reaches certain threshold of used memory.
+The [max_bytes_before_external_group_by](/operations/settings/settings#max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
+Alternatively, you can set [max_bytes_ratio_before_external_group_by](/operations/settings/settings#max_bytes_ratio_before_external_group_by), which allows to use `GROUP BY` in external memory only once the query reaches certain threshold of used memory.
 
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high (or `max_bytes_ratio_before_external_group_by=0.5`). This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn't dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
-For example, if [max_memory_usage](/operations/settings/query-complexity.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
+For example, if [max_memory_usage](/operations/settings/settings#max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
 With distributed query processing, external aggregation is performed on remote servers. In order for the requester server to use only a small amount of RAM, set `distributed_aggregation_memory_efficient` to 1.
 

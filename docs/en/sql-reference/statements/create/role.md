@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/create/role
+description: 'Documentation for Role'
+sidebar_label: 'ROLE'
 sidebar_position: 40
-sidebar_label: ROLE
-title: "CREATE ROLE"
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
 ---
 
 Creates new [roles](../../../guides/sre/user-management/index.md#role-management). Role is a set of [privileges](/sql-reference/statements/grant#granting-privilege-syntax). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
 Syntax:
 
-``` sql
+```sql
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [IN access_storage_type]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
@@ -27,7 +28,7 @@ To delete role, use the [DROP ROLE](/sql-reference/statements/drop#drop-role) st
 
 ## Examples {#examples}
 
-``` sql
+```sql
 CREATE ROLE accountant;
 GRANT SELECT ON db.* TO accountant;
 ```
@@ -36,13 +37,13 @@ This sequence of queries creates the role `accountant` that has the privilege of
 
 Assigning the role to the user `mira`:
 
-``` sql
+```sql
 GRANT accountant TO mira;
 ```
 
 After the role is assigned, the user can apply it and execute the allowed queries. For example:
 
-``` sql
+```sql
 SET ROLE accountant;
 SELECT * FROM db.*;
 ```

@@ -5,6 +5,7 @@
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <IO/Progress.h>
 
 #include <random>
 
@@ -39,7 +40,7 @@ public:
     struct Info;
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -48,12 +49,14 @@ public:
         const DB::ASTRefreshStrategy & strategy,
         bool attach,
         bool coordinated,
-        bool empty);
+        bool empty,
+        bool is_restore_from_backup);
 
     /// Called at most once.
     void startup();
+    void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
-    /// Ok to call multiple times, but not in parallel.
+    /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
     void shutdown();
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
@@ -66,10 +69,16 @@ public:
 
     Info getInfo() const;
 
-    /// Enable task scheduling
+    bool canCreateOrDropOtherTables() const;
+
+    /// Methods to pause/unpause refreshing on this replica or all replicas.
+    /// The per-replica pause and global pause are two separate flags; if either of them is set,
+    /// no refreshes will run.
     void start();
-    /// Disable task scheduling
     void stop();
+    void startReplicated();
+    void stopReplicated(const String & reason);
+
     /// Schedule task immediately
     void run();
     /// Cancel task execution
@@ -156,6 +165,7 @@ public:
         CoordinationZnode znode;
         bool refresh_running;
         ProgressValues progress;
+        std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
     };
 
 private:
@@ -168,7 +178,8 @@ private:
         /// │   ├── name1
         /// │   ├── name2
         /// │   └── name3
-        /// └── ["running"] (RunningZnode, ephemeral)
+        /// ├── ["running"] (ephemeral)
+        /// └── ["paused"]
 
         struct WatchState
         {
@@ -179,6 +190,7 @@ private:
 
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
+        bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,
@@ -208,6 +220,8 @@ private:
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW.
         bool stop_requested = false;
+        /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
+        std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
@@ -261,8 +275,8 @@ private:
     void refreshTask();
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
-    /// Mutex must be unlocked. Called only from refresh_task.
-    UUID executeRefreshUnlocked(bool append, int32_t root_znode_version);
+    /// Mutex must be unlocked. Called only from refresh_task. Doesn't throw.
+    std::optional<UUID> executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message);
 
     /// Assigns dependencies_satisfied_until.
     void updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock);
@@ -298,5 +312,4 @@ struct OwnedRefreshTask
     RefreshTask& operator*() const { return *ptr; }
     explicit operator bool() const { return ptr != nullptr; }
 };
-
 }

@@ -52,7 +52,8 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
     storage_policy='default',
     min_rows_for_wide_part = 1000000,
     min_bytes_for_wide_part = 1000000,
-    ratio_of_defaults_for_sparse_serialization=1.0;
+    ratio_of_defaults_for_sparse_serialization=1.0,
+    write_marks_for_substreams_in_compact_parts=1;
 "
 
 echo "INSERT"

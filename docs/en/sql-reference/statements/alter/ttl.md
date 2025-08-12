@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/ttl
+description: 'Documentation for Manipulations with Table TTL'
+sidebar_label: 'TTL'
 sidebar_position: 44
-sidebar_label: TTL
+slug: /sql-reference/statements/alter/ttl
+title: 'Manipulations with Table TTL'
 ---
 
 # Manipulations with Table TTL
@@ -14,7 +16,7 @@ If you are looking for details on using TTL for managing old data, check out the
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
-``` sql
+```sql
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression;
 ```
 

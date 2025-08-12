@@ -2,8 +2,9 @@ import time
 import traceback
 
 import requests
-from praktika.info import Info
-from praktika.secret import Secret
+
+from ci.praktika.info import Info
+from ci.praktika.secret import Secret
 
 
 class LogCluster:
@@ -24,10 +25,11 @@ class LogCluster:
 
     def is_ready(self):
         if not self.url:
-            self.url = Secret.Config(
+            url = Secret.Config(
                 name=self.URL_SECRET,
                 type=Secret.Type.AWS_SSM_VAR,
             ).get_value()
+            self.url = "https://" + url.removeprefix("https://")
         passwd = Secret.Config(
             name=self.PASSWD_SECRET,
             type=Secret.Type.AWS_SSM_VAR,
@@ -47,7 +49,7 @@ class LogCluster:
         }
         try:
             response = requests.post(
-                url="https://" + self.url,
+                url=self.url,
                 params=params,
                 data="",
                 headers=self._auth,
@@ -80,6 +82,7 @@ class LogCluster:
         if db_name:
             params["database"] = db_name
 
+        response = None
         for retry in range(retries):
             try:
                 response = self._session.post(
@@ -101,10 +104,13 @@ class LogCluster:
                     continue
                 else:
                     break
-            except Exception as ex:
+            except Exception:
                 print(f"WARNING: LogCluster query failed with exception")
                 traceback.print_exc()
-        print(f"ERROR: Failed to query LogCluster")
+        if response is not None:
+            print(
+                f"ERROR: Failed to query LogCluster, query:\n {query}\n    reason:\n {response.text}"
+            )
         return False
 
 
@@ -117,17 +123,17 @@ class LogClusterBuildProfileQueries:
     def insert_profile_data(self, build_name, start_time, file):
         query = self._profile_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            self._log_cluster.do_query(query, data=data_fd)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def insert_build_size_data(self, build_name, start_time, file):
         query = self._build_size_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            self._log_cluster.do_query(query, data=data_fd)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def insert_binary_symbol_data(self, build_name, start_time, file):
         query = self._binary_symbol_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            self._log_cluster.do_query(query, data=data_fd)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def _profile_query(self, build_name, start_time):
         return f"""INSERT INTO build_time_trace

