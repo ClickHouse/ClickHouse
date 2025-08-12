@@ -222,6 +222,8 @@ static void buildEquialentSetsForJoinStepLogical(
 
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+
     auto & parent = parent_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
 
@@ -364,6 +366,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
     Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
+    LOG_DEBUG(&Poco::Logger::get("debug"), "filter->getExpression().dumpDAG()={}", filter->getExpression().dumpDAG());
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,
@@ -373,6 +377,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "\nleft_stream_available_columns_to_push_down=[{}],\nleft_stream_input_header.dumpStructure()=[{}],\n"
+        "right_stream_available_columns_to_push_down=[{}],\nright_stream_input_header.dumpStructure()=[{}]",
+        fmt::join(left_stream_available_columns_to_push_down, ", "),
+        left_stream_input_header->dumpStructure(),
+        fmt::join(right_stream_available_columns_to_push_down, ", "),
+        right_stream_input_header->dumpStructure());
 
     size_t updated_steps = 0;
 
@@ -393,6 +406,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "join_filter_push_down_actions.left_stream_filter_to_push_down->dumpDAG()={}",
+            join_filter_push_down_actions.left_stream_filter_to_push_down->dumpDAG());
+
         if (logical_join)
         {
 
@@ -417,6 +435,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "join_filter_push_down_actions.right_stream_filter_to_push_down->dumpDAG()={}",
+            join_filter_push_down_actions.right_stream_filter_to_push_down->dumpDAG());
+
         if (logical_join)
         {
 
