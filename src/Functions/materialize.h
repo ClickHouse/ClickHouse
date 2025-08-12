@@ -58,7 +58,10 @@ public:
     {
         auto res = arguments[0].column->convertToFullColumnIfConst();
         if constexpr (remove_sparse)
+        {
             res = recursiveRemoveSparse(res);
+            res = recursiveRemoveNonNativeLowCardinality(res);
+        }
         return res;
     }
 

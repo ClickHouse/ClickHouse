@@ -20,7 +20,11 @@ void MaterializingTransform::transform(Chunk & chunk)
     {
         col = col->convertToFullColumnIfConst();
         if (remove_sparse)
+        {
             col = recursiveRemoveSparse(col);
+            col = recursiveRemoveNonNativeLowCardinality(col);
+        }
+
     }
 
     chunk.setColumns(std::move(columns), num_rows);

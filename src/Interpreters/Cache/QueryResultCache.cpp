@@ -452,8 +452,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            convertToFullIfSparse(chunk);
-            convertToFullIfConst(chunk);
+            materializeChunk(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
