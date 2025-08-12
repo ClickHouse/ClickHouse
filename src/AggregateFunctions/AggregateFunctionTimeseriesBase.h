@@ -111,6 +111,9 @@ public:
         if (end_timestamp < start_timestamp)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
 
+        if (end_timestamp == start_timestamp)
+            return 1;
+
         if (step <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
 
@@ -120,7 +123,7 @@ public:
     size_t bucketIndexForTimestamp(const TimestampType timestamp) const
     {
         chassert(timestamp <= end_timestamp);
-        const size_t index = (timestamp < start_timestamp) ? 0 : ((timestamp - start_timestamp + step - 1) / step);
+        const size_t index = (timestamp <= start_timestamp) ? 0 : ((timestamp - start_timestamp + step - 1) / step);
         chassert(index < bucket_count);
         return index;
     }

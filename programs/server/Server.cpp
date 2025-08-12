@@ -2546,7 +2546,7 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
@@ -2783,6 +2783,8 @@ try
             /// (because killAllQueries() will cancel all running backups/restores).
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
+            else
+                global_context->cancelAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
