@@ -455,7 +455,7 @@ void StatementGenerator::generateNextTTL(
             const TableKey & tk = te->has_primary_key() && te->primary_key().exprs_size() ? te->primary_key() : te->order();
             std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
             const uint32_t ttl_group_size = table_key_dist(rg.generator);
-            const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(3))) + 1;
+            const size_t nset = (rg.nextLargeNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(3))) + 1;
 
             for (uint32_t j = 0; j < ttl_group_size; j++)
             {
@@ -485,7 +485,7 @@ void StatementGenerator::generateNextTTL(
 void StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist)
 {
     flatTableColumnPath(flat_nested | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-    const uint32_t ocols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
+    const uint32_t ocols = (rg.nextLargeNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     for (uint32_t i = 0; i < ocols; i++)
     {
@@ -743,7 +743,7 @@ void StatementGenerator::generateTableKey(
         }
         else
         {
-            const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
+            const size_t ocols = (rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             if (teng != SummingMergeTree && rg.nextSmallNumber() < 3)
@@ -923,7 +923,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         if (!this->filtered_entries.empty())
         {
             TableKey * tkey = te->mutable_sample_by();
-            const size_t ncols = (rg.nextMediumNumber() % std::min<size_t>(this->filtered_entries.size(), UINT32_C(3))) + 1;
+            const size_t ncols = (rg.nextLargeNumber() % std::min<size_t>(this->filtered_entries.size(), UINT32_C(3))) + 1;
 
             std::shuffle(this->filtered_entries.begin(), this->filtered_entries.end(), rg.generator);
             for (size_t i = 0; i < ncols; i++)
@@ -1357,6 +1357,34 @@ void StatementGenerator::generateEngineDetails(
             /// Add server settings
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
+        }
+        if (b.isMergeTreeFamily() && rg.nextMediumNumber() < 26)
+        {
+            /// Use wide and vertical merge settings more often
+            static const DB::Strings & behavior_settings
+                = {"min_rows_for_wide_part",
+                   "min_bytes_for_wide_part",
+                   "vertical_merge_algorithm_min_rows_to_activate",
+                   "vertical_merge_algorithm_min_columns_to_activate",
+                   "min_bytes_for_full_part_storage",
+                   "min_rows_for_full_part_storage"};
+            const size_t nsets = (rg.nextLargeNumber() % behavior_settings.size()) + 1;
+
+            chassert(this->ids.empty());
+            for (size_t i = 0; i < behavior_settings.size(); i++)
+            {
+                this->ids.emplace_back(i);
+            }
+            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+            svs = svs ? svs : te->mutable_setting_values();
+            for (size_t i = 0; i < nsets; i++)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property(behavior_settings[this->ids[i]]);
+                sv->set_value(rg.nextBool() ? "1" : "0");
+            }
+            this->ids.clear();
         }
         if (b.isAnyS3Engine() && rg.nextBool())
         {
@@ -2052,7 +2080,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_sign = 0;
         uint32_t added_is_deleted = 0;
         uint32_t added_version = 0;
-        const uint32_t to_addcols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
+        const uint32_t to_addcols = (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1);
         const uint32_t to_addidxs
             = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
@@ -2221,7 +2249,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
     /// Range requires 2 cols for min and max
-    const uint32_t dictionary_ncols = std::max((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
+    const uint32_t dictionary_ncols = std::max((rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
@@ -2447,7 +2475,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     /// Add Primary Key
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
-    const size_t kcols = dl == IP_TRIE ? 1 : ((rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
+    const size_t kcols = dl == IP_TRIE ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
     for (size_t i = 0; i < kcols; i++)
