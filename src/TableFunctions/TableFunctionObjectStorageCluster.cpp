@@ -33,7 +33,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     StoragePtr storage;
 
     LOG_DEBUG(getLogger("TableFunctionObjectStorageCluster"),
-        "Creating storage with configuration type: {} for table {}, context->getClientInfo().query_kind {}, is_replicated_database_internal {}, is_insert_query {}",
+        "Creating storage with configuration type: {} for table {}, "
+        "context->getClientInfo().query_kind {}, "
+        "is_replicated_database_internal {}, "
+        "is_insert_query {}",
         configuration->getTypeName(),
         table_name,
         context->getClientInfo().query_kind,

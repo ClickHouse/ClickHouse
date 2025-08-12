@@ -190,7 +190,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         "parallel_replicas_cluster_name {}, "
         "parallel_replicas_for_cluster_engines {}, "
         "canUseTaskBasedParallelReplicas {}, "
-        "isDistributed {}",
+        "isDistributed {} at\n{}",
         configuration->getTypeName(),
         table_name,
         can_use_parallel_replicas,
@@ -199,7 +199,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         parallel_replicas_cluster_name,
         bool(query_settings[Setting::parallel_replicas_for_cluster_engines]),
         context->canUseTaskBasedParallelReplicas(),
-        context->isDistributed());
+        context->isDistributed(),
+        StackTrace().toString()
+        );
 
     if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {

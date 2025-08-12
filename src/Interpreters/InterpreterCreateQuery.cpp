@@ -2230,6 +2230,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         auto insert_context = Context::createCopy(getContext());
         insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
 
+        LOG_DEBUG(getLogger("InterpreterCreateQuery"), "Filling table {} with data from SELECT", create.getTable());
+
         return InterpreterInsertQuery(
                    insert,
                    insert_context,
