@@ -55,8 +55,8 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         /// Slightly normalize something that look like aliases - if they are complex, replace them to `?` placeholders.
         if (token.type == TokenType::QuotedIdentifier
             /// Differentiate identifier from function (example: SHA224(x)).
-            /// By the way, there is padding in columns and pointer dereference is Ok.
-            || (token.type == TokenType::BareWord && *token.end != '('))
+            /// However, it does not account for whitespaces and comments between the function name and the parentheses.
+            || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
         {
             /// Explicitly ask to keep identifier names
             if (keep_names)
