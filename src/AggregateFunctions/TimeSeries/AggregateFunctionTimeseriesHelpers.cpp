@@ -5,7 +5,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeSeriesLastToGrid.h> 
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeSeriesLastToGrid.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -279,7 +279,7 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
         createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
 
     factory.registerFunction("timeSeriesLastToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeSeriesLastToGridTraits, AggregateFunctionTimeSeriesLastToGrid>); 
+        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeSeriesLastToGridTraits, AggregateFunctionTimeSeriesLastToGrid>);
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
