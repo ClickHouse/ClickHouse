@@ -175,7 +175,10 @@ void IcebergStreamingPositionDeleteTransform::initialize()
         auto latest_chunk = delete_source->read();
         iterator_at_latest_chunks.push_back(0);
         if (latest_chunk.hasRows())
-            latest_positions.insert(std::pair<size_t, size_t>{latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), i});
+        {
+            size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0);
+            latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, i});
+        }
         latest_chunks.push_back(std::move(latest_chunk));
     }
 }
@@ -184,7 +187,10 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t del
 {
     auto latest_chunk = delete_sources[delete_source_index]->read();
     if (latest_chunk.hasRows())
-        latest_positions.insert(std::pair<size_t, size_t>{latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), delete_source_index});
+    {
+        size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices[delete_source_index].position_index]->get64(0);
+        latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, delete_source_index});
+    }
 
     iterator_at_latest_chunks[delete_source_index] = 0;
     latest_chunks[delete_source_index] = std::move(latest_chunk);
@@ -200,7 +206,9 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
     size_t total_previous_chunks_size = chunk_info->row_num_offset;
-
+    if (previous_chunk_offset && previous_chunk_offset.value() > total_previous_chunks_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Chunks offsets should increase.");
+    previous_chunk_offset = total_previous_chunks_size;
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
         while (!latest_positions.empty())
@@ -218,7 +226,8 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
                 {
                     ++iterator_at_latest_chunks[delete_source_index];
                     auto position_index = delete_source_column_indices[delete_source_index].position_index;
-                    latest_positions.insert(std::pair<size_t, size_t>{latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]), delete_source_index});
+                    size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
+                    latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
                 }
             }
             else if (it->first == i + total_previous_chunks_size)

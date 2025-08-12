@@ -114,7 +114,7 @@ public:
         initialize();
     }
 
-    String getName() const override { return "IcebergBitmapPositionDeleteTransform"; }
+    String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }
 
     void transform(Chunk & chunk) override;
 
@@ -133,6 +133,8 @@ private:
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
     std::set<std::pair<size_t, size_t>> latest_positions;
+
+    std::optional<size_t> previous_chunk_offset;
 };
 
 }
