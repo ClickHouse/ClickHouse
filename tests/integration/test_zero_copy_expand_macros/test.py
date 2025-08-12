@@ -10,7 +10,6 @@ cluster = ClickHouseCluster(__file__)
 def get_macros():
     return {
         "shard": "01",
-        "replica": "1",
     }
 
 @pytest.fixture(scope="module")
@@ -42,7 +41,7 @@ def test_drop_after_fetch(started_cluster):
         SETTINGS
             storage_policy = 's3',
             allow_remote_fs_zero_copy_replication=1,
-            remote_fs_zero_copy_zookeeper_path = '/clickhouse/zero_copy/{shard}/{replica}'
+            remote_fs_zero_copy_zookeeper_path = '/clickhouse/zero_copy/{shard}'
         """
     )
 
@@ -51,10 +50,7 @@ def test_drop_after_fetch(started_cluster):
     shard = node.query("SELECT name FROM system.zookeeper WHERE path='/clickhouse/zero_copy/'").strip()
     assert shard == macros["shard"]
 
-    replica = node.query(f"SELECT name FROM system.zookeeper WHERE path='/clickhouse/zero_copy/{shard}'").strip()
-    assert replica == macros["replica"]
-
-    out = node.query(f"SELECT name FROM system.zookeeper WHERE path='/clickhouse/zero_copy/{shard}/{replica}'").strip()
+    out = node.query(f"SELECT name FROM system.zookeeper WHERE path='/clickhouse/zero_copy/{shard}'").strip()
     assert out == "zero_copy_s3"
 
 
