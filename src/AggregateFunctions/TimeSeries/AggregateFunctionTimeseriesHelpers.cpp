@@ -278,11 +278,9 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     factory.registerFunction("timeSeriesPredictLinearToGrid",
         createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
 
-    factory.registerFunction("timeSeriesLastToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeSeriesLastToGridTraits, AggregateFunctionTimeSeriesLastToGrid>);
-
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
+    factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness"); 
 }
 
 }
