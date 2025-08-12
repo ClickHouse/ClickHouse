@@ -62,6 +62,8 @@ public:
 
     bool isTransactional() const override { return true; }
 
+    void dropTable(const String & namespace_name, const String & table_name) const override;
+
 private:
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
@@ -131,7 +133,11 @@ private:
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token = false) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    void sendPOSTRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body) const;
+    void sendRequest(
+        const String & endpoint,
+        Poco::JSON::Object::Ptr request_body,
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
+        bool ignore_result = false) const;
 };
 
 }
