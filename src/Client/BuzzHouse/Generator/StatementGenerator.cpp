@@ -830,6 +830,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
         const uint64_t nrows = rows_dist(rg.generator);
+        const bool allow_cast = rg.nextSmallNumber() < 3;
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -867,7 +868,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                 }
                 else
                 {
-                    buf += strAppendAnyValue(rg, entry.getBottomType());
+                    buf += strAppendAnyValue(rg, allow_cast, entry.getBottomType());
                 }
                 j++;
             }
@@ -1005,6 +1006,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
     else
     {
         const uint32_t nupdates = (rg.nextLargeNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
+        const bool allow_cast = rg.nextSmallNumber() < 3;
 
         std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
         for (uint32_t j = 0; j < nupdates; j++)
@@ -1038,7 +1040,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
                 }
                 else
                 {
-                    buf = strAppendAnyValue(rg, entry.getBottomType());
+                    buf = strAppendAnyValue(rg, allow_cast, entry.getBottomType());
                 }
                 lv->set_no_quote_str(buf);
             }

@@ -2187,11 +2187,11 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
     return ret;
 }
 
-String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, SQLType * tp)
+String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, const bool allow_cast, SQLType * tp)
 {
     String ret = tp->appendRandomRawValue(rg, *this);
 
-    if (rg.nextSmallNumber() < 7)
+    if (allow_cast && rg.nextSmallNumber() < 7)
     {
         ret += "::";
         ret += tp->typeName(false);

@@ -311,7 +311,7 @@ private:
     SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
-    String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
+    String strAppendAnyValue(RandomGenerator & rg, bool allow_cast, SQLType * tp);
     void flatTableColumnPath(
         uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
