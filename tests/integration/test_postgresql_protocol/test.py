@@ -369,7 +369,7 @@ def test_copy_command(started_cluster):
 
     cur.execute("create table test_recreated (x UInt32, y String) engine=Memory();")
     data_to_copy = "1\ta\n2\tb\n3\tc\n"
-    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x","y"))
     cur.execute("select * from test_recreated order by x;")
 
     assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]

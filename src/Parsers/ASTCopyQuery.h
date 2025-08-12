@@ -24,6 +24,7 @@ public:
     } type;
 
     String table_name;
+    Strings column_names;
     enum class Formats : uint8_t
     {
         TSV,
@@ -40,5 +41,7 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+String toString(ASTCopyQuery::Formats format);
 
 }

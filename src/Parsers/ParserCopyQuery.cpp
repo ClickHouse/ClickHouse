@@ -54,6 +54,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto saved_pos = pos;
+
     if (!open_bracket.ignore(pos, expected))
     {
         ParserIdentifier s_table_identifier;
@@ -62,9 +63,17 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         if (open_bracket.ignore(pos, expected))
-            while (!close_bracket.ignore(pos, expected))
-                ++pos;
+        {
+            ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+            ASTPtr columns;
+            if (!columns_p.parse(pos, columns, expected))
+                return false;
+            if (!close_bracket.ignore(pos, expected))
+                return false;
 
+            for (const auto & column_ast : columns->children)
+                copy_element->column_names.push_back(column_ast->as<ASTIdentifier>()->full_name);
+        }
         saved_pos = pos;
         copy_element->table_name = table_name->as<ASTIdentifier>()->full_name;
 
@@ -120,12 +129,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node
     ParserKeyword s_with(Keyword::WITH);
     ParserKeyword s_format(Keyword::FORMAT);
 
-    if (!s_with.ignore(pos, expected))
-    {
-        while (!pos->isEnd())
-            ++pos;
-        return true;
-    }
+    s_with.ignore(pos, expected);
 
     if (s_format.ignore(pos, expected))
     {

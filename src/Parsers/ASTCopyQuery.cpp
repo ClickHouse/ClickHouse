@@ -17,4 +17,17 @@ ASTPtr ASTCopyQuery::clone() const
     return res;
 }
 
+String toString(ASTCopyQuery::Formats format)
+{
+    switch (format)
+    {
+        case ASTCopyQuery::Formats::TSV:
+            return "TSV";
+        case ASTCopyQuery::Formats::CSV:
+            return "CSV";
+        case ASTCopyQuery::Formats::Binary:
+            return "Binary";
+    }
+}
+
 }

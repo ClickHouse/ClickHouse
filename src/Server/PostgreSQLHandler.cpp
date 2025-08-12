@@ -27,8 +27,10 @@
 #include <Parsers/ParserQuery.h>
 #include <fmt/format.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -418,6 +420,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         copy_query_parsed.reset();
     }
 
+
     /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
      * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
      * The client then sends CopyInData until all data has been sent.
@@ -431,7 +434,17 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
         CurrentThread::QueryScope query_scope{query_context};
 
-        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` FROM INFILE 'psql_copy'", copy_query->table_name), query_context, {}, QueryProcessingStage::Enum::Complete);
+        String columns_to_insert;
+        if (!copy_query->column_names.empty())
+        {
+            for (const auto & column_name : copy_query->column_names)
+                columns_to_insert += fmt::format("{}, ", column_name);
+            columns_to_insert.pop_back();
+            columns_to_insert.pop_back();
+            columns_to_insert = "(" + columns_to_insert + ")";
+        }
+
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
@@ -490,7 +503,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         return true;
     }
 
-    /* In the case of a COPY TO request, the server calculates the number of rows and then sends it to the client in CopyOutResponse.
+    /* In the case of a COPY TO request, the server calculates the number of columns and then sends it to the client in CopyOutResponse.
      * After this, the server sends the data in a CopyOutData message, and when the data runs out, it sends a CopyCompletionResponse.
      * For more detailes see https://www.dolthub.com/blog/2024-09-17-tabular-data-imports/
      */
@@ -502,19 +515,33 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         CurrentThread::QueryScope query_scope{query_context};
 
-        auto select_query = fmt::format("SELECT * FROM {} FORMAT TSV;", copy_query->table_name);
-        std::vector<char> result_select;
-        WriteBufferFromVectorImpl out_buf_select_query(result_select);
-        ReadBufferFromString read_buf_select_query(select_query);
-        executeQuery(read_buf_select_query, out_buf_select_query, false, query_context, {});
-        out_buf_select_query.finalize();
-        while (!result_select.empty() && result_select.back() == 0)
-            result_select.pop_back();
+        String columns_to_select = "*";
+        if (!copy_query->column_names.empty())
+        {
+            columns_to_select.clear();
+            for (const auto & column_name : copy_query->column_names)
+                columns_to_select += fmt::format("{}, ", column_name);
+            columns_to_select.pop_back();
+            columns_to_select.pop_back();
+        }
 
-        Int32 num_columns = parseNumberColumns(result_select);
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_select));
-
+        auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
+        chassert(io.pipeline.pulling());
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
+        std::vector<char> result_buf;
+        WriteBufferFromVectorImpl output_buffer(result_buf);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
+        auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
+        Block block;
+        while (executor->pull(block))
+        {
+            output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate moved vector
+            format_ptr->write(materializeBlock(block));
+            format_ptr->flush();
+            output_buffer.finalize();
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(std::move(result_buf)));
+        }
         message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse(), true);
         return true;
     }
