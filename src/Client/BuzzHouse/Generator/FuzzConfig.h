@@ -67,6 +67,8 @@ const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_c
                          allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
                          allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43);
 
+extern const DB::Strings compressionMethods;
+
 using JSONObjectType = JSONParserImpl::Element;
 
 class Catalog

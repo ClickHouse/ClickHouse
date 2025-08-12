@@ -2293,7 +2293,7 @@ void StatementGenerator::generateTopSelect(
         }
         if (rg.nextSmallNumber() < 4)
         {
-            sif->set_compression(rg.pickRandomly(compression));
+            sif->set_compression(rg.pickRandomly(compressionMethods));
         }
         if (rg.nextSmallNumber() < 4)
         {

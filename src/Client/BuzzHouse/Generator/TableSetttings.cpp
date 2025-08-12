@@ -8,7 +8,7 @@ static DB::Strings storagePolicies, disks;
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
     {
-        const DB::Strings & choices
+        static const DB::Strings & choices
             = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
@@ -54,7 +54,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
+                static const DB::Strings & choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
                 return rg.pickRandomly(choices);
             },
             {"'ignore'", "'throw'", "'drop'", "'rebuild'"},
@@ -63,7 +63,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'T64'", "'AES_128_GCM_SIV'"};
+                static const DB::Strings & choices = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'T64'", "'AES_128_GCM_SIV'"};
                 return rg.pickRandomly(choices);
             },
             {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'T64'", "'AES_128_GCM_SIV'"},
@@ -91,7 +91,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
+                static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
                 return rg.pickRandomly(choices);
             },
             {"'throw'", "'drop'", "'rebuild'"},
@@ -132,7 +132,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
+                static const DB::Strings & choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
                 return rg.pickRandomly(choices);
             },
             {"'Simple'", "'Trivial'", "'StochasticSimple'"},
@@ -196,7 +196,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'none'", "'local'", "'any'"};
+                static const DB::Strings & choices = {"'none'", "'local'", "'any'"};
                 return rg.pickRandomly(choices);
             },
             {"'none'", "'local'", "'any'"},
@@ -353,6 +353,8 @@ const std::unordered_map<String, CHSetting> dataLakeSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
        {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
+       {"iceberg_metadata_compression_method",
+        CHSetting([](RandomGenerator & rg) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
 
@@ -365,7 +367,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+                static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
                 return rg.pickRandomly(choices);
             },
             {},
@@ -445,7 +447,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg)
               {
-                  const DB::Strings & choices = {"'keep'", "'delete'"};
+                  static const DB::Strings & choices = {"'keep'", "'delete'"};
                   return rg.pickRandomly(choices);
               },
               {},

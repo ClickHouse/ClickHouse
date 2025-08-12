@@ -16,6 +16,9 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
+const DB::Strings compressionMethods
+    = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
+
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)

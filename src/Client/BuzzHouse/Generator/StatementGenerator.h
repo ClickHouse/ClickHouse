@@ -128,7 +128,6 @@ class StatementGenerator
 {
 public:
     static const std::unordered_map<OutFormat, InFormat> outIn;
-    static const DB::Strings compression;
 
     FuzzConfig & fc;
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();
@@ -554,7 +553,7 @@ private:
                 /// Compression
                 const String next_compression = (b.file_comp.has_value() && (!allow_chaos || rg.nextMediumNumber() < 81))
                     ? b.file_comp.value()
-                    : rg.pickRandomly(compression);
+                    : rg.pickRandomly(compressionMethods);
 
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {

@@ -1070,7 +1070,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
         if (rg.nextBool())
         {
-            b.file_comp = rg.pickRandomly(compression);
+            b.file_comp = rg.pickRandomly(compressionMethods);
             te->add_params()->set_svalue(b.file_comp.value());
         }
     }
@@ -1295,7 +1295,7 @@ void StatementGenerator::generateEngineDetails(
         /// Optional compression
         if (rg.nextBool())
         {
-            b.file_comp = rg.pickRandomly(compression);
+            b.file_comp = rg.pickRandomly(compressionMethods);
             te->add_params()->set_svalue(b.file_comp.value());
         }
     }
