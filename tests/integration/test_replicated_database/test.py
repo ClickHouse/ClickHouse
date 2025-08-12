@@ -25,6 +25,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -33,6 +34,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -41,6 +43,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -48,12 +51,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 all_nodes = [
@@ -70,6 +75,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -1720,4 +1726,35 @@ def test_implicit_index(started_cluster):
     dummy_node.query(
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
+    )
+
+
+def test_rmv_dropped_user(started_cluster):
+    main_node.query(
+        """
+        DROP DATABASE IF EXISTS mat_view_dropped_user;
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
+        CREATE TABLE mat_view_dropped_user.source (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
+        CREATE TABLE mat_view_dropped_user.to (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
+        DROP USER IF EXISTS test_mv_user;
+        CREATE USER test_mv_user IDENTIFIED WITH plaintext_password BY 'test_password';
+        GRANT ALL ON mat_view_dropped_user.* TO test_mv_user;
+        CREATE MATERIALIZED VIEW mat_view_dropped_user.mv REFRESH EVERY 10 MINUTE TO mat_view_dropped_user.to DEFINER = test_mv_user SQL SECURITY DEFINER AS SELECT * FROM mat_view_dropped_user.source;
+        DROP USER test_mv_user;
+        """
+    )
+
+    dummy_node.query(
+        """
+        DROP DATABASE IF EXISTS mat_view_dropped_user;
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
+        SYSTEM SYNC DATABASE REPLICA mat_view_dropped_user;
+        DROP DATABASE mat_view_dropped_user SYNC;
+        """, timeout=10
+    )
+
+    main_node.query(
+        """
+        DROP DATABASE mat_view_dropped_user SYNC;
+        """
     )

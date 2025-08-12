@@ -79,6 +79,7 @@ extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsString iceberg_metadata_compression_method;
 }
 
 using namespace Iceberg;
@@ -476,8 +477,15 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-    writeMessageToFile(metadata_content, filename, object_storage, local_context);
+    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+
+    auto compression_suffix = compression_method_str;
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+
+    auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
