@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -83,7 +84,14 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         {
             if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                if (type->canBeInsideLowCardinality())
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+                }
+                else
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                }
             }
             else
             {
