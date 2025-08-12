@@ -31,8 +31,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
