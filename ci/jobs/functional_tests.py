@@ -294,7 +294,9 @@ def main():
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
-        os.environ["MALLOC_CONF"] = f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+        os.environ["MALLOC_CONF"] = (
+            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+        )
 
         commands.append(configure_log_export)
 

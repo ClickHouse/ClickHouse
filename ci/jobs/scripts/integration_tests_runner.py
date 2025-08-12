@@ -8,6 +8,7 @@ import random
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import time
 from collections import OrderedDict, defaultdict
@@ -42,6 +43,8 @@ MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
 NO_CHANGES_MSG = "Nothing to run"
+
+JOB_TIMEOUT_TEST_NAME = "Job Timeout Expired"
 
 
 # Search test by the common prefix.
@@ -233,9 +236,7 @@ class ClickhouseIntegrationTestsRunner:
     def _pre_pull_images(self):
         image_cmd = self._get_runner_image_cmd()
 
-        cmd = (
-            f"{self.repo_path}/tests/integration/runner {self._get_runner_opts()} {image_cmd} --pre-pull --command ' echo Pre Pull finished ' "
-        )
+        cmd = f"{self.repo_path}/tests/integration/runner {self._get_runner_opts()} {image_cmd} --pre-pull --command ' echo Pre Pull finished ' "
         Shell.check(cmd, retries=3, verbose=True, strict=True)
 
     @staticmethod
@@ -780,10 +781,8 @@ class ClickhouseIntegrationTestsRunner:
             )
             status_text = "Job timeout expired, " + status_text
             result_state = "failure"
-            # # add mock test case to make timeout visible in job report and in ci db
-            # test_result.insert(
-            #     0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
-            # )
+            # add mock test case to make timeout visible in job report and in ci db
+            test_result.insert(0, (JOB_TIMEOUT_TEST_NAME, "FAIL", "", ""))
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
@@ -831,19 +830,20 @@ class ClickhouseIntegrationTestsRunner:
             try:
                 logging.info(
                     "Querying play via HTTP (Attempt %s/%s)...",
-                    attempt + 1, max_retries
+                    attempt + 1,
+                    max_retries,
                 )
 
                 response = requests.get(url, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
-                    row['file']: float(row['file_duration_ms']) for row in result_data
+                    row["file"]: float(row["file_duration_ms"]) for row in result_data
                 }
 
                 logging.info(
                     "Successfully fetched execution times for %s modules via HTTP.",
-                    len(tests_execution_times)
+                    len(tests_execution_times),
                 )
                 return tests_execution_times
 
@@ -876,39 +876,55 @@ class ClickhouseIntegrationTestsRunner:
         file_to_test_map = self.group_test_by_file(self.all_tests)
         all_current_files = sorted(list(file_to_test_map.keys()))
 
-        sequential_test_prefixes = [p.split("::", 1)[0] for p in self._get_parallel_tests_skip_list(self.repo_path)]
+        sequential_test_prefixes = [
+            p.split("::", 1)[0]
+            for p in self._get_parallel_tests_skip_list(self.repo_path)
+        ]
         sequential_files_list = []
         parallel_files_list = []
 
         for file in all_current_files:
-            is_sequential = any(file.startswith(prefix) for prefix in sequential_test_prefixes)
+            is_sequential = any(
+                file.startswith(prefix) for prefix in sequential_test_prefixes
+            )
             if is_sequential:
                 sequential_files_list.append(file)
             else:
                 parallel_files_list.append(file)
 
         tests_execution_times = self.get_tests_execution_time()
-        assert len(tests_execution_times) > 400, \
-            f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        assert (
+            len(tests_execution_times) > 400
+        ), f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in parallel_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in parallel_files_list
+            if mod in known_db_modules_set
         }
         new_parallel_tests: List[str] = [
             mod for mod in parallel_files_list if mod not in known_db_modules_set
         ]
         sequential_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in sequential_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in sequential_files_list
+            if mod in known_db_modules_set
         }
         new_sequential_tests: List[str] = [
             mod for mod in sequential_files_list if mod not in known_db_modules_set
         ]
 
-        logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
+        logging.info(
+            "Found %s parallel modules with known execution time.",
+            len(parallel_tests_with_known_time),
+        )
         logging.info("Found %s new parallel modules:", len(new_parallel_tests))
         logging.info("%s", str(new_parallel_tests))
-        logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
+        logging.info(
+            "Found %s sequential modules with known execution time.",
+            len(sequential_tests_with_known_time),
+        )
         logging.info("Found %s new sequential modules:", len(new_sequential_tests))
         logging.info("%s", str(new_sequential_tests))
 
@@ -917,7 +933,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(parallel_heap)
 
         sorted_timed_parallel = sorted(
-            parallel_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            parallel_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_parallel:
             total_time, group_index, files = heapq.heappop(parallel_heap)
@@ -942,7 +960,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(sequential_heap)
 
         sorted_timed_sequential = sorted(
-            sequential_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            sequential_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_sequential:
             total_time, group_index = heapq.heappop(sequential_heap)
@@ -983,7 +1003,11 @@ class ClickhouseIntegrationTestsRunner:
             sequential_time = total_time - parallel_time
             logging.info(
                 "Group %d | Tests: %d | Total time: %.2fs (parallel: %.2fs, sequential: %.2fs)",
-                i, len(test_group), total_time, parallel_time, sequential_time
+                i,
+                len(test_group),
+                total_time,
+                parallel_time,
+                sequential_time,
             )
 
         return final_test_groups
@@ -1072,7 +1096,7 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        grouped_tests['parallel'] = filtered_parallel_tests
+        grouped_tests["parallel"] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
@@ -1166,7 +1190,7 @@ def write_results(results_file, status_file, results, status):
 
 
 def run():
-    # signal.signal(signal.SIGTERM, handle_sigterm)
+    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH", "")
@@ -1202,18 +1226,15 @@ def run():
     logging.info("Result written")
 
 
-# TODO:
 timeout_expired = False
-# runner_subprocess = None  # type:Optional[TeePopen]
-#
-#
-# def handle_sigterm(signum, _frame):
-#     # TODO: think on how to process it without globals?
-#     print(f"WARNING: Received signal {signum}")
-#     global timeout_expired  # pylint:disable=global-statement
-#     timeout_expired = True
-#     if runner_subprocess:
-#         runner_subprocess.terminate()
+runner_subprocess = None  # type:Optional[TeePopen]
+
+
+def handle_sigterm(signum, _frame):
+    # TODO: think on how to process it without globals?
+    print(f"WARNING: Received signal {signum}")
+    global timeout_expired  # pylint:disable=global-statement
+    timeout_expired = True
 
 
 if __name__ == "__main__":
