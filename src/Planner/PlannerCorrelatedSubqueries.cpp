@@ -3,8 +3,15 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include "Core/QueryProcessingStage.h"
+#include "Processors/QueryPlan/EvaluateCommonSubqueryStep.h"
+#include "Processors/QueryPlan/ReadFromMemoryStorageStep.h"
+#include "Storages/ConstraintsDescription.h"
+#include "Storages/IStorage.h"
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -55,6 +62,8 @@ namespace Setting
 
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
+extern const SettingsUInt64 max_block_size;
+extern const SettingsMaxThreads max_threads;
 
 }
 
@@ -188,7 +197,7 @@ struct DecorrelationContext
 namespace
 {
 
-void projectCorrelatedColumns(
+[[maybe_unused]] void projectCorrelatedColumns(
     QueryPlan & lhs_plan,
     const ColumnIdentifiers & correlated_column_identifiers)
 {
@@ -270,28 +279,63 @@ QueryPlan decorrelateQueryPlan(
         }
 
         /// The rest of the query plan doesn't use any correlated columns.
-        auto lhs_plan = context.query_plan.clone();
+        auto temp_table_desc = ColumnsDescription::fromNamesAndTypes(context.query_plan.getCurrentHeader()->getNamesAndTypes());
+        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "Creating temporary table for correlated subquery:\n{}", temp_table_desc.toString());
+        auto external_storage_holder = TemporaryTableHolder(
+            context.planner_context->getQueryContext(),
+            temp_table_desc,
+            ConstraintsDescription{},
+            nullptr /*query*/,
+            true /*create_for_global_subquery*/);
 
-        projectCorrelatedColumns(lhs_plan, context.correlated_subquery.correlated_column_identifiers);
+        auto in_memory_storage = external_storage_holder.getTable();
+        auto table_out = in_memory_storage->write({}, in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext(), /*async_insert=*/false);
 
-        auto lhs_plan_header = lhs_plan.getCurrentHeader();
+        /// Save the correlated subquery input stream to the temporary table.
+        context.query_plan.addStep(std::make_unique<EvaluateCommonSubqueryStep>(
+            context.query_plan.getCurrentHeader(),
+            in_memory_storage,
+            context.planner_context->getQueryContext()));
+
+        UInt64 max_block_size = settings[Setting::max_block_size];
+        size_t max_streams = settings[Setting::max_threads];
+
+        QueryPlan new_rhs_plan;
+        SelectQueryInfo query_info;
+        in_memory_storage->read(
+            new_rhs_plan,
+            context.correlated_subquery.correlated_column_identifiers,
+            in_memory_storage->getStorageSnapshot(in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext()),
+            query_info,
+            context.planner_context->getQueryContext(),
+            QueryProcessingStage::Complete,
+            max_block_size,
+            max_streams
+        );
+
+        // auto rhs_plan = context.query_plan.clone();
+
+        // projectCorrelatedColumns(rhs_plan, context.correlated_subquery.correlated_column_identifiers);
+
+        auto rhs_plan_header = new_rhs_plan.getCurrentHeader();
+        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "RHS plan header:\n{}", rhs_plan_header->dumpStructure());
 
         ColumnsWithTypeAndName output_columns_and_types;
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
         output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header->getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), rhs_plan_header->getColumnsWithTypeAndName());
 
         JoinExpressionActions join_expression_actions(
-            lhs_plan_header->getColumnsWithTypeAndName(),
             decorrelated_plan_header->getColumnsWithTypeAndName(),
+            rhs_plan_header->getColumnsWithTypeAndName(),
             output_columns_and_types);
 
         Names output_columns;
-        output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
         output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader()->getNames());
+        output_columns.insert_range(output_columns.cend(), rhs_plan_header->getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
-            lhs_plan_header,
-            /*right_header_=*/decorrelated_plan_header,
+            /*left_header_=*/decorrelated_plan_header,
+            /*right_header_=*/rhs_plan_header,
             JoinInfo{
                 .expression = {},
                 .kind = JoinKind::Cross,
@@ -308,11 +352,20 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN
         QueryPlan result_plan;
 
-        std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
-        plans.emplace_back(std::make_unique<QueryPlan>(context.correlated_query_plan.extractSubplan(node)));
+        auto new_lhs_plan = context.correlated_query_plan.extractSubplan(node);
+        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "RHS final plan:\n{}", dumpQueryPlan(new_rhs_plan));
+        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "LHS final plan:\n{}", dumpQueryPlan(new_lhs_plan));
 
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(new_lhs_plan)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(new_rhs_plan)));
+
+        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "Decorrelated JOIN:\n{}", decorrelated_join->getInputHeaders().size());
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
+
+        String temporary_table_name = "input_stream_" + context.correlated_subquery.action_node_name;
+
+        context.planner_context->getMutableQueryContext()->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
         return result_plan;
     }
@@ -564,17 +617,17 @@ bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
 
 QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
-    QueryPlan left_plan,
-    QueryPlan right_plan,
+    QueryPlan input_stream_plan,
+    QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery
 )
 {
-    const auto & lhs_plan_header = left_plan.getCurrentHeader();
-    const auto & rhs_plan_header = right_plan.getCurrentHeader();
+    const auto & lhs_plan_header = decorrelated_plan.getCurrentHeader();
+    const auto & rhs_plan_header = input_stream_plan.getCurrentHeader();
 
     ColumnsWithTypeAndName output_columns_and_types;
-    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
-    output_columns_and_types.emplace_back(rhs_plan_header->getByName(correlated_subquery.action_node_name));
+    output_columns_and_types.emplace_back(lhs_plan_header->getByName(correlated_subquery.action_node_name));
+    output_columns_and_types.insert_range(output_columns_and_types.cend(), rhs_plan_header->getColumnsWithTypeAndName());
 
     JoinExpressionActions join_expression_actions(
         lhs_plan_header->getColumnsWithTypeAndName(),
@@ -582,16 +635,16 @@ QueryPlan buildLogicalJoin(
         output_columns_and_types);
 
     Names output_columns;
-    output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
     output_columns.push_back(correlated_subquery.action_node_name);
+    output_columns.insert_range(output_columns.cend(), rhs_plan_header->getNames());
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
     std::vector<JoinPredicate> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
-        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name));
+        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name));
+        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(column_name);
 
         JoinPredicate predicate{
             .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
@@ -602,7 +655,7 @@ QueryPlan buildLogicalJoin(
         predicates.emplace_back(std::move(predicate));
     }
 
-    /// Add LEFT OUTER JOIN
+    /// Add RIGHT OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
         lhs_plan_header,
         rhs_plan_header,
@@ -616,7 +669,7 @@ QueryPlan buildLogicalJoin(
                 },
                 .disjunctive_conditions = {}
             },
-            .kind = JoinKind::Left,
+            .kind = JoinKind::Right,
             .strictness = JoinStrictness::Any,
             .locality = JoinLocality::Local
         },
@@ -630,8 +683,8 @@ QueryPlan buildLogicalJoin(
     QueryPlan result_plan;
 
     std::vector<QueryPlanPtr> plans;
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(input_stream_plan)));
 
     result_plan.unitePlans(std::move(result_join), {std::move(plans)});
     return result_plan;
