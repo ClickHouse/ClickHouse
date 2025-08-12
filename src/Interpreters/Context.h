@@ -267,6 +267,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class IModelEntity;
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -1180,6 +1181,10 @@ public:
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
 
+    void setModelsConfig(const Poco::Util::AbstractConfiguration & config);
+    void reloadModelEntitiesConfigIfChanged(const ConfigurationPtr & config);
+    std::shared_ptr<IModelEntity> getModelEntity(const String & name) const;
+    std::unordered_map<String, std::shared_ptr<IModelEntity>> getModelEntities() const;
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
