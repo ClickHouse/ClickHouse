@@ -1,3 +1,4 @@
+#include <limits>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -30,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -528,6 +530,20 @@ void StorageObjectStorage::truncate(
         objects.emplace_back(key.path);
 
     object_storage->removeObjectsIfExist(objects);
+}
+
+void StorageObjectStorage::drop()
+{
+    TableExclusiveLockHolder holder;
+    truncate(nullptr, nullptr, nullptr, holder);
+
+    if (catalog)
+    {
+        std::cerr << "drop from catalog\n";
+        auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        catalog->dropTable(namespace_name, table_name);
+    }
+    std::cerr << "non-drop from catalog\n";
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

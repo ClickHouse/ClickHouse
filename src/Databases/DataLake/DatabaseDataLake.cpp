@@ -449,6 +449,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* lazy_init */true);
 }
 
+void DatabaseDataLake::dropTable( /// NOLINT
+    ContextPtr /*context*/,
+    const String & name,
+    bool /*sync*/)
+{
+    auto catalog = getCatalog();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    catalog->dropTable(namespace_name, table_name);
+}
+
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
