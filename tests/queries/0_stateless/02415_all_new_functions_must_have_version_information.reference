@@ -32,12 +32,9 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
@@ -307,7 +304,6 @@ isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
 jaroSimilarity
 jaroWinklerSimilarity
@@ -546,13 +542,6 @@ shardNum
 showCertificate
 sigmoid
 sign
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
 sin
 sinh
 sipHash128
