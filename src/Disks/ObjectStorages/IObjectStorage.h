@@ -123,6 +123,8 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
+    RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
+
     virtual ~RelativePathWithMetadata() = default;
 
     virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }

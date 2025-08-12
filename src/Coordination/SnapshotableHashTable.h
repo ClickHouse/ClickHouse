@@ -45,6 +45,11 @@ struct ListNode
         uint64_t version : 62;
     } node_metadata{false, false, 0};
 
+    ListNode copyFromSnapshotNode()
+    {
+        return {key, value.copyFromSnapshotNode(), node_metadata};
+    }
+
     void setInactiveInMap()
     {
         node_metadata.active_in_map = false;
@@ -233,7 +238,7 @@ public:
         if (auto it = map.find(key); it != map.end())
             return std::make_pair(it, false);
 
-        ListElem elem{copyStringInArena(arena, key), value};
+        ListElem elem{copyStringInArena(arena, key), std::move(value)};
         elem.setVersion(current_version);
         auto itr = list.insert(list.end(), std::move(elem));
         auto [it, inserted] = map.emplace(itr->key, itr);
@@ -326,7 +331,8 @@ public:
             /// snapshot and we don't need to copy it.
             if (list_itr->getVersion() <= snapshot_up_to_version)
             {
-                auto elem_copy = *(list_itr);
+                auto elem_copy = list_itr->copyFromSnapshotNode();
+                updateDataSize(UPDATE, key.size, list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
                 list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
