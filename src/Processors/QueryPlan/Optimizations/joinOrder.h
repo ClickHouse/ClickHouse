@@ -71,7 +71,7 @@ struct QueryGraph
     std::vector<JoinActionRef> edges;
 
     std::vector<std::tuple<BitSet, BitSet, JoinKind>> dependencies;
-    std::unordered_map<JoinActionRef, BitSet> pinned;
+    std::unordered_map<JoinActionRef, std::pair<BitSet, BitSet>> pinned;
 };
 
 

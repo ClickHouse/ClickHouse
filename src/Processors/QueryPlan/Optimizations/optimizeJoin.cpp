@@ -348,7 +348,7 @@ struct QueryGraphBuilder
 
     std::vector<std::tuple<BitSet, BitSet, JoinKind>> dependencies;
     std::vector<std::pair<BitSet, ActionsDAG::NodeRawConstPtrs>> type_changes;
-    std::unordered_map<JoinActionRef, BitSet> pinned;
+    std::unordered_map<JoinActionRef, std::pair<BitSet, BitSet>> pinned;
 
     struct BuilderContext
     {
@@ -419,7 +419,8 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     for (auto & [action, pin] : rhs_pinned_raw)
     {
-        pin.shift(shift);
+        pin.first.shift(shift);
+        pin.second.shift(shift);
         lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = pin;
     }
 }
@@ -558,20 +559,43 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     if (!right_changes_types.empty())
         query_graph.type_changes.emplace_back(right_mask, std::move(right_changes_types));
 
+
+    /// During-join predicates cannot be pushed past preserved-row tables;
+    /// After-join predicates (those in WHERE) cannot be pushed past null-supplying tables.
     for (const auto * old_node : join_expression)
     {
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
         auto sources = edge.getSourceRelations();
-        for (auto & [null_side, _, join_kind] : query_graph.dependencies)
+        auto & pinned = query_graph.pinned[edge];
+        for (auto & [null_side, other_side, join_kind] : query_graph.dependencies)
         {
             if (sources & null_side)
             {
-                auto & pinned = query_graph.pinned[edge];
-                pinned = pinned | null_side;
+                if (null_side & left_mask)
+                {
+                    pinned.first = null_side;
+                    pinned.second = right_mask;
+                }
+                else if (null_side & right_mask)
+                {
+                    pinned.first = left_mask;
+                    pinned.second = null_side;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot determine pinned relations for node {} joinging [{}] and [{}] with null side {}",
+                        new_node->result_name, toString(left_mask), toString(right_mask), toString(null_side));
+                }
             }
         }
+
+        if (isLeftOrFull(join_operator.kind))
+            pinned.first = left_mask;
+        if (isRightOrFull(join_operator.kind))
+            pinned.second = right_mask;
     }
 
     bool allow_reorder = query_graph.context->optimization_settings.optimize_join_order;

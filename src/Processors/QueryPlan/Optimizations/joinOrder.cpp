@@ -230,8 +230,10 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (!isSubsetOf(edge_sources, joined_rels))
             continue;
 
-        auto pinned = query_graph.pinned[edge];
-        if (!isSubsetOf(pinned, left | right))
+        const auto & pinned = query_graph.pinned[edge];
+        bool can_place = (isSubsetOf(pinned.first, left) && isSubsetOf(pinned.second, right))
+                      || (isSubsetOf(pinned.first, right) && isSubsetOf(pinned.second, left));
+        if (!can_place)
             continue;
 
         applicable.push_back(&edge);
