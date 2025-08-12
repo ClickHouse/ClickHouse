@@ -265,6 +265,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
+    extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
 }
 
 namespace ServerSetting
@@ -1051,6 +1052,13 @@ void MergeTreeData::checkProperties(
     {
         if (projection.with_parent_part_offset)
         {
+            if (!(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
+                    "This projection cannot be used in this table",
+                    projection.name);
+
             projection_with_parent_part_offset = projection.name;
             break;
         }

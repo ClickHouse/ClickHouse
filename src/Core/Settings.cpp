@@ -4790,9 +4790,6 @@ Possible values:
 
 - string: name of preferred projection
 )", 0) \
-    DECLARE(Bool, allow_projection_with_parent_part_offset, true, R"(
-Allows or forbids the use of projections with `_part_offset` columns in `SELECT` queries.
-)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 

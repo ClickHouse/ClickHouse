@@ -29,8 +29,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Common/iota.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -45,11 +43,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
-}
-
-namespace Setting
-{
-    extern const SettingsBool allow_projection_with_parent_part_offset;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -253,21 +246,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = *select.getSampleBlock();
-
-    bool allow_projection_with_parent_part_offset = query_context->getSettingsRef()[Setting::allow_projection_with_parent_part_offset];
-    LOG_DEBUG(
-        getLogger("ProjectionDescription"),
-        "Projection {} can hold parent part offset: {}, allow_projection_with_parent_part_offset: {}, has _part_offset: {}",
-        result.name,
-        can_hold_parent_part_offset,
-        allow_projection_with_parent_part_offset,
-        result.sample_block.has("_part_offset"));
-
-    if (!allow_projection_with_parent_part_offset && can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
-        throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION,
-            "Projection {} cannot be created because the setting 'allow_projection_with_parent_part_offset' is set to 0 and projection contains '_part_offset' column.",
-            result.name);
 
     StorageInMemoryMetadata metadata;
     metadata.partition_key = KeyDescription::buildEmptyKey();

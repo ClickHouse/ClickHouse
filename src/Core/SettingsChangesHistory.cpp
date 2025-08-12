@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
-            {"allow_projection_with_parent_part_offset", false, true, "Now projections can is _part_offset column."},
+            {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -120,7 +120,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             /// RELEASE CLOSED
-            {"allow_projection_with_parent_part_offset", false, false, "New setting, protect from creating projections with parent part offset until it is stabilized."},
+            {"allow_part_offset_column_in_projections", false, false, "New setting, it protects from creating projections with parent part offset column until it is stabilized."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
