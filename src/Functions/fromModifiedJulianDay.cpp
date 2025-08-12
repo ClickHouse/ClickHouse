@@ -246,7 +246,7 @@ SELECT fromModifiedJulianDay(58849)
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>(documentation_fromModifiedJulianDay);
 
         FunctionDocumentation::Description description_fromModifiedJulianDayOrNull = R"(
-Similar to [`fromModifiedJulianDay()`](#frommodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+Similar to [`fromModifiedJulianDay()`](#fromModifiedJulianDay), but instead of raising exceptions it returns `NULL`.
     )";
         FunctionDocumentation::Syntax syntax_fromModifiedJulianDayOrNull = R"(
 fromModifiedJulianDayOrNull(day)

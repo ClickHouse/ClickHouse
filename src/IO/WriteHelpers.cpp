@@ -36,7 +36,7 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
-    const std::reverse_iterator src(src_ptr + 16);
+    const std::reverse_iterator<const UInt8 *> src(src_ptr + 16);
 #else
     const auto * src = reinterpret_cast<const UInt8 *>(&uuid);
 #endif

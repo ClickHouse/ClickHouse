@@ -1,3 +1,4 @@
+#include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -132,6 +133,34 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+namespace
+{
+
+std::optional<std::string_view> adjustSettingName(std::string_view name)
+{
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+
+    bool modified = false;
+    if (name.starts_with(s3queue_prefix))
+    {
+        modified = true;
+        name = name.substr(s3queue_prefix.size());
+    }
+
+    if (name == "enable_logging_to_s3queue_log")
+    {
+        modified = true;
+        name = "enable_logging_to_queue_log";
+    }
+
+    if (modified)
+        return name;
+
+    return std::nullopt;
+}
+
+}
+
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
@@ -146,11 +175,8 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
             {
-                if (change.name.starts_with("s3queue_"))
-                    change.name = change.name.substr(std::strlen("s3queue_"));
-
-                if (change.name == "enable_logging_to_s3queue_log")
-                    change.name = "enable_logging_to_queue_log";
+                if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
+                    change.name = std::string{*maybe_new_name};
 
                 if (change.name == "current_shard_num")
                     ignore_settings.push_back(change.name);
@@ -206,6 +232,8 @@ Field ObjectStorageQueueSettings::get(const std::string & name)
 
 bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
 {
+    if (auto maybe_new_name = adjustSettingName(name); maybe_new_name.has_value())
+        name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
 }

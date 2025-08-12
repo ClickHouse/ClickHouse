@@ -925,6 +925,10 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
             zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, String(), zkutil::CreateMode::Persistent));
     }
 
+    /// For synchronization of lightweight updates (see PatchPartsLock.h)
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates/in_progress", String(), zkutil::CreateMode::Persistent));
+
     for (auto & future : futures)
     {
         auto res = future.get();
@@ -1041,10 +1045,6 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/quorum/failed_parts", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/mutations", "",
-            zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/lightweight_updates", "",
-            zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/lightweight_updates/in_progress", "",
             zkutil::CreateMode::Persistent));
 
         /// And create first replica atomically. See also "createReplica" method that is used to create not the first replicas.
@@ -10353,17 +10353,13 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             /// But during mutation we can have hardlinks to another part. So it's not Ok to remove blobs of this part if it was mutated.
             if (ec == Coordination::Error::ZNONODE)
             {
-                if (has_parent)
-                {
-                    LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
-                    return {false, {}};
-                }
-
                 LOG_INFO(
                     logger,
-                    "Lock on path {} for part {} doesn't exist, but we don't have mutation parent, can remove blobs",
+                    "Lock on path {} for part {}, which {} a parent, doesn't exist, refuse to remove blobs",
                     zookeeper_part_replica_node,
-                    part_name);
+                    part_name,
+                    (has_parent ? "has" : "doesn't have"));
+                return {false, {}};
             }
             else
             {

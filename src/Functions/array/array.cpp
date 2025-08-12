@@ -254,15 +254,22 @@ private:
             return false;
 
         const size_t tuple_size = concrete_out_data->tupleSize();
-        for (size_t i = 0; i < tuple_size; ++i)
+        if (tuple_size == 0)
         {
-            ColumnRawPtrs elem_columns(columns.size(), nullptr);
-            for (size_t j = 0; j < columns.size(); ++j)
+            out_data.insertManyDefaults(columns.size());
+        }
+        else
+        {
+            for (size_t i = 0; i < tuple_size; ++i)
             {
-                const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
-                elem_columns[j] = &concrete_column->getColumn(i);
+                ColumnRawPtrs elem_columns(columns.size(), nullptr);
+                for (size_t j = 0; j < columns.size(); ++j)
+                {
+                    const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
+                    elem_columns[j] = &concrete_column->getColumn(i);
+                }
+                execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
             }
-            execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
         }
         return true;
     }

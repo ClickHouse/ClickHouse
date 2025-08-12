@@ -479,10 +479,10 @@ The difference is calculated using relative units. For example, the difference b
 (see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
 (see [`toRelativeYearNum`](#toRelativeYearNum)).
 
-If the unit `week` was specified, then `date_diff` assumes that weeks start on Monday.
+If the unit `week` was specified, then `timeDiff` assumes that weeks start on Monday.
 Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
-For an alternative to [`date_diff`](#date_diff), see function [`age`](#age).
+For an alternative to [`timeDiff`](#timeDiff), see function [`age`](#age).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 date_diff(unit, startdate, enddate, [timezone])
@@ -513,7 +513,7 @@ date_diff(unit, startdate, enddate, [timezone])
     FunctionDocumentation::Examples examples =
     {
         {"Calculate date difference in hours", R"(
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
+SELECT timeDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
         )",
         R"(
 ┌─res─┐
@@ -524,9 +524,9 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 SELECT
     toDate('2022-01-01') AS e,
     toDate('2021-12-29') AS s,
-    dateDiff('day', s, e) AS day_diff,
-    dateDiff('month', s, e) AS month_diff,
-    dateDiff('year', s, e) AS year_diff
+    timeDiff('day', s, e) AS day_diff,
+    timeDiff('month', s, e) AS month_diff,
+    timeDiff('year', s, e) AS year_diff
         )",
         R"(
 ┌──────────e─┬──────────s─┬─day_diff─┬─month_diff─┬─year_diff─┐
@@ -550,7 +550,7 @@ The difference is calculated using a precision of 1 nanosecond.
 For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
 0 months for the month unit, and 0 years for the year unit.
 
-For an alternative to age, see function [`date_diff`](#date_diff).
+For an alternative to age, see function [`timeDiff`](#timeDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 age('unit', startdate, enddate, [timezone])

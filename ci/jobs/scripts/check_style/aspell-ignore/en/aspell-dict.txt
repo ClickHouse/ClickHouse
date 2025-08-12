@@ -238,6 +238,7 @@ DataGrip
 DataLakeCatalog
 DataLens
 DataPacket
+DataPup
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -601,7 +602,6 @@ LogsLevel
 Logstash
 LookML
 LoongArch
-Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -1720,6 +1720,7 @@ dateName
 dateTime
 dateTimeToSnowflake
 dateTimeToSnowflakeID
+dateTimeToUUIDv
 dateTrunc
 datetime
 datetimes
@@ -2293,7 +2294,6 @@ london
 lookahead
 lookups
 loongarch
-lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2733,6 +2733,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantized
+quantizations
 quartile
 queryID
 queryString
@@ -3122,10 +3123,12 @@ timeDiff
 timeSeries
 timeSeriesData
 timeSeriesDeltaToGrid
+timeSeriesDerivToGrid
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
+timeSeriesPredictLinearToGrid
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
@@ -3349,6 +3352,8 @@ uploaders
 upperUTF
 uptime
 uptrace
+upsert
+upserts
 uring
 url
 urlCluster

@@ -479,7 +479,6 @@ void buildRenamingForScalarSubquery(
     {
         new_outputs.push_back(&dag.addAlias(dag.findInOutputs(column_name), fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
     }
-    new_outputs.push_back(result_node);
 
     dag.getOutputs() = std::move(new_outputs);
 

@@ -393,9 +393,12 @@ void FiniteStateTransducer::clear()
     data.clear();
 }
 
-std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
+FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view term)
 {
-    std::pair<UInt64, bool> result(0, false);
+    if (data.empty())
+        return {0, false};
+
+    FiniteStateTransducer::Output result;
 
     /// Read index of initial state
     ReadBufferFromMemory read_buffer(data.data(), data.size());
@@ -423,7 +426,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
         temp_state.readFlag(read_buffer);
         if (i == term.size())
         {
-            result.second = temp_state.isFinal();
+            result.found = temp_state.isFinal();
             break;
         }
 
@@ -484,7 +487,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
             }
         }
         /// Accumulate the output value
-        result.first += arc_output;
+        result.offset += arc_output;
     }
     return result;
 }

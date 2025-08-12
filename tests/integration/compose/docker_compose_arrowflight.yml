@@ -1,0 +1,7 @@
+services:
+  arrowflight1:
+    image: clickhouse/arrowflight-server-test:${DOCKER_ARROWFLIGHT_SERVER_TAG:-latest}
+    ports:
+      - "5005:5005"
+    command: ["python", "flight_server.py"]
+    stop_signal: SIGINT

@@ -136,6 +136,8 @@ The delivered messages are tracked automatically, so each message in a group is 
 
 Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at http://kafka.apache.org/intro.
 
+It is recommended that each Kafka topic have its own dedicated consumer group, ensuring exclusive pairing between the topic and the group, especially in environments where topics may be created and deleted dynamically (e.g., in testing or staging).
+
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
 1.  Use the engine to create a Kafka consumer and consider it a data stream.

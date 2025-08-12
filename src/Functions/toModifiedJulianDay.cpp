@@ -247,7 +247,7 @@ SELECT toModifiedJulianDay('2020-01-01')
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>(documentation_toModifiedJulianDay);
 
         FunctionDocumentation::Description description_toModifiedJulianDayOrNull = R"(
-Similar to [`toModifiedJulianDay()`](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+Similar to [`toModifiedJulianDay()`](#toModifiedJulianDay), but instead of raising exceptions it returns `NULL`.
     )";
         FunctionDocumentation::Syntax syntax_toModifiedJulianDayOrNull = R"(
 toModifiedJulianDayOrNull(date)

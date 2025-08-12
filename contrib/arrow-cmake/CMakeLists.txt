@@ -212,10 +212,13 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
 
-
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
+
+set(ARROW_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
+configure_file(${LIBRARY_DIR}/util/config.h.cmake ${ARROW_GENERATED_SRC_DIR}/arrow/util/config.h)
+
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 # find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
@@ -452,6 +455,7 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
 
 add_library(_arrow ${ARROW_SRCS})
+add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem
@@ -473,8 +477,11 @@ add_dependencies(_arrow protoc)
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
-target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
+
+# === arrow flight
+
+include(flight.cmake)
 
 # === parquet
 

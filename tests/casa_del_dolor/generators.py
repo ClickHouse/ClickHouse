@@ -68,6 +68,25 @@ class BuzzHouseGenerator(Generator):
                 "user": "minio",
                 "password": minio_secret_key,
             }
+            if args.with_glue:
+                buzz_config["minio"]["glue"] = {
+                    "server_hostname": "glue",
+                    "endpoint": "warehouse-glue",
+                    "region": "us-east-1",
+                    "port": 3000,
+                }
+            if args.with_hms:
+                buzz_config["minio"]["hive"] = {
+                    "server_hostname": "hive",
+                    "endpoint": "warehouse-hms",
+                    "port": 9083,
+                }
+            if args.with_rest:
+                buzz_config["minio"]["rest"] = {
+                    "server_hostname": "rest",
+                    "endpoint": "warehouse-rest",
+                    "port": 8181,
+                }
         if args.with_postgresql:
             buzz_config["postgresql"] = {
                 "query_log_file": "/tmp/postgresql.sql",

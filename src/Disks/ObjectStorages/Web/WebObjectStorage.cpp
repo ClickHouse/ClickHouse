@@ -15,6 +15,7 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
+#include <Disks/ObjectStorages/Web/WebObjectStorageConnectionInfo.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -281,6 +282,11 @@ void WebObjectStorage::startup()
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+}
+
+ObjectStorageConnectionInfoPtr WebObjectStorage::getConnectionInfo() const
+{
+    return getWebObjectStorageConnectionInfo(url);
 }
 
 }
