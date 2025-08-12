@@ -26,7 +26,7 @@ public:
     GlueCatalog(
         const String & endpoint,
         DB::ContextPtr context_,
-        const DB::DatabaseDataLakeSettings & settings_,
+        const CatalogSettings & settings_,
         DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
@@ -58,12 +58,18 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
+    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+
 private:
+    void createNamespaceIfNotExists(const String & namespace_name) const;
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     Aws::Auth::AWSCredentials credentials;
     std::string region;
-    DB::DatabaseDataLakeSettings settings;
+    CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;

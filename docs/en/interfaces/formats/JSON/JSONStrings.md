@@ -393,4 +393,3 @@ The output will be in JSON format:
 ```
 
 ## Format settings {#format-settings}
-

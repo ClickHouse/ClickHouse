@@ -341,12 +341,18 @@ IMPLEMENT_SETTING_ENUM(
      {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
      {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
 
-
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    SearchOrphanedPartsDisks,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"any", SearchOrphanedPartsDisks::ANY},
+     {"local", SearchOrphanedPartsDisks::LOCAL},
+     {"none", SearchOrphanedPartsDisks::NONE}})
 
 }

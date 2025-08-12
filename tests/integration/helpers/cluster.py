@@ -274,6 +274,14 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        docker_exec(postgresql_java_client_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
 
 def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
@@ -424,6 +432,7 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
         with_spark=False,
+        custom_keeper_configs=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -453,6 +462,12 @@ class ClickHouseCluster:
             if keeper_config_dir
             else HELPERS_DIR
         )
+
+        self.custom_keeper_configs_paths = None
+        if len(custom_keeper_configs) > 0:
+            self.custom_keeper_configs_paths = [
+                p.abspath(p.join(self.base_dir, c)) for c in custom_keeper_configs
+            ]
 
         project_name = (
             pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
@@ -510,6 +525,8 @@ class ClickHouseCluster:
         self.base_nginx_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
+        self.with_arrowflight = False
+        self.arrowflight_host = "arrowflight1"
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -519,6 +536,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
@@ -667,6 +685,12 @@ class ClickHouseCluster:
         self.postgresql_java_client_host = "java"
         self.postgresql_java_client_docker_id = self.get_instance_docker_id(
             self.postgresql_java_client_host
+        )
+
+        # available when with_mysql_dotnet_client = True
+        self.mysql_dotnet_client_host = "dotnet"
+        self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.mysql_dotnet_client_host
         )
 
         # available when with_mysql_client == True
@@ -1235,6 +1259,25 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_mysql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_mysql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_mysql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
+        )
+
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
@@ -1391,6 +1434,19 @@ class ClickHouseCluster:
         )
         return self.base_mongo_cmd
 
+    def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_arrowflight = True
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
+        )
+        self.base_arrowflight_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml"),
+        )
+        return self.base_arrowflight_cmd
+
     def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_coredns = True
         env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
@@ -1464,17 +1520,14 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
+        self, instance, env_variables, docker_compose_yml_dir
     ):
         self.with_iceberg_catalog = True
-        file_name = "docker_compose_iceberg_rest_catalog.yml"
-        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
-            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, file_name
+                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
                 ),
             ]
         )
@@ -1482,7 +1535,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, file_name),
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1639,8 +1692,10 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
+        with_arrowflight=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -1692,7 +1747,6 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
-        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1723,14 +1777,8 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            build_opts = subprocess.check_output(
-                f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                stderr=subprocess.STDOUT,
-                shell=True,
-            ).decode()
-            with_remote_database_disk = ("NDEBUG" not in build_opts) and (
-                "-fsanitize=address" in build_opts
-            )
+            # Not enabled in public
+            with_remote_database_disk = False
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -1768,6 +1816,7 @@ class ClickHouseCluster:
             macros=macros or {},
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
+            with_arrowflight=with_arrowflight,
             with_mysql_client=with_mysql_client,
             with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
@@ -1804,6 +1853,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
@@ -1826,7 +1876,6 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
-            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1906,6 +1955,13 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
+        
+        if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
+            cmds.append(
+                self.setup_mysql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -1966,6 +2022,11 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+            
+        if with_arrowflight and not self.with_arrowflight:
+            cmds.append(
+                self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if with_coredns and not self.with_coredns:
             cmds.append(
@@ -1985,7 +2046,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir, extra_parameters
+                    instance, env_variables, docker_compose_yml_dir
                 )
             )
 
@@ -2219,16 +2280,14 @@ class ClickHouseCluster:
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data)
-            encodedStr = str(encodedBytes, "utf-8")
+            encoded_payload = base64.b64encode(data)
+            encoded_payload = str(encoded_payload, "utf-8")
             self.exec_in_container(
                 container_id,
                 [
                     "bash",
                     "-c",
-                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(
-                        dest_path, encodedStr, dest_path
-                    ),
+                    f"mkdir -p $(dirname {dest_path}) && echo {encoded_payload} | base64 --decode > {dest_path}.tmp && mv {dest_path}.tmp {dest_path}",
                 ],
             )
 
@@ -2245,8 +2304,9 @@ class ClickHouseCluster:
         if result:
             decoded_data = base64.b64decode(result)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            with open(local_path, "wb") as f:
+            with open(local_path + ".tmp", "wb") as f:
                 f.write(decoded_data)
+            os.rename(local_path + ".tmp", local_path)
         else:
             raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
 
@@ -2259,7 +2319,7 @@ class ClickHouseCluster:
             return True
         except Exception:
             return False
-        
+
     def get_files_list_in_container(self, container_id, path):
         result = self.exec_in_container(
             container_id,
@@ -2271,7 +2331,7 @@ class ClickHouseCluster:
         )
 
         files = result.strip().splitlines() if result else []
-        return files            
+        return files
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -2519,6 +2579,22 @@ class ClickHouseCluster:
                 logging.debug("Can't find PostgreSQL Java Client" + str(ex))
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
+
+    def wait_mysql_dotnet_client(self, timeout=30):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_mysql_dotnet_client_is_available(
+                    self.mysql_dotnet_client_docker_id
+                ):
+                    logging.debug("MySQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find MySQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait MySQL C# Client container")
+
 
     def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
@@ -2907,6 +2983,10 @@ class ClickHouseCluster:
         self.wait_for_url(
             f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
         )
+        
+    def wait_arrowflight_to_start(self):
+        time.sleep(5) # TODO
+        
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -2992,47 +3072,62 @@ class ClickHouseCluster:
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
                         )
-                        shutil.copy(
-                            os.path.join(
-                                self.keeper_config_dir, f"keeper_config{i}.xml"
-                            ),
-                            current_keeper_config_dir,
-                        )
+                        if self.custom_keeper_configs_paths is None:
+                            shutil.copy(
+                                os.path.join(
+                                    self.keeper_config_dir, f"keeper_config{i}.xml"
+                                ),
+                                current_keeper_config_dir,
+                            )
 
-                        extra_configs_dir = os.path.join(
-                            current_keeper_config_dir, f"keeper_config{i}.d"
-                        )
-                        os.mkdir(extra_configs_dir)
-                        feature_flags_config = os.path.join(
-                            extra_configs_dir, "feature_flags.yaml"
-                        )
+                            extra_configs_dir = os.path.join(
+                                current_keeper_config_dir, f"keeper_config{i}.d"
+                            )
+                            os.mkdir(extra_configs_dir)
+                            feature_flags_config = os.path.join(
+                                extra_configs_dir, "feature_flags.yaml"
+                            )
 
-                        indentation = 4 * " "
+                            indentation = 4 * " "
 
-                        def get_feature_flag_value(feature_flag):
-                            if not self.keeper_randomize_feature_flags:
-                                return 1
+                            def get_feature_flag_value(feature_flag):
+                                if not self.keeper_randomize_feature_flags:
+                                    return 1
 
-                            if feature_flag in self.keeper_required_feature_flags:
-                                return 1
+                                if feature_flag in self.keeper_required_feature_flags:
+                                    return 1
 
-                            return random.randint(0, 1)
+                                return random.randint(0, 1)
 
-                        with open(feature_flags_config, "w") as ff_config:
-                            ff_config.write("keeper_server:\n")
-                            ff_config.write(f"{indentation}feature_flags:\n")
-                            indentation *= 2
+                            with open(feature_flags_config, "w") as ff_config:
+                                ff_config.write("keeper_server:\n")
+                                ff_config.write(f"{indentation}feature_flags:\n")
+                                indentation *= 2
 
-                            for feature_flag in [
-                                "filtered_list",
-                                "multi_read",
-                                "check_not_exists",
-                                "create_if_not_exists",
-                                "remove_recursive",
-                            ]:
-                                ff_config.write(
-                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
-                                )
+                                for feature_flag in [
+                                    "filtered_list",
+                                    "multi_read",
+                                    "check_not_exists",
+                                    "create_if_not_exists",
+                                    "remove_recursive",
+                                ]:
+                                    ff_config.write(
+                                        f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+                        else:
+                            basename = os.path.basename(
+                                self.custom_keeper_configs_paths[i - 1]
+                            )
+                            shutil.copy(
+                                self.custom_keeper_configs_paths[i - 1],
+                                current_keeper_config_dir,
+                            )
+                            os.rename(
+                                os.path.join(current_keeper_config_dir, basename),
+                                os.path.join(
+                                    current_keeper_config_dir, f"keeper_config{i}.xml"
+                                ),
+                            )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3135,6 +3230,17 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_postgresql_java_client()
+
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                logging.debug("Setup MySQL C# Client")
+                subprocess_check_call(
+                    self.base_mysql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_mysql_dotnet_client()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
@@ -3349,6 +3455,18 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Prometheus...")
                 self.wait_prometheus_to_start()
+
+            if self.with_arrowflight and self.base_arrowflight_cmd:
+                arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Arrowflight instance by command %s",
+                    " ".join(map(str, arrowflight_start_cmd)),
+                )
+                run_and_check(arrowflight_start_cmd)
+
+                logging.error(f'Trying to connect to Arrowflight...')
+                self.wait_arrowflight_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
@@ -3612,6 +3730,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
@@ -3662,6 +3781,7 @@ class ClickHouseInstance:
         macros,
         with_zookeeper,
         zookeeper_config_path,
+        with_arrowflight,
         with_mysql_client,
         with_mysql57,
         with_mysql8,
@@ -3695,6 +3815,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
@@ -3717,7 +3838,6 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
-        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3770,6 +3890,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
@@ -3782,6 +3903,7 @@ class ClickHouseInstance:
         self.mongo_secure_config_dir = p.abspath(
             p.join(base_path, "mongo_secure_config")
         )
+        self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
@@ -4512,7 +4634,7 @@ class ClickHouseInstance:
         return self.cluster.file_exists_in_container(
             self.docker_id, path
         )
-    
+
     def get_files_list_in_container(self, path):
         return self.cluster.get_files_list_in_container(
             self.docker_id, path
@@ -4704,15 +4826,21 @@ class ClickHouseInstance:
         self.get_docker_handle().start()
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
+        # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
+        self.wait_until_port_is_ready(9000, timeout=start_timeout, connection_timeout=connection_timeout)
+        self.is_up = True
+
+    # Waits until a specified port is ready for connections.
+    def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
         handle = self.get_docker_handle()
 
-        if start_timeout is None or start_timeout <= 0:
-            raise Exception("Invalid timeout: {}".format(start_timeout))
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
 
-        if connection_timeout is not None and connection_timeout < start_timeout:
+        if connection_timeout is not None and connection_timeout < timeout:
             raise Exception(
-                "Connection timeout {} should be grater then start timeout {}".format(
-                    connection_timeout, start_timeout
+                "Connection timeout {} should be greater then start timeout {}".format(
+                    connection_timeout, timeout
                 )
             )
 
@@ -4737,7 +4865,7 @@ class ClickHouseInstance:
                     f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
-            deadline = start_time + start_timeout
+            deadline = start_time + timeout
             # It is possible that server starts slowly.
             # If container is running, and there is some progress in log, check connection_timeout.
             if connection_timeout and status == "running" and has_new_rows_in_log():
@@ -4750,15 +4878,13 @@ class ClickHouseInstance:
                     f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
-            socket_timeout = min(start_timeout, deadline - current_time)
+            socket_timeout = min(timeout, deadline - current_time)
 
             # Repeatedly poll the instance address until there is something that listens there.
-            # Usually it means that ClickHouse is ready to accept queries.
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(socket_timeout)
-                sock.connect((self.ip_address, 9000))
-                self.is_up = True
+                sock.connect((self.ip_address, port))
                 return
             except socket.timeout:
                 continue
@@ -5106,6 +5232,9 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
+            
+        if self.with_arrowflight:
+            depends_on.append("arrowflight1")
 
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.

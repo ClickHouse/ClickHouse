@@ -300,7 +300,6 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-
 ## Reading Variant type from the data {#reading-variant-type-from-the-data}
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Variant` type. During data parsing ClickHouse tries to insert value into most appropriate variant type.
@@ -333,7 +332,6 @@ $$)
 │ [1,2,3]             │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ [1,2,3] │
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
-
 
 ## Comparing values of Variant type {#comparing-values-of-variant-data}
 

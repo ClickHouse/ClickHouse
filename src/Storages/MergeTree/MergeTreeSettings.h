@@ -6,6 +6,7 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace boost
 {
@@ -51,6 +52,8 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion)
+    M(CLASS_NAME, SearchOrphanedPartsDisks)
+
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
 struct MergeTreeSettings
@@ -83,6 +86,7 @@ struct MergeTreeSettings
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
+    void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 

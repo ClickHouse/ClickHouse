@@ -183,7 +183,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
                 },
                 max_unexpected_write_error_retries,
                 part_data.data_size);
-            LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
+            LOG_TRACE(limited_log, "Committed single block for blob `{}`", blob_path);
 
             detached_part_data.pop_front();
             return;
@@ -212,7 +212,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
-    LOG_TRACE(log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
+    LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
 
     if (!is_prefinalized)
         preFinalize();
@@ -238,7 +238,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
                     azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attetmpt));
             },
             max_unexpected_write_error_retries);
-        LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+        LOG_TRACE(limited_log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
     }
 
     if (check_objects_after_upload)
@@ -287,7 +287,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 void WriteBufferFromAzureBlobStorage::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->throttle(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 
@@ -337,7 +337,7 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     }
 
     auto size = buffer_allocation_policy->getBufferSize();
-    memory = Memory(size);
+    memory = Memory<>(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
