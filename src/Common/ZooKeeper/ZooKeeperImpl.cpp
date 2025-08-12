@@ -1863,8 +1863,10 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 
 void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
 {
-    if (auto maybe_lightweight_zookeeper_log = getLightweightZooKeeperLog())
+    chassert(response);
+    if (auto maybe_lightweight_zookeeper_log = getLightweightZooKeeperLog(); maybe_lightweight_zookeeper_log && request)
     {
+        chassert(elapsed_microseconds > 0);
         maybe_lightweight_zookeeper_log->observe(request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
     }
 }

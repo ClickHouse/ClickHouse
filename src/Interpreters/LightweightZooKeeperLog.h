@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <Interpreters/PeriodicLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
@@ -20,7 +21,7 @@ struct LightweightZooKeeperLogElement
     
     /// Group statistics.
     UInt32 count;
-    Coordination::ErrorCounter errors;
+    std::unique_ptr<Coordination::ErrorCounter> errors;
     UInt64 total_latency_microseconds;
 
     static std::string name() { return "LightweightZooKeeperLog"; }
@@ -84,13 +85,13 @@ private:
     {
         UInt32 count = 0;
         UInt64 total_latency_microseconds = 0;
-        Coordination::ErrorCounter errors;
+        std::unique_ptr<Coordination::ErrorCounter> errors = std::make_unique<Coordination::ErrorCounter>();
 
         void observe(UInt64 latency_microseconds, Coordination::Error error)
         {
             ++count;
             total_latency_microseconds += latency_microseconds;
-            errors.increment(error);
+            errors->increment(error);
         }
     };
 

@@ -1397,7 +1397,7 @@
         <database>system</database>
         <table>lightweight_zookeeper_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </lightweight_zookeeper_log>
 

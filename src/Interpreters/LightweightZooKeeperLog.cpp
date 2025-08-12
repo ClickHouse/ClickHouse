@@ -135,7 +135,7 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(parent_path);
     columns[i++]->insert(operation);
     columns[i++]->insert(count);
-    errors.dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
+    errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(total_latency_microseconds);
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
