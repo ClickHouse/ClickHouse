@@ -963,14 +963,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
-    // for (const auto * child : children)
-    // {
-    //     for (const auto & column : *child->step->getOutputHeader())
-    //     {
-    //         auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
-    //         used_expressions.push_back(std::move(input_node));
-    //     }
-    // }
+    for (const auto * child : children)
+    {
+        for (const auto & column : *child->step->getOutputHeader())
+        {
+            auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
+            used_expressions.push_back(std::move(input_node));
+        }
+    }
 
     {
         std::unordered_set<const ActionsDAG::Node *> seen_used_expressions;
