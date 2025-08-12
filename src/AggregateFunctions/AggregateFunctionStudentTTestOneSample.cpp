@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionTTest.h>
+#include <AggregateFunctions/AggregateFunctionOneSampleTTest.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Moments.h>
 #include <boost/math/distributions/students_t.hpp>
@@ -53,18 +53,16 @@ struct StudentTTestOneSampleData : public OneSampleTTestMoments<Float64>
 AggregateFunctionPtr createAggregateFunctionStudentTTestOneSample(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
-    assertUnary(name, argument_types);
+    if (argument_types.size() != 1 && argument_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one or two arguments.", name);
 
-    if (parameters.size() < 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one parameter (population_mean).", name);
-
-    if (parameters.size() > 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one or two parameters.", name);
-
-    if (!isNumber(argument_types[0]))
+    if (!isNumber(argument_types[0]) || (argument_types.size() == 2 && !isNumber(argument_types[1])))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
-    return std::make_shared<AggregateFunctionTTest<StudentTTestOneSampleData, true>>(argument_types, parameters);
+    if (parameters.size() > 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} allows at most one parameter (confidence level).", name);
+
+    return std::make_shared<AggregateFunctionOneSampleTTest<StudentTTestOneSampleData>>(argument_types, parameters);
 }
 
 }

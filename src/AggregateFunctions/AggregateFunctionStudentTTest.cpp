@@ -87,7 +87,7 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
-    return std::make_shared<AggregateFunctionTTest<StudentTTestData, false>>(argument_types, parameters);
+    return std::make_shared<AggregateFunctionTTest<StudentTTestData>>(argument_types, parameters);
 }
 
 }
