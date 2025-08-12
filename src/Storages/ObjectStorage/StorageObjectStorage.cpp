@@ -536,14 +536,6 @@ void StorageObjectStorage::drop()
 {
     TableExclusiveLockHolder holder;
     truncate(nullptr, nullptr, nullptr, holder);
-
-    if (catalog)
-    {
-        std::cerr << "drop from catalog\n";
-        auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
-    }
-    std::cerr << "non-drop from catalog\n";
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
