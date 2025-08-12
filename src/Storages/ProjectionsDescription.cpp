@@ -29,8 +29,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/iota.h>
 #include <DataTypes/NestedUtils.h>
 
