@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -375,6 +376,12 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
         proc = subprocess.Popen(
             command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
         )
@@ -618,18 +625,22 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                # Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
-                # (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
                 if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 600",
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
                     verbose=True,
                 ):
-                    print("Failed to stop ClickHouse process gracefully")
+                    print(
+                        "Failed to stop ClickHouse process gracefully - send ABRT signal to generate core file"
+                    )
+                    Shell.check(f"kill -ABRT {pid}")
 
         return self
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
+        if Path(self.GDB_LOG).exists():
+            res.append(self.GDB_LOG)
         if all:
             res += self.debug_artifacts
             res += self.dump_system_tables()
@@ -639,8 +650,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.MINIO_LOG)
             if Path(self.AZURITE_LOG).exists():
                 res.append(self.AZURITE_LOG)
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if Path(self.DMESG_LOG).exists():
                 res.append(self.DMESG_LOG)
             if Path(self.CH_LOCAL_ERR_LOG).exists():
@@ -654,6 +663,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # Find at most 3 core.* files in the current directory (non-recursive)
         cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
         core_files = Shell.get_output(cmd, verbose=True).splitlines()
+        if len(core_files) > 3:
+            print(
+                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
+            )
+            core_files = core_files[0:3]
         return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
 
     @classmethod
@@ -668,20 +682,76 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
+    @classmethod
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        if not profiles:
+            return []
+
+        profiles = profiles.split('\n')
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split('.')
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+
+        # fetch jeprof
+        if Shell.check(
+            f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
+            verbose=True,
+        ) and Shell.check(
+            f"sed -i -e 's/@jemalloc_version@/5.3.0-12-g41a859ef/g' -e 's/@JEMALLOC_PREFIX@//g' {temp_dir}/jeprof && chmod +x {temp_dir}/jeprof"
+        ):
+            has_flamegraph = Shell.check(
+                f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
+                verbose=True,
+            )
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt {chbinary}"
+            for pid, profile in latest_profiles.items():
+                Shell.check(
+                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                    verbose=True
+                )
+
+                if has_flamegraph:
+                    Shell.check(
+                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                        verbose=True
+                    )
+
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
+        else:
+            print("WARNING: Jemalloc profiles not found")
+            return []
+        return res
+
     def _get_logs_archives_server(self):
         assert Path(
             self.log_dir
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
-
-    def check_ch_is_oom_killed(self):
-        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
-            return Result.from_commands_run(
-                name="OOM in dmesg",
-                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-            )
-        else:
-            return None
 
     def check_fatal_messages_in_logs(self):
         results = []
@@ -701,25 +771,25 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="Killed by signal (in clickhouse-server.log)",
+                name="Killed by signal (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log)",
+                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
+                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="No lost s3 keys",
+                name="Lost s3 keys",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
@@ -737,21 +807,26 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
+                name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
-        oom_check = self.check_ch_is_oom_killed()
-        if oom_check is None:
-            print("WARNING: dmesg not enabled")
+        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
+            results.append(
+                Result.from_commands_run(
+                    name="OOM in dmesg",
+                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                )
+            )
         else:
-            results.append(oom_check)
-        results.append(
-            Result.from_commands_run(
-                name="Found signal in gdb.log",
-                command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+            print("WARNING: dmesg not enabled")
+        if Path(self.GDB_LOG).is_file():
+            results.append(
+                Result.from_commands_run(
+                    name="Found signal in gdb.log",
+                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+                )
             )
-        )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
@@ -812,15 +887,17 @@ quit
         assert self.pid, "ClickHouse not started"
         # FIXME Hung check may work incorrectly because of attached gdb
         # We cannot attach another gdb to get stacktraces if some queries hung
-        print(f"Attach gdb to PID {self.pid}")
+        command = f"gdb -batch -command {script_path} -p {self.pid}"
+        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
         with open(self.GDB_LOG, "w") as log_file:
             self.gdb_proc = subprocess.Popen(
-                f"gdb -batch -command {script_path} -p {self.pid}",
+                command,
                 shell=True,
                 stdout=log_file,
                 stderr=log_file,
             )
         time.sleep(2)
+        time.sleep(1000)
         self.gdb_proc.poll()
         attached = False
         if self.gdb_proc.returncode is not None:
@@ -858,10 +935,14 @@ quit
             "error_log",
             "query_metric_log",
             "part_log",
-            "latency_log",
             "minio_audit_logs",
             "minio_server_logs",
         ]
+
+        if "_tsan" in Info().job_name:
+            print("minio_audit_logs scrapping is too slow with tsan - skip")
+            TABLES.remove("minio_audit_logs")
+
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"

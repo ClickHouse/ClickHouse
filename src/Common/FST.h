@@ -163,10 +163,16 @@ private:
 class FiniteStateTransducer
 {
 public:
+    struct Output
+    {
+        UInt64 offset = 0;
+        bool found = false;
+    };
+
     FiniteStateTransducer() = default;
     explicit FiniteStateTransducer(std::vector<UInt8> data_);
     void clear();
-    std::pair<UInt64, bool> getOutput(std::string_view term);
+    Output getOutput(std::string_view term);
     std::vector<UInt8> & getData() { return data; }
 
 private:

@@ -185,6 +185,10 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
+            if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+            }
             if (t.isURLEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers"}));
@@ -193,10 +197,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
-        }
-        else if (t.isMergeEngine())
-        {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
         else if (t.isDistributedEngine())
         {
@@ -207,6 +207,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
     }
     return rel;
 }
@@ -567,6 +568,24 @@ static const std::vector<SQLFunc> datesHash
        SQLFunc::FUNCtoModifiedJulianDayOrNull,
        SQLFunc::FUNCtoUTCTimestamp};
 
+static const std::vector<SQLFunc> arithmeticFuncs
+    = {SQLFunc::FUNCplus,
+       SQLFunc::FUNCminus,
+       SQLFunc::FUNCmultiply,
+       SQLFunc::FUNCdivide,
+       SQLFunc::FUNCintDiv,
+       SQLFunc::FUNCintDivOrZero,
+       SQLFunc::FUNCifNotFinite,
+       SQLFunc::FUNCmodulo,
+       SQLFunc::FUNCmoduloOrZero,
+       SQLFunc::FUNCpositiveModulo,
+       SQLFunc::FUNCgcd,
+       SQLFunc::FUNClcm,
+       SQLFunc::FUNCmax2,
+       SQLFunc::FUNCmin2,
+       SQLFunc::FUNCicebergBucket,
+       SQLFunc::FUNCicebergTruncate};
+
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
     columnPathRef(entry, expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
@@ -582,6 +601,18 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
     }
 }
 
+void StatementGenerator::entryOrConstant(RandomGenerator & rg, const ColumnPathChain & entry, Expr * expr)
+{
+    if (rg.nextBool())
+    {
+        columnPathRef(entry, expr);
+    }
+    else
+    {
+        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+    }
+}
+
 void StatementGenerator::colRefOrExpression(
     RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
 {
@@ -594,8 +625,9 @@ void StatementGenerator::colRefOrExpression(
     const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
     const uint32_t rand_func = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
+    const uint32_t arithmetic_func = 5;
     const uint32_t col_ref = 40;
-    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref;
+    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + col_ref;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -612,9 +644,9 @@ void StatementGenerator::colRefOrExpression(
         /// Use modulo function for partitioning/keys
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
-        columnPathRef(entry, bexpr->mutable_lhs());
+        entryOrConstant(rg, entry, bexpr->mutable_lhs());
         bexpr->set_op(BinaryOperator::BINOP_PERCENT);
-        bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+        entryOrConstant(rg, entry, bexpr->mutable_rhs());
     }
     else if (one_arg_func && nopt < (datetime_func + modulo_func + one_arg_func + 1))
     {
@@ -665,12 +697,22 @@ void StatementGenerator::colRefOrExpression(
     else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
     {
         /// Use random func
+        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+    }
+    else if (
+        arithmetic_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + 1))
+    {
+        /// Use arithmetic function
         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-        func_call->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(arithmeticFuncs));
+        entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
+        entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
     }
-    else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref + 1))
+    else if (
+        col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + arithmetic_func + col_ref + 1))
     {
+        /// Reference a column
         columnPathRef(entry, expr);
     }
     else
@@ -928,7 +970,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     if (this->allow_not_deterministic && rg.nextMediumNumber() < 26)
     {
         /// Use random sharding key sometimes
-        expr->mutable_lit_val()->set_no_quote_str("rand()");
+        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
     }
     else if (t.has_value())
     {
@@ -946,9 +988,32 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, bool allow_chaos)
+{
+    String buf;
+    bool first = true;
+    const bool allCols = allow_chaos && rg.nextSmallNumber() < 4;
+
+    flatTableColumnPath(to_remote_entries, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
+    std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    for (const auto & entry : this->remote_entries)
+    {
+        buf += fmt::format(
+            "{}{} {}{}",
+            first ? "" : ", ",
+            entry.getBottomName(),
+            entry.getBottomType()->typeName(true),
+            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+        first = false;
+    }
+    this->remote_entries.clear();
+    return buf;
+}
+
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
+    SettingValues * svs = nullptr;
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
@@ -982,7 +1047,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_svalue(b.getTablePath(fc, false));
         if (rg.nextBool())
         {
-            b.file_comp = rg.pickRandomly(fileCompress);
+            b.file_comp = rg.pickRandomly(compression);
             te->add_params()->set_svalue(b.file_comp);
         }
     }
@@ -1207,10 +1272,7 @@ void StatementGenerator::generateEngineDetails(
         /// Optional compression
         if (rg.nextBool())
         {
-            static const DB::Strings & URLCompress
-                = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
-
-            b.file_comp = rg.pickRandomly(URLCompress);
+            b.file_comp = rg.pickRandomly(compression);
             te->add_params()->set_svalue(b.file_comp);
         }
     }
@@ -1226,32 +1288,16 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine() || b.isAnyS3Engine();
-        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine() || b.isAnyAzureEngine();
-
-        if (isS3 || isAzure)
+        if (b.isOnS3() || b.isOnAzure())
         {
-            connections.createExternalDatabaseTable(rg, isS3 ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+            connections.createExternalDatabaseTable(rg, b.isOnS3() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
         }
         else
         {
+            chassert(b.isOnLocal());
             te->add_params()->set_svalue(b.getTablePath(fc, false));
         }
-        /// Set path, but ignore it for now
-        //const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
-        //te->add_params()->set_svalue(fpath.generic_string());
-
-        /// Set format
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        te->add_params()->set_in_out(b.file_format.value());
-        /// Optional compression
-        if (rg.nextBool())
-        {
-            static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-            b.file_comp = rg.pickRandomly(ObjectCompress);
-            te->add_params()->set_svalue(b.file_comp);
-        }
+        setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
@@ -1273,7 +1319,6 @@ void StatementGenerator::generateEngineDetails(
     }
     if (te->has_engine())
     {
-        SettingValues * svs = nullptr;
         const auto & engineSettings = allTableSettings.at(b.teng);
 
         if (!engineSettings.empty() && rg.nextBool())
@@ -1288,7 +1333,7 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine())
+        if (b.isAnyS3Engine() && rg.nextBool())
         {
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1305,7 +1350,8 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+        if ((b.isMergeTreeFamily() || b.isLogFamily())
+            && ((b.toption.has_value() && b.toption.value() == TShared) || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -1577,7 +1623,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
             idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
-            if (rg.nextBool())
+            if (next_tokenizer == "ngram" && rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
@@ -1587,7 +1633,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             {
                 String buf;
                 DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
-                std::uniform_int_distribution<size_t> next_dist(UINT32_C(0), separators.size());
+                std::uniform_int_distribution<size_t> next_dist(UINT32_C(1), separators.size());
 
                 std::shuffle(separators.begin(), separators.end(), rg.generator);
                 const size_t nlen = next_dist(rg.generator);
@@ -2209,7 +2255,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.postgresql_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
@@ -2222,7 +2268,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.mysql_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
             dsd->set_user(sc.user);
@@ -2235,7 +2281,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             const ServerCredentials & sc = fc.mongodb_server.value();
 
             est->mutable_database()->set_database(sc.database);
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            est->mutable_table()->set_table(t.getTableName());
             dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
@@ -2416,6 +2462,78 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         cd->set_comment(nextComment(rg));
     }
     this->staged_dictionaries[tname] = std::move(next);
+}
+
+DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
+{
+    chassert(this->ids.empty());
+    this->ids.emplace_back(DAtomic);
+    if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
+    {
+        this->ids.emplace_back(DMemory);
+    }
+    if (replica_setup && (fc.engine_mask & allow_replicated) != 0)
+    {
+        this->ids.emplace_back(DReplicated);
+    }
+    if (supports_cloud_features && (fc.engine_mask & allow_shared) != 0)
+    {
+        this->ids.emplace_back(DShared);
+    }
+    if (connections.hasAnyCatalog() && (fc.engine_mask & allow_datalakecatalog) != 0)
+    {
+        this->ids.emplace_back(DDataLakeCatalog);
+    }
+    const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
+    this->ids.clear();
+    return res;
+}
+
+void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
+{
+    SQLDatabase next;
+    SettingValues * svs = nullptr;
+    const uint32_t dname = this->database_counter++;
+    DatabaseEngine * deng = cd->mutable_dengine();
+
+    next.deng = this->getNextDatabaseEngine(rg);
+    deng->set_engine(next.deng);
+    if (next.isReplicatedDatabase())
+    {
+        next.zoo_path_counter = this->zoo_path_counter++;
+    }
+    if (!fc.clusters.empty() && !next.isSharedDatabase() && rg.nextSmallNumber() < (next.isReplicatedDatabase() ? 9 : 4))
+    {
+        next.cluster = rg.pickRandomly(fc.clusters);
+        cd->mutable_cluster()->set_cluster(next.cluster.value());
+    }
+    next.dname = dname;
+    next.finishDatabaseSpecification(deng);
+    next.setName(cd->mutable_database());
+    if (rg.nextSmallNumber() < 3)
+    {
+        cd->set_comment(nextComment(rg));
+    }
+    if (!next.isSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
+    {
+        /// Add server settings
+        svs = svs ? svs : cd->mutable_setting_values();
+        generateSettingValues(rg, serverSettings, svs);
+    }
+    if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
+    {
+        svs = svs ? svs : cd->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        sv->set_property("disk");
+        sv->set_value("'" + rg.pickRandomly(fc.disks) + "'");
+    }
+    else if (next.isDataLakeCatalogDatabase())
+    {
+        svs = svs ? svs : cd->mutable_setting_values();
+        connections.createExternalDatabase(rg, IntegrationCall::MinIO, next, deng, svs);
+    }
+    this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
 
 }

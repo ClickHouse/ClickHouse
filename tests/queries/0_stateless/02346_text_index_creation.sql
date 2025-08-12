@@ -150,6 +150,53 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
+SELECT 'Test bloom_filter_false_positive_rate argument.';
+
+SELECT '-- bloom_filter_false_positive_rate must be a double.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.5)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 1.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 SELECT 'Parameters are shuffled.';
 
 CREATE TABLE tab
@@ -209,6 +256,14 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 3, ngram_size = 4)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', bloom_filter_false_positive_rate = 0.5, bloom_filter_false_positive_rate = 0.5)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
