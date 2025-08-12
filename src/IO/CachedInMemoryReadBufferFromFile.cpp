@@ -213,4 +213,15 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     return true;
 }
 
+bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t size)
+{
+    auto old_offset = std::exchange(cache_key.offset, offset);
+    auto old_size = std::exchange(cache_key.size, size);
+    SCOPE_EXIT(
+        cache_key.offset = old_offset;
+        cache_key.size = old_size;
+    );
+    return cache->contains(cache_key, /*inject_eviction=*/false);
+}
+
 }
