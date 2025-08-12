@@ -974,7 +974,7 @@ class ClickHouseCluster:
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
-                print("Got exception getting docker handle", str(ex))
+                logging.debug(f"Got exception getting docker handle {ex}")
                 time.sleep(0.5)
                 exception = ex
         raise exception
@@ -1955,7 +1955,7 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
-        
+
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
@@ -2022,7 +2022,7 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
             )
-            
+
         if with_arrowflight and not self.with_arrowflight:
             cmds.append(
                 self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2983,10 +2983,10 @@ class ClickHouseCluster:
         self.wait_for_url(
             f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
         )
-        
+
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
-        
+
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3187,7 +3187,7 @@ class ClickHouseCluster:
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
-                print("Setup MySQL")
+                logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
@@ -4967,10 +4967,12 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
-        yield
-        self.exec_in_container(
-            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
-        )
+        try:
+            yield
+        finally:
+            self.exec_in_container(
+                ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+            )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -5004,7 +5006,7 @@ class ClickHouseInstance:
         instance_config_dir = p.abspath(p.join(self.path, "configs"))
         os.makedirs(instance_config_dir)
 
-        print(
+        logging.debug(
             f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}"
         )
 
@@ -5232,7 +5234,7 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
-            
+
         if self.with_arrowflight:
             depends_on.append("arrowflight1")
 
