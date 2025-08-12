@@ -1519,6 +1519,16 @@ Chunk StorageFileSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    current_path);
+            }
+
             /// Enrich with virtual columns.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
@@ -1528,15 +1538,6 @@ Chunk StorageFileSource::generate()
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
                 }, getContext());
-
-            // The order is important, it must be added after virtual columns..
-            if (!hive_partition_columns_to_read_from_file_path.empty())
-            {
-                HivePartitioningUtils::addPartitionColumnsToChunk(
-                    chunk,
-                    hive_partition_columns_to_read_from_file_path,
-                    current_path);
-            }
 
             return chunk;
         }

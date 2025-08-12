@@ -477,16 +477,9 @@ Chunk StorageURLSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk,
-                requested_virtual_columns,
-                {
-                    .path = curr_uri.getPath(),
-                    .size = current_file_size,
-                },
-                getContext());
 
-            // The order is important, hive partition columns must be added after virtual columns
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 const auto path = curr_uri.getPath();
@@ -495,6 +488,15 @@ Chunk StorageURLSource::generate()
                     hive_partition_columns_to_read_from_file_path,
                     path);
             }
+
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk,
+                requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size,
+                },
+                getContext());
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
