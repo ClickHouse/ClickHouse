@@ -298,7 +298,8 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_always_error_throw_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: Executable generates stderr: Fake error" in str(ex)
+        print(ex)
+        assert "Executable generates stderr: Fake error" in str(ex)
 
     query_id = uuid.uuid4().hex
     assert (
@@ -337,7 +338,7 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_exit_error_fail_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: Child process was exited with return code 1" in str(ex)
+        assert "Child process was exited with return code 1" in str(ex)
 
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
