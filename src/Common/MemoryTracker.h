@@ -78,6 +78,9 @@ private:
     /// Randomly sample allocations only smaller or equal to this size
     UInt64 max_allocation_size_bytes = 0;
 
+    UInt64 jemalloc_flush_profile_interval_bytes = 0;
+    bool jemalloc_flush_profile_on_memory_exceeded = false;
+
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
     std::atomic<MemoryTracker *> parent {};
@@ -193,6 +196,16 @@ public:
     void setSampleMinAllocationSize(UInt64 value)
     {
         min_allocation_size_bytes = value;
+    }
+
+    void setJemallocFlushProfileInterval(UInt64 interval)
+    {
+        jemalloc_flush_profile_interval_bytes = interval;
+    }
+
+    void setJemallocFlushProfileOnMemoryExceeded(bool flush)
+    {
+        jemalloc_flush_profile_on_memory_exceeded = flush;
     }
 
     void setSampleMaxAllocationSize(UInt64 value)
