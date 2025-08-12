@@ -262,6 +262,8 @@ public:
         producer_task->deactivate();
     }
 
+    const std::vector<Iceberg::ManifestFileEntry> & getPositionDeletesFiles() const { return position_deletes_files; }
+
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
     SingleThreadIcebergKeysIterator data_files_iterator;

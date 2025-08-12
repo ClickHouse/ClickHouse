@@ -134,16 +134,6 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContent
         throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
 }
 
-std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContentType content_type)
-{
-    if (content_type == FileContentType::DATA)
-        return data_files;
-    else if (content_type == FileContentType::POSITION_DELETE)
-        return position_deletes_files;
-    else
-        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
-}
-
 using namespace DB;
 
 ManifestFileContent::ManifestFileContent(

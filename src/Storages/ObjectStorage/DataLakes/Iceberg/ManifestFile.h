@@ -118,8 +118,6 @@ public:
         const String & path_to_manifest_file_);
 
     const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
-    std::vector<ManifestFileEntry> & getFiles(FileContentType content_type);
-
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;

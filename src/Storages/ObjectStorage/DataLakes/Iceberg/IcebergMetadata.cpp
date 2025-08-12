@@ -364,8 +364,9 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
 
 std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
 {
-    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     SharedLockGuard lock(mutex);
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    chassert(iceberg_object_info != nullptr);
     return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
         ? schema_processor->getClickhouseTableSchemaById(iceberg_object_info->read_schema_id)
         : nullptr;
@@ -375,6 +376,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     SharedLockGuard lock(mutex);
+    chassert(iceberg_object_info != nullptr);
     return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
         ? schema_processor->getSchemaTransformationDagByIds(iceberg_object_info->read_schema_id, relevant_snapshot_schema_id)
         : nullptr;
@@ -697,16 +699,11 @@ ObjectIterator IcebergMetadata::iterate(
      size_t /* list_batch_size */,
      ContextPtr local_context) const
 {
-    LOG_DEBUG(
-        log,
-        "Creating Iceberg iterator for table with path {}, stacktrace: {}",
-        configuration.lock()->getPathForRead().path,
-        StackTrace().toString());
     SharedLockGuard lock(mutex);
 
     auto table_snapshot
         = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
-    return std::make_shared<IcebergIterator>(
+    current_iterator = std::make_shared<IcebergIterator>(
         local_context,
         configuration.lock(),
         filter_dag,
@@ -718,6 +715,7 @@ ObjectIterator IcebergMetadata::iterate(
         schema_processor,
         format_version,
         table_location);
+    return current_iterator;
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
@@ -738,7 +736,7 @@ bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_
     if (!iceberg_object_info)
         return false;
 
-    return !iceberg_object_info->position_deletes_objects.empty();
+    return iceberg_object_info->position_deletes_objects_range.first < iceberg_object_info->position_deletes_objects_range.second;
 }
 
 std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
@@ -761,7 +759,14 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     String delete_object_compression_method = configuration_ptr->compression_method;
 
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+        header,
+        iceberg_object_info,
+        object_storage,
+        format_settings,
+        context_,
+        delete_object_format,
+        delete_object_compression_method,
+        current_iterator->getPositionDeletesFiles());
 }
 }
 

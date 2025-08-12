@@ -92,7 +92,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
         }
         while (internal_data_index < current_manifest_file_content->getFiles(content_type).size())
         {
-            auto & manifest_file_entry = current_manifest_file_content->getFiles(content_type)[internal_data_index++];
+            const auto & manifest_file_entry = current_manifest_file_content->getFiles(content_type)[internal_data_index++];
             LOG_DEBUG(
                 log,
                 "Inspecting manifest file: {}, data file: {}, content type: {}, schema id: {}",
@@ -127,7 +127,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:
-                    return std::move(manifest_file_entry);
+                    return manifest_file_entry;
                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
                     ++min_max_index_pruned_files;
                     break;
@@ -150,6 +150,11 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
 
 SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("IcebergIterator"),
+        "SingleThreadIcebergKeysIterator destroyed, pruned files: {}, partition pruned files: {}",
+        min_max_index_pruned_files,
+        partition_pruned_files);
     if (partition_pruned_files > 0)
         ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, partition_pruned_files);
     if (min_max_index_pruned_files > 0)

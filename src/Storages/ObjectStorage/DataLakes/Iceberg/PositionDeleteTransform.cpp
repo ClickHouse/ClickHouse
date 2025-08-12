@@ -41,7 +41,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
+    for (const auto & position_deletes_object : relevant_position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
