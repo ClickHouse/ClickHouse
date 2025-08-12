@@ -216,6 +216,10 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(c
             left_required_outputs.insert(predicate.left_node.getColumnName());
             right_required_outputs.insert(predicate.right_node.getColumnName());
         }
+        for (const auto & left_filter : condition.left_filter_conditions)
+            left_required_outputs.insert(left_filter.getColumnName());
+        for (const auto & right_filter : condition.right_filter_conditions)
+            right_required_outputs.insert(right_filter.getColumnName());
         for (const auto & residual_condition : condition.residual_conditions)
             required_output_columns.push_back(residual_condition.getColumnName());
     };
