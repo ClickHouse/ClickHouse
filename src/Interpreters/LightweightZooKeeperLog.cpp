@@ -1,4 +1,4 @@
-#include "LightweightZooKeeperLog.h"
+#include <Interpreters/LightweightZooKeeperLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -10,7 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnMap.h>
-#include "base/getFQDNOrHostName.h"
+#include <base/getFQDNOrHostName.h>
 
 namespace DB
 {
@@ -119,7 +119,7 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
     result.add({"total_latency",
                 std::make_shared<DataTypeUInt64>(),
                 "Sum of all latencies in (parent_path, operation) group, in microseconds."});
-    
+
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
                 "Average latency across all operations in (parent_path, operation) group, in microseconds."});

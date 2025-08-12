@@ -346,7 +346,7 @@ private:
     ReadBuffer & getReadBuffer();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
-    
+
     /// Observes the operation in Lightweight ZooKeeper Log.
     void observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds);
 

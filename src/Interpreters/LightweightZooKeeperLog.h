@@ -18,7 +18,7 @@ struct LightweightZooKeeperLogElement
     time_t event_time;
     String parent_path;
     Coordination::OpNum operation;
-    
+
     /// Group statistics.
     UInt32 count;
     std::unique_ptr<Coordination::ErrorCounter> errors;

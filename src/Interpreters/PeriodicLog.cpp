@@ -16,7 +16,7 @@ void PeriodicLog<LogElement>::startCollect(const String & thread_name, size_t co
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
     collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
-        setThreadName(thread_name.c_str());
+        setThreadName(thread_name.c_str(), /*truncate=*/ true);
         threadFunction();
     });
 }
