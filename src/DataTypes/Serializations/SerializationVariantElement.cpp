@@ -122,9 +122,16 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
         /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
         if (rows_offset)
+        {
+            if (!variant_element_state->discriminators)
+                variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+
             variant_element_state->discriminators->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
+        }
         else
+        {
             variant_element_state->discriminators = cached_discriminators;
+        }
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
