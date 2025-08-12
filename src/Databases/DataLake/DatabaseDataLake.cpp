@@ -5,7 +5,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 #if USE_AVRO && USE_PARQUET
 
