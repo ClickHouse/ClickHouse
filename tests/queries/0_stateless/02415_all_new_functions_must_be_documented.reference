@@ -54,9 +54,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -110,7 +107,6 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
-demangle
 dotProduct
 dumpColumnStructure
 e
@@ -157,7 +153,6 @@ fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 fuzzBits
-gccMurmurHash
 generateUUIDv4
 getMacro
 getOSKernelVersion
@@ -196,8 +191,6 @@ initialQueryID
 initializeAggregation
 intExp10
 intExp2
-intHash32
-intHash64
 isConstant
 isDecimalOverflow
 isIPAddressInRange
@@ -207,9 +200,6 @@ isValidJSON
 isValidUTF8
 joinGet
 joinGetOrNull
-jumpConsistentHash
-kafkaMurmurHash
-kostikConsistentHash
 left
 leftPad
 leftPadUTF8
@@ -221,7 +211,6 @@ log
 log10
 log1p
 log2
-logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
@@ -258,33 +247,16 @@ multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-murmurHash2_32
-murmurHash2_64
-murmurHash3_128
-murmurHash3_32
-murmurHash3_64
 neighbor
 netloc
 ngramDistance
 ngramDistanceCaseInsensitive
 ngramDistanceCaseInsensitiveUTF8
 ngramDistanceUTF8
-ngramMinHash
-ngramMinHashArg
-ngramMinHashArgCaseInsensitive
-ngramMinHashArgCaseInsensitiveUTF8
-ngramMinHashArgUTF8
-ngramMinHashCaseInsensitive
-ngramMinHashCaseInsensitiveUTF8
-ngramMinHashUTF8
 ngramSearch
 ngramSearchCaseInsensitive
 ngramSearchCaseInsensitiveUTF8
 ngramSearchUTF8
-ngramSimHash
-ngramSimHashCaseInsensitive
-ngramSimHashCaseInsensitiveUTF8
-ngramSimHashUTF8
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -453,7 +425,6 @@ tanh
 tcpPort
 tgamma
 throwIf
-tid
 toBool
 toColumnTypeName
 toDate
@@ -623,6 +594,7 @@ version
 visibleWidth
 windowID
 wkt
+<<<<<<< HEAD
 wordShingleMinHash
 wordShingleMinHashArg
 wordShingleMinHashArgCaseInsensitive
@@ -635,5 +607,8 @@ wordShingleSimHash
 wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF8
 wordShingleSimHashUTF8
+=======
+wyHash64
+>>>>>>> d29272017ab0ba259a3b66dfad209a79c0677cd5
 xor
 zookeeperSessionUptime

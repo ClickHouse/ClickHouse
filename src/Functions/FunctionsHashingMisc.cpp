@@ -521,6 +521,7 @@ For the 64-bit version see [`xxHash64`](#xxHash64)
     FunctionDocumentation::Category xxHash32_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation xxHash32_documentation = {xxHash32_description, xxHash32_syntax, xxHash32_arguments, xxHash32_returned_value, xxHash32_examples, xxHash32_introduced_in, xxHash32_category};
     factory.registerFunction<FunctionXxHash32>(xxHash32_documentation);
+
     FunctionDocumentation::Description xxHash64_description = R"(
 Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string.
 
@@ -546,67 +547,53 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Category xxHash64_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation xxHash64_documentation = {xxHash64_description, xxHash64_syntax, xxHash64_arguments, xxHash64_returned_value, xxHash64_examples, xxHash64_introduced_in, xxHash64_category};
     factory.registerFunction<FunctionXxHash64>(xxHash64_documentation);
-    factory.registerFunction<FunctionXXH3>(
-        FunctionDocumentation{
-            .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
-            .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
-            .category = FunctionDocumentation::Category::Hash
-        });
 
-    FunctionDocumentation::Description wyHash64_description = R"(
-Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
-)";
+    FunctionDocumentation::Description xxh3_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 64-bit hash value.";
+    FunctionDocumentation::Syntax xxh3_syntax = "xxh3(expr)";
+    FunctionDocumentation::Arguments xxh3_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue xxh3_returned_value = {"Returns the computed 64-bit `xxh3` hash value", {"UInt64"}};
+    FunctionDocumentation::Examples xxh3_example = {{"Usage example", "SELECT xxh3('ClickHouse')", "18009318874338624809"}};
+    FunctionDocumentation::IntroducedIn xxh3_introduced_in = {22, 12};
+    FunctionDocumentation::Category xxh3_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
+    factory.registerFunction<FunctionXXH3>(xxh3_documentation);
+
+    FunctionDocumentation::Description wyHash64_description = "Computes a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.";
     FunctionDocumentation::Syntax wyHash64_syntax = "wyHash64(arg)";
-    FunctionDocumentation::Arguments wyHash64_arguments = {
-        {"arg", "Input string to hash.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue wyHash64_returned_value = {"Returns the computed hash value of the input string.", {"UInt64"}};
-    FunctionDocumentation::Examples wyHash64_examples = {
-    {
-        "Usage example",
-        "SELECT wyHash64('ClickHouse') AS Hash;",
-        R"(
-┌─────────────────Hash─┐
-│ 12336419557878201794 │
-└──────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn wyHash64_introduced_in = {22, 6};
+    FunctionDocumentation::Arguments wyHash64_argument = {{"arg", "String argument for which to compute the hash.", {"String"}}};
+    FunctionDocumentation::ReturnedValue wyHash64_returned_value = {"Returns the computed 64-bit hash value", {"UInt64"}};
+    FunctionDocumentation::Examples wyHash64_example = {{"Usage example", "SELECT wyHash64('ClickHouse') AS Hash;", "12336419557878201794"}};
+    FunctionDocumentation::IntroducedIn wyHash64_introduced_in = {22, 7};
     FunctionDocumentation::Category wyHash64_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation wyHash64_documentation = {wyHash64_description, wyHash64_syntax, wyHash64_arguments, wyHash64_returned_value, wyHash64_examples, wyHash64_introduced_in, wyHash64_category};
+    FunctionDocumentation wyHash64_documentation = {wyHash64_description, wyHash64_syntax, wyHash64_argument, wyHash64_returned_value, wyHash64_example, wyHash64_introduced_in, wyHash64_category};
     factory.registerFunction<FunctionWyHash64>(wyHash64_documentation);
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them.
-Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
+[Interprets](../..//sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input
+parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
+resulting string, and interprets them as [UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order. The function is
+relatively slow (5 million short strings per second per processor core).
 
-:::tip
-The function is relatively slow (5 million short strings per second per processor core).
-Consider using the [`sipHash64`](#siphash64) function instead.
-:::
+Consider using the [`sipHash64`](#sipHash64) function instead.
 
-:::note
-The calculated hash values may be equal for the same input values of different argument types.
-This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
-)";
-    FunctionDocumentation::Syntax halfMD5_syntax = "halfMD5(arg1[, arg2, ...])";
-    FunctionDocumentation::Arguments halfMD5_arguments = {
-        {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue halfMD5_returned_value = {"Returns a computed hash value of the input arguments.", {"UInt64"}};
+The function takes a variable number of input parameters.
+Arguments can be any of the supported data types.
+For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
+    )";
+    FunctionDocumentation::Syntax halfMD5_syntax = "SELECT halfMD5(arg1[, arg2, ..., argN])";
+    FunctionDocumentation::Arguments halfMD5_arguments = {{"arg1[, arg2, ..., argN]", "Variable number of arguments for which to compute the hash.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue halfMD5_returned_value = {"Returns the computed half MD5 hash of the given input params returned as a `UInt64` in big-endian byte order.", {"UInt64"}};
     FunctionDocumentation::Examples halfMD5_examples = {
     {
         "Usage example",
         R"(
-SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
+SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
         )",
         R"(
-┌────────halfMD5hash─┬─type───┐
-│ 186182704141653334 │ UInt64 │
-└────────────────────┴────────┘
+┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
+│ 2C9506B7374CFAF4                  │
+└───────────────────────────────────┘
         )"
     }
     };
