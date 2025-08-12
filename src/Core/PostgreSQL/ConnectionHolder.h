@@ -40,19 +40,21 @@ public:
         {
             try
             {
-                connection->getRef().reset();
+                // First try to close the connection gracefully.
+                connection->close();
             }
             catch (...)
             {
+                // If that fails for some reason, hard-reset it.
                 connection.reset();
             }
         }
         pool->returnObject(std::move(connection));
     }
 
-    pqxx::connection & get()
+    postgres::Connection::Lease getLease()
     {
-        return connection->getRef();
+        return connection->getLease();
     }
 
     void update()

@@ -1110,6 +1110,8 @@ The server successfully detected this situation and will download merged part fr
     M(RefreshableViewSyncReplicaSuccess, "How many times a SELECT from refreshable materialized view did an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    \
+    M(PostgreSQLClientConnectionsCreated, "Total number of PostgreSQL client connections created", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -112,9 +112,11 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const ContextPtr & context_)
 {
     const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
+
     auto connection_holder = pool_->get();
+    postgres::Connection::Lease conn_lease = connection_holder->getLease();
     auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), table, schema, use_nulls).physical_columns;
+            conn_lease.getRef(), table, schema, use_nulls).physical_columns;
 
     if (!columns_info)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
@@ -247,13 +249,13 @@ public:
         {
             if (on_conflict.empty())
             {
-                inserter = std::make_unique<StreamTo>(connection_holder->get(),
+                inserter = std::make_unique<StreamTo>(connection_holder->getLease(),
                         remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
                                                     : pqxx::table_path({remote_table_schema, remote_table_name}), block.getNames());
             }
             else
             {
-                inserter = std::make_unique<PreparedInsert>(connection_holder->get(), remote_table_name,
+                inserter = std::make_unique<PreparedInsert>(connection_holder->getLease(), remote_table_name,
                                                             remote_table_schema, block.getColumnsWithTypeAndName(), on_conflict);
             }
         }
@@ -424,12 +426,12 @@ public:
 private:
     struct Inserter
     {
-        pqxx::connection & connection;
+        postgres::Connection::Lease conn_lease;
         pqxx::work tx;
 
-        explicit Inserter(pqxx::connection & connection_)
-            : connection(connection_)
-            , tx(connection) {}
+        explicit Inserter(postgres::Connection::Lease && conn_lease_)
+            : conn_lease(std::move(conn_lease_))
+            , tx(conn_lease.getRef()) {}
 
         virtual ~Inserter() = default;
 
@@ -442,10 +444,10 @@ private:
         Names columns;
         pqxx::stream_to stream;
 
-        StreamTo(pqxx::connection & connection_, pqxx::table_path table_, Names columns_)
-            : Inserter(connection_)
+        StreamTo(postgres::Connection::Lease && conn_lease_, pqxx::table_path table_, Names columns_)
+            : Inserter(std::move(conn_lease_))
             , columns(std::move(columns_))
-            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))
+            , stream(pqxx::stream_to::raw_table(tx, conn_lease.getRef().quote_table(table_), conn_lease.getRef().quote_columns(columns)))
         {
         }
 
@@ -463,9 +465,9 @@ private:
 
     struct PreparedInsert : Inserter
     {
-        PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
+        PreparedInsert(postgres::Connection::Lease && conn_lease_, const String & table, const String & schema,
                        const ColumnsWithTypeAndName & columns, const String & on_conflict_)
-            : Inserter(connection_)
+            : Inserter(std::move(conn_lease_))
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
@@ -479,13 +481,13 @@ private:
             }
             buf << ") ";
             buf << on_conflict_;
-            connection.prepare(statement_name, buf.str());
+            conn_lease.getRef().prepare(statement_name, buf.str());
             prepared = true;
         }
 
         void complete() override
         {
-            connection.unprepare(statement_name);
+            conn_lease.getRef().unprepare(statement_name);
             prepared = false;
             tx.commit();
         }
@@ -503,7 +505,7 @@ private:
             try
             {
                 if (prepared)
-                    connection.unprepare(statement_name);
+                    conn_lease.getRef().unprepare(statement_name);
             }
             catch (...)
             {

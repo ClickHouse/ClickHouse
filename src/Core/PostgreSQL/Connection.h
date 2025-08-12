@@ -33,14 +33,31 @@ struct ConnectionInfo
 class Connection : private boost::noncopyable
 {
 public:
+    class Lease
+    {
+    public:
+        Lease(pqxx::connection & connection_);
+        ~Lease();
+
+        Lease(const Lease &);
+        Lease & operator=(const Lease &);
+
+        pqxx::connection & getRef() { return *connection; }
+
+    private:
+        pqxx::connection * connection;
+    };
+
     explicit Connection(
         const ConnectionInfo & connection_info_,
         bool replication_ = false,
         size_t num_tries = 3);
+    
+    ~Connection();
 
     void execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec);
 
-    pqxx::connection & getRef();
+    Lease getLease();
 
     void connect();
 
@@ -53,6 +70,8 @@ public:
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
     String getInfoForLog() const { return connection_info.host_port; }
+
+    void close();
 
 private:
 
