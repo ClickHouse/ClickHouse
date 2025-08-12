@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
