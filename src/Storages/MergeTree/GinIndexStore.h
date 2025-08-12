@@ -145,6 +145,7 @@ struct GinSegmentDictionary
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
     std::unique_ptr<FST::FiniteStateTransducer> fst;
+    std::mutex fst_mutex;
 
     /// Bloom filter created from the segment's dictionary
     std::unique_ptr<GinSegmentDictionaryBloomFilter> bloom_filter;

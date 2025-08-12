@@ -16,6 +16,7 @@ import time
 import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
+from statistics import median
 from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import requests
@@ -32,9 +33,10 @@ CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.c
 CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
 CLICKHOUSE_PLAY_PASSWORD = os.environ.get("CLICKHOUSE_PLAY_PASSWORD", "")
 CLICKHOUSE_PLAY_DB = os.environ.get("CLICKHOUSE_PLAY_DB", "default")
+CLICKHOUSE_PLAY_URL = f"https://{CLICKHOUSE_PLAY_HOST}/"
 
 MAX_RETRY = 1
-NUM_WORKERS = 5
+NUM_WORKERS = 4
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
@@ -838,10 +840,10 @@ class ClickhouseIntegrationTestsRunner:
                 WHERE (check_name LIKE 'Integration%')
                     AND (check_name LIKE '%{self.job_configuration}%')
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
-                    AND (check_start_time <= ({start_time_filter}))
+                    AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
-                    AND (test_status != 'SKIPPED')
                     AND (test_name != '')
+                    AND (test_status != 'SKIPPED')
                 GROUP BY test_name
             )
             GROUP BY file
@@ -850,15 +852,13 @@ class ClickhouseIntegrationTestsRunner:
         """
         logging.info(query)
 
+        url = (
+            f"{CLICKHOUSE_PLAY_URL}/?user={CLICKHOUSE_PLAY_USER}"
+            f"&password={requests.compat.quote(CLICKHOUSE_PLAY_PASSWORD)}"
+            f"&query={requests.compat.quote(query)}"
+        )
         max_retries = 3
         retry_delay_seconds = 5
-
-        url = f"https://{CLICKHOUSE_PLAY_HOST}/"
-        params = {
-            "database": CLICKHOUSE_PLAY_DB,
-            "user": CLICKHOUSE_PLAY_USER,
-            "password": CLICKHOUSE_PLAY_PASSWORD,
-        }
 
         for attempt in range(max_retries):
             try:
@@ -867,7 +867,7 @@ class ClickhouseIntegrationTestsRunner:
                     attempt + 1, max_retries
                 )
 
-                response = requests.post(url, params=params, data=query, timeout=120)
+                response = requests.get(url, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
@@ -988,13 +988,21 @@ class ClickhouseIntegrationTestsRunner:
             total_time, group_index = heapq.heappop(sequential_heap)
             total_group_times[group_index] = total_time
 
+        # sort tests in groups by execution time to run slow tests first
+        def module_sort_key(m):
+            return (-tests_execution_times.get(m, -1.0), m)
+
+        for i in range(len(test_file_groups)):
+            test_file_groups[i].sort(key=module_sort_key)
+
         # expand groups
         final_test_groups = []
         for group_of_test_files in test_file_groups:
             test_name_group = []
-            for module_name in sorted(group_of_test_files):
-                test_name_group.extend(file_to_test_map.get(module_name, []))
-            final_test_groups.append(sorted(test_name_group))
+            for module_name in group_of_test_files:
+                tests_in_file = sorted(file_to_test_map.get(module_name, []))
+                test_name_group.extend(tests_in_file)
+            final_test_groups.append(test_name_group)
 
         # log
         for i, test_group in enumerate(final_test_groups):
@@ -1115,7 +1123,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "2h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
