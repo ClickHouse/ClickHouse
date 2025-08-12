@@ -1,10 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesInstantValue.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesExtrapolatedValue.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesToGridSparse.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesInstantValue.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeSeriesLastToGrid.h> 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -276,6 +277,9 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
     factory.registerFunction("timeSeriesPredictLinearToGrid",
         createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
+
+    factory.registerFunction("timeSeriesLastToGrid",
+        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeSeriesLastToGridTraits, AggregateFunctionTimeSeriesLastToGrid>); 
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);

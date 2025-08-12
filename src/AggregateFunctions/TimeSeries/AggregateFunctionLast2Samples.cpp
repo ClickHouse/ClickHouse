@@ -1,5 +1,6 @@
+#include <AggregateFunctions/TimeSeries/AggregateFunctionLast2Samples.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionLast2Samples.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/IDataType.h>
