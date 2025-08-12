@@ -2343,6 +2343,14 @@ try
     }
 
 #if USE_SSL
+    /// We may notice that try to reload certificates twice within this function.
+    /// First time here before starting the `servers_to_start_before_tables`, and then
+    /// one more time before starting the `servers`. The problem we're trying to avoid is:
+    /// 1. We create a socket for keeper secure protocol (w/o starting a server yet). That creates a SSL context (in particular, it might be the default context).
+    /// 2. We then start this server a few lines below. While handling the first request, it will access (read) certs.
+    /// 3. A little further down, we reload certificates before starting the rest of the servers.
+    /// 4. `CertificateReloader` will set its custom `cert_cb` to the default context if it is not initialized yet (see `CertificateReloader::init()`).
+    /// 5. Items (2) and (4) are not synchronized, so there might be a data race for example (see https://github.com/ClickHouse/ClickHouse/issues/85412).
     CertificateReloader::instance().tryLoad(config());
     CertificateReloader::instance().tryLoadClient(config());
 #endif
