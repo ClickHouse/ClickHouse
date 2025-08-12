@@ -47,6 +47,14 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Note**
+Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+For example, if the type of timestamps is `DateTime64(3)` then
+`timeSeriesRange(start_timestamp, end_timestamp, step)` returns the same result as the following expression:
+```sql
+range(start_timestamp::Int64, end_timestamp::Int64 + 1, step::Int64)::Array(DateTime64(3))
+```
+
 ## timeSeriesFromGrid {#timeSeriesFromGrid}
 
 Converts array of values `[value1, value2, value3, ..., valueN]` to array of tuples
@@ -90,6 +98,12 @@ Result:
 ┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Note**
+Function `timeSeriesFromGrid(start_timestamp, end_timestamp, step, values)` returns the same result as the following expression:
+```sql
+arrayFilter(x -> x.2 IS NOT NULL, arrayZip(timeSeriesRange(start_timestamp, end_timestamp, step), values))
 ```
 
 <!-- 
