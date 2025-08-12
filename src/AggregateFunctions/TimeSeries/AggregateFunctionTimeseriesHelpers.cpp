@@ -279,7 +279,7 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
-    factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness"); 
+    factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
 }
 
 }
