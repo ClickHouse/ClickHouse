@@ -88,7 +88,6 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-
 ### Inserting data {#json-inserting-data}
 
 ```sql title="Query"

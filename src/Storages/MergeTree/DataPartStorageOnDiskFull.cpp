@@ -1,4 +1,3 @@
-#include <memory>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/IDiskTransaction.h>
@@ -8,9 +7,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-#include <Disks/FakeDiskTransaction.h>
-
-#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -30,8 +26,6 @@ DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
 }
-
-DataPartStorageOnDiskFull::~DataPartStorageOnDiskFull() = default;
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
     VolumePtr volume_, std::string root_path_, std::string part_dir_, bool /*initialize_*/) const
@@ -249,27 +243,6 @@ void DataPartStorageOnDiskFull::commitTransaction()
 
     transaction->commit();
     transaction.reset();
-}
-
-void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function)
- {
-    auto active_transaction = transaction;
-    if (!active_transaction)
-        active_transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
-
-    SCOPE_EXIT({
-        if (active_transaction != transaction)
-            active_transaction->commit();
-    });
-
-    active_transaction->validateTransaction(std::move(check_function));
-}
-
-bool DataPartStorageOnDiskFull::isTransactional() const
-{
-    auto tx = volume->getDisk()->createTransaction();
-    SCOPE_EXIT({ tx->undo(); });
-    return tx->isTransactional();
 }
 
 }
