@@ -12,7 +12,7 @@ FROM (
 );
 
 -- Test with confidence interval
-SELECT studentTTestOneSample(value, 0.0, 0.95) as result
+SELECT studentTTestOneSample(0.95)(value, 0.0) as result
 FROM (
     SELECT 1.0 as value
     UNION ALL SELECT 2.0

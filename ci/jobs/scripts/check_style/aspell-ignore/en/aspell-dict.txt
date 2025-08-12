@@ -3016,6 +3016,8 @@ structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
 studentttest
+studentTTestOneSample
+studentttestonesample
 subBitmap
 subDate
 subarray
