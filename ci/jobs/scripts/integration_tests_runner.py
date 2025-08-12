@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-
 import csv
 import glob
+import heapq
 import json
 import logging
 import os
@@ -11,9 +10,7 @@ import shlex
 import shutil
 import signal
 import subprocess
-import sys
 import time
-import heapq
 from collections import OrderedDict, defaultdict
 from itertools import chain
 from statistics import median
@@ -22,12 +19,9 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 import requests
 import yaml  # type: ignore[import-untyped]
 
-from ci_utils import kill_ci_runner
-from env_helper import IS_CI
-from integration_test_images import IMAGES
-from report import JOB_TIMEOUT_TEST_NAME
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
+from ci.jobs.scripts.integration_test_images import IMAGES
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 CLICKHOUSE_PLAY_HOST = os.environ.get("CLICKHOUSE_PLAY_HOST", "play.clickhouse.com")
 CLICKHOUSE_PLAY_USER = os.environ.get("CLICKHOUSE_PLAY_USER", "play")
@@ -50,6 +44,8 @@ TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
 NO_CHANGES_MSG = "Nothing to run"
 
+JOB_TIMEOUT_TEST_NAME = "Job Timeout Expired"
+
 
 # Search test by the common prefix.
 # This is accept tests w/o parameters in skip list.
@@ -68,9 +64,8 @@ def has_test(tests: List[str], test_to_match: str) -> bool:
     return False
 
 
-def get_changed_tests_to_run(pr_info, repo_path):
+def get_changed_tests_to_run(changed_files, repo_path):
     result = set()
-    changed_files = pr_info["changed_files"]
 
     if changed_files is None:
         return []
@@ -241,28 +236,8 @@ class ClickhouseIntegrationTestsRunner:
     def _pre_pull_images(self):
         image_cmd = self._get_runner_image_cmd()
 
-        cmd = (
-            f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
-            "--pre-pull --command ' echo Pre Pull finished ' "
-        )
-
-        for i in range(5):
-            logging.info("Pulling images before running tests. Attempt %s", i)
-            try:
-                subprocess.check_output(
-                    cmd,
-                    shell=True,
-                )
-                return
-            except subprocess.CalledProcessError as err:
-                logging.info("docker-compose pull failed: %s", str(err))
-                continue
-        message = "Pulling images failed for 5 attempts. Will fail the worker."
-        logging.error(message)
-        kill_ci_runner(message)
-        # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
-        sys.exit(13)
+        cmd = f"{self.repo_path}/tests/integration/runner {self._get_runner_opts()} {image_cmd} --pre-pull --command ' echo Pre Pull finished ' "
+        Shell.check(cmd, retries=3, verbose=True, strict=True)
 
     @staticmethod
     def _parse_report(
@@ -345,8 +320,7 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         report_file = "runner_get_all_tests.jsonl"
         cmd = (
-            f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 2m ./runner {runner_opts} {image_cmd} -- "
+            f"cd {self.repo_path}/tests/integration && PYTHONPATH='../..:.' timeout --verbose --signal=KILL 2m ./runner {runner_opts} {image_cmd} -- "
             f"--setup-plan --report-log={report_file}"
         )
 
@@ -585,7 +559,7 @@ class ClickhouseIntegrationTestsRunner:
             # -s -- (s)kipped
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
-                f"timeout --verbose --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
+                f"PYTHONPATH=../..:. timeout --verbose --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
                 f"-rfEps --run-id={i} --color=no --durations=0 "
                 f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
@@ -595,11 +569,7 @@ class ClickhouseIntegrationTestsRunner:
             log_basename = f"{test_group_str}_{i}.log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
-            # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            _ret_code = Shell.run(command=cmd, log_file=log_path)
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -692,16 +662,16 @@ class ClickhouseIntegrationTestsRunner:
         return counters, tests_times, log_paths
 
     def run_flaky_check(self, should_fail=False):
-        pr_info = self.params["pr_info"]
-
-        tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
+        tests_to_run = get_changed_tests_to_run(
+            self.params["changed_files"], self.repo_path
+        )
         if not tests_to_run:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
-        description_prefix = "No flaky tests: "
+        description_prefix = "No failed tests: "
         logging.info("Starting check with retries")
         final_retry = 0
         counters = {
@@ -792,7 +762,6 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, tests_log_paths
 
     def run_impl(self):
-        stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
                 self.run_flaky_check(should_fail=self.bugfix_validate_check)
@@ -813,9 +782,7 @@ class ClickhouseIntegrationTestsRunner:
             status_text = "Job timeout expired, " + status_text
             result_state = "failure"
             # add mock test case to make timeout visible in job report and in ci db
-            test_result.insert(
-                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
-            )
+            test_result.insert(0, (JOB_TIMEOUT_TEST_NAME, "FAIL", "", ""))
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
@@ -838,7 +805,6 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_name LIKE '%{self.job_configuration}%')
                     AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
                     AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
@@ -864,32 +830,38 @@ class ClickhouseIntegrationTestsRunner:
             try:
                 logging.info(
                     "Querying play via HTTP (Attempt %s/%s)...",
-                    attempt + 1, max_retries
+                    attempt + 1,
+                    max_retries,
                 )
 
                 response = requests.get(url, timeout=120)
                 response.raise_for_status()
                 result_data = response.json().get("data", [])
                 tests_execution_times = {
-                    row['file']: float(row['file_duration_ms']) for row in result_data
+                    row["file"]: float(row["file_duration_ms"]) for row in result_data
                 }
 
                 logging.info(
                     "Successfully fetched execution times for %s modules via HTTP.",
-                    len(tests_execution_times)
+                    len(tests_execution_times),
                 )
                 return tests_execution_times
 
             except requests.exceptions.RequestException as e:
                 logging.warning(
                     "Attempt %s/%s failed to fetch test times via HTTP: %s",
-                    attempt + 1, max_retries, e
+                    attempt + 1,
+                    max_retries,
+                    e,
                 )
                 if attempt < max_retries - 1:
                     logging.info("Retrying in %s seconds...", retry_delay_seconds)
                     time.sleep(retry_delay_seconds)
                 else:
-                    logging.error("All %s attempts failed. Could not fetch test times.", max_retries)
+                    logging.error(
+                        "All %s attempts failed. Could not fetch test times.",
+                        max_retries,
+                    )
                     raise
 
     def group_tests_by_execution_time(self) -> List[List[str]]:
@@ -904,39 +876,55 @@ class ClickhouseIntegrationTestsRunner:
         file_to_test_map = self.group_test_by_file(self.all_tests)
         all_current_files = sorted(list(file_to_test_map.keys()))
 
-        sequential_test_prefixes = [p.split("::", 1)[0] for p in self._get_parallel_tests_skip_list(self.repo_path)]
+        sequential_test_prefixes = [
+            p.split("::", 1)[0]
+            for p in self._get_parallel_tests_skip_list(self.repo_path)
+        ]
         sequential_files_list = []
         parallel_files_list = []
 
         for file in all_current_files:
-            is_sequential = any(file.startswith(prefix) for prefix in sequential_test_prefixes)
+            is_sequential = any(
+                file.startswith(prefix) for prefix in sequential_test_prefixes
+            )
             if is_sequential:
                 sequential_files_list.append(file)
             else:
                 parallel_files_list.append(file)
 
         tests_execution_times = self.get_tests_execution_time()
-        assert len(tests_execution_times) > 400, \
-            f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
+        assert (
+            len(tests_execution_times) > 400
+        ), f"Number of tests should be more than 400. Actual {len(tests_execution_times)}"
         known_db_modules_set = set(tests_execution_times.keys())
 
         parallel_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in parallel_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in parallel_files_list
+            if mod in known_db_modules_set
         }
         new_parallel_tests: List[str] = [
             mod for mod in parallel_files_list if mod not in known_db_modules_set
         ]
         sequential_tests_with_known_time: Dict[str, float] = {
-            mod: tests_execution_times[mod] for mod in sequential_files_list if mod in known_db_modules_set
+            mod: tests_execution_times[mod]
+            for mod in sequential_files_list
+            if mod in known_db_modules_set
         }
         new_sequential_tests: List[str] = [
             mod for mod in sequential_files_list if mod not in known_db_modules_set
         ]
 
-        logging.info("Found %s parallel modules with known execution time.", len(parallel_tests_with_known_time))
+        logging.info(
+            "Found %s parallel modules with known execution time.",
+            len(parallel_tests_with_known_time),
+        )
         logging.info("Found %s new parallel modules:", len(new_parallel_tests))
         logging.info("%s", str(new_parallel_tests))
-        logging.info("Found %s sequential modules with known execution time.", len(sequential_tests_with_known_time))
+        logging.info(
+            "Found %s sequential modules with known execution time.",
+            len(sequential_tests_with_known_time),
+        )
         logging.info("Found %s new sequential modules:", len(new_sequential_tests))
         logging.info("%s", str(new_sequential_tests))
 
@@ -945,7 +933,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(parallel_heap)
 
         sorted_timed_parallel = sorted(
-            parallel_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            parallel_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_parallel:
             total_time, group_index, files = heapq.heappop(parallel_heap)
@@ -970,7 +960,9 @@ class ClickhouseIntegrationTestsRunner:
         heapq.heapify(sequential_heap)
 
         sorted_timed_sequential = sorted(
-            sequential_tests_with_known_time.items(), key=lambda item: item[1], reverse=True
+            sequential_tests_with_known_time.items(),
+            key=lambda item: item[1],
+            reverse=True,
         )
         for file, time in sorted_timed_sequential:
             total_time, group_index = heapq.heappop(sequential_heap)
@@ -1011,7 +1003,11 @@ class ClickhouseIntegrationTestsRunner:
             sequential_time = total_time - parallel_time
             logging.info(
                 "Group %d | Tests: %d | Total time: %.2fs (parallel: %.2fs, sequential: %.2fs)",
-                i, len(test_group), total_time, parallel_time, sequential_time
+                i,
+                len(test_group),
+                total_time,
+                parallel_time,
+                sequential_time,
             )
 
         return final_test_groups
@@ -1100,7 +1096,7 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        grouped_tests['parallel'] = filtered_parallel_tests
+        grouped_tests["parallel"] = filtered_parallel_tests
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
@@ -1209,7 +1205,8 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    is_ci = not Info().is_local_run
+    if is_ci:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1217,7 +1214,7 @@ def run():
     state, description, test_results, _test_log_paths = runner.run_impl()
     logging.info("Tests finished")
 
-    if IS_CI:
+    if is_ci:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)
@@ -1238,8 +1235,6 @@ def handle_sigterm(signum, _frame):
     print(f"WARNING: Received signal {signum}")
     global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
-    if runner_subprocess:
-        runner_subprocess.terminate()
 
 
 if __name__ == "__main__":
