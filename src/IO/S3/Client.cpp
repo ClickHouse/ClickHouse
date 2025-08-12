@@ -748,7 +748,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
                 else
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
