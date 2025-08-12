@@ -256,19 +256,10 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        // to small table we can iterate without prefetching
-        if (CouldPrefetchKey<Cell> && this->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
-        {
-            auto it = this->prefetchingBegin();
-            auto end = this->prefetchingEnd();
-            for (; it != end; ++it)
-                func(it->getKey(), it->getMapped());
-        }
-        else
-        {
-            for (auto & it : *this)
-                func(it.getKey(), it.getMapped());
-        }
+        auto it = this->begin(false);
+        auto end = this->end();
+        for (; it != end; ++it)
+            func(it->getKey(), it->getMapped());
     }
 
     /// Call func(Mapped &) for each hash map element.

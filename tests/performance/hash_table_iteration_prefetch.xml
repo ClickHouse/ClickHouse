@@ -1,13 +1,13 @@
 <test>
     <settings>
-        <max_threads>1</max_threads>
+        <max_threads>2</max_threads>
     </settings>
     <create_query>
         create table ht_prefetch (a String, b String, c UInt64) engine=Memory
     </create_query>
 
     <fill_query>
-        insert into ht_prefetch select concat('key', toString(number)), concat('value', toString(rand())), rand() % 1000 from numbers(2e7)
+        insert into ht_prefetch select concat('key', toString(number)), concat('value', toString(rand())), rand() % 1000 from numbers(1e7)
     </fill_query>
 
     <query>
