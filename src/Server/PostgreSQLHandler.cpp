@@ -540,7 +540,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             format_ptr->write(materializeBlock(block));
             format_ptr->flush();
             output_buffer.finalize();
-            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(std::move(result_buf)));
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
+            result_buf.clear();
         }
         message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse(), true);
         return true;
