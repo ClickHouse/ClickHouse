@@ -44,7 +44,7 @@ std::pair<bool, std::string> StudentTTestOneSample::compareAndReport(size_t conf
     double sample_std_dev = sqrt(sample_variance);
     double standard_error = sample_std_dev / sqrt(static_cast<double>(data.size));
 
-    double t_statistic = (sample_mean - data.population_mean) / standard_error;
+    // t-statistic is not needed for compare/report path; confidence interval is based on standard error.
 
     double mean_difference = fabs(sample_mean - data.population_mean);
     double mean_confidence_interval = table_value * standard_error;
