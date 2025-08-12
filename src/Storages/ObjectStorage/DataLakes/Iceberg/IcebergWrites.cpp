@@ -75,7 +75,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_)
+FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_)
     : table_dir(table_dir_)
     , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
@@ -83,6 +83,7 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String &
     , storage_data_dir(storage_dir + "data/")
     , storage_metadata_dir(storage_dir + "metadata/")
     , use_uuid_in_metadata(use_uuid_in_metadata_)
+    , compression_method(compression_method_)
 {
 }
 
@@ -100,6 +101,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    compression_method = other.compression_method;
 
     return *this;
 }
@@ -136,21 +138,23 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
+    auto compression_suffix = toContentEncodingName(compression_method);
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
     if (!use_uuid_in_metadata)
     {
         return Result{
-            .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
-            .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+            .path_in_metadata = fmt::format("{}v{}{}.metadata.json", metadata_dir, initial_version, compression_suffix),
+            .path_in_storage = fmt::format("{}v{}{}.metadata.json", storage_metadata_dir, initial_version, compression_suffix),
         };
     }
     else
     {
         auto uuid_str = uuid_generator.createRandom().toString();
         return Result{
-            .path_in_metadata = fmt::format("{}v{}-{}.metadata.json", metadata_dir, initial_version, uuid_str),
-            .path_in_storage = fmt::format("{}v{}-{}.metadata.json", storage_metadata_dir, initial_version, uuid_str),
+            .path_in_metadata = fmt::format("{}v{}-{}{}.metadata.json", metadata_dir, initial_version, uuid_str, compression_suffix),
+            .path_in_storage = fmt::format("{}v{}-{}{}.metadata.json", storage_metadata_dir, initial_version, uuid_str, compression_suffix),
         };
-
     }
 }
 
@@ -691,20 +695,20 @@ IcebergStorageSink::IcebergStorageSink(
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-
+    metadata_compression_method = compression_method;
     auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()));
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()));
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -884,7 +888,7 @@ bool IcebergStorageSink::initializeMetadata()
             return false;
         }
 
-        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, metadata_compression_method);
         if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = filename_generator.generateVersionHint();

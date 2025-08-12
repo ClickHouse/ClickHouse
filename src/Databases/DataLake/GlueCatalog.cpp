@@ -116,7 +116,7 @@ GlueCatalog::GlueCatalog(
         region,
         getContext()->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,

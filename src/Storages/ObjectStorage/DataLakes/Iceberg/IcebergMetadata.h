@@ -144,7 +144,7 @@ private:
 
     ColumnMapperPtr column_mapper;
 
-    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
+    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::vector<ParsedDataFileInfo> getDataFiles(
         const ActionsDAG * filter_dag,
         ContextPtr local_context,
