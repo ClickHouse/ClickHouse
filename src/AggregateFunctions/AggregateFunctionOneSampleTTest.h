@@ -22,30 +22,18 @@ class AggregateFunctionOneSampleTTest final:
 private:
     bool need_confidence_interval = false;
     Float64 confidence_level;
-    Float64 population_mean = 0.0;
-    bool population_mean_from_column = false;
 
 public:
     AggregateFunctionOneSampleTTest(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionOneSampleTTest<Data>>({arguments}, params, createResultType(!params.empty()))
     {
-        population_mean_from_column = (arguments.size() == 2);
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires two arguments: sample_data and population_mean.", Data::name);
 
-        if (!population_mean_from_column)
-        {
-            if (params.size() < 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires at least one parameter (population_mean).", Data::name);
-
-            population_mean = params.at(0).safeGet<Float64>();
-            if (!std::isfinite(population_mean))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite population mean.", Data::name);
-        }
-
-        size_t confidence_param_index = population_mean_from_column ? 0 : 1;
-        if (params.size() > confidence_param_index)
+        if (!params.empty())
         {
             need_confidence_interval = true;
-            confidence_level = params.at(confidence_param_index).safeGet<Float64>();
+            confidence_level = params.at(0).safeGet<Float64>();
 
             if (!std::isfinite(confidence_level))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite confidence level.", Data::name);
@@ -102,10 +90,7 @@ public:
 
         if (data.n == 0)
         {
-            if (population_mean_from_column)
-                data.setPopulationMean(columns[1]->getFloat64(row_num));
-            else
-                data.setPopulationMean(population_mean);
+            data.setPopulationMean(columns[1]->getFloat64(row_num));
         }
 
         data.add(value);
