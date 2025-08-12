@@ -530,7 +530,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
         std::vector<char> result_buf;
-        WriteBufferFromVectorImpl output_buffer(result_buf);
+        WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
         auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
