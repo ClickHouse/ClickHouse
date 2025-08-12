@@ -47,10 +47,8 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include "Processors/QueryPlan/AggregatingStep.h"
-#include "Processors/QueryPlan/LimitStep.h"
-
-#include <stack>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 
 namespace DB
 {
