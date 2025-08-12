@@ -15,7 +15,7 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
     ISerialization::EnumerateStreamsSettings & enumerate_settings)
 {
     /// Create map (substream) -> (pos in serialization order).
-    std::unordered_map<String, size_t> substream_to_pos;
+    std::unordered_map<std::string_view, size_t> substream_to_pos;
     substream_to_pos.reserve(substreams_in_serialization_order.size());
     for (size_t i = 0; i != substreams_in_serialization_order.size(); ++i)
         substream_to_pos[substreams_in_serialization_order[i]] = i;
@@ -36,7 +36,7 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
             auto it = substream_to_pos.find(substream_name);
             if (it == substream_to_pos.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column_name);
-            substreams_positions.push_back(substream_to_pos[substream_name]);
+            substreams_positions.push_back(it->second);
         };
 
         data.serialization->enumerateStreams(enumerate_settings, callback, data);

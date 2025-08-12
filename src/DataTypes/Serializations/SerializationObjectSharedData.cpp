@@ -11,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
+#include <ranges>
 
 namespace DB
 {
@@ -120,44 +121,18 @@ void SerializationObjectSharedData::enumerateStreams(
         else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
         {
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructurePrefix);
             else
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructure);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructure);
 
-            settings.path.push_back(Substream::ObjectSharedDataData);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-            callback(settings.path);
-            settings.path.pop_back();
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);
         }
         else
         {
@@ -173,17 +148,9 @@ void SerializationObjectSharedData::enumerateStreams(
     {
         settings.path.push_back(Substream::ObjectSharedDataCopy);
 
-        settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataCopyValues);
-        callback(settings.path);
-        settings.path.pop_back();
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataCopySizes);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataCopyPathsIndexes);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataCopyValues);
 
         settings.path.pop_back();
     }
@@ -283,8 +250,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             /// Write data of flattened paths.
             settings.path.push_back(Substream::ObjectSharedDataData);
             auto * data_stream = settings.getter(settings.path);
-            auto data_stream_path = settings.path;
-            settings.path.pop_back();
 
             if (!data_stream)
                 throw Exception(
@@ -295,15 +260,17 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark getter is not set for ADVANCED shared data serialization");
 
             /// Remember the mark of the ObjectSharedDataData stream, we will write it in the structure stream later.
-            MarkInCompressedFile data_stream_mark = settings.stream_mark_getter(data_stream_path);
+            MarkInCompressedFile data_stream_mark = settings.stream_mark_getter(settings.path);
 
             /// Collect mark of the ObjectSharedDataData stream for each path.
             std::vector<MarkInCompressedFile> paths_marks;
             paths_marks.reserve(flattened_paths.size());
             /// Collect list of substreams for each path.
             std::vector<std::vector<String>> paths_substreams;
+            paths_substreams.reserve(flattened_paths.size());
             /// Collect mark of the ObjectSharedDataData stream for each substream of each path.
             std::vector<std::vector<MarkInCompressedFile>> paths_substreams_marks;
+            paths_substreams_marks.reserve(flattened_paths.size());
 
             /// Configure serialization settings as in Compact part.
             SerializeBinaryBulkSettings data_serialization_settings;
@@ -318,7 +285,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             data_serialization_settings.object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::ADVANCED;
             /// Don't write any dynamic statistics.
             data_serialization_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::NONE;
-            data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(data_stream_path); };
+            data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
 
             for (const auto & [path, path_column] : flattened_paths)
             {
@@ -328,23 +295,24 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 {
                     /// Add new substream and its mark for current path.
                     paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path));
-                    paths_substreams_marks.back().push_back(settings.stream_mark_getter(data_stream_path));
+                    paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
                     return data_stream;
                 };
 
                 SerializeBinaryBulkStatePtr path_state;
                 /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
-                paths_marks.push_back(settings.stream_mark_getter(data_stream_path));
+                paths_marks.push_back(settings.stream_mark_getter(settings.path));
                 dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
+            /// End ObjectSharedDataData stream.
+            settings.path.pop_back();
+
             /// Write paths marks of the ObjectSharedDataData stream.
             settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
             auto * paths_marks_stream = settings.getter(settings.path);
-            auto paths_marks_stream_path = settings.path;
-            settings.path.pop_back();
 
             if (!paths_marks_stream)
                 throw Exception(
@@ -352,7 +320,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                     "Got empty stream for shared data paths marks in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
             /// Remember the mark of the ObjectSharedDataPathsMarks stream, we will write it in the structure stream later.
-            MarkInCompressedFile paths_marks_stream_mark = settings.stream_mark_getter(paths_marks_stream_path);
+            MarkInCompressedFile paths_marks_stream_mark = settings.stream_mark_getter(settings.path);
 
             for (const auto & mark : paths_marks)
             {
@@ -360,11 +328,12 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 writeBinaryLittleEndian(mark.offset_in_decompressed_block, *paths_marks_stream);
             }
 
+            /// End ObjectSharedDataPathsMarks stream.
+            settings.path.pop_back();
+
             /// Write paths substreams.
             settings.path.push_back(Substream::ObjectSharedDataSubstreams);
             auto * paths_substreams_stream = settings.getter(settings.path);
-            auto paths_substreams_stream_path = settings.path;
-            settings.path.pop_back();
 
             if (!paths_substreams_stream)
                 throw Exception(
@@ -374,20 +343,22 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             /// Collect marks of the ObjectSharedDataSubstreams stream for each path so
             /// we will be able to seek to the start of the substreams list of the specific path.
             std::vector<MarkInCompressedFile> marks_of_paths_substreams;
+            marks_of_paths_substreams.reserve(paths_substreams.size());
             for (const auto & path_substreams : paths_substreams)
             {
-                marks_of_paths_substreams.push_back(settings.stream_mark_getter(paths_substreams_stream_path));
+                marks_of_paths_substreams.push_back(settings.stream_mark_getter(settings.path));
                 /// Write number of substreams of this path and the list of substreams.
                 writeVarUInt(path_substreams.size(), *paths_substreams_stream);
                 for (const auto & substream : path_substreams)
                     writeStringBinary(substream, *paths_substreams_stream);
             }
 
+            /// End ObjectSharedDataSubstreams stream.
+            settings.path.pop_back();
+
             /// Write paths substreams marks of the ObjectSharedDataData stream.
             settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
             auto * substreams_marks_stream = settings.getter(settings.path);
-            auto substreams_marks_stream_path = settings.path;
-            settings.path.pop_back();
 
             if (!substreams_marks_stream)
                 throw Exception(
@@ -397,9 +368,10 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             /// Collect mark of the ObjectSharedDataSubstreamsMarks stream for each path so
             /// we will be able to seek to the start of the substreams marks of the specific path.
             std::vector<MarkInCompressedFile> marks_of_paths_substreams_marks;
+            marks_of_paths_substreams_marks.reserve(paths_substreams_marks.size());
             for (const auto & substreams_marks : paths_substreams_marks)
             {
-                marks_of_paths_substreams_marks.push_back(settings.stream_mark_getter(substreams_marks_stream_path));
+                marks_of_paths_substreams_marks.push_back(settings.stream_mark_getter(settings.path));
                 for (const auto & mark : substreams_marks)
                 {
                     writeBinaryLittleEndian(mark.offset_in_compressed_file, *substreams_marks_stream);
@@ -407,18 +379,19 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 }
             }
 
+            /// End ObjectSharedDataSubstreamsMarks stream.
+            settings.path.pop_back();
+
             /// For each path write mark of its substreams in ObjectSharedDataSubstreams/ObjectSharedDataSubstreamsMarks streams.
             settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
             auto * paths_substreams_metadata_stream = settings.getter(settings.path);
-            auto paths_substreams_metadata_stream_path = settings.path;
-            settings.path.pop_back();
 
             if (!paths_substreams_metadata_stream)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Got empty stream for shared data paths substreams metadata in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
-            MarkInCompressedFile paths_substreams_metadata_stream_mark = settings.stream_mark_getter(paths_substreams_metadata_stream_path);
+            MarkInCompressedFile paths_substreams_metadata_stream_mark = settings.stream_mark_getter(settings.path);
             for (size_t i = 0; i != marks_of_paths_substreams.size(); ++i)
             {
                 writeBinaryLittleEndian(marks_of_paths_substreams[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
@@ -426,6 +399,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
                 writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_decompressed_block, *paths_substreams_metadata_stream);
             }
+
+            /// End ObjectSharedDataPathsSubstreamsMetadata stream.
+            settings.path.pop_back();
 
             /// Write collected marks of other streams into structure stream.
             structure_stream_type = settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::ObjectSharedDataStructureSuffix
@@ -479,13 +455,10 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         /// of paths in the total list of paths that we serialized for buckets.
         std::unordered_map<std::string_view, size_t> path_to_index;
         size_t index = 0;
-        for (const auto & bucket_paths : flattened_paths_buckets)
+        for (const auto & [path, _] : flattened_paths_buckets | std::views::join)
         {
-            for (const auto & [path, _] : bucket_paths)
-            {
-                path_to_index[path] = index;
-                ++index;
-            }
+            path_to_index[path] = index;
+            ++index;
         }
 
         auto [indexes_column, indexes_type] = createPathsIndexes(path_to_index, shared_data_tuple_column.getColumn(0), nested_offset, nested_end);
@@ -619,6 +592,10 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     String path;
     /// Read number of paths stored in this granule.
     readVarUInt(structure_granule.num_paths, buf);
+
+    if (structure_state.need_all_paths)
+        structure_granule.all_paths.reserve(structure_granule.num_paths);
+
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
     {
@@ -1219,14 +1196,13 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
 
                 size_t num_substreams;
-                String substream;
                 size_t total_number_of_substreams = 0;
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {
                     readVarUInt(num_substreams, *paths_substreams_stream);
                     total_number_of_substreams += num_substreams;
                     for (size_t j = 0; j != num_substreams; ++j)
-                        readStringBinary(substream, *paths_substreams_stream);
+                        skipStringBinary(*paths_substreams_stream);
                 }
 
                 settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);

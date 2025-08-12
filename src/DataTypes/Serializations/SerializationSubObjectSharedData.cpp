@@ -82,44 +82,18 @@ void SerializationSubObjectSharedData::enumerateStreams(
         else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
         {
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructurePrefix);
             else
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructure);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructure);
 
-            settings.path.push_back(Substream::ObjectSharedDataData);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-            callback(settings.path);
-            settings.path.pop_back();
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);
         }
         else
         {
@@ -187,13 +161,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkStatePrefix(
             structure_state_concrete->requested_paths_prefixes.push_back(paths_prefix);
             /// All paths that matches the prefix will be read, so if we requested subcolumns of such paths, remove them from
             /// requested_paths_subcolumns so we don't deserialize them but extract from path data in memory.
-            for (auto it = structure_state_concrete->requested_paths_subcolumns.begin(); it != structure_state_concrete->requested_paths_subcolumns.end();)
-            {
-                if (it->first.starts_with(paths_prefix))
-                    it = structure_state_concrete->requested_paths_subcolumns.erase(it);
-                else
-                    ++it;
-            }
+            std::erase_if(structure_state_concrete->requested_paths_subcolumns, [&](const auto & pair) { return pair.first.starts_with(paths_prefix); });
             settings.path.pop_back();
         }
     }

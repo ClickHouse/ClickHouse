@@ -584,6 +584,8 @@ public:
     static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
 
 protected:
+    void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
+
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
 

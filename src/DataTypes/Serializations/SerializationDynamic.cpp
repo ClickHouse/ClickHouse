@@ -393,7 +393,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
             }
 
-            structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1);
+            structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
         }
         else
         {

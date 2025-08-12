@@ -81,44 +81,18 @@ void SerializationObjectSharedDataPath::enumerateStreams(
         settings.path.back().object_shared_data_bucket = bucket;
 
         if (settings.use_specialized_prefixes_and_suffixes_substreams)
-        {
-            settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
-            callback(settings.path);
-            settings.path.pop_back();
-        }
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructurePrefix);
         else
-        {
-            settings.path.push_back(Substream::ObjectSharedDataStructure);
-            callback(settings.path);
-            settings.path.pop_back();
-        }
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructure);
 
-        settings.path.push_back(Substream::ObjectSharedDataData);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-        callback(settings.path);
-        settings.path.pop_back();
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+        addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
         if (settings.use_specialized_prefixes_and_suffixes_substreams)
-        {
-            settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
-            callback(settings.path);
-            settings.path.pop_back();
-        }
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);
 
         settings.path.pop_back();
     }

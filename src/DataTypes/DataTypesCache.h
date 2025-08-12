@@ -6,7 +6,7 @@
 namespace DB
 {
 
-const size_t MAX_DATA_TYPES_ELEMENTS = 4096;
+const size_t MAX_DATA_TYPES_ELEMENTS = 16;
 
 /// Simple cache of data types and their serializations to avoid creating
 /// them from String using FormatFactory or creating shared_ptr explicitly.
@@ -23,35 +23,29 @@ public:
 
     DataTypePtr getType(const String & type_name)
     {
-        auto it = cache.find(type_name);
-        if (it != cache.end())
-            return it->second.type;
-
-        /// If cache is full, just clear it.
-        if (cache.size() >= MAX_DATA_TYPES_ELEMENTS)
-            cache.clear();
-
-        auto type = DataTypeFactory::instance().get(type_name);
-        it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
-        return it->second.type;
+        return getCacheElement(type_name).type;
     }
 
     SerializationPtr getSerialization(const String & type_name)
     {
+        return getCacheElement(type_name).serialization;
+    }
+
+private:
+    const Element & getCacheElement(const String & type_name)
+    {
         auto it = cache.find(type_name);
         if (it != cache.end())
-            return it->second.serialization;
+            return it->second;
 
         /// If cache is full, just clear it.
         if (cache.size() >= MAX_DATA_TYPES_ELEMENTS)
             cache.clear();
+
         auto type = DataTypeFactory::instance().get(type_name);
         it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
-        return it->second.serialization;
+        return it->second;
     }
-
-private:
-
     std::unordered_map<String, Element> cache;
 };
 

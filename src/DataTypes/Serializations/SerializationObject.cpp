@@ -667,12 +667,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             /// Read the list of flattened paths.
             size_t paths_size;
             readVarUInt(paths_size, *structure_stream);
-            structure_state->flattened_paths.reserve(paths_size);
+            structure_state->flattened_paths.resize(paths_size);
             for (size_t i = 0; i != paths_size; ++i)
-            {
-                structure_state->flattened_paths.emplace_back();
-                readStringBinary(structure_state->flattened_paths.back(), *structure_stream);
-            }
+                readStringBinary(structure_state->flattened_paths[i], *structure_stream);
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
         {
@@ -691,12 +688,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             size_t dynamic_paths_size;
             readVarUInt(dynamic_paths_size, *structure_stream);
             structure_state->sorted_dynamic_paths = std::make_shared<std::vector<String>>();
-            structure_state->sorted_dynamic_paths->reserve(dynamic_paths_size);
+            structure_state->sorted_dynamic_paths->resize(dynamic_paths_size);
             for (size_t i = 0; i != dynamic_paths_size; ++i)
-            {
-                structure_state->sorted_dynamic_paths->emplace_back();
-                readStringBinary(structure_state->sorted_dynamic_paths->back(), *structure_stream);
-            }
+                readStringBinary((*structure_state->sorted_dynamic_paths)[i], *structure_stream);
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
 
             /// If we have V3 Object serialization, read shared data serialization version.

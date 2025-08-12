@@ -344,19 +344,13 @@ struct SubstreamsCacheColumnElement : public ISerialization::ISubstreamsCacheEle
 
 void ISerialization::addColumnToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (!cache || path.empty())
-        return;
-
-    cache->emplace(getSubcolumnNameForStream(path), std::make_unique<SubstreamsCacheColumnElement>(column));
+    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnElement>(column));
 }
 
 ColumnPtr ISerialization::getColumnFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
 {
-    if (!cache || path.empty())
-        return nullptr;
-
-    auto it = cache->find(getSubcolumnNameForStream(path));
-    return it == cache->end() ? nullptr : assert_cast<SubstreamsCacheColumnElement *>(it->second.get())->column;
+    auto element = getElementFromSubstreamsCache(cache, path);
+    return element ? assert_cast<SubstreamsCacheColumnElement *>(element)->column : nullptr;
 }
 
 void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
@@ -599,6 +593,13 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
         std::string(istr.position(), std::min(size_t(10), istr.available())),
         type_name,
         ostr.str());
+}
+
+void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const
+{
+    path.push_back(substream);
+    callback(path);
+    path.pop_back();
 }
 
 }

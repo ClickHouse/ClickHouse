@@ -158,14 +158,6 @@ private:
             offset = 0;
             num_paths = 0;
         }
-
-        std::vector<String> getRequestedPaths() const
-        {
-            std::vector<String> paths;
-            for (const auto & [_, path] : position_to_requested_path)
-                paths.push_back(path);
-            return paths;
-        }
     };
 
     using StructureGranules = std::vector<StructureGranule>;
@@ -211,12 +203,7 @@ private:
 
         bool checkIfPathMatchesAnyRequestedPrefix(const String & path) const
         {
-            for (const auto & prefix : requested_paths_prefixes)
-            {
-                if (path.starts_with(prefix))
-                    return true;
-            }
-            return false;
+            return std::ranges::any_of(requested_paths_prefixes, [&](const auto & prefix) { return path.starts_with(prefix); });
         }
     };
 
