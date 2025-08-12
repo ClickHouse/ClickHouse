@@ -238,7 +238,11 @@ public:
 
         MutableColumnPtr res_values;
         if constexpr (with_values)
+        {
             res_values = result_value_type->createColumn();
+            res_values->reserve(values->size());
+            res_timestamps->reserve(values->size());
+        }
 
         auto res_offsets = ColumnArray::ColumnOffsets::create();
         res_offsets->reserve(num_rows);
@@ -247,7 +251,7 @@ public:
         {
             auto start_timestamp = static_cast<TimestampType>(start_timestamp_column.get64(i) * start_timestamp_multiplier);
             auto end_timestamp = static_cast<TimestampType>(end_timestamp_column.get64(i) * end_timestamp_multiplier);
-            auto step = static_cast<IntervalType>(step_column.get64(i) * step_multiplier);
+            auto step = static_cast<IntervalType>(step_column.getInt(i) * step_multiplier);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
@@ -255,7 +259,7 @@ public:
             size_t num_steps = 1;
             if (start_timestamp != end_timestamp)
             {
-                if (step <= 0)
+                if (step <= static_cast<IntervalType>(0))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
                 num_steps = (end_timestamp - start_timestamp) / step + 1;
             }

@@ -8,8 +8,9 @@ title: 'Functions for Working with Time Series'
 # Time series functions
 
 Below functions are designed to be used with `timeSeries*()` aggregate functions like
-[timeSeriesLastToGrid](../aggregate-functions/reference/timeSeriesLastToGrid.md),
-[timeSeriesInstantRateToGrid](../aggregate-functions/reference/timeSeriesInstantRateToGrid.md), and so on.
+[timeSeriesInstantRateToGrid](../aggregate-functions/reference/timeSeriesInstantRateToGrid.md),
+[timeSeriesLastToGrid](../aggregate-functions/reference/timeSeriesResampleToGridWithStaleness.md),
+and so on.
 
 ## timeSeriesRange {#timeSeriesRange}
 
@@ -47,9 +48,11 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Note**
-Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
-For example, if the type of timestamps is `DateTime64(3)` then
+**Notes**
+- If function `timeSeriesRange()` is called with `start_timestamp` equal to `end_timestamp`
+then it returns a 1-element array containing that timestamp: `[start_timestamp]`
+- Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+For example, if the type of timestamps is `DateTime64(3)` and `start_timestamp < end_timestamp` then
 `timeSeriesRange(start_timestamp, end_timestamp, step)` returns the same result as the following expression:
 ```sql
 range(start_timestamp::Int64, end_timestamp::Int64 + 1, step::Int64)::Array(DateTime64(3))
