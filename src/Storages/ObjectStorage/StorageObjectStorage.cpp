@@ -528,17 +528,7 @@ void StorageObjectStorage::truncate(
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
     {
-        if (key.path.ends_with('/'))
-        {
-            RelativePathsWithMetadata files_with_metadata;
-            object_storage->listObjects(key.path, files_with_metadata, 0);
-            for (const auto & data_filename : files_with_metadata)
-                objects.emplace_back(data_filename->getPath());
-        }
-        else
-        {
-            objects.emplace_back(key.path);
-        }
+        objects.emplace_back(key.path);
     }
     object_storage->removeObjectsIfExist(objects);
 }
@@ -550,9 +540,6 @@ void StorageObjectStorage::drop()
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
         catalog->dropTable(namespace_name, table_name);
     }
-
-    TableExclusiveLockHolder holder;
-    truncate(nullptr, nullptr, nullptr, holder);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
