@@ -92,7 +92,6 @@ enum class TargetArch : UInt32
     AMXTILE = (1 << 9),
     AMXINT8 = (1 << 10),
     SVE    = (1 << 11),
-    SVE2   = (1 << 12),
 };
 
 /// Runtime detection.
@@ -404,7 +403,7 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
 
 #endif
 
-/// SVE enablement code 
+/// SVE enablement code
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
 
     #define USE_ARM_MULTITARGET_CODE 1
@@ -418,7 +417,7 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
 
     /* Clang shows warning when there aren't any objects to apply pragma.
     * To prevent this warning we define this function inside every macros with pragmas.
-    */ 
+    */
     #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 
     #define DECLARE_SVE_SPECIFIC_CODE(...) \
@@ -434,7 +433,7 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
         constexpr auto BuildArch = TargetArch::SVE;
     )
 
-#else 
+#else
 
     #define USE_ARM_MULTITARGET_CODE 0
 

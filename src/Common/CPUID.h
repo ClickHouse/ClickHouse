@@ -309,10 +309,15 @@ inline bool haveAMXINT8() noexcept
             && ((CPUInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
-/// https://www.kernel.org/doc/Documentation/arm64/sve.txt
-inline bool haveSVE() noexcept {
+inline bool haveSVE() noexcept
+{
+#if defined(__aarch64__)
+    /// https://www.kernel.org/doc/Documentation/arm64/sve.txt
     unsigned long hwcap = getauxval(AT_HWCAP);
     return (hwcap & HWCAP_SVE) != 0;
+#else
+    return false
+#endif
 }
 
 #define CPU_ID_ENUMERATE(OP) \
@@ -356,7 +361,7 @@ inline bool haveSVE() noexcept {
     OP(AMXBF16)              \
     OP(AMXTILE)              \
     OP(AMXINT8)              \
-    OP(SVE)                  
+    OP(SVE)
 
 struct CPUFlagsCache
 {
