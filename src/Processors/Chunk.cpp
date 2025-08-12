@@ -2,7 +2,7 @@
 #include <Processors/Chunk.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 

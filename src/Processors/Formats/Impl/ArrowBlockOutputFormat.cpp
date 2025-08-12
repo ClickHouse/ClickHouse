@@ -7,6 +7,7 @@
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>

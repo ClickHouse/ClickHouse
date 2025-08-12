@@ -390,10 +390,8 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         return;
     }
 
-    // should match the structure of sample_block (after materialization)
-    convertToFullIfConst(chunk);
-    convertToFullIfSparse(chunk);
-
+    /// should match the structure of sample_block (after materialization)
+    materializeChunk(chunk);
     current_chunk = std::move(chunk);
     cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
 }

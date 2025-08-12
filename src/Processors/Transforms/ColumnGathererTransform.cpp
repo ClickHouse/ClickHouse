@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 
@@ -102,7 +103,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_serialization_kind == LOW_CARDINALITY && !result_column->lowCardinality())
-        result_column = createEmptyLowCardinalityColumn(*data_type);
+        result_column = createEmptyLowCardinalityColumn(*data_type, false);
 
     if (result_column->hasDynamicStructure())
         result_column->takeDynamicStructureFromSourceColumns(source_columns);

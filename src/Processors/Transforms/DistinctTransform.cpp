@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Transforms/DistinctTransform.h>
 
 namespace DB
@@ -54,9 +55,7 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
-    convertToFullIfSparse(chunk);
-    convertToFullIfConst(chunk);
-
+    materializeChunk(chunk);
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 

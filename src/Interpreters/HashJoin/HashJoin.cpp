@@ -11,7 +11,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
-
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -85,7 +85,7 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
             auto & column = *column_ptr;
 
             /// There's no optimization for right side const columns. Remove constness if any.
-            column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+            column.column = materializeColumn(column.column);
 
             if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
             {
@@ -642,10 +642,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     data->rows_to_join += rows;
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
+
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = materializeColumn(column)->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());

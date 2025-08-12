@@ -22,6 +22,7 @@
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <stack>
 #include <base/sort.h>

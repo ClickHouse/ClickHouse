@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>

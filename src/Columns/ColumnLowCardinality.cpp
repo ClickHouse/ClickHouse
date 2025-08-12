@@ -128,8 +128,8 @@ namespace
 }
 
 
-ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
-    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
+ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared, bool is_native_)
+    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_)), is_native(is_native_)
 {
 }
 

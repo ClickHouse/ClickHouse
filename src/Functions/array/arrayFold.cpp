@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>

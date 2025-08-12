@@ -12,6 +12,7 @@
 #include <Common/thread_local_rng.h>
 #include <Interpreters/IJoin.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <numeric>
 #include <shared_mutex>

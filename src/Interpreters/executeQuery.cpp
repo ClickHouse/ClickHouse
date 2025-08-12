@@ -72,6 +72,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <IO/CompressionMethod.h>
 

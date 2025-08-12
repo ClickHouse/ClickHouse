@@ -13,6 +13,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -2,6 +2,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
@@ -12,7 +13,9 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/Logger.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 
 #include <iterator>
 #include <ranges>
@@ -915,37 +918,6 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
     }
 
     return res;
-}
-
-void convertToFullIfSparse(Block & block)
-{
-    for (auto & column : block)
-        column.column = recursiveRemoveSparse(column.column);
-}
-
-Block materializeBlock(const Block & block)
-{
-    if (block.empty())
-        return block;
-
-    Block res = block;
-    size_t columns = res.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & element = res.getByPosition(i);
-        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
-
-        if (element.column->lowCardinality() && !element.type->lowCardinality())
-            element.column = recursiveRemoveLowCardinality(element.column);
-    }
-
-    return res;
-}
-
-void materializeBlockInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
 Block concatenateBlocks(const std::vector<Block> & blocks)

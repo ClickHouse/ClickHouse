@@ -1177,7 +1177,6 @@ struct MutationContext
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     ColumnsStatistics stats_to_recalc;
@@ -1348,9 +1347,6 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             finalizeTempProjections();
             return false;
         }
-
-        if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 
@@ -1736,8 +1732,6 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-        ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-
         bool affects_all_columns = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -1768,6 +1762,9 @@ private:
         PartLevelStatistics part_level_statistics;
         part_level_statistics.addExplicitStats(stats_to_rewrite, true);
 
+        auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        part_level_statistics.addMinMaxIndex(minmax_idx, true);
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
@@ -1793,14 +1790,11 @@ private:
     void finalize()
     {
         bool noop;
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        /// TODO: fix...
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, nullptr);
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr, nullptr);
         ctx->out.reset();
     }
 

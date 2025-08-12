@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/ProfileEvents.h>
@@ -49,17 +50,15 @@ public:
 
     using Inputs = std::vector<Input>;
 
-    static void removeConstAndSparse(const Block & header, Input & input)
+    static void removeConstAndSparse(Input & input)
     {
-        convertToFullIfConst(input.chunk);
-        convertToFullIfSparse(input.chunk);
-        convertToFullIfNonNativeLowCardinality(header, input.chunk);
+        materializeChunk(input.chunk);
     }
 
-    static void removeConstAndSparse(const Block & header, Inputs & inputs)
+    static void removeConstAndSparse(Inputs & inputs)
     {
         for (auto & input : inputs)
-            removeConstAndSparse(header, input);
+            removeConstAndSparse(input);
     }
 
     virtual const char * getName() const = 0;

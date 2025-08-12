@@ -1,4 +1,4 @@
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -317,9 +317,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
         auto & column = block_to_write.getByName(it->name);
-
-        if (getSerialization(it->name)->getKind() != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
 
         if (permutation)
         {

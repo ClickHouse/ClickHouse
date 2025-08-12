@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -265,7 +266,7 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeConstAndSparse(*header, inputs);
+    removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
@@ -277,7 +278,7 @@ void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(*header, input);
+    removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }

@@ -2,7 +2,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 namespace DB
 {

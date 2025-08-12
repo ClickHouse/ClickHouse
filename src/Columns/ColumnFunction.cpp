@@ -2,6 +2,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>

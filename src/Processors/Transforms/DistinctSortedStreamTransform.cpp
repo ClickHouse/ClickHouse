@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 namespace DB
@@ -202,9 +203,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     if (unlikely(0 == chunk_rows))
         return;
 
-    convertToFullIfSparse(chunk);
-    convertToFullIfConst(chunk);
-
+    materializeChunk(chunk);
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
     initChunkProcessing(input_columns);

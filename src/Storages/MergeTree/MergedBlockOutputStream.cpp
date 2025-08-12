@@ -1,5 +1,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -480,7 +481,7 @@ void convertToCorrectSerializations(Block & block, const SerializationInfoByName
             }
             else if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
             {
-                auto new_column = createEmptyLowCardinalityColumn(*column.type);
+                auto new_column = createEmptyLowCardinalityColumn(*column.type, false);
                 auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
 
                 column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());

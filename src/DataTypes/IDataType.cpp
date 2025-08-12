@@ -87,7 +87,7 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
         return ColumnSparse::create(std::move(column));
 
     if (serialization.getKind() == ISerialization::Kind::LOW_CARDINALITY)
-        return createEmptyLowCardinalityColumn(*this);
+        return createEmptyLowCardinalityColumn(*this, false);
 
     return column;
 }

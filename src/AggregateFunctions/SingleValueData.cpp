@@ -1,5 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -1470,7 +1471,7 @@ void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_nu
     auto new_value = column.cloneEmpty();
     new_value->reserve(1);
     new_value->insertFrom(column, row_num);
-    value = recursiveRemoveSparse(std::move(new_value));
+    value = materializeColumn(std::move(new_value));
 }
 
 void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
