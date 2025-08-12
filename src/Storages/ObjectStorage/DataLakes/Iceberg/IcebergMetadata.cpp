@@ -203,8 +203,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
-        schema_id_by_data_file.clear();
-        schema_id_by_data_files_initialized = false;
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -364,48 +362,24 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
     }
 }
 
-std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const
+std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
 {
-    if (!schema_id_by_data_files_initialized)
-    {
-        std::lock_guard lock(mutex);
-        if (!schema_id_by_data_files_initialized)
-            initializeSchemasFromManifestList(local_context, relevant_snapshot->manifest_list_entries);
-    }
-
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     SharedLockGuard lock(mutex);
-    auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-    return version_if_outdated.has_value() ? schema_processor->getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
-}
-
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr local_context, const String & data_path) const
-{
-    if (!schema_id_by_data_files_initialized)
-    {
-        std::lock_guard lock(mutex);
-        if (!schema_id_by_data_files_initialized)
-            initializeSchemasFromManifestList(local_context, relevant_snapshot->manifest_list_entries);
-    }
-
-    SharedLockGuard lock(mutex);
-    auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-    return version_if_outdated.has_value()
-        ? schema_processor->getSchemaTransformationDagByIds(version_if_outdated.value(), relevant_snapshot_schema_id)
+    return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
+        ? schema_processor->getClickhouseTableSchemaById(iceberg_object_info->read_schema_id)
         : nullptr;
 }
 
-std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
+std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
 {
-    auto schema_id_it = schema_id_by_data_file.find(data_path);
-    if (schema_id_it == schema_id_by_data_file.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file for data file: {}", data_path);
-
-    auto schema_id = schema_id_it->second;
-    if (schema_id == relevant_snapshot_schema_id)
-        return std::nullopt;
-
-    return std::optional{schema_id};
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    SharedLockGuard lock(mutex);
+    return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
+        ? schema_processor->getSchemaTransformationDagByIds(iceberg_object_info->read_schema_id, relevant_snapshot_schema_id)
+        : nullptr;
 }
+
 
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
@@ -479,31 +453,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr);
 }
 
-void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const
-{
-    schema_id_by_data_file.clear();
-
-    for (const auto & manifest_list_entry : manifest_list_ptr)
-    {
-        auto manifest_file_ptr = getManifestFile(
-            object_storage,
-            configuration.lock(),
-            manifest_cache,
-            schema_processor,
-            format_version,
-            table_location,
-            local_context,
-            log,
-            manifest_list_entry.manifest_file_path,
-            manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id);
-        for (const auto & manifest_file_entry : manifest_file_ptr->getFiles(Iceberg::FileContentType::DATA))
-        {
-            schema_id_by_data_file.emplace(manifest_file_entry.file_path, manifest_file_entry.schema_id);
-        }
-    }
-}
-
 ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context, const String & filename) const
 {
     auto configuration_ptr = configuration.lock();
@@ -529,6 +478,7 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
             const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
             const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
             Int64 added_sequence_number = 0;
+            ManifestFileContentType content_type = Iceberg::ManifestFileContentType::DATA;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
                 throw Exception(
@@ -540,8 +490,11 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
             if (format_version > 1)
             {
                 added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
+                content_type = Iceberg::ManifestFileContentType(
+                    manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
-            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>());
+            manifest_file_cache_keys.emplace_back(
+                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
@@ -744,20 +697,25 @@ ObjectIterator IcebergMetadata::iterate(
      size_t /* list_batch_size */,
      ContextPtr local_context) const
 {
+    LOG_DEBUG(
+        log,
+        "Creating Iceberg iterator for table with path {}, stacktrace: {}",
+        configuration.lock()->getPathForRead().path,
+        StackTrace().toString());
     SharedLockGuard lock(mutex);
 
     auto table_snapshot
         = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
     return std::make_shared<IcebergIterator>(
         local_context,
-        object_storage,
+        configuration.lock(),
         filter_dag,
+        callback,
+        object_storage,
         table_snapshot,
         relevant_snapshot,
         manifest_cache,
         schema_processor,
-        configuration.lock(),
-        callback,
         format_version,
         table_location);
 }

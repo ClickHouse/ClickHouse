@@ -31,22 +31,6 @@ namespace DB
 {
 
 class IcebergMetadata;
-
-struct ParsedDataFileInfo
-{
-    ParsedDataFileInfo(
-        StorageObjectStorageConfigurationPtr configuration_,
-        Iceberg::ManifestFileEntry data_object_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
-    String data_object_file_path_key;
-    String data_object_file_path; // Full path to the data object file
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-
-    bool operator<(const ParsedDataFileInfo & other) const
-    {
-        return std::tie(data_object_file_path_key) < std::tie(other.data_object_file_path_key);
-    }
-};
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
@@ -87,8 +71,8 @@ public:
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override;
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override;
 
@@ -135,11 +119,6 @@ private:
 
     Int32 last_metadata_version TSA_GUARDED_BY(mutex);
     const Int32 format_version;
-
-    mutable std::unordered_map<String, Int32> schema_id_by_data_file TSA_GUARDED_BY(mutex);
-    /// Does schema_id_by_data_files initialized and valid?
-    /// Is an optimization to avoid acquiring exclusive lock from get*() method
-    mutable std::atomic_bool schema_id_by_data_files_initialized = false;
 
     Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);

@@ -30,6 +30,13 @@ enum class FileContentType : uint8_t
     EQUALITY_DELETE = 2
 };
 
+
+enum class ManifestFileContentType
+{
+    DATA = 0,
+    DELETE = 1
+};
+
 String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
@@ -111,6 +118,8 @@ public:
         const String & path_to_manifest_file_);
 
     const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
+    std::vector<ManifestFileEntry> & getFiles(FileContentType content_type);
+
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -145,7 +154,7 @@ private:
     String path_to_manifest_file;
 };
 
-using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
 
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);

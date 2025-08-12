@@ -134,6 +134,16 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContent
         throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
 }
 
+std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContentType content_type)
+{
+    if (content_type == FileContentType::DATA)
+        return data_files;
+    else if (content_type == FileContentType::POSITION_DELETE)
+        return position_deletes_files;
+    else
+        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
+}
+
 using namespace DB;
 
 ManifestFileContent::ManifestFileContent(
@@ -197,6 +207,12 @@ ManifestFileContent::ManifestFileContent(
         std::optional<DB::NameAndTypePair> manifest_file_column_characteristics = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
         if (!manifest_file_column_characteristics.has_value())
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Iceberg Manifest File"),
+                "Manifest file '{}' has partition key with source id {}, but it is not present in schema with id {}",
+                manifest_file_name,
+                source_id,
+                manifest_schema_id);
             continue;
         }
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
@@ -205,7 +221,14 @@ ManifestFileContent::ManifestFileContent(
         auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("Iceberg Manifest File"),
+                "Manifest file '{}' has unsupported partition key transform '{}', skipping",
+                manifest_file_name,
+                transform_name);
             continue;
+        }
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));

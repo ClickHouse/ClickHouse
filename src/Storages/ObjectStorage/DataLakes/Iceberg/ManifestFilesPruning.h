@@ -14,6 +14,13 @@
 namespace Iceberg
 {
 
+enum class PruningReturnStatus
+{
+    NOT_PRUNED,
+    PARTITION_PRUNED,
+    MIN_MAX_INDEX_PRUNED
+};
+
 struct ManifestFileEntry;
 class ManifestFileContent;
 
@@ -44,8 +51,7 @@ public:
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    bool canBePruned(const ManifestFileEntry & entry) const;
-
+    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
 };
 
 }
