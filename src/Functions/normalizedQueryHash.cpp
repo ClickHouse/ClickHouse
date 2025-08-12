@@ -47,7 +47,7 @@ private:
         }
     }
 public:
-    FunctionNormalizedQueryHash(bool keep_names_) : keep_names(keep_names_) {}
+    explicit FunctionNormalizedQueryHash(bool keep_names_) : keep_names(keep_names_) {}
 
     String getName() const override
     {
