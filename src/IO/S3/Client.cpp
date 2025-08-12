@@ -42,7 +42,12 @@
 namespace ProfileEvents
 {
     extern const Event S3WriteRequestsErrors;
+    extern const Event S3WriteRequestAttempts;
+    extern const Event S3WriteRequestRetryableErrors;
+
     extern const Event S3ReadRequestsErrors;
+    extern const Event S3ReadRequestAttempts;
+    extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3ReadRequestsErrors;
@@ -158,6 +163,14 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     }
 }
 
+template <bool IsReadMethod>
+void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Event write_event)
+{
+    if constexpr (IsReadMethod)
+        ProfileEvents::increment(read_event);
+    else
+        ProfileEvents::increment(write_event);
+}
 }
 
 std::unique_ptr<Client> Client::create(
@@ -692,6 +705,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
+            if (!isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
 
@@ -716,6 +732,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
+                    if (!isClientForDisk())
+                        incrementProfileEvents<IsReadMethod>(
+                            ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
                 }
@@ -725,20 +745,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
-                if constexpr (IsReadMethod)
-                {
-                    if (isClientForDisk())
-                        ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
-                }
+                if (isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
                 else
-                {
-                    if (isClientForDisk())
-                        ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
-                }
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
