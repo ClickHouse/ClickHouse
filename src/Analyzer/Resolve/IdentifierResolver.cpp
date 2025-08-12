@@ -30,6 +30,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
+#include <fmt/format.h>
 #include <iostream>
 
 namespace DB
@@ -564,10 +565,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
         {
             Identifier column_name_identifier_without_last_part(column_name);
-            auto column_name_identifier_last_part = column_name_identifier_without_last_part.getParts().back();
-            column_name_identifier_without_last_part.popLast();
+            Strings column_name_identifier_last_parts;
 
-            if (identifier_without_column_qualifier.getFullName() != column_name_identifier_without_last_part.getFullName())
+            while (column_name_identifier_without_last_part.getPartsSize() > 0)
+            {
+                column_name_identifier_last_parts.insert(column_name_identifier_last_parts.begin(), column_name_identifier_without_last_part.getParts().back());
+                column_name_identifier_without_last_part.popLast();
+
+                if (identifier_without_column_qualifier.getFullName() == column_name_identifier_without_last_part.getFullName())
+                    break;
+            }
+
+            if (column_name_identifier_without_last_part.getPartsSize() == 0)
                 continue;
 
             auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
@@ -575,14 +584,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
                 continue;
 
             const auto & column_node = column_node_it->second;
-            const auto & column_type = column_node->getColumnType();
-            const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
-            if (!column_type_array)
+            auto column_type = column_node->getColumnType();
+
+            for (size_t i = 0; i < column_name_identifier_last_parts.size(); ++i)
+            {
+
+                const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
+                if (column_type_array)
+                    column_type = column_type_array->getNestedType();
+                else
+                    column_type = nullptr;
+            }
+
+            if (!column_type)
                 continue;
 
             nested_column_nodes.push_back(column_node);
-            nested_types.push_back(column_type_array->getNestedType());
-            nested_names_array.push_back(Field(std::move(column_name_identifier_last_part)));
+            nested_types.push_back(column_type);
+            nested_names_array.push_back(Field(fmt::format("{}", fmt::join(column_name_identifier_last_parts, "."))));
         }
 
         if (!nested_types.empty())
