@@ -65,7 +65,7 @@ private:
         const StorageIDPrivate & back() const { return path.back(); }
         const StorageIDPrivate & current() const { return back(); }
         StorageIDPrivate parent(size_t inheritance) const;
-        String debugString() const;
+        String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<StorageIDPrivate, std::vector<StorageID>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
@@ -106,6 +106,8 @@ private:
 
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
+    String debugTree() const;
+    String debugPath(const DependencyPath & path) const;
     void collectAllDependencies();
 
     Chain createPreSink(StorageIDPrivate view_id) const;
