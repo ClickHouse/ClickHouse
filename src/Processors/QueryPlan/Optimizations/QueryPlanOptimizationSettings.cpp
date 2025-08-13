@@ -39,7 +39,6 @@ namespace Setting
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
-    extern const SettingsBool allow_experimental_text_index_pipeline;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
@@ -63,6 +62,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool query_plan_direct_read_from_text_index;
 }
 
 namespace ServerSetting
@@ -141,7 +141,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
-    allow_experimental_text_index_pipeline = from[Setting::allow_experimental_text_index_pipeline];
+    direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index];
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

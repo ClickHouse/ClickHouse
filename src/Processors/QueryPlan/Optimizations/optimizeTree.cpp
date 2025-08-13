@@ -110,7 +110,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
     Optimization::ExtraSettings extra_settings = {
-        optimization_settings.allow_experimental_text_index_pipeline,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,
@@ -191,7 +190,6 @@ void optimizeTreeSecondPass(
     bool has_reading_from_mt = false;
 
     Optimization::ExtraSettings extra_settings = {
-        optimization_settings.allow_experimental_text_index_pipeline,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_with_rescoring,
         optimization_settings.vector_search_filter_strategy,

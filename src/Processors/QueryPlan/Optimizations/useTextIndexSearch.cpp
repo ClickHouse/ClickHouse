@@ -102,6 +102,9 @@ class FunctionReplacerDAG {
         chassert(map_it != map_indexed_columns.end());
 
         { /// Check if the associated index column already exist
+
+            /// This uses backward iterators because the index column node (if exists already) should be inserted by a previous call of this
+            /// same function.  Which uses dag.addColumn (push_back).
             const auto index_column_it = std::find_if(dag.nodes.rbegin(), dag.nodes.rend(),
                 [&map_it](const ActionsDAG::Node &index_column) -> bool
                 {
@@ -149,7 +152,7 @@ class FunctionReplacerDAG {
         return true;
     }
 
-    bool isIndexedColumnNode(const ActionsDAG::Node *node) const
+    bool isColumnNodeWithTextIndex(const ActionsDAG::Node *node) const
     {
         return (node->type == ActionsDAG::ActionType::INPUT
                 && node->result_type->getTypeId() == TypeIndex::String
@@ -157,11 +160,11 @@ class FunctionReplacerDAG {
                 && map_indexed_columns.contains(node->result_name));
     }
 
-    bool hasIndexedChild(const ActionsDAG::Node &subnode) const
+    bool hasChildColumnNodeWithTextIndex(const ActionsDAG::Node &subnode) const
     {
         return std::ranges::any_of(
             subnode.children,
-            [&](const ActionsDAG::Node *child) -> bool { return isIndexedColumnNode(child); }
+            [&](const ActionsDAG::Node *child) -> bool { return isColumnNodeWithTextIndex(child); }
         );
     }
 
@@ -187,7 +190,7 @@ class FunctionReplacerDAG {
             std::back_inserter(new_children),
             [&](const ActionsDAG::Node *child) -> const ActionsDAG::Node *
             {
-                if (!isIndexedColumnNode(child))
+                if (!isColumnNodeWithTextIndex(child))
                     return child;
 
                 ++replaced; // count the replacements
@@ -199,6 +202,9 @@ class FunctionReplacerDAG {
         if (replaced == 0)
             return nullptr;
 
+        /// The pindex and poffsets could be already inserted by some previous optimization or because the user query
+        /// explicitly uses them. i.e: select _part_index, _part_offset where ...,
+        /// or select ... where _part_index > X, or select ... where some_function(_part_offset)
         if (pindex == nullptr)
             pindex = &dag.addInput("_part_index", std::make_shared<DataTypeNumber<UInt64>>());
         new_children.push_back(pindex);
@@ -305,6 +311,7 @@ public:
         : dag(_dag), map_indexed_columns(_map_indexed_columns)
     {
         /// Check if these nodes are already there.
+        /// This may happen if the query uses them explicitly.
         pindex = tryFindInInputs("_part_index");
         poffsets = tryFindInInputs("_part_offset");
     }
@@ -354,7 +361,7 @@ public:
             if (!isOptimizableFunction(subnode))
                 continue;
 
-            if (!hasIndexedChild(subnode))
+            if (!hasChildColumnNodeWithTextIndex(subnode))
                 continue;
 
             const ActionsDAG::Node * replacement = tryAddReplacementIndexFunction(subnode);
@@ -372,7 +379,7 @@ public:
     }
 };
 
-/// Invert index text search queries have this form:
+/// Text index search queries have this form:
 ///     SELECT [...]
 ///     FROM tab, [...]
 ///     WHERE text_function(text, criteria), [...]
@@ -390,7 +397,7 @@ public:
 ///
 /// (*) Text search only makes sense if a text index exists on text. In the scope of this function, we don't care.
 ///     That check is left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseTextSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & )
+size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & )
 {
     QueryPlan::Node * node = parent_node;
 

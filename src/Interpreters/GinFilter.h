@@ -76,8 +76,9 @@ public:
     /// given postings list cache
     bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
-	// Get a vector of indices.
-	std::vector<uint32_t> getIndices(const GinFilter * filter, const PostingsCacheForStore *cache_store, const MarkRanges &ranges) const;
+	/// Get a vector of indices given a filter.
+    /// The function uses the input ranges to limit the desired indices.
+	std::vector<UInt32> getIndices(const GinFilter * filter, const PostingsCacheForStore * cache_store, const MarkRanges & ranges) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)

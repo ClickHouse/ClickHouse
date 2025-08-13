@@ -6669,9 +6669,6 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", BETA) \
-    DECLARE(Bool, allow_experimental_text_index_pipeline, false, R"(
-Allow to perform full text search filtering using only the inverted index
-)", EXPERIMENTAL) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
@@ -6877,6 +6874,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, false, R"(
+Allow to perform full text search filtering using only the inverted index
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.

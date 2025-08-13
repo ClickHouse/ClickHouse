@@ -31,9 +31,6 @@ struct Optimization
 {
     struct ExtraSettings
     {
-        /// Full text search related settings
-        bool allow_experimental_text_index_pipeline;
-
         /// Vector-search-related settings
         size_t max_limit_for_vector_search_queries;
         bool vector_search_with_rescoring;
@@ -98,7 +95,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Extract tokens and reference column for full text search
-size_t tryUseTextSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings);
+size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings);
 
 /// Put some steps under union, so that plan optimization could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
@@ -125,7 +122,7 @@ inline const auto & getOptimizations()
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
-        {tryUseTextSearch, "tryUseTextSearch", &QueryPlanOptimizationSettings::allow_experimental_text_index_pipeline},
+        {tryDirectReadFromTextIndex, "tryDirectReadFromTextIndex", &QueryPlanOptimizationSettings::direct_read_from_text_index},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
     }};
