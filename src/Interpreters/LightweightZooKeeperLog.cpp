@@ -146,4 +146,50 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
 
+ void LightweightZooKeeperLog::stepFunction(TimePoint current_time)
+{
+    std::lock_guard lock(stats_mutex);
+    for (auto & [entry_key, entry_stats] : stats)
+    {
+        LightweightZooKeeperLogElement element{
+            .event_time = std::chrono::system_clock::to_time_t(current_time),
+            .session_id = entry_key.session_id,
+            .parent_path = entry_key.parent_path,
+            .operation = entry_key.operation,
+            .count = entry_stats.count,
+            .errors = std::move(entry_stats.errors),
+            .total_latency_microseconds = entry_stats.total_latency_microseconds,
+        };
+        add(std::move(element));
+    }
+    stats.clear();
+}
+
+void LightweightZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
+{
+    std::lock_guard lock(stats_mutex);
+    stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
+}
+
+bool LightweightZooKeeperLog::EntryKey::operator==(const EntryKey & other) const
+{
+    return session_id == other.session_id && operation == other.operation && parent_path == other.parent_path;
+}
+
+size_t LightweightZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_key) const
+{
+    SipHash hash;
+    hash.update(entry_key.session_id);
+    hash.update(entry_key.operation);
+    hash.update(entry_key.parent_path);
+    return hash.get64();
+}
+
+void LightweightZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Coordination::Error error)
+{
+    ++count;
+    total_latency_microseconds += latency_microseconds;
+    errors->increment(error);
+}
+
 }
