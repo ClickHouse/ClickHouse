@@ -82,6 +82,7 @@ private:
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
 
+        /// For debugging purposes
         String toString() const
         {
             return fmt::format(

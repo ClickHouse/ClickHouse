@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/misc.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -257,7 +256,6 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
                 for (const Field & field : value.safeGet<Tuple>())
                 {
                     ranges.emplace_back(field);
-                    std::cout << toString(field) << std::endl;
                 }
                 out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
             }
@@ -374,7 +372,6 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
-            std::cout << "range: " << range.toString() << std::endl;
             if (range.isInfinite())
                 return 1.0;
 
