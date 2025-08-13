@@ -1837,20 +1837,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get())) {
+        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
             cache_in_store = std::make_shared<PostingsCacheForStore>(index_helper->getFileName(), part->getDataPartStoragePtr());
-
-            std::println("GinIndexStoreFactory(file_name: {}, part_storage: {})",
-                index_helper->getFileName(),
-                part->getDataPartStoragePtr()->getRelativePath()
-            );
-        }
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-
-            std::println("Range: {} = [{} - {}]", i, index_range.begin, index_range.end);
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {

@@ -303,10 +303,6 @@ class FunctionReplacerDAG {
         }
         chassert(function_it != dag.nodes.end());
 
-        std::println("============================ CALLED BEFORE ============================");
-        printDag();
-        std::println("===============================================================");
-
         /// Remove unused inputs
         {
             auto [it_end, last] = std::ranges::remove_if(

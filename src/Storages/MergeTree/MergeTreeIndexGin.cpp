@@ -567,9 +567,9 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
 {
     const String& function_name = function_node.getFunctionName();
-    // TODO: JAM Remove this in the future.
-    if (function_name != "hasTokenIndex")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Index function: {}, only 'hasTokenIndex' is supported", function_name);
+
+    if (!function_name.ends_with("Index"))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function: {}, Does not seem to be an index function", function_name);
 
     const size_t function_arguments_size = function_node.getArgumentsSize();
     if (function_arguments_size < 4)
