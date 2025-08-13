@@ -618,7 +618,7 @@ void GinIndexStore::writeSegment()
     /// Write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
-    FST::FstBuilder fst_builder(write_buf);
+    FST::Builder fst_builder(write_buf);
 
     UInt64 offset = 0;
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)

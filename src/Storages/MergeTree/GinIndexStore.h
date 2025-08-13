@@ -17,7 +17,7 @@
 #include "config.h"
 
 #if USE_FASTPFOR
-#include <codecfactory.h>
+#  include <codecfactory.h>
 #endif
 
 
@@ -69,7 +69,7 @@ private:
     static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
+    static constexpr String FASTPFOR_CODEC_NAME = "simdfastpfor128";
     /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
     static constexpr size_t FASTPFOR_THRESHOLD = 4;
 };
@@ -209,7 +209,7 @@ public:
     };
 
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
+    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<String, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -316,7 +316,7 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
 
 /// Postings lists and terms built from query string
-using GinPostingsCache = std::unordered_map<std::string, GinSegmentedPostingsListContainer>;
+using GinPostingsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
 using GinPostingsCachePtr = std::shared_ptr<GinPostingsCache>;
 
 /// Gin index store reader which helps to read segments, dictionaries and postings list
@@ -390,7 +390,7 @@ public:
     void remove(const String & part_path);
 
     /// GinIndexStores indexed by part file path
-    using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
+    using GinIndexStores = std::unordered_map<String, GinIndexStorePtr>;
 
 private:
     GinIndexStores stores;
