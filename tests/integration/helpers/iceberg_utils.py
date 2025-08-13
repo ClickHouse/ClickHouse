@@ -185,6 +185,7 @@ def get_creation_expression(
     format_version=2,
     partition_by="",
     if_not_exists=False,
+    compression_method=None,
     format="Parquet",
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
@@ -206,6 +207,9 @@ def get_creation_expression(
     if partition_by:
         partition_by = "PARTITION BY " + partition_by
     settings_array.append(f"iceberg_format_version = {format_version}")
+
+    if compression_method:
+        settings_array.append(f"iceberg_metadata_compression_method = '{compression_method}'")
 
     if settings_array:
         settings_expression = " SETTINGS " + ",".join(settings_array)
@@ -318,11 +322,12 @@ def create_iceberg_table(
     format_version=2,
     partition_by="",
     if_not_exists=False,
+    compression_method=None,
     format="Parquet",
     **kwargs,
 ):
     node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, format, **kwargs)
+        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs)
     )
 
 
