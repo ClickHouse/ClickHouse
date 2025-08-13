@@ -203,4 +203,9 @@ bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
 }
