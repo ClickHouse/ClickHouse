@@ -224,9 +224,9 @@ bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*s
     }
 
     size_t block_size = settings.page_cache_block_size;
-    cache_key.offset = offset / block_size * block_size;
-    cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
-
+    auto old_offset = std::exchange(cache_key.offset, offset / block_size * block_size);
+    auto old_size = std::exchange(cache_key.size, std::min(block_size, file_size.value() - cache_key.offset));
+    SCOPE_EXIT(cache_key.offset = old_offset; cache_key.size = old_size;);
     return cache->contains(cache_key, settings.page_cache_inject_eviction);
 }
 
