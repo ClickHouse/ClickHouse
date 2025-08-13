@@ -84,19 +84,6 @@ public:
     {
     }
 
-    ~ReadFromCluster() override
-    {
-        LOG_DEBUG(
-            log,
-            "ReadFromCluster destructor called, storage: {}, processed_stage: {}, filter_dag_address: {}, "
-            "query_info_filter_dag_address: {}, stacktrace: {}",
-            storage->getName(),
-            QueryProcessingStage::toString(processed_stage),
-            static_cast<const void *>(filter_actions_dag.get()),
-            static_cast<const void *>(query_info.filter_actions_dag.get()),
-            StackTrace().toString());
-    }
-
 private:
     std::shared_ptr<IStorageCluster> storage;
     ASTPtr query_to_send;

@@ -51,13 +51,14 @@
 
 namespace DB {
 
-using namespace Iceberg;
 
 namespace ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace Iceberg
+{
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
@@ -128,15 +129,18 @@ ManifestFileCacheKeys getManifestList(
         if (iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto manifest_list_buf
+            = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         ManifestFileCacheKeys manifest_file_cache_keys;
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
-            const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
+            const std::string file_path
+                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
+            const auto manifest_file_name
+                = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -148,7 +152,8 @@ ManifestFileCacheKeys getManifestList(
 
             if (format_version > 1)
             {
-                added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
+                added_sequence_number
+                    = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
             }
             manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>());
         }
@@ -210,6 +215,8 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};
+}
+
 }
 }
 

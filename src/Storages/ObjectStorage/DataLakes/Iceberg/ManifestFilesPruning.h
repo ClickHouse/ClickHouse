@@ -11,7 +11,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 enum class PruningReturnStatus

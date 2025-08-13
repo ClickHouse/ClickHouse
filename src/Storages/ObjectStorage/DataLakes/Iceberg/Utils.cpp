@@ -66,7 +66,7 @@ namespace ProfileEvents
     extern const Event IcebergVersionHintUsed;
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 using namespace DB;
@@ -209,11 +209,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     }
 }
 
-}
-
-namespace DB
-{
-
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,
@@ -299,7 +294,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;

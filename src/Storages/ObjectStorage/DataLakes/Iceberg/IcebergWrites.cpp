@@ -57,6 +57,8 @@
 namespace DB
 {
 
+using namespace Iceberg;
+
 namespace Setting
 {
 extern const SettingsUInt64 output_format_compression_level;

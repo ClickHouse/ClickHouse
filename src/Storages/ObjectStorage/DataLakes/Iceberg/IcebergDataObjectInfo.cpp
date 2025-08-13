@@ -36,13 +36,11 @@ namespace DB::ErrorCodes
 
 namespace {
 
-using namespace Iceberg;
+using namespace DB::Iceberg;
 
 
 std::pair<size_t, size_t> definePositionDeletesSpan(
-    Iceberg::ManifestFileEntry data_object_,
-    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_,
-    const String & format)
+    ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & position_deletes_objects_, const String & format)
 {
     ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -55,7 +53,7 @@ std::pair<size_t, size_t> definePositionDeletesSpan(
         position_deletes_objects_.begin(),
         position_deletes_objects_.end(),
         data_object_,
-        [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
+        [](const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
         {
             return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
                 < std::tie(rhs.common_partition_specification, rhs.partition_key_value);

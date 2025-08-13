@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <variant>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 enum class ManifestEntryStatus : uint8_t

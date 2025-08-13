@@ -29,7 +29,7 @@ namespace ProfileEvents
     extern const Event IcebergMinMaxIndexPrunedFiles;
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
@@ -59,18 +59,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
 {
     if (source_dag == nullptr)
-    {
-        LOG_DEBUG(&Poco::Logger::get("Iceberg Manifest Pruner"), "Filter DAG is empty, no pruning will be applied.");
         return nullptr;
-    }
-    else
-    {
-        LOG_DEBUG(
-            &Poco::Logger::get("Iceberg Manifest Pruner"),
-            "Filter DAG is not empty, pruning will be applied., address: {}, stacktrace: {}",
-            static_cast<const void *>(source_dag),
-            StackTrace().toString());
-    }
 
     const auto & inputs = source_dag->getInputs();
 
@@ -105,12 +94,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
         node = &dag_with_renames.addAlias(*node, column->name);
         dag_with_renames.getOutputs().push_back(node);
     }
-    LOG_DEBUG(
-        &Poco::Logger::get("Iceberg Manifest Pruner"),
-        "Transformed filter DAG for manifest with {} used columns, dag_with_renames address: {}, initial source dag address: {}",
-        used_columns_in_filter.size(),
-        static_cast<void *>(&dag_with_renames),
-        static_cast<const void *>(source_dag));
     auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
     result->removeUnusedActions();
     return result;
@@ -131,16 +114,6 @@ ManifestFilesPruner::ManifestFilesPruner(
 {
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    LOG_DEBUG(
-        &Poco::Logger::get("Iceberg Manifest Pruner"),
-        "Creating pruner for manifest file with schema id {}, initial schema id {}",
-        current_schema_id,
-        initial_schema_id);
-    LOG_DEBUG(
-        &Poco::Logger::get("Iceberg Manifest Pruner"),
-        "Manifest file has partition key: {}, has bounds info in manifests: {}",
-        manifest_file.hasPartitionKey(),
-        manifest_file.hasBoundsInfoInManifests());
     if (manifest_file.hasPartitionKey() || manifest_file.hasBoundsInfoInManifests())
         transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
 
@@ -181,11 +154,6 @@ ManifestFilesPruner::ManifestFilesPruner(
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 {
-    LOG_DEBUG(
-        &Poco::Logger::get("Iceberg Manifest Pruner"),
-        "Checking if manifest entry with file path {} can be pruned, partition key condition exists: {}",
-        entry.file_path,
-        partition_key_condition.has_value());
     if (partition_key_condition.has_value())
     {
         const auto & partition_value = entry.partition_key_value;
@@ -199,12 +167,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
         bool can_be_true = partition_key_condition->mayBeTrueInRange(
             partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
-
-        LOG_DEBUG(
-            &Poco::Logger::get("Iceberg Manifest Pruner"),
-            "Partition key condition for manifest entry with file path {} can be true: {}",
-            entry.file_path,
-            can_be_true);
 
         if (!can_be_true)
         {

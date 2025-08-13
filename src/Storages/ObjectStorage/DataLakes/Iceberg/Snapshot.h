@@ -7,7 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 struct IcebergDataSnapshot

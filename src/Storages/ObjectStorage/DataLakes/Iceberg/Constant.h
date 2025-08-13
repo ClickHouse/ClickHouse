@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
 #define DEFINE_ICEBERG_FIELD_ALIAS(name, strval) constexpr const char * f_##name = #strval;

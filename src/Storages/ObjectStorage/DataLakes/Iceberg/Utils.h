@@ -20,7 +20,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 void writeMessageToFile(
@@ -38,11 +38,6 @@ struct TransformAndArgument
 };
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
-
-}
-
-namespace DB
-{
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,

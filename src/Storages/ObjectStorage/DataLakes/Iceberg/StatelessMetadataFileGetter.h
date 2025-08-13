@@ -22,7 +22,7 @@
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 
-namespace DB
+namespace DB::Iceberg
 {
 
 Iceberg::ManifestFilePtr getManifestFile(
