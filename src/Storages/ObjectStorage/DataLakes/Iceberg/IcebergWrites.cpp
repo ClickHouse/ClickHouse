@@ -34,6 +34,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include <Columns/IColumn.h>
 
 #include <memory>
@@ -162,11 +163,20 @@ FileNamesGenerator::Result FileNamesGenerator::generateVersionHint()
     };
 }
 
+FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
+{
+    auto uuid_str = uuid_generator.createRandom().toString();
+
+    return Result{
+        .path_in_metadata = fmt::format("{}pos-delete-{}.parquet", data_dir, uuid_str),
+        .path_in_storage = fmt::format("{}pos-delete-{}.parquet", storage_data_dir, uuid_str)
+    };
+}
+
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
     return storage_dir + metadata_path.substr(table_dir.size());
 }
-
 
 String removeEscapedSlashes(const String & json_str)
 {
@@ -220,7 +230,8 @@ void generateManifestFile(
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
-    WriteBuffer & buf)
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type)
 {
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -273,7 +284,7 @@ void generateManifestFile(
     }
     avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
     if (version > 1)
-        data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
+        data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(content_type));
     data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name);
     data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
@@ -319,7 +330,8 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    WriteBuffer & buf)
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type)
 {
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -345,7 +357,7 @@ void generateManifestList(
 
         if (version > 1)
         {
-            entry.field(Iceberg::f_content) = 0;
+            entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
             entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int32>(Iceberg::f_metadata_sequence_number);
             entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int32>(Iceberg::f_metadata_sequence_number);
         }
@@ -468,7 +480,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int32 added_files,
     Int32 added_records,
     Int32 added_files_size,
-    Int32 num_partitions)
+    Int32 num_partitions,
+    Int32 added_delete_files)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -505,8 +518,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     sum_with_parent_snapshot(Iceberg::f_total_records, added_records);
     sum_with_parent_snapshot(Iceberg::f_total_files_size, added_files_size);
     sum_with_parent_snapshot(Iceberg::f_total_data_files, added_files);
-    sum_with_parent_snapshot(Iceberg::f_total_delete_files, 0);
-    sum_with_parent_snapshot(Iceberg::f_total_position_deletes, 0);
+    sum_with_parent_snapshot(Iceberg::f_total_delete_files, added_delete_files);
+    sum_with_parent_snapshot(Iceberg::f_total_position_deletes, added_delete_files);
     sum_with_parent_snapshot(Iceberg::f_total_equality_deletes, 0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
@@ -838,7 +851,7 @@ bool IcebergStorageSink::initializeMetadata()
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
+        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), 0);
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
@@ -851,7 +864,7 @@ bool IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
+        generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry, Iceberg::FileContentType::DATA);
         buffer_manifest_entry->finalize();
         manifest_lengths += buffer_manifest_entry->count();
     }
@@ -861,7 +874,7 @@ bool IcebergStorageSink::initializeMetadata()
             StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
         generateManifestList(
-            filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list);
+            filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
         buffer_manifest_list->finalize();
     }
 

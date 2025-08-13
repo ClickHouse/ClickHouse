@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h"
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -33,6 +34,15 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 
 #include <Poco/Logger.h>
 
@@ -632,5 +642,35 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
+
+void StorageObjectStorage::mutate(const MutationCommands & commands, ContextPtr context_)
+{
+#if USE_AVRO
+    if (configuration->supportsWrites())
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        auto storage = getStorageID();
+
+        Iceberg::mutate(
+            commands,
+            context_,
+            metadata_snapshot,
+            storage,
+            object_storage,
+            configuration,
+            format_settings,
+            catalog,
+            storage_id);
+    }
+#endif
+}
+
+void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
 
 }

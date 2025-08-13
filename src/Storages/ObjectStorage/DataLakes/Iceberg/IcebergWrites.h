@@ -14,6 +14,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Common/randomSeed.h>
 
 #include <Poco/JSON/Array.h>
@@ -55,6 +56,7 @@ public:
     Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
     Result generateMetadataName();
     Result generateVersionHint();
+    Result generatePositionDeleteFile();
 
     String convertMetadataPathToStoragePath(const String & metadata_path) const;
 
@@ -83,7 +85,8 @@ void generateManifestFile(
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type);
 
 void generateManifestList(
     const FileNamesGenerator & filename_generator,
@@ -93,7 +96,8 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type);
 
 class MetadataGenerator
 {
@@ -114,7 +118,8 @@ public:
         Int32 added_files,
         Int32 added_records,
         Int32 added_files_size,
-        Int32 num_partitions);
+        Int32 num_partitions,
+        Int32 added_delete_files);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;

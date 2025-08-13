@@ -127,6 +127,9 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    bool supportsDelete() const override { return true; }
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
