@@ -112,13 +112,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         );
     }
 
-    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
-    }
-
     /// Hive: Not building the file_columns like `StorageObjectStorage` does because it is not necessary to do it here.
 
     StorageInMemoryMetadata metadata;

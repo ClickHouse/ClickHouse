@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-fasttest, no-random-settings
 
-DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;
+DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format;
 
 CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
@@ -70,6 +70,17 @@ select * from s3(s3_conn, filename='t_03363_function_write_down_partition_column
 
 -- only partition columns
 INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_parquet', format=Parquet, partition_strategy='hive') PARTITION BY (year, country) SELECT 2020 as year, 'Brazil' as country; -- {serverError INCORRECT_DATA};
+
+-- Schema specified, but the hive partition column is missing in the schema (present in the data tho)
+INSERT INTO FUNCTION s3(s3_conn, filename='half_baked', format=Parquet, partition_strategy='hive') PARTITION BY year SELECT 1 AS key, 2020 AS year;
+
+CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet);
+
+-- Should succeed and not return hive columns. Distinct because maybe MinIO isn't cleaned up
+SELECT DISTINCT * FROM s3_table_half_schema_with_format;
+
+-- Should fail because the column year does not exist
+SELECT year, * FROM s3_table_half_schema_with_format; -- {serverError UNKNOWN_IDENTIFIER}
 
 -- hive with partition id placeholder
 CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)

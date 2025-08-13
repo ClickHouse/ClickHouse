@@ -9,6 +9,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
+#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {
@@ -130,6 +131,30 @@ void addPartitionColumnsToChunk(
     }
 }
 
+void assertHivePartitionColumnsAreNotTheOnlyColumns(const NamesAndTypesList & hive_partition_columns_to_read_from_file_path, const ColumnsDescription & storage_columns)
+{
+    if (hive_partition_columns_to_read_from_file_path.size() != storage_columns.size())
+    {
+        return;
+    }
+    
+    /// Initially I assumed checking for size would be enough, but it's not.
+    /// Example of that is a bucket that already contains hive partitioned data partition by the same amount of columns
+    /// that were specified in the schema (and the schema is missing the partition columns)
+    /// In that case, the hive columns will have the same size as the storage columns, but they are completely different.
+    for (const auto & column : storage_columns)
+    {
+        if (!hive_partition_columns_to_read_from_file_path.contains(column.name))
+        {
+            return;
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+}
+
 void extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
     NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
@@ -153,12 +178,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
         }
     }
 
-    if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
-    }
+    assertHivePartitionColumnsAreNotTheOnlyColumns(hive_partition_columns_to_read_from_file_path, storage_columns);
 }
 
 }
