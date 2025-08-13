@@ -218,14 +218,6 @@ public:
         M(two_level_keys256)           \
         M(two_level_hashed)
 
-    /// Used for reading from StorageJoin and applying joinGet function
-    #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
-        M(key8)                                \
-        M(key16)                               \
-        M(key32)                               \
-        M(key64)                               \
-        M(key_string)                          \
-        M(key_fixed_string)
 
     /// Used in ConcurrentHashJoin
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
@@ -236,6 +228,7 @@ public:
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
+
 
     enum class Type : uint8_t
     {
