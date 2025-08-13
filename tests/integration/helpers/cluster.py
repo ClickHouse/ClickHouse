@@ -69,6 +69,27 @@ DEFAULT_ENV_NAME = ".env"
 DEFAULT_BASE_CONFIG_DIR = os.environ.get(
     "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
 )
+
+DEFAULT_THREAD_FUZZER_SETTINGS = {
+    "THREAD_FUZZER_CPU_TIME_PERIOD_US" : "1000",
+    "THREAD_FUZZER_SLEEP_PROBABILITY" : "0.1",
+    "THREAD_FUZZER_SLEEP_TIME_US_MAX" : "100000",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY" : "0.01",
+    "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY" : "0.01"
+}
+
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
@@ -433,6 +454,8 @@ class ClickHouseCluster:
         zookeeper_certfile=None,
         with_spark=False,
         custom_keeper_configs=[],
+        enable_thread_fuzzer=False,
+        thread_fuzzer_settings={},
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -491,6 +514,13 @@ class ClickHouseCluster:
         self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+
+        if enable_thread_fuzzer:
+            for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():
+                thread_fuzzer_settings.setdefault(key, value)
+            for key, value in thread_fuzzer_settings.items():
+                self.env_variables[key] = value
+
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
