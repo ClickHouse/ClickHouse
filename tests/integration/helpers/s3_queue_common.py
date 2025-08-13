@@ -110,7 +110,8 @@ def create_table(
     database_name="default",
     replace=False,
     no_settings=False,
-    hive_partitioning="",
+    hive_partitioning_path="",
+    hive_partitioning_columns="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -126,24 +127,27 @@ def create_table(
 
     settings.update(additional_settings)
 
+    if hive_partitioning_columns:
+        hive_partitioning_columns = f", {hive_partitioning_columns}"
+
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning}"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning}', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
 
     create = "REPLACE" if replace else "CREATE"
     if not replace:
         node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """

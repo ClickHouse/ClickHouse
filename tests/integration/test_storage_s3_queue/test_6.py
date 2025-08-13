@@ -124,7 +124,8 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
                 "buckets": buckets,
             },
             engine_name=engine_name,
-            hive_partitioning="date=*/city=*/",
+            hive_partitioning_path="date=*/city=*/",
+            hive_partitioning_columns="date Date, city String",
         )
         create_mv(node, table_name, dst_table_name, virtual_columns="date Date, city String")
 

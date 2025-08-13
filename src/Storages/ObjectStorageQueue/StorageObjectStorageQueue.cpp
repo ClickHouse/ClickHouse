@@ -236,7 +236,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
             columns,
             hive_partition_columns_to_read_from_file_path,
             configuration->getRawPath().path,
-            true,
+            false,
             format_settings,
             context_
         );
@@ -251,10 +251,27 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     for (const auto & column : columns.getAllPhysical())
     {
-        if (!hive_partition_columns_to_read_from_file_path_set.contains(column.getNameInStorage()))
-        {
+        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
+        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
             file_columns.emplace_back(column);
+        else
+            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
+    }
+
+    /// All hive columns must be in storage schema
+    if (!hive_partition_columns_to_read_from_file_path_set.empty())
+    {
+        auto column = hive_partition_columns_to_read_from_file_path_set.begin();
+        std::string not_found_columns = *column;
+        ++column;
+        while (column != hive_partition_columns_to_read_from_file_path_set.end())
+        {
+            not_found_columns += ", " + *column;
+            ++column;
         }
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
+            not_found_columns);
     }
 
     StorageInMemoryMetadata storage_metadata;
