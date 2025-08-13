@@ -389,7 +389,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
 
     for (const auto & arg : arguments)
     {
-        if (checkAndGetColumn<ColumnLowCardinality>(arg.column.get()))
+        if (checkAndGetColumn<ColumnLowCardinality>(arg.column.get()) || checkAndGetColumnConstData<ColumnLowCardinality>(arg.column.get()))
             ++num_low_cardinality_columns;
         else if (!isColumnConst(*arg.column))
             ++num_full_columns;

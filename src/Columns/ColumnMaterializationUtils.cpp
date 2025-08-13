@@ -105,7 +105,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
 ColumnPtr recursiveRemoveNonNativeLowCardinality(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(column, true);
+    return recursiveRemoveLowCardinality(column, false);
 }
 
 ColumnPtr materializeColumn(const ColumnPtr & column)
