@@ -27,7 +27,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>

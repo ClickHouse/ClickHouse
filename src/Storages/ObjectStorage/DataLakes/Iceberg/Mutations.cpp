@@ -30,6 +30,8 @@ extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 namespace Iceberg
 {
 
+#if USE_AVRO
+
 static constexpr const char * block_datafile_path = "_path";
 static constexpr const char * block_row_number = "_row_number";
 
@@ -277,7 +279,12 @@ void mutate(
 {
     FileNamesGenerator generator(configuration->getRawPath().path, configuration->getRawPath().path, false);
     auto delete_file = writeDataFiles(commands, context, metadata, storage_id, object_storage, configuration, generator, format_settings);
-    writeMetadataFiles(delete_file, object_storage, configuration, context, generator, catalog, table_id);
+
+    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, generator, catalog, table_id))
+    {
+    }
 }
+
+#endif
 
 }
