@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS normal;
 CREATE TABLE IF NOT EXISTS normal
 (
