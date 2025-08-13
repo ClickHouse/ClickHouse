@@ -17,12 +17,6 @@ namespace Setting
     extern const SettingsBool allow_nonconst_timezone_arguments;
 }
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
-
 namespace
 {
 
