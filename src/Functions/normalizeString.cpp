@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Parsers/IAST_fwd.h>
 
+
 namespace DB
 {
 
@@ -80,7 +81,6 @@ struct NormalizeNFKDImpl
 template<typename NormalizeImpl>
 struct NormalizeUTF8Impl
 {
-
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
@@ -94,7 +94,6 @@ struct NormalizeUTF8Impl
             throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (getNormalizer): {}", u_errorName(err));
 
         res_offsets.resize(input_rows_count);
-
         res_data.reserve(data.size() * 2);
 
         ColumnString::Offset current_from_offset = 0;
@@ -107,48 +106,51 @@ struct NormalizeUTF8Impl
         {
             size_t from_size = offsets[i] - current_from_offset;
 
-            from_uchars.resize(from_size);
-            int32_t from_code_points = 0;
-            u_strFromUTF8(
-                from_uchars.data(),
-                from_uchars.size(),
-                &from_code_points,
-                reinterpret_cast<const char*>(&data[current_from_offset]),
-                from_size,
-                &err);
-            if (U_FAILURE(err))
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
+            if (from_size > 0)
+            {
+                from_uchars.resize(from_size);
+                int32_t from_code_points = 0;
+                u_strFromUTF8(
+                    from_uchars.data(),
+                    from_uchars.size(),
+                    &from_code_points,
+                    reinterpret_cast<const char*>(&data[current_from_offset]),
+                    from_size,
+                    &err);
+                if (U_FAILURE(err))
+                    throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
 
-            to_uchars.resize(from_code_points * NormalizeImpl::expansionFactor);
+                to_uchars.resize(from_code_points * NormalizeImpl::expansionFactor);
 
-            int32_t to_code_points = unorm2_normalize(
-                normalizer,
-                from_uchars.data(),
-                from_code_points,
-                to_uchars.data(),
-                to_uchars.size(),
-                &err);
-            if (U_FAILURE(err))
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
+                int32_t to_code_points = unorm2_normalize(
+                    normalizer,
+                    from_uchars.data(),
+                    from_code_points,
+                    to_uchars.data(),
+                    to_uchars.size(),
+                    &err);
+                if (U_FAILURE(err))
+                    throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
 
-            size_t max_to_size = current_to_offset + 4 * to_code_points;
-            if (res_data.size() < max_to_size)
-                res_data.resize(max_to_size);
+                size_t max_to_size = current_to_offset + 4 * to_code_points;
+                if (res_data.size() < max_to_size)
+                    res_data.resize(max_to_size);
 
-            int32_t to_size = 0;
-            u_strToUTF8(
-                reinterpret_cast<char*>(&res_data[current_to_offset]),
-                res_data.size() - current_to_offset,
-                &to_size,
-                to_uchars.data(),
-                to_code_points,
-                &err);
-            if (U_FAILURE(err))
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strToUTF8): {}", u_errorName(err));
+                int32_t to_size = 0;
+                u_strToUTF8(
+                    reinterpret_cast<char*>(&res_data[current_to_offset]),
+                    res_data.size() - current_to_offset,
+                    &to_size,
+                    to_uchars.data(),
+                    to_code_points,
+                    &err);
+                if (U_FAILURE(err))
+                    throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strToUTF8): {}", u_errorName(err));
 
-            current_to_offset += to_size;
+                current_to_offset += to_size;
+            }
+
             res_offsets[i] = current_to_offset;
-
             current_from_offset = offsets[i];
         }
 
