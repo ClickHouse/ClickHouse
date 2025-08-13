@@ -155,6 +155,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_table_num_to_throw;
     extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace ErrorCodes

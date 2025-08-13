@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -29,6 +30,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -88,13 +94,14 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
+        , context(Context::createCopy(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -312,7 +319,12 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                {
+                    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
 
                 ++rows_count;
             }
@@ -327,6 +339,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;

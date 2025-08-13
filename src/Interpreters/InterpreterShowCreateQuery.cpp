@@ -13,12 +13,18 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace ErrorCodes
@@ -103,7 +109,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
 
     // TODO It's possible to create option to display UUIDs of columns similar to show_table_uuid_in_table_create_query_if_not_nil
     // disable dictionaries
-    if (query_ptr->as<ASTShowCreateTableQuery>())
+    if (query_ptr->as<ASTShowCreateTableQuery>() && getContext()->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.resetColumnUUIDs();
