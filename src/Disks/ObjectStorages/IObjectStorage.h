@@ -127,12 +127,14 @@ struct RelativePathWithMetadata
 
     virtual ~RelativePathWithMetadata() = default;
 
+
     virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
     virtual std::string getPath() const { return relative_path; }
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual bool hasPositionDeleteTransformer() const { return false; }
 };
 
 struct ObjectKeyWithMetadata
