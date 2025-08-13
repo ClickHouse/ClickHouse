@@ -41,9 +41,9 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// If working buffer is empty then the next nextImpl() call will have to send a new read
-    /// request anyway, seeking doesn't make it more expensive.
-    return available() == 0 || last_read_hit_cache;
+    /// Seek is cheap in the sense that seek()+nextImpl() is never much slower than ignore()+nextImpl()
+    /// (which is what the caller cares about).
+    return true;
 }
 
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
