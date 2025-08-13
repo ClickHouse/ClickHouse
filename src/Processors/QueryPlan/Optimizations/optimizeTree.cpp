@@ -120,7 +120,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -153,15 +153,6 @@ void optimizeTreeSecondPass(
 
         auto & frame = stack.back();
 
-        if (optimization_settings.enable_join_runtime_filters && frame.next_child == 0)
-        {
-            tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
-            /// Re-run filter push down optimizations to move runtime filter as deep in the tree as possible
-            tryMergeExpressions(frame.node, nodes, {});
-            tryMergeFilters(frame.node, nodes, {});
-            tryPushDownFilter(frame.node, nodes, {});
-        }
-
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
@@ -177,13 +168,30 @@ void optimizeTreeSecondPass(
     calculateHashTableCacheKeys(root);
 
     stack.push_back({.node = &root});
+    bool join_runtime_filters_were_added = false;
     while (!stack.empty())
     {
+        /// Re-run optimizePrewhere if join runtime filters were added
+        if (optimization_settings.enable_join_runtime_filters && optimization_settings.optimize_prewhere && join_runtime_filters_were_added)
+            optimizePrewhere(stack, nodes);
+
         auto & frame = stack.back();
 
         if (frame.next_child == 0)
         {
+            /// Re-run filter push down optimizations to move newly added runtime filter as deep in the tree as possible
+            if (optimization_settings.enable_join_runtime_filters && join_runtime_filters_were_added)
+            {
+                tryMergeExpressions(frame.node, nodes, {});
+                tryMergeFilters(frame.node, nodes, {});
+                tryPushDownFilter(frame.node, nodes, {});
+            }
+
             const auto rhs_estimation = optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+
+            if (optimization_settings.enable_join_runtime_filters)
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
+
             bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, rhs_estimation);
             if (!has_join_logical)
                 optimizeJoinLegacy(*frame.node, nodes, optimization_settings);

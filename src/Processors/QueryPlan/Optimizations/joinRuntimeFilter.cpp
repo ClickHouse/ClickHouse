@@ -44,16 +44,16 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
     return condition;
 }
 
-void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
-        return;
+        return false;
 
     /// Joining two sources?
     if (node.children.size() != 2)
-        return;
+        return false;
 
     /// Check if join can do runtime filtering on left table
     const auto & join_info = join_step->getJoinInfo();
@@ -62,7 +62,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global) ||
         !join_info.expression.disjunctive_conditions.empty())
     {
-        return;
+        return false;
     }
 
     QueryPlan::Node * source_a = node.children[0];
@@ -75,7 +75,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     for (const auto & predicate : join_condition.predicates)
     {
         if (predicate.op != PredicateOperator::Equals)
-            return;
+            return false;
 
         join_keys_a.push_back(predicate.left_node.getColumn());
         join_keys_b.push_back(predicate.right_node.getColumn());
@@ -192,6 +192,8 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     node.children = {apply_filter_a_node, build_fliter_b_node};
+
+    return true;
 }
 
 }
