@@ -16,7 +16,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
-#include <AggregateFunctions/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
 #include <absl/container/flat_hash_map.h>
 

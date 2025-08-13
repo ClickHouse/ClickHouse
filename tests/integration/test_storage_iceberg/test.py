@@ -530,11 +530,13 @@ def test_delete_files(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
 
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_position_deletes(started_cluster, storage_type):
+def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps};")
 
     spark.sql(
         f"""

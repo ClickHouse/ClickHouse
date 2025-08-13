@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Any
 
-from ci.jobs.scripts.integration_test_images import get_docker_env
+from integration_test_images import get_docker_env
 
 
 def random_str(length: int = 6) -> str:
