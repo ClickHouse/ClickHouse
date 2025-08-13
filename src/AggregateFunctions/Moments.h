@@ -439,7 +439,7 @@ struct OneSampleTTestMoments
 
         boost::math::students_t dist(degrees_of_freedom);
         Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
-        
+
         Float64 ci_low = sample_mean - t * standard_error;
         Float64 ci_high = sample_mean + t * standard_error;
 
