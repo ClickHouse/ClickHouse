@@ -1,7 +1,7 @@
 #pragma once
 
-#include "PolygonDictionary.h"
-#include "PolygonDictionaryUtils.h"
+#include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/PolygonDictionaryUtils.h>
 
 #include <vector>
 

@@ -70,6 +70,9 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
+    if (all_mark_ranges.getNumberOfMarks() == 0)
+        return;
+
     try
     {
         /// Start prefetches for all columns. But don't deserialize prefixes, because it can be a heavy operation
@@ -106,7 +109,9 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         ? settings.read_settings.remote_fs_prefetch
         : settings.read_settings.local_fs_prefetch;
 
-    if (!do_prefetch)
+    if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
+        return;
+    if (settings.filesystem_prefetches_limit && num_columns > settings.filesystem_prefetches_limit)
         return;
 
     if (deserialize_prefixes)
@@ -380,7 +385,7 @@ void MergeTreeReaderWide::deserializePrefix(
                 return;
 
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
-            if (!streams.contains(*stream_name))
+            if (stream_name && !streams.contains(*stream_name))
                 addStream(substream_path, *stream_name);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);

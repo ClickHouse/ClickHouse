@@ -31,6 +31,7 @@
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
@@ -629,7 +630,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
-            .source_access_type = AccessType::POSTGRES,
+            .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
         });
 }

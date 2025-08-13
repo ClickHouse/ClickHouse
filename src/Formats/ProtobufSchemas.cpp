@@ -87,11 +87,16 @@ public:
 
 private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
-    void AddError(const String & filename, int line, int column, const String & message) override
+    void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override
     {
         /// Protobuf library code is not exception safe, we should
         /// remember the error and throw it later from our side.
-        error = ErrorInfo{filename, line, column, message};
+        error = ErrorInfo{
+            std::string(filename),
+            line,
+            column,
+            std::string(message),
+        };
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;

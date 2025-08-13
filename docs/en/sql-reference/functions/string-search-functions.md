@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Searching in Strings'
-sidebar_label: 'Searching in Strings'
-sidebar_position: 160
+sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
 ---
@@ -747,6 +746,152 @@ Query:
 
 ```sql
 SELECT multiSearchAnyCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x68']);
+```
+
+Result:
+
+```response
+1
+```
+
+## searchAny {#searchany}
+
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
+:::
+
+Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
+
+**Syntax**
+
+```sql
+searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
+```
+
+**Parameters**
+
+- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+:::note
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
+:::
+
+The `input` string is tokenized by the tokenizer from the index definition.
+
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
+
+**Returned value**
+
+- 1, if there was at least one match.
+- 0, otherwise.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+3
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+```
+
+Result:
+
+```response
+3
+```
+
+## searchAll {#searchall}
+
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
+:::
+
+Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
+
+**Syntax**
+
+```sql
+searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
+```
+
+**Parameters**
+
+- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+:::note
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
+:::
+
+The `input` string is tokenized by the tokenizer from the index definition.
+
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
+
+**Returned value**
+
+- 1, if all needles match.
+- 0, otherwise.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+1
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
@@ -1559,6 +1704,11 @@ Result:
 
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
+The behavior of this function depends on the ClickHouse version:
+- in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
+- in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
+  The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
+
 **Syntax**
 
 ```sql
@@ -1771,7 +1921,7 @@ Query:
 **Examples**
 
 ```sql
-select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
@@ -1806,7 +1956,7 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 Query:
 
 ```sql
-select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:
@@ -1961,3 +2111,13 @@ SELECT hasTokenCaseInsensitiveOrNull('Hello World','hello,world');
 ```response
 null
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->
+

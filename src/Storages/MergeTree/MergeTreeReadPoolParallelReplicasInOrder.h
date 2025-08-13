@@ -30,6 +30,7 @@ public:
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
 private:
+    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
     const bool has_limit_below_one_block;

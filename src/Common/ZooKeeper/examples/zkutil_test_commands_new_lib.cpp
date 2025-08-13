@@ -3,6 +3,7 @@
 #include <Poco/Event.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
 #include <memory>

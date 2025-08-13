@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS test_parallel_replicas_settings;
 CREATE TABLE test_parallel_replicas_settings (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
 INSERT INTO test_parallel_replicas_settings SELECT * FROM numbers(10);

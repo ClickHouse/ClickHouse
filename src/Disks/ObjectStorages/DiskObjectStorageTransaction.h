@@ -29,7 +29,7 @@ public:
     /// Action to execute after metadata transaction successfully committed.
     /// Useful when it's impossible to revert operation
     /// like removal of blobs. Such implementation can lead to garbage.
-    virtual void finalize() = 0;
+    virtual void finalize(StoredObjects & to_remove) = 0;
     virtual ~IDiskObjectStorageOperation() = default;
 
     virtual std::string getInfoForLog() const = 0;
@@ -59,24 +59,21 @@ protected:
 
     MetadataTransactionPtr metadata_transaction;
 
-    /// TODO we can get rid of this params
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
-
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
+
+    bool is_committed = false;
 
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
+        IMetadataStorage & metadata_storage_);
 
-    void commit() override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
     void undo() override;
 
     void createDirectory(const std::string & path) override;
@@ -125,19 +122,20 @@ public:
     void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
+
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
 {
-    IObjectStorage& destination_object_storage;
-    IMetadataStorage& destination_metadata_storage;
+    IObjectStorage & destination_object_storage;
+    IMetadataStorage & destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        IObjectStorage& destination_object_storage,
-        IMetadataStorage& destination_metadata_storage,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
+        IObjectStorage & destination_object_storage,
+        IMetadataStorage & destination_metadata_storage);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

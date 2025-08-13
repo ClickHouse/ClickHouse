@@ -126,8 +126,8 @@ bool isInnerTable(const QualifiedTableName & table_name)
 
 bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
-    /// We skip inner tables of materialized views.
-    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
+    /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
 }
 
 }

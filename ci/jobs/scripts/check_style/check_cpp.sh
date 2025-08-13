@@ -13,8 +13,8 @@
 #  and then to run formatter only for the specified files.
 
 LC_ALL="en_US.UTF-8"
-ROOT_PATH="."
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h'
+ROOT_PATH=$(git rev-parse --show-toplevel)
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -33,10 +33,11 @@ function in_array()
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE |
+    grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"'
+    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -45,12 +46,14 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
+result=$(find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE |
-    xargs grep $@ -P '}\s*//+\s*namespace\s*'
+    xargs grep $@ -P '}\s*//+\s*namespace\s*' 2>/dev/null)
 
-# Broken symlinks
-find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
+if [ -n "$result" ]; then
+    echo "$result"
+    echo "^ Found unnecessary namespace comments"
+fi
 
 # Duplicated or incorrect setting declarations
 bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
@@ -68,6 +71,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementNoTrace
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -220,7 +224,6 @@ std_cerr_cout_excludes=(
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
-    src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
     src/IO/Ask.cpp
 )
@@ -309,7 +312,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep 
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | grep -v StorageSystemContributors.generated.cpp | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
 
 # Orphaned header files.
-join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
+join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils,tests/lexer} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
     grep . && echo '^ Found orphan header files.'
 
 # Don't allow dynamic compiler check with CMake, because we are using hermetic, reproducible, cross-compiled, static (TLDR, good) builds.
@@ -318,7 +321,7 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -327,8 +330,8 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
 
 PATTERN="allow_";
-DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
-[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/ci/jobs/scripts/check_style/experimental_settings_ignore.txt | sort -u));
+[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to ci/jobs/scripts/check_style/experimental_settings_ignore.txt"
 
 # Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
 find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
@@ -341,3 +344,42 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
+
+# Forbid using quotes for includes (except for autogenerated files)
+QUOTE_EXCLUSIONS=(
+    --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
+)
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
+  grep -vP $EXCLUDE |
+  xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | \
+  grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
+  xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
+
+# Context.h (and a few similar headers) is included in many parts of the
+# codebase, so any modifications to it trigger a large-scale recompilation.
+# Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
+# headers.
+#
+# In most cases, we can include Context_fwd.h instead, as we usually do not
+# need the full definition of the Context structure in headers - only declaration.
+CONTEXT_H_EXCLUDES=(
+    # For now we have few exceptions (somewhere due to templated code, in other
+    # places just because for now it does not worth it, i.e. the header is not
+    # too generic):
+    --exclude "$ROOT_PATH/src/BridgeHelper/XDBCBridgeHelper.h"
+    --exclude "$ROOT_PATH/src/Interpreters/AddDefaultDatabaseVisitor.h"
+    --exclude "$ROOT_PATH/src/TableFunctions/ITableFunctionCluster.h"
+    --exclude "$ROOT_PATH/src/Core/PostgreSQLProtocol.h"
+    --exclude "$ROOT_PATH/src/Client/ClientBase.h"
+    --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
+    --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
+
+    # For functions we allow it for regular functions (due to lots of
+    # templates), but forbid it in interface (IFunction) part.
+    --exclude "$ROOT_PATH/src/Functions/*"
+    --include "$ROOT_PATH/src/Functions/IFunction*"
+)
+find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+
+exit 0

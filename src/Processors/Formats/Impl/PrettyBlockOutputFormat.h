@@ -27,7 +27,7 @@ public:
     };
 
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
     ~PrettyBlockOutputFormat() override;
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
@@ -88,7 +88,7 @@ private:
 
     /// For mono_block == true only
     Chunk mono_chunk;
-    Widths prev_chunk_name_widths;
+    Widths prev_chunk_max_widths;
     bool had_footer = false;
 
     /// Implements squashing of chunks by time

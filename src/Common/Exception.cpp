@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -33,10 +34,12 @@ namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
+    extern const int AVRO_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
+    extern const int POTENTIALLY_BROKEN_DATA_PART;
 }
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
@@ -55,38 +58,54 @@ void abortOnFailedAssertion(const String & description)
 }
 
 bool terminate_on_any_exception = false;
+std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
-std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+
+constexpr bool debug_or_sanitizer_build =
+#ifdef DEBUG_OR_SANITIZER_BUILD
+true
+#else
+false
+#endif
+;
+
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-static size_t handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+static size_t handle_error_code(
+    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
+            abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
     }
-#endif
 
     if (Exception::callback)
-        Exception::callback(msg, code, remote, trace);
+    {
+        /// Only anonymized exception message (format_string) is send to the monitoring callback,
+        /// So it does not include customer queries.
+        Exception::callback(format_string, code, remote, trace);
+    }
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string format_string_)
     : msg(std::move(msg_))
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
@@ -101,7 +120,8 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
+    message_format_string = msg_masked.format_string;
+    error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -111,7 +131,8 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(message(), code, remote, getStackFramePointers());
+    message_format_string = msg_masked.format_string;
+    error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -128,8 +149,17 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 #endif
 }
 
+static int getCodeForSTDException(const std::exception & exc)
+{
+    /// This looks strange, but avoids a direct dependency on the external library.
+    std::string name = demangle(typeid(exc).name());
+    if (name.starts_with("avro::"))
+        return ErrorCodes::AVRO_EXCEPTION;
+    return ErrorCodes::STD_EXCEPTION;
+}
+
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), getCodeForSTDException(exc))
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
@@ -263,29 +293,71 @@ void Exception::clearThreadFramePointers()
         thread_frame_pointers.frame_pointers.clear();
 }
 
+bool Exception::isErrorCodeImportant() const
+{
+    const int error_code = code();
+    return error_code == ErrorCodes::LOGICAL_ERROR
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART;
+}
+
+Exception::~Exception()
+try
+{
+    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    {
+        LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
+    }
+}
+catch (...) // NOLINT(bugprone-empty-catch)
+{
+}
+
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
-    if (!isLoggingEnabled())
-        return;
-
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        if (!start_of_message.empty())
-            message.text = fmt::format("{}: {}", start_of_message, message.text);
-
-        switch (level)
+        if (start_of_message.empty())
         {
-            case LogsLevel::none: break;
-            case LogsLevel::test: LOG_TEST(logger, message); break;
-            case LogsLevel::trace: LOG_TRACE(logger, message); break;
-            case LogsLevel::debug: LOG_DEBUG(logger, message); break;
-            case LogsLevel::information: LOG_INFO(logger, message); break;
-            case LogsLevel::warning: LOG_WARNING(logger, message); break;
-            case LogsLevel::error: LOG_ERROR(logger, message); break;
-            case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+            switch (level)
+            {
+                case LogsLevel::none: break;
+                case LogsLevel::test: LOG_TEST(logger, message); break;
+                case LogsLevel::trace: LOG_TRACE(logger, message); break;
+                case LogsLevel::debug: LOG_DEBUG(logger, message); break;
+                case LogsLevel::information: LOG_INFO(logger, message); break;
+                case LogsLevel::warning: LOG_WARNING(logger, message); break;
+                case LogsLevel::error: LOG_ERROR(logger, message); break;
+                case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+            }
         }
+        else
+        {
+            switch (level)
+            {
+                case LogsLevel::none: break;
+                case LogsLevel::test: LOG_TEST(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::trace: LOG_TRACE(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::debug: LOG_DEBUG(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::information: LOG_INFO(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::warning: LOG_WARNING(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::error: LOG_ERROR(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::fatal: LOG_FATAL(logger, "{}: {}", start_of_message, message.text); break;
+            }
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
 
+    /// Mark the exception as logged.
+    try
+    {
+        throw;
+    }
+    catch (Exception & e)
+    {
+        e.markAsLogged();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -294,9 +366,6 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
-    if (!isLoggingEnabled())
-        return;
-
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///
@@ -498,20 +567,21 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        try
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            if (!with_stacktrace)
-                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
+            try
+            {
+                throw;
+            }
+            catch (const std::logic_error &)
+            {
+                if (!with_stacktrace)
+                    stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
 
-            abortOnFailedAssertion(stream.str());
+                abortOnFailedAssertion(stream.str());
+            }
+            catch (...) {} // NOLINT(bugprone-empty-catch)
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-#endif
     }
     catch (...)
     {
@@ -593,7 +663,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
     }
 }
 
-void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message)
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
     try
     {
@@ -601,7 +671,7 @@ void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string &
     }
     catch (...)
     {
-        tryLogCurrentException(logger, start_of_message);
+        tryLogCurrentException(logger, start_of_message, level);
     }
 }
 
@@ -612,6 +682,12 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
+std::string getExceptionMessageForLogging(Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    e.markAsLogged();
     return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
 }
 

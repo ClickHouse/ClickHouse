@@ -37,6 +37,7 @@ set(BSON_HAVE_RAND_R 1)
 set(BSON_HAVE_STRINGS_H 1)
 set(BSON_HAVE_STRLCPY 0)
 set(BSON_HAVE_STRNLEN 1)
+set(BSON_HAVE_ALIGNED_ALLOC 1)
 set(BSON_HAVE_STDBOOL_H 1)
 set(BSON_HAVE_CLOCK_GETTIME 1)
 
@@ -77,6 +78,7 @@ set(MONGOC_ENABLE_SSL_LIBRESSL 0)
 set(MONGOC_ENABLE_CRYPTO_LIBCRYPTO 0)
 set(MONGOC_ENABLE_CLIENT_SIDE_ENCRYPTION 0)
 set(MONGOC_HAVE_ASN1_STRING_GET0_DATA 0)
+set(MONGOC_HAVE_BCRYPT_PBKDF2 1)
 if(ENABLE_SSL)
     set(MONGOC_ENABLE_SSL 1)
     set(MONGOC_ENABLE_CRYPTO 1)
@@ -108,8 +110,8 @@ configure_file(
         ${LIBBSON_BINARY_DIR}/bson/bson-version.h
 )
 
-set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common")
-set(COMMON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/common")
+set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common/src")
+set(COMMON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/common/src")
 file(GLOB_RECURSE COMMON_SOURCES "${COMMON_SOURCE_DIR}/*.c")
 configure_file(
         ${COMMON_SOURCE_DIR}/common-config.h.in
@@ -118,6 +120,7 @@ configure_file(
 add_library(_libbson ${LIBBSON_SOURCES} ${COMMON_SOURCES})
 add_library(ch_contrib::libbson ALIAS _libbson)
 target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR} ${COMMON_BINARY_DIR})
+target_include_directories(_libbson PRIVATE ${COMMON_SOURCE_DIR}/src)
 target_compile_definitions(_libbson PRIVATE BSON_COMPILATION)
 if(OS_LINUX)
     target_compile_definitions(_libbson PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)

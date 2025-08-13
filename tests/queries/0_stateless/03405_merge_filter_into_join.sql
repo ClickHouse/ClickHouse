@@ -1,4 +1,4 @@
-CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=Memory;
+CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO users VALUES (1231, 'John', 33);
 INSERT INTO users VALUES (6666, 'Ksenia', 48);
@@ -9,6 +9,7 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 set query_plan_join_swap_table = 0;
 set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
+set parallel_hash_join_threshold = 0;
 
 -- { echoOn }
 

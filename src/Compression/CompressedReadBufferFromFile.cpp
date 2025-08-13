@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "CompressedReadBufferFromFile.h"
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Common/logger_useful.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -101,6 +101,11 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+off_t CompressedReadBufferFromFile::getPosition() const
+{
+    return file_in.getPosition();
 }
 
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)

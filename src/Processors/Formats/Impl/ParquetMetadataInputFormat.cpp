@@ -1,4 +1,4 @@
-#include "ParquetMetadataInputFormat.h"
+#include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
 #if USE_PARQUET
 
@@ -20,7 +20,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -136,7 +136,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     return parquet::ReadMetaData(arrow_file);
 }
 
-ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
@@ -504,15 +504,13 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
         [](ReadBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            const ReadSettings &,
-            bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t /* max_parsing_threads */)
-        {
-            return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
-        });
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings &,
+           bool /* is_remote_fs */,
+           FormatParserSharedResourcesPtr,
+           FormatFilterInfoPtr) -> InputFormatPtr
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

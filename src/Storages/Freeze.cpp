@@ -2,6 +2,7 @@
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -137,19 +138,17 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                         config_key);
     }
 
-    auto disks_map = local_context->getDisksMap();
-    Disks disks;
-    for (auto & [name, disk]: disks_map)
-    {
-        disks.push_back(disk);
-    }
     auto backup_path = fs::path(backup_directory_prefix) / escapeForFileName(backup_name);
     auto store_paths = {backup_path / "store", backup_path / "data"};
 
     PartitionCommandsResultInfo result_info;
 
-    for (const auto & disk: disks)
+    auto disks_map = local_context->getDisksMap();
+    for (auto & [_, disk] : disks_map)
     {
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
         for (const auto & store_path : store_paths)
         {
             if (!disk->existsDirectory(store_path))
@@ -164,9 +163,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
                         [](const String &) { return true; }, backup_name, {disk}, table_directory);
                     for (auto & command_result : current_result_info)
-                    {
                         command_result.command_type = "SYSTEM UNFREEZE";
-                    }
                     result_info.insert(
                         result_info.end(),
                         std::make_move_iterator(current_result_info.begin()),
@@ -190,7 +187,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     return result;
 }
 
-bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper)
+bool Unfreezer::removeFrozenPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper)
 {
     if (disk->supportZeroCopyReplication())
     {
@@ -231,7 +228,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
-            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
+            bool keep_shared = removeFrozenPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
                 .command_type = "UNFREEZE PART",

@@ -218,7 +218,7 @@ protected:
                 break;
             if (f->name() == "headers")
                 result.nested_maps.push_back(f->name());
-            else if (f->name() != "extra_credentials")
+            else if (f->name() != "extra_credentials" && f->name() != "equals")
                 break;
             count -= 1;
         }
@@ -236,6 +236,8 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+
+        findSecretNamedArgument("secret_access_key", url_arg_idx);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -549,6 +551,8 @@ protected:
             return;
         }
 
+        findSecretNamedArgument("secret_access_key", 0);
+
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
         /// S3('url', 'format', 'compression' [, extra_credentials(..)] [, headers(..)])
@@ -628,6 +632,10 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
         }
+        else if (engine_name == "DataLakeCatalog")
+        {
+            findDataLakeCatalogSecretArguments();
+        }
     }
 
     void findMySQLDatabaseSecretArguments()
@@ -656,6 +664,14 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             markSecretArgument(2);
         }
+    }
+
+    void findDataLakeCatalogSecretArguments()
+    {
+        /// datalake catalog should support different storage types,
+        /// we need a function to check if the url is S3 or Azure.
+        /// right now we assume it's a S3 url
+        findS3DatabaseSecretArguments();
     }
 
     void findBackupNameSecretArguments()

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-async-insert
 # Tag no-fasttest: interserver mode requires SSL
+# Tag no-async-insert: last check which counts queries from query log doesnt count query with query_kind: AsyncInsertFlush
 #
 # Test that checks that some of ClientInfo correctly passed in inter-server mode.
 # NOTE: we need .sh test (.sql is not enough) because queries on remote nodes does not have current_database = currentDatabase()

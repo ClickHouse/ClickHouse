@@ -490,11 +490,12 @@ class SourceHTTPBase(ExternalSource):
             [
                 "bash",
                 "-c",
-                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
+                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem {logs}".format(
                     tbl=path,
                     schema=self._get_schema(),
                     host=self.docker_hostname,
                     port=self.http_port,
+                    logs='>> /var/log/clickhouse-server/http_server.py.log 2>&1'
                 ),
             ],
             detach=True,

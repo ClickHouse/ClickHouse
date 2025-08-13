@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <Common/SymbolIndex.h>
 
 
 namespace DB
@@ -103,6 +104,10 @@ void TraceCollector::run()
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const auto * object = SymbolIndex::instance().thisObject();
+#endif
+
     try
     {
         while (true)
@@ -128,7 +133,15 @@ void TraceCollector::run()
             {
                 uintptr_t addr = 0;
                 readPODBinary(addr, in);
-                trace.emplace_back(static_cast<UInt64>(addr));
+
+                /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+                uintptr_t offset = 0;
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+                    offset = uintptr_t(object->address_begin);
+#endif
+
+                trace.emplace_back(static_cast<UInt64>(addr) - offset);
             }
 
             TraceType trace_type;

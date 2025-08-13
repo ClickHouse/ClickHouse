@@ -31,7 +31,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "MergeTreeProjection"; }
+    const char * getStorageEngineName() const override { return "MergeTreeProjection"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     String projection_name;
@@ -100,7 +100,7 @@ void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
         {
             .description = "Reading directly from MergeTree projection",
             .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
-            .category = "",
+            .category = FunctionDocumentation::Category::TableFunction
         },
         .allow_readonly = true,
     });
