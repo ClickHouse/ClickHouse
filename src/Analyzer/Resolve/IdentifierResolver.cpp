@@ -564,6 +564,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
         for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
         {
+            if (table_expression_data.subcolumn_names.contains(column_name))
+                continue;
+
             Identifier column_name_identifier_without_last_part(column_name);
             Strings column_name_identifier_last_parts;
 
