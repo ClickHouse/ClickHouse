@@ -38,15 +38,16 @@ private:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     static void mergeFilter(BloomFilter & destination, const BloomFilter & source)
     {
-        auto & destination_bytes = destination.getFilter();
-        const auto & source_bytes = source.getFilter();
-        if (destination_bytes.size() != source_bytes.size())
+        auto & destination_words = destination.getFilter();
+        const auto & source_words = source.getFilter();
+        constexpr size_t word_size = sizeof(source_words.front());
+        if (destination_words.size() != source_words.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot merge Bloom Filters of different sizes: {} and {}",
-                destination_bytes.size(), source_bytes.size());
+                destination_words.size() * word_size, source_words.size() * word_size);
 
-        for (size_t i = 0; i < destination_bytes.size(); ++i)
-            destination_bytes[i] |= source_bytes[i];
+        for (size_t i = 0; i < destination_words.size(); ++i)
+            destination_words[i] |= source_words[i];
     }
 
     mutable SharedMutex rw_lock;
