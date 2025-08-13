@@ -99,13 +99,11 @@ WITH RECURSIVE x AS (SELECT 1 AS n UNION ALL SELECT sum(n) FROM x)
 WITH RECURSIVE x AS (SELECT 1 AS n UNION ALL SELECT n+1 FROM x ORDER BY 1)
   SELECT * FROM x FORMAT NULL SETTINGS max_recursive_cte_evaluation_depth = 5; -- { serverError TOO_DEEP_RECURSION }
 
--- FIXME: indeterministic results
---
 -- target list has a recursive query name
--- WITH RECURSIVE x AS (SELECT 1 AS id
---     UNION ALL
---     SELECT (SELECT * FROM x) FROM x WHERE id < 5
--- ) SELECT * FROM x; -- { serverError UNKNOWN_TABLE, CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+WITH RECURSIVE x AS (SELECT 1 AS id
+    UNION ALL
+    SELECT (SELECT * FROM x) FROM x WHERE id < 5
+) SELECT * FROM x; -- { serverError UNKNOWN_TABLE }
 
 -- mutual recursive query (not implemented)
 WITH RECURSIVE

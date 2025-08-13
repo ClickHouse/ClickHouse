@@ -21,13 +21,13 @@ class ArrowColumnToCHColumn;
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
+    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
     void resetParser() override;
 
-    const BlockMissingValues * getMissingValues() const override;
+    const BlockMissingValues & getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -75,7 +75,6 @@ private:
     void initializeIfNeeded();
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
     std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };

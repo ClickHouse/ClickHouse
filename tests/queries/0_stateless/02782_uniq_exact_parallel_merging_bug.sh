@@ -17,6 +17,3 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "insert into ${CLICKHOUSE_DATABASE}.t select number%10==0 ? toString(number) : '' from numbers_mt(1e7)"
 
 $CLICKHOUSE_BENCHMARK -q "select count(distinct s) from ${CLICKHOUSE_DATABASE}.t settings max_memory_usage = '50Mi'" --ignore-error -c 16 -i 1000 2>/dev/null
-
-# if clickhouse-benchmark returns non-zero exit code, if will be propagated and the test will be considered as failed
-exit 0

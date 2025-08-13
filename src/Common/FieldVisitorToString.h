@@ -29,10 +29,6 @@ public:
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
-    String operator() (const Decimal32 & x, UInt32 scale) const;
-    String operator() (const Decimal64 & x, UInt32 scale) const;
-    String operator() (const Decimal128 & x, UInt32 scale) const;
-    String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
     String operator() (const bool & x) const;
@@ -41,8 +37,5 @@ public:
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String convertFieldToString(const Field & field);
-
-/// Convert Object to String without quotes.
-String convertObjectToString(const Object & object);
 
 }

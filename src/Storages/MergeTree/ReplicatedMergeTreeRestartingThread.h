@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <base/types.h>
 #include <thread>
 #include <atomic>
@@ -25,9 +25,16 @@ class ReplicatedMergeTreeRestartingThread
 public:
     explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-    void start(bool schedule);
+    void start(bool schedule = true)
+    {
+        LOG_TRACE(log, "Starting restating thread, schedule: {}", schedule);
+        if (schedule)
+            task->activateAndSchedule();
+        else
+            task->activate();
+    }
 
-    void wakeup();
+    void wakeup() { task->schedule(); }
 
     void shutdown(bool part_of_full_shutdown);
 
@@ -42,7 +49,7 @@ private:
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     UInt32 consecutive_check_failures = 0;  /// How many consecutive checks have failed
     bool first_time = true;                 /// Activate replica for the first time.

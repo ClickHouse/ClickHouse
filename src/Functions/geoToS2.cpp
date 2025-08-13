@@ -9,7 +9,7 @@
 #include <Common/NaNUtils.h>
 #include <base/range.h>
 
-#include <Functions/s2_fwd.h>
+#include "s2_fwd.h"
 
 class S2CellId;
 
@@ -63,11 +63,6 @@ public:
                     arg->getName(), i, getName());
         }
 
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt64>();
     }
 

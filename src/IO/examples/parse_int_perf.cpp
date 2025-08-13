@@ -1,6 +1,5 @@
 #include <iostream>
 #include <iomanip>
-#include <vector>
 #include <pcg_random.hpp>
 
 #include <base/types.h>
@@ -63,7 +62,8 @@ int main(int argc, char ** argv)
         formatted.reserve(n * 21);
 
         {
-            auto wb = DB::WriteBufferFromVector<std::vector<char>>(formatted);
+            DB::WriteBufferFromVector wb(formatted);
+        //    DB::CompressedWriteBuffer wb2(wb1);
             Stopwatch watch;
 
             UInt64 tsc = rdtsc();
@@ -92,6 +92,7 @@ int main(int argc, char ** argv)
 
         {
             DB::ReadBuffer rb(formatted.data(), formatted.size(), 0);
+        //    DB::CompressedReadBuffer rb(rb_);
             Stopwatch watch;
 
             for (size_t i = 0; i < n; ++i)

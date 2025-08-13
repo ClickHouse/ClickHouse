@@ -1,7 +1,5 @@
-#include <Access/Credentials.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 
-#include <Core/Types_fwd.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>
@@ -85,11 +83,6 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
         res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
         parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
         return res;
     }
 
@@ -108,12 +101,12 @@ namespace
 
         if (type == "expose_metrics")
             return parseExposeMetricsConfig(config, config_prefix);
-        if (type == "remote_write")
+        else if (type == "remote_write")
             return parseRemoteWriteConfig(config, config_prefix);
-        if (type == "remote_read")
+        else if (type == "remote_read")
             return parseRemoteReadConfig(config, config_prefix);
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -129,7 +122,8 @@ namespace
     {
         if (for_keeper)
             return std::make_unique<KeeperPrometheusMetricsWriter>();
-        return std::make_unique<PrometheusMetricsWriter>();
+        else
+            return std::make_unique<PrometheusMetricsWriter>();
     }
 
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.
@@ -137,15 +131,14 @@ namespace
         IServer & server,
         const AsynchronousMetrics & async_metrics,
         const PrometheusRequestHandlerConfig & config,
-        bool for_keeper,
-        std::unordered_map<String, String> headers = {})
+        bool for_keeper)
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
         auto metric_writer = createPrometheusMetricWriter(for_keeper);
-        auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [&server, &async_metrics, config, metric_writer]() -> std::unique_ptr<PrometheusRequestHandler>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
+            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer);
         };
         return std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     }
@@ -207,13 +200,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const AsynchronousMetrics & asynchronous_metrics,
-    std::unordered_map<String, String> & common_headers)
+    const AsynchronousMetrics & asynchronous_metrics)
 {
-    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
-
     auto parsed_config = parseExposeMetricsConfig(config, config_prefix + ".handler");
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
     return handler;

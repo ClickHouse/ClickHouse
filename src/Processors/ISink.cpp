@@ -1,10 +1,10 @@
 #include <Processors/ISink.h>
-#include <Processors/Port.h>
+
 
 namespace DB
 {
 
-ISink::ISink(SharedHeader header)
+ISink::ISink(Block header)
     : IProcessor({std::move(header)}, {}), input(inputs.front())
 {
 }

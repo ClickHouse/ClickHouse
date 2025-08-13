@@ -4,11 +4,9 @@
 # pylint: disable=redefined-outer-name
 
 import logging
-
 import pytest
-
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 upstream = cluster.add_instance("upstream", use_old_analyzer=True)
@@ -156,13 +154,6 @@ def test_aggregate_states(start_cluster):
 
 
 def test_string_functions(start_cluster):
-    if (
-        upstream.is_built_with_thread_sanitizer()
-        or upstream.is_built_with_memory_sanitizer()
-        or upstream.is_built_with_address_sanitizer()
-    ):
-        pytest.skip("The test is slow in builds with sanitizer")
-
     functions = backward.query(
         """
         SELECT if(NOT empty(alias_to), alias_to, name)

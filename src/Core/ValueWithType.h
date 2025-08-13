@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
+
 namespace llvm
 {
     class Value;
@@ -7,9 +9,6 @@ namespace llvm
 
 namespace DB
 {
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// LLVM value with its data type
 struct ValueWithType

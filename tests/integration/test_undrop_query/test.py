@@ -1,8 +1,7 @@
+import pytest
+import uuid
 import logging
 import time
-import uuid
-
-import pytest
 
 from helpers.cluster import ClickHouseCluster
 

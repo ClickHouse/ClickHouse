@@ -12,7 +12,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
@@ -190,7 +189,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        const IColumn * nested[num_arguments];
 
         for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
@@ -216,7 +215,7 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = begin; i < end; ++i)
         {
-            nested_func->add(nested_state, nested.data(), i, arena);
+            nested_func->add(nested_state, nested, i, arena);
             nested_state += nested_size_of_data;
         }
     }

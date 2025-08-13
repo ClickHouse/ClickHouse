@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   dotnet1:
     image: clickhouse/dotnet-client:${DOCKER_DOTNET_CLIENT_TAG:-latest}

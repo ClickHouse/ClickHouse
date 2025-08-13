@@ -1,13 +1,10 @@
 ---
-description: 'When writing to a `Null` table, data is ignored. When reading from a
-  `Null` table, the response is empty.'
-sidebar_label: 'Null'
+slug: /en/engines/table-engines/special/null
 sidebar_position: 50
-slug: /engines/table-engines/special/null
-title: 'Null Table Engine'
+sidebar_label:  'Null'
 ---
 
-# `Null` table engine
+# Null Table Engine
 
 When writing to a `Null` table, data is ignored. When reading from a `Null` table, the response is empty.
 

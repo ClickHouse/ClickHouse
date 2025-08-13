@@ -1,15 +1,13 @@
-#include <Columns/IColumn.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 
 namespace DB
 {
 
-JSONObjectEachRowRowOutputFormat::JSONObjectEachRowRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
-    : JSONEachRowRowOutputFormat(out_, header_, settings_), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(*header_, settings_))
+JSONObjectEachRowRowOutputFormat::JSONObjectEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : JSONEachRowRowOutputFormat(out_, header_, settings_), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, settings_))
 {
 }
 
@@ -85,11 +83,10 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
     factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
-    factory.setContentType("JSONObjectEachRow", "application/json; charset=UTF-8");
 }
 
 }

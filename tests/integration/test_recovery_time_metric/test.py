@@ -1,7 +1,5 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import get_database_disk_name
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -41,25 +39,7 @@ def test_recovery_time_metric(start_cluster):
         """
     )
 
-    db_disk_name = get_database_disk_name(node)
-    metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='rdb' AND name='t'"
-    ).strip()
-
-    node.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "disks",
-            "-C",
-            "/etc/clickhouse-server/config.xml",
-            "--disk",
-            f"{db_disk_name}",
-            "--save-logs",
-            "--query",
-            f"remove {metadata_path}",
-        ],
-        user="root",
-    )
+    node.exec_in_container(["bash", "-c", "rm /var/lib/clickhouse/metadata/rdb/t.sql"])
 
     node.restart_clickhouse()
 

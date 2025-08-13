@@ -51,12 +51,12 @@ namespace
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
-    class SourceFromNativeStream final : public ISource
+    class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(SharedHeader header, TemporaryBlockStreamReaderHolder tmp_stream_)
-            : ISource(header)
-            , tmp_stream(std::move(tmp_stream_))
+        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
+            : ISource(tmp_stream_->getHeader())
+            , tmp_stream(tmp_stream_)
         {}
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -67,9 +67,9 @@ namespace
                 return {};
 
             auto block = tmp_stream->read();
-            if (block.empty())
+            if (!block)
             {
-                tmp_stream.reset();
+                tmp_stream = nullptr;
                 return {};
             }
             return convertToChunk(block);
@@ -78,13 +78,13 @@ namespace
         std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
     private:
-        TemporaryBlockStreamReaderHolder tmp_stream;
+        TemporaryFileStream * tmp_stream;
     };
 }
 
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
-class ConvertingAggregatedToChunksWithMergingSource final : public ISource
+class ConvertingAggregatedToChunksWithMergingSource : public ISource
 {
 public:
     static constexpr UInt32 NUM_BUCKETS = 256;
@@ -106,7 +106,7 @@ public:
 
     ConvertingAggregatedToChunksWithMergingSource(
         AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, Arena * arena_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        : ISource(params_->getHeader(), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
@@ -143,11 +143,11 @@ private:
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
-class ConvertingAggregatedToChunksSource final : public ISource
+class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
     ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
+        : ISource(params_->getHeader(), false), params(params_), variant(variant_)
     {
     }
 
@@ -188,7 +188,7 @@ private:
 };
 
 /// Reads chunks from GroupingAggregatedTransform (stored in ChunksToMerge structure) and outputs them.
-class FlattenChunksToMergeTransform final : public IProcessor
+class FlattenChunksToMergeTransform : public IProcessor
 {
 public:
     explicit FlattenChunksToMergeTransform(const Block & input_header, const Block & output_header)
@@ -272,7 +272,7 @@ private:
 /// ConvertingAggregatedToChunksWithMergingSource ->
 ///
 /// Result chunks guaranteed to be sorted by bucket number.
-class ConvertingAggregatedToChunksTransform final : public IProcessor
+class ConvertingAggregatedToChunksTransform : public IProcessor
 {
 public:
     ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
@@ -486,7 +486,7 @@ private:
 
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
@@ -520,7 +520,7 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
+AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
         std::move(header),
         std::move(params_),
@@ -534,7 +534,7 @@ AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTrans
 }
 
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header,
+    Block header,
     AggregatingTransformParamsPtr params_,
     ManyAggregatedDataPtr many_data_,
     size_t current_variant,
@@ -609,10 +609,12 @@ IProcessor::Status AggregatingTransform::prepare()
             many_data.reset();
             return Status::Finished;
         }
-
-        /// Finish data processing and create another pipe.
-        is_consume_finished = true;
-        return Status::Ready;
+        else
+        {
+            /// Finish data processing and create another pipe.
+            is_consume_finished = true;
+            return Status::Ready;
+        }
     }
 
     if (!input.hasData())
@@ -769,7 +771,7 @@ void AggregatingTransform::initGenerate()
                     if (params->final)
                     {
                         pipe.addSimpleTransform(
-                            [this](const SharedHeader & header)
+                            [this](const Block & header)
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
@@ -811,18 +813,15 @@ void AggregatingTransform::initGenerate()
 
         Pipes pipes;
         /// Merge external data from all aggregators used in query.
-        for (auto & aggregator : *params->aggregator_list_ptr)
+        for (const auto & aggregator : *params->aggregator_list_ptr)
         {
-            tmp_files = aggregator.detachTemporaryData();
-            num_streams += tmp_files.size();
+            const auto & tmp_data = aggregator.getTemporaryData();
+            for (auto * tmp_stream : tmp_data.getStreams())
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
-            for (auto & tmp_stream : tmp_files)
-            {
-                auto stat = tmp_stream.finishWriting();
-                compressed_size += stat.compressed_size;
-                uncompressed_size += stat.uncompressed_size;
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
-            }
+            num_streams += tmp_data.getStreams().size();
+            compressed_size += tmp_data.getStat().compressed_size;
+            uncompressed_size += tmp_data.getStat().uncompressed_size;
         }
 
         LOG_DEBUG(

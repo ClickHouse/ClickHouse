@@ -124,30 +124,18 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
 }
 
 
-void HTTPSession::setReceiveThrottler(const ThrottlerPtr& throttler)
-{
-	_receiveThrottler = throttler;
-	_socket.setReceiveThrottler(throttler);
-}
-
-void HTTPSession::setSendThrottler(const ThrottlerPtr& throttler)
-{
-	_sendThrottler = throttler;
-	_socket.setSendThrottler(throttler);
-}
-
 int HTTPSession::get()
 {
 	if (_pCurrent == _pEnd)
 		refill();
-
+	
 	if (_pCurrent < _pEnd)
 		return *_pCurrent++;
 	else
 		return std::char_traits<char>::eof();
 }
 
-
+	
 int HTTPSession::peek()
 {
 	if (_pCurrent == _pEnd)
@@ -159,7 +147,7 @@ int HTTPSession::peek()
 		return std::char_traits<char>::eof();
 }
 
-
+	
 int HTTPSession::read(char* buffer, std::streamsize length)
 {
 	if (_pCurrent < _pEnd)
@@ -178,17 +166,10 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 {
 	try
 	{
-		if (_sendDataHooks)
-			_sendDataHooks->atStart((int) length);
-		int result = _socket.sendBytes(buffer, (int) length);
-		if (_sendDataHooks)
-			_sendDataHooks->atFinish(result);
-		return result;
+		return _socket.sendBytes(buffer, (int) length);
 	}
 	catch (Poco::Exception& exc)
 	{
-		if (_sendDataHooks)
-			_sendDataHooks->atFail();
 		setException(exc);
 		throw;
 	}
@@ -199,17 +180,10 @@ int HTTPSession::receive(char* buffer, int length)
 {
 	try
 	{
-		if (_receiveDataHooks)
-			_receiveDataHooks->atStart(length);
-		int result = _socket.receiveBytes(buffer, length);
-		if (_receiveDataHooks)
-			_receiveDataHooks->atFinish(result);
-		return result;
+		return _socket.receiveBytes(buffer, length);
 	}
 	catch (Poco::Exception& exc)
 	{
-		if (_receiveDataHooks)
-			_receiveDataHooks->atFail();
 		setException(exc);
 		throw;
 	}
@@ -239,8 +213,6 @@ void HTTPSession::connect(const SocketAddress& address)
 	_socket.connect(address, _connectionTimeout);
 	_socket.setReceiveTimeout(_receiveTimeout);
 	_socket.setSendTimeout(_sendTimeout);
-	_socket.setReceiveThrottler(_receiveThrottler);
-	_socket.setSendThrottler(_sendThrottler);
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.
@@ -287,8 +259,6 @@ StreamSocket HTTPSession::detachSocket()
 void HTTPSession::attachSocket(const StreamSocket& socket)
 {
 	_socket = socket;
-	_socket.setReceiveThrottler(_receiveThrottler);
-	_socket.setSendThrottler(_sendThrottler);
 }
 
 

@@ -4,14 +4,12 @@
 #include <Common/ExternalModelInfo.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Poco/URI.h>
 #include <optional>
 
 namespace DB
 {
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class CatBoostLibraryBridgeHelper final : public LibraryBridgeHelper
 {

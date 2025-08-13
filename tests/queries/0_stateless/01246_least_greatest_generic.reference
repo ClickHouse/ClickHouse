@@ -5,9 +5,9 @@ z
 hello
 world
 1
-1
-inf
-inf
+\N
+\N
+nan
 inf
 -0
 123
@@ -20,4 +20,4 @@ inf
 []
 [NULL]
 [0]
-[0]
+[NULL]

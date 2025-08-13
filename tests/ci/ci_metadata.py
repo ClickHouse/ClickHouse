@@ -1,16 +1,17 @@
 from pathlib import Path
 from typing import Optional
 
-from ci_utils import GH
 from env_helper import (
-    GITHUB_REPOSITORY,
-    GITHUB_UPSTREAM_REPOSITORY,
     S3_BUILDS_BUCKET,
-    S3_BUILDS_BUCKET_PUBLIC,
     TEMP_PATH,
+    GITHUB_UPSTREAM_REPOSITORY,
+    GITHUB_REPOSITORY,
+    S3_BUILDS_BUCKET_PUBLIC,
 )
 from s3_helper import S3Helper
-from synchronizer_utils import SYNC_PR_PREFIX
+from ci_utils import GH
+from synchronizer_utils import SYNC_BRANCH_PREFIX
+
 
 # pylint: disable=too-many-lines
 
@@ -54,7 +55,7 @@ class CiMetadata:
         self.s3_path_upstream = ""
         if (
             self.git_ref
-            and self.git_ref.startswith(SYNC_PR_PREFIX)
+            and self.git_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
             and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
         ):
             self.upstream_pr_number = int(self.git_ref.split("/pr/", maxsplit=1)[1])

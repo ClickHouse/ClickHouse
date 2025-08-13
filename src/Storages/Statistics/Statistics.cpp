@@ -1,5 +1,4 @@
 #include <Storages/Statistics/Statistics.h>
-
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -10,7 +9,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
-#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
@@ -60,35 +58,16 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
-    : stats_desc(stats_desc_), column_name(column_name_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
+    : stats_desc(stats_desc_)
 {
 }
 
-void ColumnStatistics::build(const ColumnPtr & column)
+void ColumnStatistics::update(const ColumnPtr & column)
 {
     rows += column->size();
     for (const auto & stat : stats)
-        stat.second->build(column);
-}
-
-void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
-{
-    rows += other->rows;
-    for (const auto & stat_it : stats)
-    {
-        if (auto it = other->stats.find(stat_it.first); it != other->stats.end())
-        {
-            stat_it.second->merge(it->second);
-        }
-    }
-    for (const auto & stat_it : other->stats)
-    {
-        if (!stats.contains(stat_it.first))
-        {
-            stats.insert(stat_it);
-        }
-    }
+        stat.second->update(column);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -104,11 +83,6 @@ Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 Float64 IStatistics::estimateLess(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
-}
-
-Float64 IStatistics::estimateRange(const Range & /*range*/) const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
 }
 
 /// Notes:
@@ -127,8 +101,6 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
-    if (stats.contains(StatisticsType::MinMax))
-        return stats.at(StatisticsType::MinMax)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
@@ -143,67 +115,13 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
-        {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
-        }
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
-    {
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
-    }
 #endif
-    if (stats.contains(StatisticsType::Uniq))
-    {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
-            return 0;
-        return Float64(rows) / cardinality; /// assume uniform distribution
-    }
-
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
-}
-
-Float64 ColumnStatistics::estimateRange(const Range & range) const
-{
-    if (range.empty())
-    {
-        return 0;
-    }
-
-    if (range.isInfinite())
-    {
-        return rows;
-    }
-
-    if (range.left == range.right)
-    {
-        return estimateEqual(range.left);
-    }
-
-    if (range.left.isNegativeInfinity())
-    {
-        return estimateLess(range.right);
-    }
-
-    if (range.right.isPositiveInfinity())
-    {
-        return estimateGreater(range.left);
-    }
-
-    Float64 right_count = estimateLess(range.right);
-    Float64 left_count = estimateLess(range.left);
-    return right_count - left_count;
-}
-
-UInt64 ColumnStatistics::estimateCardinality() const
-{
-    if (stats.contains(StatisticsType::Uniq))
-    {
-        return stats.at(StatisticsType::Uniq)->estimateCardinality();
-    }
-    /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
-    return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
 /// -------------------------------------
@@ -214,7 +132,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf)
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
-        stat_types_mask |= 1LL << UInt8(type);
+        stat_types_mask |= 1 << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
 
     /// as the column row count is always useful, save it in any case
@@ -239,7 +157,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 
     for (auto it = stats.begin(); it != stats.end();)
     {
-        if (!(stat_types_mask & 1LL << UInt8(it->first)))
+        if (!(stat_types_mask & 1 << UInt8(it->first)))
         {
             stats.erase(it++);
         }
@@ -258,7 +176,7 @@ String ColumnStatistics::getFileName() const
 
 const String & ColumnStatistics::columnName() const
 {
-    return column_name;
+    return stats_desc.column_name;
 }
 
 UInt64 ColumnStatistics::rowCount() const
@@ -280,9 +198,6 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerValidator(StatisticsType::MinMax, minMaxStatisticsValidator);
-    registerCreator(StatisticsType::MinMax, minMaxStatisticsCreator);
-
     registerValidator(StatisticsType::TDigest, tdigestStatisticsValidator);
     registerCreator(StatisticsType::TDigest, tdigestStatisticsCreator);
 
@@ -312,15 +227,15 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     }
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
-    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(stats);
+    for (const auto & [type, desc] : stats.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
-        auto stat_ptr = (it->second)(desc, column_desc.type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' and 'count_min'", type);
+        auto stat_ptr = (it->second)(desc, stats.data_type);
         column_stat->stats[type] = stat_ptr;
     }
     return column_stat;
@@ -331,7 +246,7 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
     ColumnsStatistics result;
     for (const auto & col : columns)
         if (!col.statistics.empty())
-            result.push_back(get(col));
+            result.push_back(get(col.statistics));
     return result;
 }
 

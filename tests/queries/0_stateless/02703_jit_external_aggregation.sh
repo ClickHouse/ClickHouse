@@ -25,7 +25,7 @@ GROUP BY group_key
 HAVING (c = 2) AND (x0 > 0) AND (x1 > 0) AND (x2 > 0)
 ORDER BY group_key ASC
 LIMIT 10
-SETTINGS max_bytes_before_external_group_by = 200000, max_bytes_ratio_before_external_group_by = 0
+SETTINGS max_bytes_before_external_group_by = 200000
 " && echo -n '.'
 
 echo

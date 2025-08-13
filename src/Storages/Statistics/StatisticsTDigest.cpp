@@ -11,11 +11,11 @@ extern const int ILLEGAL_STATISTICS;
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
-    , data_type(removeNullable(data_type_))
+    , data_type(data_type_)
 {
 }
 
-void StatisticsTDigest::build(const ColumnPtr & column)
+void StatisticsTDigest::update(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
@@ -25,12 +25,6 @@ void StatisticsTDigest::build(const ColumnPtr & column)
         auto data = column->getFloat64(row);
         t_digest.add(data, 1);
     }
-}
-
-void StatisticsTDigest::merge(const StatisticsPtr & other_stats)
-{
-    const StatisticsTDigest * other = typeid_cast<const StatisticsTDigest*>(other_stats.get());
-    t_digest.merge(other->t_digest);
 }
 
 void StatisticsTDigest::serialize(WriteBuffer & buf)

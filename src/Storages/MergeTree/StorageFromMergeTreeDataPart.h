@@ -18,27 +18,22 @@ class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.
-    StorageFromMergeTreeDataPart(
-        const MergeTreeData::DataPartPtr & part_,
-        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
+    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
-        , parts(RangesInDataParts({part_}))
-        , mutations_snapshot(mutations_snapshot_)
+        , parts({part_})
+        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
         , storage(part_->storage)
-        , partition_id(part_->info.getPartitionId())
+        , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(
-        const MergeTreeData & storage_,
-        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
-        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
@@ -76,17 +71,17 @@ public:
 
     bool hasLightweightDeletedMask() const override
     {
-        return !parts.empty() && parts.front().data_part->hasLightweightDelete();
+        return !parts.empty() && parts.front()->hasLightweightDelete();
     }
 
     bool supportsLightweightDelete() const override
     {
-        return !parts.empty() && parts.front().data_part->supportLightweightDeleteMutate();
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
     }
 
 private:
-    const RangesInDataParts parts;
-    const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    const MergeTreeData::DataPartsVector parts;
+    const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
     const String partition_id;
     const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;

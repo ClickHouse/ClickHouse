@@ -3,6 +3,7 @@
 #include <Dictionaries/CassandraHelpers.h>
 
 #if USE_CASSANDRA
+#include <Core/Block.h>
 #include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 
@@ -10,15 +11,13 @@
 namespace DB
 {
 
-class Block;
-
 class CassandraSource final : public ISource
 {
 public:
     CassandraSource(
             const CassSessionShared & session_,
             const String & query_str,
-            SharedHeader & sample_block,
+            const Block & sample_block,
             size_t max_block_size);
 
     String getName() const override { return "Cassandra"; }

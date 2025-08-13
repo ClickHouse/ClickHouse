@@ -6,12 +6,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/formatAST.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
@@ -26,13 +25,13 @@ namespace ErrorCodes
 
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
-    SharedHeader header,
+    const Block & header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
+    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
     , context(std::move(context_))
 {
 }
@@ -80,7 +79,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         "Constraint expression returns nullable column that contains null value",
                         backQuote(constraint_ptr->name),
                         table_id.getNameForLogs(),
-                        constraint_ptr->expr->formatForErrorMessage());
+                        serializeAST(*(constraint_ptr->expr)));
 
                 result_column = nested_column;
             }
@@ -123,7 +122,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                     backQuote(constraint_ptr->name),
                     table_id.getNameForLogs(),
                     rows_written + row_idx + 1,
-                    constraint_ptr->expr->formatForErrorMessage(),
+                    serializeAST(*(constraint_ptr->expr)),
                     column_values_msg);
             }
         }

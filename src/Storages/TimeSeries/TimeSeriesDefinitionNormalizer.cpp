@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/TimeSeriesDefinitionNormalizer.h>
 
-#include <Common/quoteString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -15,14 +14,6 @@
 
 namespace DB
 {
-
-namespace TimeSeriesSetting
-{
-    extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
-    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
-    extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
-}
 
 namespace ErrorCodes
 {
@@ -94,10 +85,10 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     /// Reorder columns for the "tags" table.
     add_column_in_correct_order(TimeSeriesColumnNames::MetricName);
 
-    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+    const Map & tags_to_columns = time_series_settings.tags_to_columns;
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         add_column_in_correct_order(column_name);
     }
@@ -105,7 +96,7 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     add_column_in_correct_order(TimeSeriesColumnNames::Tags);
     add_column_in_correct_order(TimeSeriesColumnNames::AllTags);
 
-    if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+    if (time_series_settings.store_min_time_and_max_time)
     {
         add_column_in_correct_order(TimeSeriesColumnNames::MinTime);
         add_column_in_correct_order(TimeSeriesColumnNames::MaxTime);
@@ -183,7 +174,8 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     {
         if (type->name == "Nullable")
             return type;
-        return makeASTDataType("Nullable", type);
+        else
+           return makeASTDataType("Nullable", type);
     };
 
     /// Add missing columns for the "data" table.
@@ -207,10 +199,10 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         make_new_column(TimeSeriesColumnNames::MetricName, get_lc_string_type());
     }
 
-    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+    const Map & tags_to_columns = time_series_settings.tags_to_columns;
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         if (!is_next_column_named(column_name))
             make_new_column(column_name, get_string_type());
@@ -230,16 +222,13 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         make_new_column(TimeSeriesColumnNames::AllTags, get_string_to_string_map_type());
     }
 
-    if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+    if (time_series_settings.store_min_time_and_max_time)
     {
         /// We use Nullable(DateTime64(3)) as the default type of the `min_time` and `max_time` columns.
         /// It's nullable because it allows the aggregation (see aggregate_min_time_and_max_time) work correctly even
         /// for rows in the "tags" table which doesn't have `min_time` and `max_time` (because they have no matching rows in the "data" table).
-
-        if (!is_next_column_named(TimeSeriesColumnNames::MinTime))
-            make_new_column(TimeSeriesColumnNames::MinTime, make_nullable(timestamp_type));
-        if (!is_next_column_named(TimeSeriesColumnNames::MaxTime))
-            make_new_column(TimeSeriesColumnNames::MaxTime, make_nullable(timestamp_type));
+        make_new_column(TimeSeriesColumnNames::MinTime, make_nullable(timestamp_type));
+        make_new_column(TimeSeriesColumnNames::MaxTime, make_nullable(timestamp_type));
     }
 
     /// Add missing columns for the "metrics" table.
@@ -293,16 +282,16 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
     ASTs arguments_for_hash_function;
     arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
 
-    if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
+    if (time_series_settings.use_all_tags_column_to_generate_id)
     {
         arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
     }
     else
     {
-        const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+        const Map & tags_to_columns = time_series_settings.tags_to_columns;
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(column_name));
         }
@@ -327,31 +316,26 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
     {
         return make_hash_function("sipHash64");
     }
-    if (id_type_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
+    else if (id_type_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
     {
         return make_hash_function("sipHash128");
     }
-    if (id_type_which.isUUID())
+    else if (id_type_which.isUUID())
     {
         return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128"));
     }
-    if (id_type_which.isUInt128())
+    else if (id_type_which.isUInt128())
     {
         return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));
     }
-
-    throw Exception(
-        ErrorCodes::INCOMPATIBLE_COLUMNS,
-        "{}: The DEFAULT expression for column {} must contain an expression "
-        "which will be used to calculate the identifier of each time series: {} {} DEFAULT ... "
-        "If the DEFAULT expression is not specified then it can be chosen implicitly but only if the column type is one of these: "
-        "UInt64, UInt128, UUID. "
-        "For type {} the DEFAULT expression can't be chosen automatically, so please specify it explicitly",
-        time_series_storage_id.getNameForLogs(),
-        id_column.name,
-        id_column.name,
-        id_type->getName(),
-        id_type->getName());
+    else
+    {
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "{}: The DEFAULT expression for column {} must contain an expression "
+                        "which will be used to calculate the identifier of each time series: {} {} DEFAULT ... "
+                        "If the DEFAULT expression is not specified then it can be chosen implicitly but only if the column type is one of these: UInt64, UInt128, UUID. "
+                        "For type {} the DEFAULT expression can't be chosen automatically, so please specify it explicitly",
+                        time_series_storage_id.getNameForLogs(), id_column.name, id_column.name, id_type->getName(), id_type->getName());
+    }
 }
 
 
@@ -433,7 +417,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
         case ViewTarget::Tags:
         {
             String engine_name;
-            if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+            if (time_series_settings.aggregate_min_time_and_max_time)
                 engine_name = "AggregatingMergeTree";
             else
                 engine_name = "ReplacingMergeTree";
@@ -450,7 +434,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
                 order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
                 order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
-                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time] && !time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+                if (time_series_settings.store_min_time_and_max_time && !time_series_settings.aggregate_min_time_and_max_time)
                 {
                     order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                     order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));

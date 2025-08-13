@@ -72,17 +72,17 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 
     bool was_exception = false;
 
-    DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=] (const Poco::Util::AbstractConfiguration & config)
+    DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=, this] (const Poco::Util::AbstractConfiguration & config)
     {
-        return DB::GeoDictionariesLoader::reloadRegionsHierarchies(config);
+        return geo_dictionaries_loader->reloadRegionsHierarchies(config);
     };
 
     if (!reloadDictionary<RegionsHierarchies>(regions_hierarchies, std::move(reload_regions_hierarchies), throw_on_error, force_reload))
         was_exception = true;
 
-    DictionaryReloader<RegionsNames> reload_regions_names = [=] (const Poco::Util::AbstractConfiguration & config)
+    DictionaryReloader<RegionsNames> reload_regions_names = [=, this] (const Poco::Util::AbstractConfiguration & config)
     {
-        return DB::GeoDictionariesLoader::reloadRegionsNames(config);
+        return geo_dictionaries_loader->reloadRegionsNames(config);
     };
 
     if (!reloadDictionary<RegionsNames>(regions_names, std::move(reload_regions_names), throw_on_error, force_reload))

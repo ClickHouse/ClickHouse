@@ -8,7 +8,6 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_aggregate_functions
         clickhouse_common_config
         clickhouse_common_io
-        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_functions
         clickhouse_parsers

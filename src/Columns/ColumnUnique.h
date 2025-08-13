@@ -14,9 +14,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/NaNUtils.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/FieldVisitors.h>
+#include "Columns/ColumnsDateTime.h"
+#include "Columns/ColumnsNumber.h"
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -48,8 +48,6 @@ private:
     ColumnUnique(const ColumnUnique & other);
 
 public:
-    std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
-
     MutableColumnPtr cloneEmpty() const override;
 
     const ColumnPtr & getNestedColumn() const override;
@@ -74,10 +72,6 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        return getNestedColumn()->getValueNameAndType(n);
-    }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -91,7 +85,10 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
-    void updateHashWithValue(size_t n, SipHash & hash_func) const override;
+    void updateHashWithValue(size_t n, SipHash & hash_func) const override
+    {
+        return getNestedColumn()->updateHashWithValue(n, hash_func);
+    }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
@@ -122,7 +119,7 @@ public:
         callback(column_holder);
     }
 
-    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
+    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -136,10 +133,10 @@ public:
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
         callback(*column_holder);
-        column_holder->forEachMutableSubcolumnRecursively(callback);
+        column_holder->forEachSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
@@ -344,29 +341,11 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
-template <typename>
-struct is_float_vector : std::false_type {};
-
-template <typename T>
-requires is_floating_point<T>
-struct is_float_vector<ColumnVector<T>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_float_vector_v = is_float_vector<T>::value;
-
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.isNull())
         return getNullValueIndex();
-
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
 
     auto single_value_column = column_holder->cloneEmpty();
     single_value_column->insert(x);
@@ -390,15 +369,6 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
     if (!single_value_column->tryInsert(x))
         return false;
 
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            index = uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-            return true;
-        }
-
     auto single_value_data = single_value_column->getDataAt(0);
     index = uniqueInsertData(single_value_data.data, single_value_data.size);
     return true;
@@ -412,14 +382,6 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
-
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-    if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(src.getFloat64(n)))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
 
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data, ref.size);
@@ -546,7 +508,8 @@ int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rh
         {
             if (lval_is_null && rval_is_null)
                 return 0;
-            return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+            else
+                return lval_is_null ? nan_direction_hint : -nan_direction_hint;
         }
     }
 
@@ -757,6 +720,33 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     return indexes_with_overflow;
 }
 
+template <typename ColumnType>
+UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & column)
+{
+    size_t column_size = column.size();
+    UInt128 cur_hash;
+
+    if (column_size != num_added_rows.load())
+    {
+        SipHash sip_hash;
+        for (size_t i = 0; i < column_size; ++i)
+            column.updateHashWithValue(i, sip_hash);
+
+        std::lock_guard lock(mutex);
+        hash = sip_hash.get128();
+        cur_hash = hash;
+        num_added_rows.store(column_size);
+    }
+    else
+    {
+        std::lock_guard lock(mutex);
+        cur_hash = hash;
+    }
+
+    return cur_hash;
+}
+
+
 extern template class ColumnUnique<ColumnInt8>;
 extern template class ColumnUnique<ColumnUInt8>;
 extern template class ColumnUnique<ColumnInt16>;
@@ -769,19 +759,10 @@ extern template class ColumnUnique<ColumnInt128>;
 extern template class ColumnUnique<ColumnUInt128>;
 extern template class ColumnUnique<ColumnInt256>;
 extern template class ColumnUnique<ColumnUInt256>;
-extern template class ColumnUnique<ColumnBFloat16>;
 extern template class ColumnUnique<ColumnFloat32>;
 extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
-extern template class ColumnUnique<ColumnTime64>;
-extern template class ColumnUnique<ColumnIPv4>;
-extern template class ColumnUnique<ColumnIPv6>;
-extern template class ColumnUnique<ColumnUUID>;
-extern template class ColumnUnique<ColumnDecimal<Decimal32>>;
-extern template class ColumnUnique<ColumnDecimal<Decimal64>>;
-extern template class ColumnUnique<ColumnDecimal<Decimal128>>;
-extern template class ColumnUnique<ColumnDecimal<Decimal256>>;
 
 }

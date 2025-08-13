@@ -2,10 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -22,7 +20,8 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 {
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
-    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version.toUnderType());
+    else
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
 void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
@@ -50,11 +49,7 @@ void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, Mer
         if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
     }
-}
 
-String MergeTreePartInfo::getOriginalPartitionId() const
-{
-    return isPatch() ? getOriginalPartitionIdOfPatch(partition_id) : partition_id;
 }
 
 std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
@@ -126,7 +121,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
 
     MergeTreePartInfo part_info;
 
-    part_info.setPartitionId(partition_id);
+    part_info.partition_id = std::move(partition_id);
     part_info.min_block = min_block_num;
     part_info.max_block = max_block_num;
 
@@ -188,11 +183,7 @@ String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion f
         return getPartNameV1();
 
     /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
-    /// It is tempting to add chassert(false) here to catch it in CI.
-    /// But it turns out that in stress tests a common database could be used by multiple tests, and there are tests that create
-    /// tables with V0 format using `allow_deprecated_syntax_for_merge_tree` and tests that do BACKUP are RESOURCE of a db containing
-    /// such tables. Current implementation of RESTORE do not support V0 in MergeTreeData::restorePartFromBackup().
-    /// So this creates flaky combination of tests.
+    chassert(false);  /// Catch it in CI. Feel free to remove this line.
     throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version. "
                     "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
 }

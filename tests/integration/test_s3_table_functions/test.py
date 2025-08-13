@@ -1,10 +1,9 @@
 import logging
-
 import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.client import QueryRuntimeException
+
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

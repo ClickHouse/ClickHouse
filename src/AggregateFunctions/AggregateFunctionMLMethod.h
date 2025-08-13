@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,7 +7,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
-
+#include "IAggregateFunction.h"
 
 namespace DB
 {
@@ -385,7 +384,7 @@ public:
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
-                            "getReturnTypeToPredict must return same value as it is cast to");
+                            "getReturnTypeToPredict must return same value as it is casted to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }

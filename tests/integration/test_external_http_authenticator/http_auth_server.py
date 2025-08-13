@@ -2,6 +2,7 @@ import base64
 import http.server
 import json
 
+
 GOOD_PASSWORD = "good_password"
 USER_RESPONSES = {
     "test_user_1": {"settings": {"auth_user": "'test_user'", "auth_num": "UInt64_15"}},
@@ -62,8 +63,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
             user_name, password = self.decode_basic(data)
             if password == GOOD_PASSWORD:
-                self.do_ACCESS_GRANTED(user_name)
-            elif self.headers.get("Custom-Header") == "ok" and not self.headers.get("User-Agent"):
                 self.do_ACCESS_GRANTED(user_name)
             else:
                 self.do_AUTHHEAD()

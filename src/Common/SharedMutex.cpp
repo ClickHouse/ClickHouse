@@ -1,7 +1,7 @@
-#ifdef OS_LINUX /// Because of futex
-
 #include <Common/SharedMutex.h>
 #include <base/getThreadId.h>
+
+#ifdef OS_LINUX /// Because of futex
 
 #include <bit>
 

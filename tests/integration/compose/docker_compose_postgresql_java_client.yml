@@ -1,3 +1,4 @@
+version: '2.2'
 services:
   java:
     image: clickhouse/postgresql-java-client:${DOCKER_POSTGRESQL_JAVA_CLIENT_TAG:-latest}

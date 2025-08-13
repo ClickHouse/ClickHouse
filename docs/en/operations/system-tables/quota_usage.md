@@ -1,20 +1,13 @@
 ---
-description: 'System table containing formation about quota usage by the current user
-  such as how much of the quota is used and how much is left.'
-keywords: ['system table', 'quota_usage']
-slug: /operations/system-tables/quota_usage
-title: 'system.quota_usage'
+slug: /en/operations/system-tables/quota_usage
 ---
-
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# quota_usage
 
 Quota usage by the current user: how much is used and how much is left.
 
 Columns:
 - `quota_name` ([String](../../sql-reference/data-types/string.md)) — Quota name.
-- `quota_key`([String](../../sql-reference/data-types/string.md)) — Key value. For example, if keys = \[`ip address`\], `quota_key` may have a value '192.168.1.1'.
+- `quota_key`([String](../../sql-reference/data-types/string.md)) — Key value. For example, if keys = \[`ip address`\], `quota_key` may have a value ‘192.168.1.1’.
 - `start_time`([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Start time for calculating resource consumption.
 - `end_time`([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — End time for calculating resource consumption.
 - `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Length of the time interval for calculating resource consumption, in seconds.
@@ -39,4 +32,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW QUOTA](/sql-reference/statements/show#show-quota))
+- [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)

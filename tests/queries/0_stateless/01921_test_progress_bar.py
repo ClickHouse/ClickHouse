@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import os
-import signal
 import sys
+import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, end_of_block, prompt
+from client import client, prompt, end_of_block
 
 log = None
 # uncomment the line below for debugging

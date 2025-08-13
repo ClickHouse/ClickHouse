@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <mutex>
 #include <chrono>
 
 namespace DB
@@ -28,8 +27,6 @@ private:
     std::map<int64_t, std::unordered_set<int64_t>> expiry_to_sessions;
 
     int64_t expiration_interval;
-
-    mutable std::mutex mutex;
 
     static int64_t getNowMilliseconds()
     {

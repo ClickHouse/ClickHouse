@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
@@ -105,8 +102,6 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 
     virtual std::string getReadMethod() const;
 
@@ -150,7 +145,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -158,7 +153,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -183,8 +178,7 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        FormatParserSharedResourcesPtr parser_shared_resources_,
-        FormatFilterInfoPtr format_filter_info_,
+        size_t max_parsing_threads,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -194,9 +188,12 @@ public:
 
     String getName() const override { return name; }
 
-    Chunk generate() override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
+    {
+        setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
+    }
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -223,7 +220,6 @@ private:
     String name;
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
-    bool need_headers_virtual_column;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
@@ -231,17 +227,11 @@ private:
     std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
-    FormatParserSharedResourcesPtr parser_shared_resources;
-    FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    Map http_response_headers;
-    bool http_response_headers_initialized = false;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
@@ -253,15 +243,15 @@ class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        String uri_,
-        String format_,
+        const String & uri,
+        const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         const ContextPtr & context,
         const ConnectionTimeouts & timeouts,
-        const CompressionMethod & compression_method,
-        HTTPHeaderEntries headers = {},
-        String method = Poco::Net::HTTPRequest::HTTP_POST);
+        CompressionMethod compression_method,
+        const HTTPHeaderEntries & headers = {},
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     ~StorageURLSink() override;
 
@@ -273,16 +263,6 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    void initBuffers();
-
-    String uri;
-    String format;
-    std::optional<FormatSettings> format_settings;
-    ContextPtr context;
-    ConnectionTimeouts timeouts;
-    CompressionMethod compression_method;
-    HTTPHeaderEntries headers;
-    String http_method;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;

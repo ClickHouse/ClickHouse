@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include "Coordination/KeeperConstants.h"
 #include <pcg_random.hpp>
 
 namespace DB

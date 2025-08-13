@@ -1,8 +1,6 @@
 import contextlib
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
+import urllib.request, urllib.parse, urllib.error
 
 from helpers.cluster import ClickHouseCluster
 
@@ -17,10 +15,9 @@ class SimpleCluster:
         cluster.start()
 
     def add_instance(self, name, config_dir):
+        script_path = os.path.dirname(os.path.realpath(__file__))
         return self.cluster.add_instance(
-            name,
-            main_configs=[os.path.join(config_dir, "config.xml")],
-            user_configs=["users.d/users.yaml"],
+            name, main_configs=[os.path.join(script_path, config_dir, "config.xml")]
         )
 
 
@@ -95,29 +92,6 @@ def test_dynamic_query_handler():
         assert (
             "also works"
             == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
-        )
-
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_with_password?query=select+currentUser()"
-            )
-            .content.strip()
-            .decode()
-            == "with_password"
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
-            ).status_code
-            == 403
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_without_password?query=select+currentUser()"
-            )
-            .content.strip()
-            .decode()
-            == "without_password"
         )
 
 
@@ -200,27 +174,6 @@ def test_predefined_query_handler():
             headers={"XXX": "xxx"},
         )
         assert b"max_threads\t1\n" == res1.content
-
-        assert (
-            cluster.instance.http_request("test_predefined_handler_auth_with_password")
-            .content.strip()
-            .decode()
-            == "with_password"
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_predefined_handler_auth_with_password_fail"
-            ).status_code
-            == 403
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_predefined_handler_auth_without_password"
-            )
-            .content.strip()
-            .decode()
-            == "without_password"
-        )
 
 
 def test_fixed_static_handler():
@@ -648,31 +601,3 @@ def test_replicas_status_handler():
                 "test_replicas_status", method="GET", headers={"XXX": "xxx"}
             ).content
         )
-
-
-def test_headers_in_response():
-    with contextlib.closing(
-            SimpleCluster(
-                ClickHouseCluster(__file__), "headers_in_response", "test_headers_in_response"
-            )
-    ) as cluster:
-        for endpoint in ("static", "ping", "replicas_status", "play", "dashboard", "binary", "merges", "metrics",
-                         "js/lz-string.js", "js/uplot.js", "?query=SELECT%201"):
-            response = cluster.instance.http_request(endpoint, method="GET")
-
-            assert "X-My-Answer" in response.headers
-            assert "X-My-Common-Header" in response.headers
-
-            assert response.headers["X-My-Common-Header"] == "Common header present"
-
-            if endpoint == "?query=SELECT%201":
-                assert response.headers["X-My-Answer"] == "Iam dynamic"
-            else:
-                assert response.headers["X-My-Answer"] == f"Iam {endpoint}"
-
-
-        # Handle predefined_query_handler separately because we need to pass headers there
-        response_predefined = cluster.instance.http_request(
-            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
-        assert response_predefined.headers["X-My-Answer"] == f"Iam predefined"
-        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"

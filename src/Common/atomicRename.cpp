@@ -57,13 +57,11 @@ namespace ErrorCodes
 namespace DB
 {
 
-static std::optional<std::string> supportsAtomicRenameImpl()
+static bool supportsAtomicRenameImpl()
 {
     VersionNumber renameat2_minimal_version(3, 15, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
-    if (linux_version >= renameat2_minimal_version)
-        return std::nullopt;
-    return fmt::format("Linux kernel 3.15+ is required, got {}", linux_version.toString());
+    return linux_version >= renameat2_minimal_version;
 }
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
@@ -99,14 +97,10 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
 }
 
-bool supportsAtomicRename(std::string * out_message)
+bool supportsAtomicRename()
 {
-    static auto error = supportsAtomicRenameImpl();
-    if (!error.has_value())
-        return true;
-    if (out_message)
-        *out_message = error.value();
-    return false;
+    static bool supports = supportsAtomicRenameImpl();
+    return supports;
 }
 
 }
@@ -158,22 +152,16 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 }
 
 
-static std::optional<std::string> supportsAtomicRenameImpl()
+static bool supportsAtomicRenameImpl()
 {
     auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
-    if (fun != nullptr)
-        return std::nullopt;
-    return "macOS 10.12 or later is required";
+    return fun != nullptr;
 }
 
-bool supportsAtomicRename(std::string * out_message)
+bool supportsAtomicRename()
 {
-    static auto error = supportsAtomicRenameImpl();
-    if (!error.has_value())
-        return true;
-    if (out_message)
-        *out_message = error.value();
-    return false;
+    static bool supports = supportsAtomicRenameImpl();
+    return supports;
 }
 
 }
@@ -191,10 +179,8 @@ static bool renameat2(const std::string &, const std::string &, int)
     return false;
 }
 
-bool supportsAtomicRename(std::string * out_message)
+bool supportsAtomicRename()
 {
-    if (out_message)
-        *out_message = "only Linux and macOS are supported";
     return false;
 }
 

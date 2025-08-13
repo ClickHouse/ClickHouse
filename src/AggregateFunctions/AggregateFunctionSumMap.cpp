@@ -112,7 +112,8 @@ public:
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
-        return 0;
+        else
+            return 0;
     }
 
     static DataTypePtr createResultType(
@@ -334,7 +335,6 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        FormatSettings format_settings;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
@@ -342,7 +342,7 @@ public:
             {
                 deserialize = [&](size_t col_idx, Array & values)
                 {
-                    values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, format_settings);
+                    values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {});
                 };
                 break;
             }
@@ -351,7 +351,7 @@ public:
                 deserialize = [&](size_t col_idx, Array & values)
                 {
                     Field & value = values[col_idx];
-                    promoted_values_serializations[col_idx]->deserializeBinary(value, buf, format_settings);
+                    promoted_values_serializations[col_idx]->deserializeBinary(value, buf, {});
 
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal128)
@@ -377,7 +377,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf, format_settings);
+            keys_serialization->deserializeBinary(key, buf, {});
 
             Array values;
             values.resize(values_types.size());
@@ -546,28 +546,7 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const
-    {
-        if (keys_to_keep.contains(key))
-            return true;
-
-        // Determine whether the numerical value of the key can have both types (UInt or Int),
-        // and use the other type with the same numerical value for keepKey verification.
-        if (key.getType() == Field::Types::UInt64)
-        {
-            const auto & value = key.safeGet<UInt64>();
-            if (value <= std::numeric_limits<Int64>::max())
-                return keys_to_keep.contains(Field(Int64(value)));
-        }
-        else if (key.getType() == Field::Types::Int64)
-        {
-            const auto & value = key.safeGet<Int64>();
-            if (value >= 0)
-                return keys_to_keep.contains(Field(UInt64(value)));
-        }
-
-        return false;
-    }
+    bool keepKey(const Field & key) const { return keys_to_keep.contains(key); }
 };
 
 
@@ -764,7 +743,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
     });
 
     factory.registerFunction("minMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
@@ -772,7 +752,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
     });
 
     factory.registerFunction("maxMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
@@ -780,7 +761,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
     });
 
     // these functions could be renamed to *MappedArrays too, but it would
@@ -790,7 +772,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
     });
 
     factory.registerFunction("sumMapFiltered", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
@@ -798,7 +781,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
     });
 
     factory.registerFunction("sumMapFilteredWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
@@ -806,7 +790,8 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
     });
 }
 

@@ -18,6 +18,7 @@
 
 
 using Poco::Exception;
+using Poco::ErrorHandler;
 
 
 namespace Poco {
@@ -30,7 +31,9 @@ TCPServerConnection::TCPServerConnection(const StreamSocket& socket):
 }
 
 
-TCPServerConnection::~TCPServerConnection() = default;
+TCPServerConnection::~TCPServerConnection()
+{
+}
 
 
 void TCPServerConnection::start()

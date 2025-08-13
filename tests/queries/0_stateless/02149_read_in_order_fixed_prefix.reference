@@ -172,8 +172,7 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        VirtualRowTransform
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
@@ -187,8 +186,7 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        VirtualRowTransform
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01

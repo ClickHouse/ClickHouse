@@ -1,41 +1,38 @@
 ---
-description: 'Allows to perform queries on data stored in a SQLite database.'
-sidebar_label: 'sqlite'
+slug: /en/sql-reference/table-functions/sqlite
 sidebar_position: 185
-slug: /sql-reference/table-functions/sqlite
-title: 'sqlite'
+sidebar_label: sqlite
+title: sqlite
 ---
 
-# sqlite Table Function
+Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 
-Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
+**Syntax**
 
-## Syntax {#syntax}
-
-```sql
-sqlite('db_path', 'table_name')
+``` sql
+    sqlite('db_path', 'table_name')
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
 - `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
 - `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned_value}
+**Returned value**
 
 - A table object with the same columns as in the original `SQLite` table.
 
-## Example {#example}
+**Example**
 
 Query:
 
-```sql
+``` sql
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 
 Result:
 
-```text
+``` text
 ┌─col1──┬─col2─┐
 │ line1 │    1 │
 │ line2 │    2 │
@@ -43,6 +40,6 @@ Result:
 └───────┴──────┘
 ```
 
-## Related {#related}
+**See Also**
 
 - [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine

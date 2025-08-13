@@ -1,13 +1,11 @@
 import json
-import logging
 import os
-
-import pytest
+import logging
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
+import pytest
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -116,9 +114,8 @@ def test_with_invalid_environment_credentials(started_cluster):
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
 
     for bucket, auth in [
-        (started_cluster.minio_restricted_bucket, f"'minio', '{minio_secret_key}'"),
+        (started_cluster.minio_restricted_bucket, "'minio', 'minio123'"),
         (started_cluster.minio_bucket, "NOSIGN"),
-        (started_cluster.minio_bucket, "no_sign = 1"),
     ]:
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"

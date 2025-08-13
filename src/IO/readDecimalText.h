@@ -3,6 +3,8 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
+#include <base/wide_integer_to_string.h>
+
 
 namespace DB
 {
@@ -88,27 +90,28 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                         /// Simply cut excessive digits.
                         break;
                     }
+                    else
+                    {
+                        if constexpr (_throw_on_error)
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too many digits ({} > {}) in decimal value",
+                                std::to_string(digits + places), std::to_string(max_digits));
 
-                    if constexpr (_throw_on_error)
-                        throw Exception(
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Too many digits ({} > {}) in decimal value",
-                            std::to_string(digits + places),
-                            std::to_string(max_digits));
-
-                    return false;
+                        return false;
+                    }
                 }
+                else
+                {
+                    digits += places;
+                    if (after_point)
+                        exponent -= places;
 
-                digits += places;
-                if (after_point)
-                    exponent -= places;
+                    // TODO: accurate shift10 for big integers
+                    x *= intExp10OfSize<typename T::NativeType>(places);
+                    places = 0;
 
-                // TODO: accurate shift10 for big integers
-                x *= intExp10OfSize<typename T::NativeType>(places);
-                places = 0;
-
-                x += (byte - '0');
-                break;
+                    x += (byte - '0');
+                    break;
+                }
             }
             case 'e': [[fallthrough]];
             case 'E':
@@ -160,9 +163,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     {
         if constexpr (throw_exception)
         {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Decimal value is too big: {} digits were read: {}e{}. Expected to read decimal with scale {} and precision {}",
-                digits, convertFieldToString(x), exponent, scale, precision);
+            static constexpr auto pattern = "Decimal value is too big: {} digits were read: {}e{}."
+                                                    " Expected to read decimal with scale {} and precision {}";
+
+            if constexpr (is_big_int_v<typename T::NativeType>)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x.value, exponent, scale, precision);
+            else
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x, exponent, scale, precision);
         }
         else
             return ReturnType(false);
@@ -179,13 +186,15 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
             scale = 0;
             return ReturnType(true);
         }
-
-        /// Too many digits after point. Just cut off excessive digits.
-        auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
-        assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
-        x.value /= divisor;  /// NOLINT(clang-analyzer-core.DivideZero)
-        scale = 0;
-        return ReturnType(true);
+        else
+        {
+            /// Too many digits after point. Just cut off excessive digits.
+            auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+            x.value /= divisor;
+            scale = 0;
+            return ReturnType(true);
+        }
     }
 
     scale += exponent;

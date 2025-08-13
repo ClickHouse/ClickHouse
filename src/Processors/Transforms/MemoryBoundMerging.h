@@ -4,7 +4,8 @@
 #include <Interpreters/sortBlock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Port.h>
+
+#include <Poco/Logger.h>
 
 namespace DB
 {

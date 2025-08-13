@@ -362,7 +362,7 @@ namespace Util
         void setArgs(int argc, char * argv[]);
         void setArgs(const ArgVec & args);
         void getApplicationPath(Poco::Path & path) const;
-        void processPocoOptions();
+        void processOptions();
         bool findAppConfigFile(const std::string & appName, const std::string & extension, Poco::Path & path) const;
         bool findAppConfigFile(const Path & basePath, const std::string & appName, const std::string & extension, Poco::Path & path) const;
 

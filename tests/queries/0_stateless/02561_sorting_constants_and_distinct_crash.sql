@@ -16,8 +16,7 @@ select distinct
 from (
     select string_value
     from test_table
-)
-order by all;
+);
 
 select distinct
  'constant_1' as constant_value, *

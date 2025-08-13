@@ -11,13 +11,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 class PushingSource : public ISource
 {
 public:
-    explicit PushingSource(SharedHeader header, std::atomic_bool & input_wait_flag_)
+    explicit PushingSource(const Block & header, std::atomic_bool & input_wait_flag_)
         : ISource(header)
         , input_wait_flag(input_wait_flag_)
     {}
@@ -57,7 +56,7 @@ PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pi
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingSource>(pipeline.input->getSharedHeader(), input_wait_flag);
+    pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), input_wait_flag);
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }
@@ -81,15 +80,6 @@ const Block & PushingPipelineExecutor::getHeader() const
     return pushing_source->getPort().getHeader();
 }
 
-[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
-{
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
-}
 
 void PushingPipelineExecutor::start()
 {
@@ -101,7 +91,8 @@ void PushingPipelineExecutor::start()
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
     if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingPipelineExecutor::push(Chunk chunk)
@@ -112,7 +103,8 @@ void PushingPipelineExecutor::push(Chunk chunk)
     pushing_source->setData(std::move(chunk));
 
     if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingPipelineExecutor::push(Block block)
@@ -127,10 +119,7 @@ void PushingPipelineExecutor::finish()
     finished = true;
 
     if (executor)
-    {
-        [[maybe_unused]] auto res = executor->executeStep();
-        chassert(!res);
-    }
+        executor->executeStep();
 }
 
 void PushingPipelineExecutor::cancel()

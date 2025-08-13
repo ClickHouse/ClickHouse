@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-import re
 import sys
+import re
 
 if __name__ == "__main__":
     for line in sys.stdin:

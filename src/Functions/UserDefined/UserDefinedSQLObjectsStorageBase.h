@@ -6,11 +6,10 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
-using Strings = std::vector<String>;
 
 class UserDefinedSQLObjectsStorageBase : public IUserDefinedSQLObjectsStorage
 {
