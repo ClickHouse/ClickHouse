@@ -7,9 +7,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 };
-    
+
 using ObjectInfo = RelativePathWithMetadata;
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
@@ -59,5 +59,4 @@ private:
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
-
 }

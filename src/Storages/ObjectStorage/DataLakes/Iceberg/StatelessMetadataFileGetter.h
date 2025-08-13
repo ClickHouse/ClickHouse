@@ -1,4 +1,3 @@
-
 #pragma once
 #include "config.h"
 #if USE_AVRO
@@ -8,7 +7,6 @@
 
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -16,7 +14,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 

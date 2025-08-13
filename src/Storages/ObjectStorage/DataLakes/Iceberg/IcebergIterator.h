@@ -20,7 +20,6 @@
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
