@@ -339,7 +339,6 @@ bool canPushDownFromOn(const JoinInfo & join_info, std::optional<JoinTableSide> 
         || (side == JoinTableSide::Right && join_info.kind == JoinKind::Left);
 
     return is_suitable_kind
-        && join_info.expression.disjunctive_conditions.empty() ///here
         && join_info.strictness == JoinStrictness::All;
 }
 

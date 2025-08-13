@@ -299,7 +299,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & bu
     if (function_node)
         function_name = function_node->getFunction()->getName();
 
-    if (function_name == "and" || function_name == "or") // HERE
+    if (function_name == "and" || function_name == "or")
     {
         for (const auto & child : function_node->getArguments())
             buildJoinCondition(child, builder_context, join_condition);
