@@ -103,7 +103,7 @@ public:
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
-    bool processBuzzHouseServerQuery(const String & full_query);
+    bool processTextAsSingleQuery(const String & full_query);
 
     virtual bool tryToReconnect(const uint32_t, const uint32_t)
     {
@@ -135,8 +135,6 @@ protected:
 
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
-    /// Returns true if query succeeded
-    bool processTextAsSingleQuery(const String & full_query);
 
     void processParsedSingleQuery(
         std::string_view query_,
@@ -432,8 +430,7 @@ protected:
 
     /// Text to prepopulate in the next query prompt
     String next_query_to_prepopulate;
-    /// When buzz_house set to 2, cut the client output
-    int buzz_house = 0;
+    bool buzz_house = false;
     int error_code = 0;
 
 #if USE_CLIENT_AI

@@ -406,11 +406,20 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
 
 bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
 {
-    if (outlog)
+    bool res = true;
+
+    try
     {
-        outf << query << std::endl;
+        if (outlog)
+        {
+            outf << query << std::endl;
+        }
+        res &= this->cb->processTextAsSingleQuery(query);
     }
-    const bool res = this->cb->processBuzzHouseServerQuery(query);
+    catch (...)
+    {
+        res = false;
+    }
     if (!res)
     {
         fmt::print(stderr, "Error on processing query '{}'\n", query);

@@ -860,10 +860,6 @@ void Client::processOptions(
             {
                 fuzzer.setSeed(fuzz_config->seed);
             }
-            else if (buzz_house && fuzz_config->truncate_output)
-            {
-                buzz_house = 2;
-            }
         }
 #endif
         if (query_fuzzer_runs)

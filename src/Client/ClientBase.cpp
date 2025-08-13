@@ -513,7 +513,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || ((query_fuzzer_runs != 0 || buzz_house > 1) && processed_rows >= 100))
+    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
@@ -624,7 +624,7 @@ try
     if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
-        if (query_fuzzer_runs || buzz_house > 1)
+        if (query_fuzzer_runs)
         {
             output_format = std::make_shared<NullOutputFormat>(std::make_shared<const Block>(block));
             return;
@@ -1111,25 +1111,6 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     if (have_error)
         processError(full_query);
     return !have_error;
-}
-
-bool ClientBase::processBuzzHouseServerQuery(const String & full_query)
-{
-    /// Ignore buzzhouse setting so the whole result set can be fetched
-    bool res = true;
-    const auto buzz_backup = this->buzz_house;
-
-    this->buzz_house = 0;
-    try
-    {
-        res = processTextAsSingleQuery(full_query);
-    }
-    catch (...)
-    {
-        res = false;
-    }
-    this->buzz_house = buzz_backup;
-    return res;
 }
 
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
@@ -2568,22 +2549,22 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
-                have_error |= buzz_house > 0;
-                error_code = buzz_house > 0 ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
-                have_error |= buzz_house > 0;
-                error_code = buzz_house > 0 ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
-                have_error |= buzz_house > 0;
-                error_code = buzz_house > 0 ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
