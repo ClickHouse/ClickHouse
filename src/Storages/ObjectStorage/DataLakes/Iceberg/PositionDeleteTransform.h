@@ -98,6 +98,55 @@ private:
     RoaringBitmapWithSmallSet<size_t, 32> bitmap;
 };
 
+
+class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
+{
+public:
+    IcebergStreamingPositionDeleteTransform(
+        const SharedHeader & header_,
+        IcebergDataObjectInfoPtr iceberg_object_info_,
+        const ObjectStoragePtr object_storage_,
+        const std::optional<FormatSettings> & format_settings_,
+        ContextPtr context_,
+        String delete_object_format_,
+        String delete_object_compression_method_,
+        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+        : IcebergPositionDeleteTransform(
+              header_,
+              iceberg_object_info_,
+              object_storage_,
+              format_settings_,
+              context_,
+              delete_object_format_,
+              delete_object_compression_method_,
+              position_deletes_objects_)
+    {
+        initialize();
+    }
+
+    String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }
+
+    void transform(Chunk & chunk) override;
+
+private:
+    void initialize();
+
+    struct PositionDeleteFileIndexes
+    {
+        size_t filename_index;
+        size_t position_index;
+    };
+
+    void fetchNewChunkFromSource(size_t delete_source_index);
+
+    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
+    std::vector<Chunk> latest_chunks;
+    std::vector<size_t> iterator_at_latest_chunks;
+    std::set<std::pair<size_t, size_t>> latest_positions;
+
+    std::optional<size_t> previous_chunk_offset;
+};
+
 }
 
 #endif

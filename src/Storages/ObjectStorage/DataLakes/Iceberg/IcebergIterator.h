@@ -35,11 +35,6 @@ namespace CurrentMetrics
 }
 namespace DB {
 
-namespace Setting
-{
-extern const SettingsBool use_iceberg_partition_pruning;
-}
-
 namespace Iceberg
 {
 

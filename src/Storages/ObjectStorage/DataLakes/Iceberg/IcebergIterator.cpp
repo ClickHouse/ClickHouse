@@ -54,8 +54,14 @@ extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
 };
 
+
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsBool use_iceberg_partition_pruning;
+};
 
 
 using namespace Iceberg;
@@ -217,8 +223,12 @@ std::shared_ptr<ISimpleTransform> IcebergIterator::getPositionDeleteTransformer(
     if (!iceberg_object_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The object with path '{}' info is not IcebergDataObjectInfo", object_info->getPath());
 
-    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
+    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
+    else
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
 }
 }
 

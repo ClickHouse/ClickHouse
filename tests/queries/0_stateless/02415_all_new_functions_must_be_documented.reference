@@ -27,10 +27,7 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
@@ -55,9 +52,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -112,7 +106,6 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
-demangle
 dotProduct
 dumpColumnStructure
 e
@@ -205,7 +198,6 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
 javaHash
 javaHashUTF16LE
@@ -222,7 +214,6 @@ log
 log10
 log1p
 log2
-logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
@@ -442,7 +433,6 @@ tanh
 tcpPort
 tgamma
 throwIf
-tid
 toBool
 toColumnTypeName
 toDate
