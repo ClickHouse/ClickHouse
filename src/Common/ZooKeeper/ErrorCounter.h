@@ -6,10 +6,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Coordination
 {

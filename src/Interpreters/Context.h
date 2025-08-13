@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/LightweightZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -26,7 +27,6 @@
 
 #include <Poco/AutoPtr.h>
 
-#include "Interpreters/LightweightZooKeeperLog.h"
 #include "config.h"
 
 #include <functional>
