@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+
 
 namespace DeltaLake
 {
@@ -10,18 +11,16 @@ using WriteTransactionPtr = std::shared_ptr<WriteTransaction>;
 
 namespace DB
 {
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class DeltaLakeMetadataDeltaKernel;
 
-class DeltaLakeSink : public SinkToStorage
+class DeltaLakeSink : public StorageObjectStorageSink
 {
 public:
     DeltaLakeSink(
         const DeltaLakeMetadataDeltaKernel & metadata,
-        ObjectStoragePtr object_storage,
-        ContextPtr context,
+        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStoragePtr object_storage_,
+        ContextPtr context_,
         SharedHeader sample_block_,
         const FormatSettings & format_settings_);
 
@@ -34,16 +33,10 @@ public:
     void onFinish() override;
 
 private:
-    void finalizeBuffers();
-    void releaseBuffers();
-    void cancelBuffers();
-
     const LoggerPtr log;
     const std::string file_name;
-
     DeltaLake::WriteTransactionPtr delta_transaction;
-    std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    size_t written_bytes = 0;
 };
 
 }

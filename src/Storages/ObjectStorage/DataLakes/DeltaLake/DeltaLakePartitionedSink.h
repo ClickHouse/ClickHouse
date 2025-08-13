@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/IPartitionStrategy.h>
 
+
 namespace DeltaLake
 {
 class WriteTransaction;
@@ -16,9 +17,6 @@ using WriteTransactionPtr = std::shared_ptr<WriteTransaction>;
 
 namespace DB
 {
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class DeltaLakeMetadataDeltaKernel;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
@@ -59,11 +57,9 @@ private:
     const FormatSettings format_settings;
     const StorageObjectStorageConfigurationPtr configuration;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
-
-    DeltaLake::WriteTransactionPtr delta_transaction;
+    const DeltaLake::WriteTransactionPtr delta_transaction;
 
     absl::flat_hash_map<StringRef, PartitionDataPtr> partition_id_to_sink;
-
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 };

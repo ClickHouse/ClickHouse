@@ -70,8 +70,8 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , format_settings(format_settings_)
     , configuration(configuration_)
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
+    , delta_transaction(std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper()))
 {
-    delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper());
     delta_transaction->create();
     delta_transaction->validateSchema(getHeader());
 }

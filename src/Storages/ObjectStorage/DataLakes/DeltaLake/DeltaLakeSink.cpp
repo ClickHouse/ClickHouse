@@ -1,50 +1,47 @@
 #include "DeltaLakeSink.h"
-
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Interpreters/Context.h>
-
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    std::string generatePath(const std::string & prefix)
+    {
+        return std::filesystem::path(prefix) / (toString(UUIDHelpers::generateV4()) + ".parquet");
+    }
+}
+
 DeltaLakeSink::DeltaLakeSink(
     const DeltaLakeMetadataDeltaKernel & metadata,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_,
     SharedHeader sample_block_,
     const FormatSettings & format_settings_)
-    : SinkToStorage(sample_block_)
+    : StorageObjectStorageSink(
+        generatePath(metadata.getKernelHelper()->getDataPath()),
+        object_storage_,
+        configuration_,
+        format_settings_,
+        sample_block_,
+        context_)
     , log(getLogger("DeltaLakeSink"))
-    , file_name(toString(UUIDHelpers::generateV4()) + ".parquet")
+    , file_name()
+    , delta_transaction(std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper()))
 {
-    delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper());
     delta_transaction->create();
     delta_transaction->validateSchema(getHeader());
-
-    write_buf = object_storage->writeObject(
-        StoredObject(std::filesystem::path(delta_transaction->getDataPath()) / file_name),
-        WriteMode::Rewrite,
-        std::nullopt,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getWriteSettings());
-
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        "Parquet",
-        *write_buf,
-        getHeader(),
-        context,
-        format_settings_);
 }
 
 void DeltaLakeSink::consume(Chunk & chunk)
@@ -52,7 +49,8 @@ void DeltaLakeSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
 
-    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+    written_bytes += chunk.bytes();
+    StorageObjectStorageSink::consume(chunk);
 }
 
 void DeltaLakeSink::onFinish()
@@ -60,47 +58,11 @@ void DeltaLakeSink::onFinish()
     if (isCancelled())
         return;
 
-    finalizeBuffers();
-
     std::vector<DeltaLake::WriteTransaction::CommitFile> files;
-    files.emplace_back(file_name, write_buf->count(), Map{});
+    files.emplace_back(file_name, written_bytes, Map{});
     delta_transaction->commit(files);
 
-    releaseBuffers();
-}
-
-void DeltaLakeSink::finalizeBuffers()
-{
-    if (!writer)
-        return;
-
-    try
-    {
-        writer->flush();
-        writer->finalize();
-    }
-    catch (...)
-    {
-        cancelBuffers();
-        releaseBuffers();
-        throw;
-    }
-
-    write_buf->finalize();
-}
-
-void DeltaLakeSink::releaseBuffers()
-{
-    writer.reset();
-    write_buf.reset();
-}
-
-void DeltaLakeSink::cancelBuffers()
-{
-    if (writer)
-        writer->cancel();
-    if (write_buf)
-        write_buf->cancel();
+    StorageObjectStorageSink::onFinish();
 }
 
 }
