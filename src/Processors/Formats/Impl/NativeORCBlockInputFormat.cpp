@@ -1286,51 +1286,47 @@ static ColumnPtr readOffsetsFromORCListColumn(const BatchType * orc_column)
 }
 
 static ColumnWithTypeAndName
-readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto * orc_bool_column = dynamic_cast<const orc::LongVectorBatch *>(orc_column);
     auto internal_type = DataTypeFactory::instance().get("Bool");
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
+
     column_data.reserve(orc_bool_column->numElements);
-
     for (size_t i = 0; i < orc_bool_column->numElements; ++i)
-        column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
+    {
+        if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
+            column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
+        else
+            column_data.push_back(0);
+    }
 
     return {std::move(internal_column), internal_type, column_name};
 }
 
-/// Inserts numeric data right into internal column data to reduce an overhead
-template <typename NumericType, typename BatchType, typename VectorType = ColumnVector<NumericType>>
+
+template <typename NumericType, typename BatchType>
 static ColumnWithTypeAndName
-readColumnWithNumericData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+readColumnWithNumericData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
     auto internal_column = internal_type->createColumn();
-    auto & column_data = static_cast<VectorType &>(*internal_column).getData();
-    column_data.reserve(orc_column->numElements);
-
+    auto & column_data = static_cast<ColumnVector<NumericType> &>(*internal_column).getData();
     const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
-    column_data.insert_assume_reserved(orc_int_column->data.data(), orc_int_column->data.data() + orc_int_column->numElements);
 
-    return {std::move(internal_column), internal_type, column_name};
-}
-
-template <typename NumericType, typename BatchType, typename VectorType = ColumnVector<NumericType>>
-static ColumnWithTypeAndName
-readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
-{
-    auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
-    auto internal_column = internal_type->createColumn();
-    auto & column_data = static_cast<VectorType &>(*internal_column).getData();
-    column_data.reserve(orc_column->numElements);
-
-    const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
+    column_data.reserve(orc_int_column->numElements);
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
-        column_data.push_back(static_cast<NumericType>(orc_int_column->data[i]));
+    {
+        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
+            column_data.push_back(NumericType(orc_int_column->data[i]));
+        else
+            column_data.push_back(NumericType{});
+    }
 
     return {std::move(internal_column), internal_type, column_name};
 }
+
 
 template <bool fixed_string>
 static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
@@ -1442,7 +1438,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
 }
 
 static ColumnWithTypeAndName
-readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
@@ -1512,39 +1508,44 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
 }
 
 
-template <typename DecimalType, typename BatchType, typename VectorType = ColumnDecimal<DecimalType>>
+template <typename DecimalType, typename BatchType>
 static ColumnWithTypeAndName readColumnWithDecimalDataCast(
-    const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, DataTypePtr internal_type)
+    const orc::ColumnVectorBatch * orc_column, const String & column_name, DataTypePtr internal_type)
 {
     using NativeType = typename DecimalType::NativeType;
     static_assert(std::is_same_v<BatchType, orc::Decimal128VectorBatch> || std::is_same_v<BatchType, orc::Decimal64VectorBatch>);
 
     auto internal_column = internal_type->createColumn();
-    auto & column_data = static_cast<VectorType &>(*internal_column).getData();
+    auto & column_data = static_cast<ColumnDecimal<DecimalType> &>(*internal_column).getData();
     column_data.reserve(orc_column->numElements);
 
     const auto * orc_decimal_column = dynamic_cast<const BatchType *>(orc_column);
     for (size_t i = 0; i < orc_decimal_column->numElements; ++i)
     {
-        DecimalType decimal_value;
-        if constexpr (std::is_same_v<BatchType, orc::Decimal128VectorBatch>)
+        if (!orc_decimal_column->hasNulls || orc_decimal_column->notNull[i])
         {
-            Int128 int128_value;
-            int128_value.items[0] = orc_decimal_column->values[i].getLowBits();
-            int128_value.items[1] = orc_decimal_column->values[i].getHighBits();
-            decimal_value.value = static_cast<NativeType>(int128_value);
+            DecimalType decimal_value;
+            if constexpr (std::is_same_v<BatchType, orc::Decimal128VectorBatch>)
+            {
+                Int128 int128_value;
+                int128_value.items[0] = orc_decimal_column->values[i].getLowBits();
+                int128_value.items[1] = orc_decimal_column->values[i].getHighBits();
+                decimal_value.value = static_cast<NativeType>(int128_value);
+            }
+            else
+                decimal_value.value = static_cast<NativeType>(orc_decimal_column->values[i]);
+
+            column_data.push_back(std::move(decimal_value));
         }
         else
-            decimal_value.value = static_cast<NativeType>(orc_decimal_column->values[i]);
-
-        column_data.push_back(std::move(decimal_value));
+            column_data.push_back(DecimalType{});
     }
 
     return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName
-readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const orc::Type * orc_type, const String & column_name)
+readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
 
@@ -1552,7 +1553,7 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
     {
         /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
         if ((!orc_str_column->hasNulls || orc_str_column->notNull[i]) && orc_str_column->length[i] != sizeof(IPv6))
-            return readColumnWithStringData(orc_column, orc_type, column_name);
+            return readColumnWithStringData(orc_column, column_name);
     }
 
     auto internal_type = std::make_shared<DataTypeIPv6>();
@@ -1572,7 +1573,7 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
 }
 
 static ColumnWithTypeAndName
-readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto * orc_int_column = dynamic_cast<const orc::LongVectorBatch *>(orc_column);
 
@@ -1582,14 +1583,19 @@ readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const orc
     column_data.reserve(orc_int_column->numElements);
 
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
-        column_data.push_back(static_cast<UInt32>(orc_int_column->data[i]));
+    {
+        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
+            column_data.push_back(static_cast<UInt32>(orc_int_column->data[i]));
+        else
+            column_data.push_back(0);
+    }
 
     return {std::move(internal_column), internal_type, column_name};
 }
 
 template <typename ColumnType>
 static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
-    const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, const DataTypePtr & column_type)
+    const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & column_type)
 {
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
 
@@ -1620,7 +1626,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 }
 
 static ColumnWithTypeAndName readColumnWithDateData(
-    const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, const DataTypePtr & type_hint)
+    const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
 {
     DataTypePtr internal_type;
     bool check_date_range = false;
@@ -1656,7 +1662,6 @@ static ColumnWithTypeAndName readColumnWithDateData(
         }
         else
         {
-            /// ORC library doesn't guarantee that orc_int_column->data[i] is initialized to zero when orc_int_column->notNull[i] is false since https://github.com/ClickHouse/ClickHouse/pull/69473
             column_data.push_back(0);
         }
     }
@@ -1665,7 +1670,7 @@ static ColumnWithTypeAndName readColumnWithDateData(
 }
 
 static ColumnWithTypeAndName
-readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto * orc_ts_column = dynamic_cast<const orc::TimestampVectorBatch *>(orc_column);
 
@@ -1677,9 +1682,14 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const orc
     constexpr Int64 multiplier = 1e9L;
     for (size_t i = 0; i < orc_ts_column->numElements; ++i)
     {
-        Decimal64 decimal64;
-        decimal64.value = orc_ts_column->data[i] * multiplier + orc_ts_column->nanoseconds[i];
-        column_data.emplace_back(std::move(decimal64));
+        if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
+        {
+            Decimal64 decimal64;
+            decimal64.value = orc_ts_column->data[i] * multiplier + orc_ts_column->nanoseconds[i];
+            column_data.emplace_back(std::move(decimal64));
+        }
+        else
+            column_data.push_back(0);
     }
     return {std::move(internal_column), internal_type, column_name};
 }
@@ -1719,20 +1729,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::IPv6:
-                        return readIPv6ColumnFromBinaryData(orc_column, orc_type, column_name);
+                        return readIPv6ColumnFromBinaryData(orc_column, column_name);
                     /// ORC format outputs big integers as binary column, because there is no fixed binary in ORC.
                     case TypeIndex::Int128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(orc_column, column_name, type_hint);
                     case TypeIndex::UInt128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(orc_column, column_name, type_hint);
                     case TypeIndex::Int256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, column_name, type_hint);
                     case TypeIndex::UInt256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, column_name, type_hint);
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(
-                            orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(orc_column, column_name, type_hint);
                     default:;
                 }
             }
@@ -1743,7 +1752,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 return readColumnWithEncodedStringOrFixedStringData<false>(orc_column, orc_type, column_name, nullable);
             }
             else
-                return readColumnWithStringData(orc_column, orc_type, column_name);
+                return readColumnWithStringData(orc_column, column_name);
         }
         case orc::CHAR:
         {
@@ -1752,13 +1761,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::Int128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(orc_column, column_name, type_hint);
                     case TypeIndex::UInt128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(orc_column, column_name, type_hint);
                     case TypeIndex::Int256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, column_name, type_hint);
                     case TypeIndex::UInt256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, orc_type, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, column_name, type_hint);
                     default:;
                 }
             }
@@ -1772,31 +1781,32 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 return readColumnWithFixedStringData(orc_column, orc_type, column_name);
         }
         case orc::BOOLEAN:
-            return readColumnWithBooleanData(orc_column, orc_type, column_name);
+            return readColumnWithBooleanData(orc_column, column_name);
         case orc::BYTE:
-            return readColumnWithNumericDataCast<Int8, orc::LongVectorBatch>(orc_column, orc_type, column_name);
+            return readColumnWithNumericData<Int8, orc::LongVectorBatch>(orc_column, column_name);
         case orc::SHORT:
-            return readColumnWithNumericDataCast<Int16, orc::LongVectorBatch>(orc_column, orc_type, column_name);
-        case orc::INT: {
+            return readColumnWithNumericData<Int16, orc::LongVectorBatch>(orc_column, column_name);
+        case orc::INT:
+        {
             /// ORC format doesn't have unsigned integers and we output IPv4 as Int32.
             /// We should allow to read it back from Int32.
             if (type_hint && isIPv4(type_hint))
-                return readIPv4ColumnWithInt32Data(orc_column, orc_type, column_name);
-            return readColumnWithNumericDataCast<Int32, orc::LongVectorBatch>(orc_column, orc_type, column_name);
+                return readIPv4ColumnWithInt32Data(orc_column, column_name);
+            return readColumnWithNumericData<Int32, orc::LongVectorBatch>(orc_column, column_name);
         }
         case orc::LONG:
-            return readColumnWithNumericData<Int64, orc::LongVectorBatch>(orc_column, orc_type, column_name);
+            return readColumnWithNumericData<Int64, orc::LongVectorBatch>(orc_column, column_name);
         case orc::FLOAT:
-            return readColumnWithNumericDataCast<Float32, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
+            return readColumnWithNumericData<Float32, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DOUBLE:
-            return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
+            return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DATE:
-            return readColumnWithDateData(orc_column, orc_type, column_name, type_hint);
-        case orc::TIMESTAMP:
-            [[fallthrough]];
+            return readColumnWithDateData(orc_column, column_name, type_hint);
+        case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
-            return readColumnWithTimestampData(orc_column, orc_type, column_name);
-        case orc::DECIMAL: {
+            return readColumnWithTimestampData(orc_column, column_name);
+        case orc::DECIMAL:
+        {
             auto interal_type = parseORCType(orc_type, false, false, nullptr, skipped);
 
             auto precision = orc_type->getPrecision();
@@ -1804,16 +1814,16 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 precision = 38;
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
-                return readColumnWithDecimalDataCast<Decimal32, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
+                return readColumnWithDecimalDataCast<Decimal32, orc::Decimal64VectorBatch>(orc_column, column_name, interal_type);
             if (precision <= DecimalUtils::max_precision<Decimal64>)
-                return readColumnWithDecimalDataCast<Decimal64, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
+                return readColumnWithDecimalDataCast<Decimal64, orc::Decimal64VectorBatch>(orc_column, column_name, interal_type);
             if (precision <= DecimalUtils::max_precision<Decimal128>)
-                return readColumnWithDecimalDataCast<Decimal128, orc::Decimal128VectorBatch>(
-                    orc_column, orc_type, column_name, interal_type);
+                return readColumnWithDecimalDataCast<Decimal128, orc::Decimal128VectorBatch>(orc_column, column_name, interal_type);
             throw Exception(
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal precision {} in ORC type {} is out of bound", precision, orc_type->toString());
         }
-        case orc::MAP: {
+        case orc::MAP:
+        {
             DataTypePtr key_type_hint;
             DataTypePtr value_type_hint;
             if (type_hint)
@@ -1850,7 +1860,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             auto map_type = std::make_shared<DataTypeMap>(key_column.type, value_column.type);
             return {map_column, map_type, column_name};
         }
-        case orc::LIST: {
+        case orc::LIST:
+        {
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
@@ -1880,13 +1891,15 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             }
             return {array_column, array_type, column_name};
         }
-        case orc::STRUCT: {
+        case orc::STRUCT:
+        {
             Columns tuple_elements;
             DataTypes tuple_types;
             std::vector<String> tuple_names;
 
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);
+
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 auto field_name = orc_type->getFieldName(i);
