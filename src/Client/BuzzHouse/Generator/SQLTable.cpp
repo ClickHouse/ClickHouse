@@ -584,6 +584,8 @@ static const std::vector<SQLFunc> arithmeticFuncs
        SQLFunc::FUNCicebergBucket,
        SQLFunc::FUNCicebergTruncate};
 
+static const std::vector<SQLFunc> icebergFuncs = {SQLFunc::FUNCicebergBucket, SQLFunc::FUNCicebergTruncate};
+
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
     columnPathRef(entry, expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
@@ -612,7 +614,7 @@ void StatementGenerator::entryOrConstant(RandomGenerator & rg, const ColumnPathC
 }
 
 void StatementGenerator::colRefOrExpression(
-    RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
+    RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const ColumnPathChain & entry, Expr * expr)
 {
     SQLType * tp = entry.getBottomType();
     const uint32_t datetime_func = 15
@@ -620,7 +622,7 @@ void StatementGenerator::colRefOrExpression(
                                 || hasType<DateTimeType>(false, true, false, tp));
     const uint32_t modulo_func = 15 * static_cast<uint32_t>(hasType<IntType>(true, true, false, tp));
     const uint32_t one_arg_func = 5;
-    const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
+    const uint32_t hash_func = 10 * static_cast<uint32_t>(b.teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
     const uint32_t rand_func = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
     const uint32_t arithmetic_func = 5;
@@ -703,7 +705,8 @@ void StatementGenerator::colRefOrExpression(
         /// Use arithmetic function
         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(arithmeticFuncs));
+        func_call->mutable_func()->set_catalog_func(
+            rg.pickRandomly((b.isAnyIcebergEngine() && rg.nextBool()) ? icebergFuncs : arithmeticFuncs));
         entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
         entryOrConstant(rg, entry, func_call->add_args()->mutable_expr());
     }
@@ -720,7 +723,7 @@ void StatementGenerator::colRefOrExpression(
 }
 
 void StatementGenerator::generateTableKey(
-    RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
+    RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const bool allow_asc_desc, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
@@ -746,7 +749,7 @@ void StatementGenerator::generateTableKey(
             const size_t ocols = (rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
             std::shuffle(entries.begin(), entries.end(), rg.generator);
-            if (teng != SummingMergeTree && rg.nextSmallNumber() < 3)
+            if (b.teng != SummingMergeTree && rg.nextSmallNumber() < 3)
             {
                 /// Use a single expression for the entire table
                 /// See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
@@ -770,7 +773,7 @@ void StatementGenerator::generateTableKey(
                 {
                     TableKeyExpr * tke = tkey->add_exprs();
 
-                    colRefOrExpression(rg, rel, teng, this->entries[i], tke->mutable_expr());
+                    colRefOrExpression(rg, rel, b, this->entries[i], tke->mutable_expr());
                     if (allow_asc_desc && rg.nextSmallNumber() < 3)
                     {
                         tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -852,7 +855,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 {
     if (rg.nextSmallNumber() < 6)
     {
-        generateTableKey(rg, rel, b.teng, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
+        generateTableKey(rg, rel, b, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
     }
     if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
@@ -874,11 +877,11 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
     else if (!te->has_order() && add_pkey)
     {
-        generateTableKey(rg, rel, b.teng, false, te->mutable_primary_key());
+        generateTableKey(rg, rel, b, false, te->mutable_primary_key());
     }
     if (rg.nextBool())
     {
-        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
+        generateTableKey(rg, rel, b, false, te->mutable_partition_by());
     }
 
     const int npkey = te->primary_key().exprs_size();
@@ -996,7 +999,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
             to_remote_entries | flat_tuple | flat_nested | flat_json | collect_generated, tt.cols, [](const SQLColumn &) { return true; });
         const ColumnPathChain entry = rg.pickRandomly(this->remote_entries);
         this->remote_entries.clear();
-        colRefOrExpression(rg, createTableRelation(rg, true, "", tt), tt.teng, entry, expr);
+        colRefOrExpression(rg, createTableRelation(rg, true, "", tt), tt, entry, expr);
     }
     else
     {
@@ -1041,7 +1044,7 @@ void StatementGenerator::generateEngineDetails(
         && rg.nextSmallNumber() < 5)
     {
         /// Optional PARTITION BY
-        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
+        generateTableKey(rg, rel, b, false, te->mutable_partition_by());
         b.has_partition_by = true;
     }
     if (b.isMergeTreeFamily())
@@ -1340,7 +1343,7 @@ void StatementGenerator::generateEngineDetails(
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
     {
-        colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
     if (te->has_engine())
     {
@@ -1633,7 +1636,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     if (!expr->has_comp_expr())
     {
         flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-        colRefOrExpression(rg, createTableRelation(rg, true, "", t), Null, rg.pickRandomly(this->entries), expr);
+        colRefOrExpression(rg, createTableRelation(rg, true, "", t), t, rg.pickRandomly(this->entries), expr);
         this->entries.clear();
     }
     switch (itpe)

@@ -2922,15 +2922,15 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_comment())
-    {
-        ret += " COMMENT ";
-        ret += create_database.comment();
-    }
     if (create_database.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, create_database.setting_values());
+    }
+    if (create_database.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_database.comment();
     }
 }
 

@@ -422,7 +422,7 @@ def dolor_cleanup():
         client.process.kill()
         client.process.wait()
     try:
-        cluster.shutdown()
+        cluster.shutdown(kill=True, ignore_fatal=False)
     except:
         pass
     if modified_server_settings:
