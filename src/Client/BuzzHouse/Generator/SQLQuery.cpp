@@ -321,13 +321,9 @@ void StatementGenerator::setTableFunction(
 
             if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
             {
-                lfunc->set_fname(static_cast<LocalFunc_FName>(static_cast<uint32_t>(val) + 2));
                 lfunc->mutable_cluster()->set_cluster(cluster.value());
             }
-            else
-            {
-                lfunc->set_fname(val);
-            }
+            lfunc->set_fname(val);
             lfunc->set_credential("local");
         }
         else if (t.isFileEngine())

@@ -2134,7 +2134,7 @@ CONV_FN(LocalFunc, local)
 {
     ret += LocalFunc_FName_Name(local.fname());
     ret += "(";
-    if (local.has_cluster() && local.fname() > LocalFunc_FName_icebergLocal)
+    if (local.has_cluster())
     {
         ClusterToString(ret, false, local.cluster());
         ret += ", ";

@@ -2610,8 +2610,6 @@ message LocalFunc {
     enum FName {
         deltaLakeLocal = 1;
         icebergLocal = 2;
-        deltaLakeLocalCluster = 3;
-        icebergLocalCluster = 4;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
