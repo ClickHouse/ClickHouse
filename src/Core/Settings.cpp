@@ -191,7 +191,7 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Cloud default value: from `2` to `4`, depending on the service size.
+Cloud default value: `0`
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -219,6 +219,8 @@ For example, when reading from a table, if it is possible to evaluate expression
 For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
+
+Cloud default value: `auto(3)`
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -293,7 +295,7 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
-Disabled by default on Cloud.
+Cloud default value: `1`
 )", 0) \
     DECLARE(Bool, allow_changing_replica_until_first_data_packet, false, R"(
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
@@ -695,10 +697,10 @@ By default, when inserting data into a `Distributed` table, the ClickHouse serve
 
 Possible values:
 
-- 0 — Data is inserted in background mode.
-- 1 — Data is inserted in synchronous mode.
+- `0` — Data is inserted in background mode.
+- `1` — Data is inserted in synchronous mode.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 
 **See Also**
 
@@ -795,22 +797,22 @@ Allows to set up waiting for actions to be executed on replicas by [ALTER](../..
 
 Possible values:
 
-- 0 — Do not wait.
-- 1 — Wait for own execution.
-- 2 — Wait for everyone.
+- `0` — Do not wait.
+- `1` — Wait for own execution.
+- `2` — Wait for everyone.
 
-Cloud default value: `0`.
+Cloud default value: `1`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
-Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Specifies how long (in seconds) to wait for inactive replicas to execute [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
-- 0 — Do not wait.
+- `0` — Do not wait.
 - Negative integer — Wait for unlimited time.
 - Positive integer — The number of seconds to wait.
 )", 0) \
@@ -2577,7 +2579,7 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of
 this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-Cloud default value: half the memory amount per replica.
+Cloud default value: `0`
 
 Enables or disables execution of `GROUP BY` clauses in external memory.
 (See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
@@ -2624,7 +2626,7 @@ Possible values:
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-Cloud default value: half the memory amount per replica.
+Cloud default value: `0`
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
 If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
@@ -3141,7 +3143,7 @@ source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
-Cloud default value: depends on the amount of RAM on the replica.
+Cloud default value: `0`
 
 The maximum amount of RAM to use for running a query on a single server.
 A value of `0` means unlimited.
@@ -3568,7 +3570,7 @@ Possible values:
     DECLARE(Bool, cancel_http_readonly_queries_on_client_close, false, R"(
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 )", 0) \
     DECLARE(Bool, external_table_functions_use_nulls, true, R"(
 Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
@@ -3797,18 +3799,18 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
-Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
+Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
 
-Cloud default value: 1 TB.
+Cloud default value: `0`.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
-Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
+Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
 
-Cloud default value: 1 TB.
+Cloud default value: `0`.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
@@ -5246,7 +5248,7 @@ Possible values:
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
-Cloud default value: `none`.
+Cloud default value: `throw`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
 Compatibility version of distributed DDL (ON CLUSTER) queries
