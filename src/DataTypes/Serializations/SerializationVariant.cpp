@@ -733,6 +733,9 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
     state.remaining_rows_in_granule = granule_size;
     UInt8 granule_format;
     readBinaryLittleEndian(granule_format, *stream);
+    if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
+
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         readBinaryLittleEndian(state.compact_discr, *stream);
