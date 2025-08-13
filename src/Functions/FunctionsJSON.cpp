@@ -1124,10 +1124,10 @@ REGISTER_FUNCTION(JSON)
         FunctionDocumentation::Description description = R"(
 Checks for the existence of the provided value(s) in the JSON document.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONHas(json [, indices_or_keys]...)";
+        FunctionDocumentation::Syntax syntax = "JSONHas(json[ ,indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
-            {"indices_or_keys", "A list of zero or more arguments.", {"String", "(U)Int*"}}
+            {"[ ,indices_or_keys, ...]", "A list of zero or more arguments.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"UInt8"}};
         FunctionDocumentation::Examples example = {
