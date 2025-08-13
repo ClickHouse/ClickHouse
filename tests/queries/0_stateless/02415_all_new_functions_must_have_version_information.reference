@@ -757,22 +757,6 @@ visibleWidth
 widthBucket
 windowID
 wkt
-<<<<<<< HEAD
-wordShingleMinHash
-wordShingleMinHashArg
-wordShingleMinHashArgCaseInsensitive
-wordShingleMinHashArgCaseInsensitiveUTF8
-wordShingleMinHashArgUTF8
-wordShingleMinHashCaseInsensitive
-wordShingleMinHashCaseInsensitiveUTF8
-wordShingleMinHashUTF8
-wordShingleSimHash
-wordShingleSimHashCaseInsensitive
-wordShingleSimHashCaseInsensitiveUTF8
-wordShingleSimHashUTF8
-=======
-wyHash64
->>>>>>> d29272017ab0ba259a3b66dfad209a79c0677cd5
 xor
 xxh3
 zookeeperSessionUptime
