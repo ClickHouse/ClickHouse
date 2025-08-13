@@ -698,9 +698,13 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
+    /// For compatibility, which is required in certain aggregate function states.
+    size_t size_used_in_hash = string_size + 1;
 
-    hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+    hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    /// This is for compatibility
+    hash.update(UInt8(0));
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const
