@@ -153,6 +153,7 @@ def main():
             )
 
         # Generate configuration file
+        # No PARALLEL WITH with slow sanitizers
         min_nested_rows = random.randint(0, 10)
         min_insert_rows = random.randint(1, 100)
         buzz_config = {
@@ -170,7 +171,12 @@ def main():
             "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
             "min_string_length": random.randint(0, 100),
             "max_parallel_queries": (
-                1 if random.randint(1, 2) == 1 else random.randint(1, 4)
+                1
+                if (
+                    any(x in Info().job_name for x in ["tsan", "asan", "msan"])
+                    or random.randint(1, 2) == 1
+                )
+                else random.randint(1, 5)
             ),
             "fuzz_floating_points": random.choice([True, False]),
             "enable_fault_injection_settings": random.choice([True, False]),
