@@ -1,7 +1,4 @@
 #pragma once
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -13,13 +10,14 @@
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-#    include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 
-#    include <optional>
-#    include <tuple>
-#    include <base/defines.h>
-#    include <Common/SharedMutex.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <base/defines.h>
+#include <Common/SharedMutex.h>
 
 
 namespace DB {

@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Block_fwd.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 

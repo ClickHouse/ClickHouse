@@ -11,8 +11,6 @@ namespace DB::Iceberg
 {
 
 struct IcebergDataSnapshot
-
-
 {
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;

@@ -2,11 +2,10 @@
 
 #include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/Names.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
+#include <Interpreters/Context_fwd.h>
 
 #include "config.h"
 
@@ -52,6 +51,7 @@ struct DeserializedSetsRegistry;
 class ActionsDAG
 {
 public:
+
     enum class ActionType : uint8_t
     {
         /// Column which must be in input.

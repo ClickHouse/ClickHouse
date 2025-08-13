@@ -31,22 +31,22 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/CompressedReadBufferWrapper.h>
 
-#    include <Storages/ColumnsDescription.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#    include <Common/ProfileEvents.h>
-#    include <Common/SharedLockGuard.h>
-#    include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {

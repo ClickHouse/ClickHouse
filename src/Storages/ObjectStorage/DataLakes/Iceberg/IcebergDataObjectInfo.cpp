@@ -2,31 +2,22 @@
 
 #if USE_AVRO
 
-#    include <Core/Settings.h>
-#    include <Interpreters/Context.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
-#    include <Core/Types.h>
-#    include <Disks/ObjectStorages/IObjectStorage.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Core/Types.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-#    include <optional>
-#    include <tuple>
-#    include <base/defines.h>
-#    include <Common/SharedMutex.h>
+#include <base/defines.h>
+#include <Common/SharedMutex.h>
 
-#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
-
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
-#    include <Common/Exception.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Common/Exception.h>
 
 namespace DB::ErrorCodes
 {

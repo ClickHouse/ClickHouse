@@ -1,7 +1,4 @@
 #pragma once
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -21,8 +18,10 @@
 
 #include <optional>
 #include <base/defines.h>
-#include <Common/SharedMutex.h>
 
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>

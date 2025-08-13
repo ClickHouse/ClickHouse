@@ -11,7 +11,6 @@
 #include <Core/Field.h>
 
 #include <cstdint>
-#include <variant>
 
 namespace DB::Iceberg
 {
