@@ -22,8 +22,8 @@ namespace DB
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool jemalloc_enable_profiler;
-    extern const ServerSettingsBool jemalloc_collect_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
@@ -104,8 +104,15 @@ void setJemallocMaxBackgroundThreads(size_t max_threads)
 
 namespace
 {
+
+std::atomic<bool> collect_global_profiles_in_trace_log = false;
+thread_local bool collect_local_profiles_in_trace_log = false;
+
 void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtrace, unsigned backtrace_length, size_t usize)
 {
+    if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
+        return;
+
     try
     {
         StackTrace::FramePointers frame_pointers;
@@ -124,6 +131,9 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
 
 void jemallocDeallocationTracker(const void * ptr, unsigned usize)
 {
+    if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
+        return;
+
     try
     {
         TraceSender::send(
@@ -139,19 +149,41 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
 
 }
 
+void setCollectLocalProfileSamplesInTraceLog(bool value)
+{
+    collect_local_profiles_in_trace_log = value;
+}
+
 void setupJemalloc(const ServerSettings & server_settings)
 {
-    setJemallocValue("prof.active", server_settings[ServerSetting::jemalloc_enable_profiler].value);
+    if (server_settings[ServerSetting::jemalloc_enable_global_profiler])
+    {
+        getThreadProfileInitMib().setValue(true);
+        getThreadProfileActiveMib().setValue(true);
+    }
+
     setJemallocBackgroundThreads(server_settings[ServerSetting::jemalloc_enable_background_threads].value);
 
     if (server_settings[ServerSetting::jemalloc_max_background_threads_num])
         setJemallocValue("max_background_threads", server_settings[ServerSetting::jemalloc_max_background_threads_num].value);
 
-    if (server_settings[ServerSetting::jemalloc_collect_profile_samples_in_trace_log])
-    {
-        setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
-        setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
-    }
+    collect_global_profiles_in_trace_log = server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log];
+    setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+    setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+}
+
+
+const JemallocMibCache<bool> & getThreadProfileActiveMib()
+{
+    static JemallocMibCache<bool> thread_profile_active("thread.prof.active");
+    return thread_profile_active;
+
+}
+
+const JemallocMibCache<bool> & getThreadProfileInitMib()
+{
+    static JemallocMibCache<bool> thread_profile_init("prof.thread_active_init");
+    return thread_profile_init;
 }
 
 }

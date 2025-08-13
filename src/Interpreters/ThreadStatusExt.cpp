@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
@@ -60,6 +61,8 @@ namespace Setting
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsBool jemalloc_enable_profiler;
+    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
 }
 
 namespace ErrorCodes
@@ -334,6 +337,14 @@ void ThreadStatus::applyQuerySettings()
             throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
 
         os_thread_priority = new_os_thread_priority;
+    }
+#endif
+
+#if USE_JEMALLOC
+    if (settings[Setting::jemalloc_enable_profiler])
+    {
+        getThreadProfileActiveMib().setValue(true);
+        setCollectLocalProfileSamplesInTraceLog(settings[Setting::jemalloc_collect_profile_samples_in_trace_log]);
     }
 #endif
 }

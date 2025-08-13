@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
@@ -6,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 
@@ -22,6 +24,11 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+}
+
+namespace Setting
+{
+    extern const SettingsBool jemalloc_enable_profiler;
 }
 
 #if !defined(SANITIZER)
@@ -271,6 +278,14 @@ ThreadStatus::~ThreadStatus()
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
+
+#if USE_JEMALLOC
+    if (query_context_ptr && query_context_ptr->getSettingsRef()[Setting::jemalloc_enable_profiler])
+    {
+        getThreadProfileActiveMib().setValue(getThreadProfileInitMib().getValue());
+        setCollectLocalProfileSamplesInTraceLog(false);
+    }
+#endif
 
     /// detachGroup if it was attached
     if (deleter)

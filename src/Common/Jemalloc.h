@@ -58,12 +58,12 @@ struct JemallocMibCache
         mallctlnametomib(name, mib, &mib_length);
     }
 
-    void setValue(T value)
+    void setValue(T value) const
     {
         mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
-    T getValue()
+    T getValue() const
     {
         T value;
         size_t value_size = sizeof(T);
@@ -71,7 +71,7 @@ struct JemallocMibCache
         return value;
     }
 
-    void run()
+    void run() const
     {
         mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
     }
@@ -81,6 +81,11 @@ private:
     size_t mib[max_mib_length];
     size_t mib_length = max_mib_length;
 };
+
+const JemallocMibCache<bool> & getThreadProfileActiveMib();
+const JemallocMibCache<bool> & getThreadProfileInitMib();
+
+void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 }
 
