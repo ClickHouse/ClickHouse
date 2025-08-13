@@ -1,4 +1,4 @@
- -- Tags: no-parallel
+-- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests that setting 'query_condition_cache_selectivity_threshold' works.
