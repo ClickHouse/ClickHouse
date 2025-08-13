@@ -186,7 +186,8 @@ public:
 
         // quote arguments
         std::vector<std::string> quoted_args;
-        for (const auto& arg : command_arguments_with_parameters) {
+        for (const auto& arg : command_arguments_with_parameters)
+        {
             quoted_args.push_back("\"" + arg + "\"");
         }
         String args_str = Poco::cat(String(", "), quoted_args.begin(), quoted_args.end());
