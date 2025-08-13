@@ -274,6 +274,14 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        docker_exec(postgresql_java_client_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
 
 def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
@@ -528,6 +536,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
@@ -678,6 +687,12 @@ class ClickHouseCluster:
             self.postgresql_java_client_host
         )
 
+        # available when with_mysql_dotnet_client = True
+        self.mysql_dotnet_client_host = "dotnet"
+        self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.mysql_dotnet_client_host
+        )
+
         # available when with_mysql_client == True
         self.mysql_client_host = "mysql_client"
         self.mysql_client_container = None
@@ -730,23 +745,20 @@ class ClickHouseCluster:
         # available when with_prometheus == True
         self.with_prometheus = False
         self.prometheus_writer_host = "prometheus_writer"
-        self.prometheus_writer_ip = None
         self.prometheus_writer_port = 9090
-        self.prometheus_writer_logs_dir = p.abspath(
-            p.join(self.instances_dir, "prometheus_writer/logs")
-        )
+        self.prometheus_writer_ip = None
+        self.prometheus_writer_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_writer/logs"))
         self.prometheus_reader_host = "prometheus_reader"
-        self.prometheus_reader_ip = None
         self.prometheus_reader_port = 9091
-        self.prometheus_reader_logs_dir = p.abspath(
-            p.join(self.instances_dir, "prometheus_reader/logs")
-        )
-        self.prometheus_remote_write_handler_host = None
-        self.prometheus_remote_write_handler_port = 9092
-        self.prometheus_remote_write_handler_path = "/write"
-        self.prometheus_remote_read_handler_host = None
-        self.prometheus_remote_read_handler_port = 9092
-        self.prometheus_remote_read_handler_path = "/read"
+        self.prometheus_reader_ip = None
+        self.prometheus_reader_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_reader/logs"))
+        self.prometheus_receiver_host = "prometheus_receiver"
+        self.prometheus_receiver_port = 9092
+        self.prometheus_receiver_ip = None
+        self.prometheus_receiver_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_receiver/logs"))
+        self.prometheus_servers = []
+        self.prometheus_remote_write_handlers = []
+        self.prometheus_remote_read_handlers = []
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -959,7 +971,7 @@ class ClickHouseCluster:
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
-                print("Got exception getting docker handle", str(ex))
+                logging.debug(f"Got exception getting docker handle {ex}")
                 time.sleep(0.5)
                 exception = ex
         raise exception
@@ -1242,6 +1254,25 @@ class ClickHouseCluster:
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        )
+
+    def setup_mysql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_mysql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_mysql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
         )
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1600,22 +1631,37 @@ class ClickHouseCluster:
         return self.base_hive_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
-        env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
-        env_variables["PROMETHEUS_WRITER_LOGS"] = self.prometheus_writer_logs_dir
-        env_variables["PROMETHEUS_WRITER_LOGS_FS"] = "bind"
-        env_variables["PROMETHEUS_READER_HOST"] = self.prometheus_reader_host
-        env_variables["PROMETHEUS_READER_PORT"] = str(self.prometheus_reader_port)
-        env_variables["PROMETHEUS_READER_LOGS"] = self.prometheus_reader_logs_dir
-        env_variables["PROMETHEUS_READER_LOGS_FS"] = "bind"
-        if self.prometheus_remote_write_handler_host:
-            env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
-                f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
-            )
-        if self.prometheus_remote_read_handler_host:
-            env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
-                f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
-            )
+        if "writer" in self.prometheus_servers:
+            prefix = f"PROMETHEUS_WRITER"
+            env_variables[f"{prefix}_HOST"] = self.prometheus_writer_host
+            env_variables[f"{prefix}_PORT"] = str(self.prometheus_writer_port)
+            env_variables[f"{prefix}_LOGS"] = self.prometheus_writer_logs_dir
+            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+
+        if "reader" in self.prometheus_servers:
+            prefix = f"PROMETHEUS_READER"
+            env_variables[f"{prefix}_HOST"] = self.prometheus_reader_host
+            env_variables[f"{prefix}_PORT"] = str(self.prometheus_reader_port)
+            env_variables[f"{prefix}_LOGS"] = self.prometheus_reader_logs_dir
+            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+
+        if "receiver" in self.prometheus_servers:
+            prefix = f"PROMETHEUS_RECEIVER"
+            env_variables[f"{prefix}_HOST"] = self.prometheus_receiver_host
+            env_variables[f"{prefix}_PORT"] = str(self.prometheus_receiver_port)
+            env_variables[f"{prefix}_LOGS"] = self.prometheus_receiver_logs_dir
+            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+
+        handler_urls = []
+        for handler_host, handler_port, handler_path in self.prometheus_remote_write_handlers:
+            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+
+        handler_urls = []
+        for handler_host, handler_port, handler_path in self.prometheus_remote_read_handlers:
+            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_READ_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+
         if not self.with_prometheus:
             self.with_prometheus = True
             self.base_cmd.extend(
@@ -1658,6 +1704,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_arrowflight=False,
@@ -1675,12 +1722,14 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        with_prometheus=False,
+        with_prometheus_writer=False,
+        with_prometheus_reader=False,
+        with_prometheus_receiver=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
-        handle_prometheus_remote_write=False,
-        handle_prometheus_remote_read=False,
+        handle_prometheus_remote_write=None,
+        handle_prometheus_remote_read=None,
         use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
@@ -1818,6 +1867,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
@@ -1920,6 +1970,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
+            cmds.append(
+                self.setup_mysql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql8:
@@ -1979,7 +2036,7 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
             )
-            
+
         if with_arrowflight and not self.with_arrowflight:
             cmds.append(
                 self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2062,11 +2119,17 @@ class ClickHouseCluster:
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_prometheus:
-            if handle_prometheus_remote_write:
-                self.prometheus_remote_write_handler_host = instance.hostname
-            if handle_prometheus_remote_read:
-                self.prometheus_remote_read_handler_host = instance.hostname
+        if with_prometheus_writer:
+            self.prometheus_servers.append('writer')
+        if with_prometheus_reader:
+            self.prometheus_servers.append('reader')
+        if with_prometheus_receiver:
+            self.prometheus_servers.append('receiver')
+        if handle_prometheus_remote_write:
+            self.prometheus_remote_write_handlers.append((instance.hostname,) + handle_prometheus_remote_write)
+        if handle_prometheus_remote_read:
+            self.prometheus_remote_read_handlers.append((instance.hostname,) + handle_prometheus_remote_read)
+        if self.prometheus_servers:
             cmds.append(
                 self.setup_prometheus_cmd(
                     instance, env_variables, docker_compose_yml_dir
@@ -2537,6 +2600,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_mysql_dotnet_client(self, timeout=30):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_mysql_dotnet_client_is_available(
+                    self.mysql_dotnet_client_docker_id
+                ):
+                    logging.debug("MySQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find MySQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait MySQL C# Client container")
+
     def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
@@ -2916,18 +2994,19 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def wait_prometheus_to_start(self):
-        self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
-        self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
-        self.wait_for_url(
-            f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/query?query=time()"
-        )
-        self.wait_for_url(
-            f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
-        )
-        
+        if "writer" in self.prometheus_servers:
+            self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
+            self.wait_for_url(f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/status/runtimeinfo")
+        if "reader" in self.prometheus_servers:
+            self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
+            self.wait_for_url(f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/status/runtimeinfo")
+        if "receiver" in self.prometheus_servers:
+            self.prometheus_receiver_ip = self.get_instance_ip(self.prometheus_receiver_host)
+            self.wait_for_url(f"http://{self.prometheus_receiver_ip}:{self.prometheus_receiver_port}/api/v1/status/runtimeinfo")
+
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
-        
+
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3128,7 +3207,7 @@ class ClickHouseCluster:
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
-                print("Setup MySQL")
+                logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
@@ -3171,6 +3250,17 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_postgresql_java_client()
+
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                logging.debug("Setup MySQL C# Client")
+                subprocess_check_call(
+                    self.base_mysql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_mysql_dotnet_client()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
@@ -3370,10 +3460,15 @@ class ClickHouseCluster:
                 )
 
             if self.with_prometheus and self.base_prometheus_cmd:
-                os.makedirs(self.prometheus_writer_logs_dir)
-                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                os.makedirs(self.prometheus_reader_logs_dir)
-                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                if "writer" in self.prometheus_servers:
+                    os.makedirs(self.prometheus_writer_logs_dir)
+                    os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                if "reader" in self.prometheus_servers:
+                    os.makedirs(self.prometheus_reader_logs_dir)
+                    os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                if "receiver" in self.prometheus_servers:
+                    os.makedirs(self.prometheus_receiver_logs_dir)
+                    os.chmod(self.prometheus_receiver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 prometheus_start_cmd = self.base_prometheus_cmd + common_opts
 
@@ -3745,6 +3840,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
@@ -3819,6 +3915,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
@@ -4895,10 +4992,12 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
-        yield
-        self.exec_in_container(
-            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
-        )
+        try:
+            yield
+        finally:
+            self.exec_in_container(
+                ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+            )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -4932,7 +5031,7 @@ class ClickHouseInstance:
         instance_config_dir = p.abspath(p.join(self.path, "configs"))
         os.makedirs(instance_config_dir)
 
-        print(
+        logging.debug(
             f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}"
         )
 
@@ -5160,7 +5259,7 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
-            
+
         if self.with_arrowflight:
             depends_on.append("arrowflight1")
 
