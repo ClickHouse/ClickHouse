@@ -1441,6 +1441,9 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
+    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
+    Allow ussage of '_part_offfset' column in projections select query.
+    )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
@@ -1581,8 +1584,7 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of
-    the table.
+    When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in

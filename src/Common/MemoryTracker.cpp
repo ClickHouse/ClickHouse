@@ -141,6 +141,10 @@ MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bo
 
 MemoryTracker::~MemoryTracker()
 {
+    /// We need to explicitly reset MainThreadStatus earlier, to avoid using total_memory_tracker after it has been destroyd
+    if (this == &total_memory_tracker)
+        DB::MainThreadStatus::reset();
+
     if ((level == VariableContext::Process || level == VariableContext::User) && peak && log_peak_memory_usage_in_destructor)
     {
         try
