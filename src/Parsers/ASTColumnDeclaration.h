@@ -14,7 +14,6 @@ class ASTColumnDeclaration : public IAST
 public:
     String name;
     ASTPtr type;
-    UUID uuid = UUIDHelpers::Nil;
     std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
@@ -25,6 +24,7 @@ public:
     ASTPtr ttl;
     ASTPtr collation;
     ASTPtr settings;
+    ASTPtr uuid;
     bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }

@@ -558,6 +558,9 @@ protected:
                             ast_create->targets->resetInnerUUIDs();
                     }
 
+                    if (ast_create)
+                        ast_create->resetColumnUUIDs();
+
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
 

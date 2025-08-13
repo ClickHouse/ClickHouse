@@ -312,9 +312,7 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    // res_columns[res_index++]->insert(column.uuid);
                     res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
-                    // res_columns[res_index++]->insert("aaa");
 
                 ++rows_count;
             }

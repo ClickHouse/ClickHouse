@@ -24,6 +24,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -522,6 +523,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->settings = std::move(settings);
         }
 
+        if (column.uuid != UUIDHelpers::Nil)
+        {
+            column_declaration->uuid = std::make_shared<ASTLiteral>(Field(UUIDHelpers::uuidToStr(column.uuid)));
+            column_declaration->children.push_back(column_declaration->uuid);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -723,6 +730,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
             MergeTreeColumnSettings::validate(column.settings);
+        }
+
+        if (col_decl.uuid)
+        {
+            auto uuid_str  = col_decl.uuid->as<ASTLiteral &>().value.safeGet<String>();
+            column.uuid = parseUUID({reinterpret_cast<const UInt8 *>(uuid_str.data()), uuid_str.length()});
         }
 
         res.add(std::move(column));

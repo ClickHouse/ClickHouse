@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -596,6 +597,15 @@ void ASTCreateQuery::resetUUIDs()
     CreateQueryUUIDs{}.copyToQuery(*this);
 }
 
+
+void ASTCreateQuery::resetColumnUUIDs()
+{
+    for (auto & ast : columns_list->columns->children)
+    {
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        col_decl.uuid = nullptr;
+    }
+}
 
 StorageID ASTCreateQuery::getTargetTableID(ViewTarget::Kind target_kind) const
 {
