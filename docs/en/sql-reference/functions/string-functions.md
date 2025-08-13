@@ -712,6 +712,42 @@ Result:
 └───────┴─────────┘
 ```
 
+## isValidASCII {#isvalidascii}
+
+Checks whether a string is valid ASCII.
+
+Alias: `isASCII`.
+
+**Syntax**
+
+```sql
+isValidASCII(input)
+```
+
+**Arguments**
+
+- `input` — The input string. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns `1` if the string contains only ASCII characters, otherwise `0`. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii;
+```
+
+Result:
+
+```response
+┌─is_ascii─┬─is_not_ascii─┐
+│        1 │            0 │
+└──────────┴──────────────┘
+```
+
 ## toValidUTF8 {#tovalidutf8}
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
