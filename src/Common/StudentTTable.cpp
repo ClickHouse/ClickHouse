@@ -110,4 +110,4 @@ const double students_table[101][6] =
 
 const double confidence_level[6] = { 80, 90, 95, 98, 99, 99.5 };
 
-} 
+}

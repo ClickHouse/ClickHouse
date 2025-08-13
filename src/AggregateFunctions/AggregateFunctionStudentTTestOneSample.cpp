@@ -33,14 +33,14 @@ struct StudentTTestOneSampleData : public OneSampleTTestMoments<Float64>
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
 
         Float64 t_statistic = getTStatistic();
-        
+
         if (unlikely(!std::isfinite(t_statistic)))
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
 
         Float64 degrees_of_freedom = getDegreesOfFreedom();
         auto student = boost::math::students_t_distribution<Float64>(degrees_of_freedom);
         Float64 p_value = 0;
-        
+
         if (t_statistic > 0)
             p_value = 2 * boost::math::cdf<Float64>(student, -t_statistic);
         else
@@ -72,4 +72,4 @@ void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & f
     factory.registerFunction("studentTTestOneSample", createAggregateFunctionStudentTTestOneSample);
 }
 
-} 
+}
