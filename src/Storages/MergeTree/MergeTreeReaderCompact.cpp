@@ -329,26 +329,43 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
     for (const auto & [column, subcolumns_indexes] : column_to_subcolumns_indexes)
     {
         auto pos = data_part_info_for_read->getColumnPosition(column);
+        auto & deserialization_order = subcolumns_deserialization_order[column];
         /// If there is no such column in the part, the subcolumns order doesn't matter.
         if (!pos)
         {
-            subcolumns_deserialization_order[column] = subcolumns_indexes;
+            deserialization_order = subcolumns_indexes;
             continue;
         }
 
         std::vector<ISerialization::SubstreamData> subcolumns_data;
         subcolumns_data.reserve(subcolumns_indexes.size());
+        /// Some subcolumns might not exist in this part and for them we don't have substreams in columns_substreams.
+        std::vector<size_t> non_existing_subcolumns_indexes;
+        /// Mapping from index in subcolumns_data to subcolumn index from subcolumns_indexes.
+        std::unordered_map<size_t, size_t> subcolumn_data_index_to_subcolumn_index;
+        subcolumn_data_index_to_subcolumn_index.reserve(subcolumns_indexes.size());
+        auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
+            if (column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            {
+                subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
                                           .withDeserializeState(deserialize_binary_bulk_state_map_for_subcolumns[columns_to_read[index].name]));
+                subcolumn_data_index_to_subcolumn_index[subcolumns_data.size() - 1] = index;
+            }
+            else
+            {
+                non_existing_subcolumns_indexes.push_back(index);
+            }
         }
 
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings);
-        subcolumns_deserialization_order[column].reserve(subcolumns_indexes.size());
+        deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
-            subcolumns_deserialization_order[column].push_back(subcolumns_indexes[i]);
+            deserialization_order.push_back(subcolumn_data_index_to_subcolumn_index[i]);
+        /// Add indexes of non-existing subcolumns at the end.
+        deserialization_order.insert(deserialization_order.end(), non_existing_subcolumns_indexes.begin(), non_existing_subcolumns_indexes.end());
     }
 }
 
