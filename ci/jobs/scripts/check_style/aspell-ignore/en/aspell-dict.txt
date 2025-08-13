@@ -1754,6 +1754,8 @@ defaultValueOfTypeName
 delim
 deltaLake
 deltaLakeCluster
+deltaLakeAzureCluster
+deltaLakeS3Cluster
 deltaSum
 deltaSumTimestamp
 deltalake
