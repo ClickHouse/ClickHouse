@@ -3,16 +3,11 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include "Core/QueryProcessingStage.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/ConstraintsDescription.h"
-#include "Storages/IStorage.h"
 
 #include <Core/Joins.h>
+#include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
@@ -40,6 +35,10 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
+
 #include <memory>
 #include <string_view>
 #include <unordered_map>
@@ -64,7 +63,7 @@ extern const SettingsBool correlated_subqueries_substitute_equivalent_expression
 extern const SettingsBool correlated_subqueries_use_input_buffer;
 extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;
-extern const SettingsUInt64 max_block_size;
+extern const SettingsNonZeroUInt64 max_block_size;
 
 }
 

@@ -5,6 +5,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 

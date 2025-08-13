@@ -5,26 +5,41 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 #include <cstddef>
-#include <unordered_set>
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB
 {
+
+namespace
+{
+
+constexpr ITransformingStep::Traits getTraits()
+{
+    return ITransformingStep::Traits
+    {
+        {
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
+            .preserves_sorting = true,
+        },
+        {
+            .preserves_number_of_rows = true,
+        }
+    };
+}
+
+}
 
 EvaluateCommonSubqueryStep::EvaluateCommonSubqueryStep(
     const SharedHeader & header_,
     ColumnIdentifiers columns_to_save_,
     StoragePtr storage_,
     ContextPtr context_
-) : ITransformingStep(header_, header_, Traits{
-        .data_stream_traits = {
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
-            .preserves_sorting = true
-        },
-        .transform_traits = {
-            .preserves_number_of_rows = true
-        }
-    })
+) : ITransformingStep(header_, header_, getTraits())
     , storage(std::move(storage_))
     , context(std::move(context_))
     , columns_to_save(std::move(columns_to_save_))
