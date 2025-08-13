@@ -65,6 +65,9 @@ def get_spark():
         )
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
+        .config("spark.sql.catalog.spark_catalog.write.delete.mode", "merge-on-read")
+        .config("spark.sql.catalog.spark_catalog.write.update.mode", "merge-on-read")
+        .config("spark.sql.catalog.spark_catalog.write.merge.mode", "merge-on-read")
         .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
         .config(
             "spark.sql.extensions",
@@ -540,7 +543,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
 
     spark.sql(
         f"""
-        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg PARTITIONED BY (bucket(5, id)) TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
         'merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
         """
     )
@@ -563,12 +566,38 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
+
+    import avro.datafile
+    import avro.io
+    import avro.schema
+    import pyarrow.parquet as pq
+
+    all_files = ""
+    for file in files:
+        if file[-4:] == 'avro':
+            with open(file, "rb") as fo:
+                reader = avro.datafile.DataFileReader(fo, avro.io.DatumReader())
+                for record in reader:
+                    all_files += f"{file} : \n"
+                    all_files += str(record)
+                    all_files += "\n\n\n"
+                reader.close()
+        elif file[-7:] == 'parquet':
+            pf = pq.ParquetFile(file)
+            meta = pf.metadata
+            schema = pf.schema
+            all_files += f"{file} : \n"
+            all_files += str(meta) + "\n"
+            all_files += str(schema) + "\n"
+            all_files += "\n\n\n"
+    raise ValueError(all_files)
+
 
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 100))
 
@@ -2638,13 +2667,14 @@ def test_writes_drop_table(started_cluster, format_version, storage_type):
     
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
-def test_writes_mutate_delete(started_cluster, storage_type):
+@pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
+def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     format_version = 2
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
 
     with pytest.raises(Exception):
         create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)

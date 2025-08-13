@@ -296,15 +296,19 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
+#if USE_PARQUET
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
-            size_t row_num_offset = 0;
             if (chunk_info)
-                row_num_offset = chunk_info->row_num_offset;
-
-            auto column = ColumnInt64::create();
-            for (size_t i = 0; i < chunk.getNumRows(); ++i)
-                column->insertValue(i + row_num_offset);
-            chunk.addColumn(std::move(column));
+            {
+                size_t row_num_offset = chunk_info->row_num_offset;
+                auto column = ColumnInt64::create();
+                for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                    column->insertValue(i + row_num_offset);
+                chunk.addColumn(std::move(column));
+                return;
+            }
+#endif
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), -1)->convertToFullColumnIfConst());
         }
     }
 }

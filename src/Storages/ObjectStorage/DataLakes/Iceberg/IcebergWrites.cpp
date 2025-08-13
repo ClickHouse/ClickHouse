@@ -293,12 +293,22 @@ void generateManifestFile(
     data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
     auto summary = new_snapshot->getObject(Iceberg::f_summary);
-    Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_records);
-    Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
+    if (summary->has(Iceberg::f_added_records))
+    {
+        Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_records);
+        Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
 
-    data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
-    data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
+        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
+        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
+    }
+    else
+    {
+        Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+        Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
 
+        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
+        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
+    }
     avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
@@ -388,25 +398,38 @@ void generateManifestList(
         };
         set_versioned_field(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id), Iceberg::f_added_snapshot_id);
 
+        auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_data_files_count);
-            set_versioned_field(std::stoi(new_snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_data_files_count);
+            set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_data_files_count);
             set_versioned_field(0, Iceberg::f_deleted_data_files_count);
+            if (summary->has(Iceberg::f_added_position_deletes))
+                set_versioned_field(summary->getValue<Int32>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
         }
         else
         {
             entry.field(Iceberg::f_added_files_count) = 1;
             entry.field(Iceberg::f_existing_files_count)
-                = new_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(Iceberg::f_total_data_files);
+                = summary->getValue<Int32>(Iceberg::f_total_data_files);
             entry.field(Iceberg::f_deleted_files_count) = 0;
+
+            if (summary->has(Iceberg::f_added_position_deletes))
+                entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int32>(Iceberg::f_added_position_deletes);
         }
 
+        if (summary->has(Iceberg::f_added_records))
+        {
+            set_versioned_field(
+                summary->getValue<Int32>(Iceberg::f_added_records),
+                Iceberg::f_added_rows_count);
+        }
+        else
+        {
+            set_versioned_field(summary->getValue<Int32>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
+        }
         set_versioned_field(
-            new_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(Iceberg::f_added_records),
-            Iceberg::f_added_rows_count);
-        set_versioned_field(
-            new_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(Iceberg::f_total_records),
+            summary->getValue<Int32>(Iceberg::f_total_records),
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
 
@@ -485,7 +508,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int32 added_records,
     Int32 added_files_size,
     Int32 num_partitions,
-    Int32 added_delete_files)
+    Int32 added_delete_files,
+    Int32 num_deleted_rows)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -507,11 +531,23 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    summary->set(Iceberg::f_operation, Iceberg::f_append);
-    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-    summary->set(Iceberg::f_added_records, std::to_string(added_records));
-    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    if (num_deleted_rows == 0)
+    {
+        summary->set(Iceberg::f_operation, Iceberg::f_append);
+        summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+        summary->set(Iceberg::f_added_records, std::to_string(added_records));
+        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    }
+    else
+    {
+        summary->set(Iceberg::f_operation, Iceberg::f_overwrite);
+        summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
+        summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
+        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+        summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
+        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    }
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
     {
@@ -523,7 +559,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     sum_with_parent_snapshot(Iceberg::f_total_files_size, added_files_size);
     sum_with_parent_snapshot(Iceberg::f_total_data_files, added_files);
     sum_with_parent_snapshot(Iceberg::f_total_delete_files, added_delete_files);
-    sum_with_parent_snapshot(Iceberg::f_total_position_deletes, added_delete_files);
+    sum_with_parent_snapshot(Iceberg::f_total_position_deletes, num_deleted_rows);
     sum_with_parent_snapshot(Iceberg::f_total_equality_deletes, 0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
@@ -558,6 +594,20 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         new_snapshot_item->set(Iceberg::f_timestamp_ms, ms.count());
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
+    }
+
+    if (added_delete_files > 0)
+    {
+        if (!metadata_object->has(Iceberg::f_properties))
+        {
+            Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+            metadata_object->set(Iceberg::f_properties, properties);
+        }
+        auto properties = metadata_object->getObject(Iceberg::f_properties);
+        properties->set("owner", "root");
+        properties->set("write.delete.mode", "merge-on-read");
+        properties->set("write.merge.mode", "merge-on-read");
+        properties->set("write.update.mode", "merge-on-read");
     }
     return {new_snapshot, manifest_list_name, storage_manifest_list_name};
 }
@@ -855,7 +905,7 @@ bool IcebergStorageSink::initializeMetadata()
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), 0);
+        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), 0, 0);
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
