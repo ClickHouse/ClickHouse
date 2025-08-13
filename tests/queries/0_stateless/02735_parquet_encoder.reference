@@ -65,4 +65,4 @@ s	Nullable(DateTime64(3, \'UTC\'))
 dus	Nullable(DateTime64(9, \'UTC\'))					
 12670676506515577395
 20312
-d	UInt16					
+d	Nullable(UInt16)					
