@@ -65,6 +65,13 @@ public:
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
 
+    SinkToStoragePtr createDeltaLakeStorageSink(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        ObjectStoragePtr object_storage,
+        ContextPtr context,
+        SharedHeader sample_block,
+        const FormatSettings & format_settings);
+
 private:
     const LoggerPtr log;
     const DeltaLake::KernelHelperPtr kernel_helper;
@@ -72,12 +79,6 @@ private:
     mutable std::mutex table_snapshot_mutex;
 };
 
-SinkToStoragePtr createDeltaLakeStorageSink(
-    const DeltaLakeMetadataDeltaKernel & metadata,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    SharedHeader sample_block,
-    const FormatSettings & format_settings);
 }
 
 #endif

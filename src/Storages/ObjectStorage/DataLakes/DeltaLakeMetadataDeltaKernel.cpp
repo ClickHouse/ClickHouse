@@ -4,7 +4,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeStorageSink.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -141,18 +142,31 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         for (auto & [column_name, _] : info.requested_columns)
             column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
     }
+
+    LOG_TEST(log, "Format header: {}", info.format_header.dumpNames());
     return info;
 }
 
-SinkToStoragePtr createDeltaLakeStorageSink(
-    const DeltaLakeMetadataDeltaKernel & metadata,
+SinkToStoragePtr DeltaLakeMetadataDeltaKernel::createDeltaLakeStorageSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     SharedHeader sample_block,
     const FormatSettings & format_settings)
 {
-    return std::make_shared<DeltaLakeStorageSink>(metadata, object_storage, context, sample_block, format_settings);
+    Names partition_columns;
+    {
+        std::lock_guard lock(table_snapshot_mutex);
+        partition_columns = table_snapshot->getPartitionColumns();
+    }
+
+    if (partition_columns.empty())
+        return std::make_shared<DeltaLakeSink>(*this, object_storage, context, sample_block, format_settings);
+
+    return std::make_shared<DeltaLakePartitionedSink>(
+        *this, configuration, partition_columns, object_storage, context, sample_block, format_settings);
 }
+
 }
 
 #endif

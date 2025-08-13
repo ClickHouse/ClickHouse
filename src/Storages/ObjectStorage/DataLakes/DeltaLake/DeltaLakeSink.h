@@ -15,19 +15,19 @@ class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class DeltaLakeMetadataDeltaKernel;
 
-class DeltaLakeStorageSink : public SinkToStorage
+class DeltaLakeSink : public SinkToStorage
 {
 public:
-    explicit DeltaLakeStorageSink(
+    DeltaLakeSink(
         const DeltaLakeMetadataDeltaKernel & metadata,
         ObjectStoragePtr object_storage,
         ContextPtr context,
         SharedHeader sample_block_,
         const FormatSettings & format_settings_);
 
-    ~DeltaLakeStorageSink() override = default;
+    ~DeltaLakeSink() override = default;
 
-    String getName() const override { return "DeltaLakeStorageSink"; }
+    String getName() const override { return "DeltaLakeSink"; }
 
     void consume(Chunk & chunk) override;
 
@@ -39,7 +39,6 @@ private:
     void cancelBuffers();
 
     const LoggerPtr log;
-    const FormatSettings format_settings;
     const std::string file_name;
 
     DeltaLake::WriteTransactionPtr delta_transaction;

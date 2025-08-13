@@ -1,8 +1,7 @@
-#include "DeltaLakeStorageSink.h"
+#include "DeltaLakeSink.h"
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-#include <fmt/ranges.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -19,30 +18,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DeltaLakeStorageSink::DeltaLakeStorageSink(
+DeltaLakeSink::DeltaLakeSink(
     const DeltaLakeMetadataDeltaKernel & metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     SharedHeader sample_block_,
     const FormatSettings & format_settings_)
     : SinkToStorage(sample_block_)
-    , log(getLogger("DeltaLakeStorageSink"))
-    , format_settings(format_settings_)
+    , log(getLogger("DeltaLakeSink"))
     , file_name(toString(UUIDHelpers::generateV4()) + ".parquet")
 {
     delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper());
-    /// Create a transaction.
     delta_transaction->create();
-    /// Verify schema.
-    const auto & write_schema = delta_transaction->getWriteSchema().getNames();
-    const auto & header_schema = getHeader().getNames();
-    if (write_schema != header_schema)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Header does not match write schema. Expected: {}, got: {}",
-            fmt::join(write_schema, ", "), fmt::join(header_schema, ", "));
-    }
+    delta_transaction->validateSchema(getHeader());
 
     write_buf = object_storage->writeObject(
         StoredObject(std::filesystem::path(delta_transaction->getDataPath()) / file_name),
@@ -59,7 +47,7 @@ DeltaLakeStorageSink::DeltaLakeStorageSink(
         format_settings_);
 }
 
-void DeltaLakeStorageSink::consume(Chunk & chunk)
+void DeltaLakeSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
@@ -67,23 +55,21 @@ void DeltaLakeStorageSink::consume(Chunk & chunk)
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
-void DeltaLakeStorageSink::onFinish()
+void DeltaLakeSink::onFinish()
 {
     if (isCancelled())
         return;
 
     finalizeBuffers();
 
-    size_t bytes_written = write_buf->count();
-    if (bytes_written)
-        delta_transaction->commit(file_name, bytes_written);
-    else
-        LOG_WARNING(log, "Nothing was written, will not commit write to delta lake");
+    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
+    files.emplace_back(file_name, write_buf->count(), Map{});
+    delta_transaction->commit(files);
 
     releaseBuffers();
 }
 
-void DeltaLakeStorageSink::finalizeBuffers()
+void DeltaLakeSink::finalizeBuffers()
 {
     if (!writer)
         return;
@@ -103,13 +89,13 @@ void DeltaLakeStorageSink::finalizeBuffers()
     write_buf->finalize();
 }
 
-void DeltaLakeStorageSink::releaseBuffers()
+void DeltaLakeSink::releaseBuffers()
 {
     writer.reset();
     write_buf.reset();
 }
 
-void DeltaLakeStorageSink::cancelBuffers()
+void DeltaLakeSink::cancelBuffers()
 {
     if (writer)
         writer->cancel();

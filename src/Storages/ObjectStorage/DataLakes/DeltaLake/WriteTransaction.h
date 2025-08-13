@@ -17,9 +17,17 @@ public:
     void create();
 
     /// Commit the transaction.
-    void commit(const std::string & file_name, size_t size);
+    struct CommitFile
+    {
+        std::string file_name;
+        size_t size;
+        DB::Map paritition_values;
+    };
+    void commit(const std::vector<CommitFile> & files);
 
     const DB::NamesAndTypesList & getWriteSchema() const { return write_schema; }
+
+    void validateSchema(const DB::Block & header) const;
 
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;

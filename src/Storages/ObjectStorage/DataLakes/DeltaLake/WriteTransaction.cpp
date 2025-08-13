@@ -15,6 +15,7 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <delta_kernel_ffi.hpp>
+#include <fmt/ranges.h>
 
 #include <arrow/c/abi.h>
 #include <arrow/table.h>
@@ -64,7 +65,7 @@ void exportTable(
     }
 }
 
-std::shared_ptr<arrow::Table> getWriteMetadata(const std::string & path, size_t size)
+std::shared_ptr<arrow::Table> getWriteMetadata(const std::vector<WriteTransaction::CommitFile> & files)
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
@@ -81,11 +82,14 @@ std::shared_ptr<arrow::Table> getWriteMetadata(const std::string & path, size_t 
     for (const auto & [_, type, name] : names_and_types)
         columns.push_back(type->createColumn());
 
-    columns[0]->insert(path);
-    columns[1]->insertDefault();
-    columns[2]->insert(size);
-    columns[3]->insert(getCurrentTime());
-    columns[4]->insert(true);
+    for (const auto & [path, size, partition_values] : files)
+    {
+        columns[0]->insert(path);
+        columns[1]->insert(partition_values);
+        columns[2]->insert(size);
+        columns[3]->insert(getCurrentTime());
+        columns[4]->insert(true);
+    }
 
     DB::FormatSettings format_settings;
     auto arrow_column = std::make_unique<DB::CHColumnToArrowColumn>(
@@ -101,7 +105,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(const std::string & path, size_t 
         });
 
     std::vector<DB::Chunk> meta_chunks;
-    meta_chunks.emplace_back(std::move(columns), 1);
+    meta_chunks.emplace_back(std::move(columns), files.size());
 
     std::shared_ptr<arrow::Table> arrow_table;
     arrow_column->chChunkToArrowTable(arrow_table, meta_chunks, names_and_types.size());
@@ -146,13 +150,30 @@ void WriteTransaction::create()
     write_path = *write_path_raw;
     delete write_path_raw;
 
-    LOG_TEST(log, "Write path: {}", write_path);
+    LOG_TEST(log, "Write path: {}, schema: {}", write_path, write_schema.toString());
 }
 
-void WriteTransaction::commit(const std::string & file_name, size_t size)
+void WriteTransaction::validateSchema(const DB::Block & header) const
 {
-    LOG_TEST(log, "Will commit data file {} with size {}", file_name, size);
-    auto write_metadata = getWriteMetadata(file_name, size);
+    if (!transaction.get())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
+
+    if (write_schema.getNames() != header.getNames())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Header does not match write schema. Expected: {}, got: {}",
+            fmt::join(write_schema.getNames(), ", "), fmt::join(header.getNames(), ", "));
+    }
+}
+
+void WriteTransaction::commit(const std::vector<CommitFile> & files)
+{
+    if (!transaction.get())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
+
+    LOG_TEST(log, "Will commit {} files", files.size());
+    auto write_metadata = getWriteMetadata(files);
 
     ffi::FFI_ArrowArray array;
     ffi::FFI_ArrowSchema schema;

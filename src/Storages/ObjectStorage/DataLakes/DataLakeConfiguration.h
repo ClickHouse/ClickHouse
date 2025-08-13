@@ -270,10 +270,10 @@ public:
         }
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-        if (const auto * metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(current_metadata.get()))
+        if (auto * metadata = dynamic_cast<DeltaLakeMetadataDeltaKernel *>(current_metadata.get()))
         {
-            return createDeltaLakeStorageSink(
-                *metadata,
+            return metadata->createDeltaLakeStorageSink(
+                shared_from_this(),
                 object_storage,
                 context,
                 sample_block,
