@@ -91,6 +91,7 @@ protected:
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
 
+    /// FIX-ME: This method does not include hive partition columns
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 

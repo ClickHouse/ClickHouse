@@ -113,7 +113,7 @@ StoragePtr TableFunctionURL::getStorage(
             format,
             compression_method,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(global_context, /* is_insert_query */ true),
+            columns,
             ConstraintsDescription{},
             configuration);
     }
