@@ -1488,17 +1488,15 @@ def test_partition_columns_2(started_cluster, cluster):
         ).strip()
     )
 
-    ac = node.query(
-        f"explain actions=1 SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
-        settings={"allow_experimental_delta_kernel_rs": 1},
-    ).strip()
-    print("KSSENII ACTIONS: ", ac)
     assert (
         "1"
         in node.query(
             f" SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1521,7 +1519,10 @@ def test_partition_columns_2(started_cluster, cluster):
         in node.query(
             f"SELECT a FROM {delta_function} WHERE c = 7 and d = 'bb'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1624,7 +1625,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "bob"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 12", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 12",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)
@@ -1633,7 +1639,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "aelin"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 51", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 51",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)
@@ -2330,6 +2341,7 @@ def test_concurrent_queries(started_cluster):
 
     select(0)
 
+
 def test_join_with_distributed(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -2362,3 +2374,380 @@ def test_join_with_distributed(started_cluster):
     assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
     assert int(instance.query(f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0").strip()) == 9
 
+
+def test_delta_kernel_internal_pruning(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_partition_columns")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = ["b", "c", "d", "e", "f", "g", "h"]
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "INT")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
+        .partitionedBy(partition_columns)
+        .execute()
+    )
+    num_rows = 9
+
+    schema = StructType(
+        [
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
+        ]
+    )
+
+    now = datetime.now()
+    for i in range(1, num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i % 3),
+                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i % 2,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
+        )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    cluster = False
+    if cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    result = instance.query(f"describe table {table_function}").strip()
+    assert (
+        result == "a\tNullable(Int32)\t\t\t\t\t\n"
+        "b\tNullable(String)\t\t\t\t\t\n"
+        "c\tNullable(Date32)\t\t\t\t\t\n"
+        "d\tNullable(Int32)\t\t\t\t\t\n"
+        "e\tNullable(DateTime64(6))\t\t\t\t\t\n"
+        "f\tNullable(Bool)\t\t\t\t\t\n"
+        "g\tNullable(Decimal(10, 2))\t\t\t\t\t\n"
+        "h\tNullable(Bool)"
+    )
+
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert result == num_rows
+
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	0	{now}	true	2.22	false
+3	test0	2000-01-03	1	2012-01-03 12:34:56.789123	false	3.33	true
+4	test1	2000-01-04	0	{now}	true	4.44	false
+5	test2	2000-01-05	1	2012-01-05 12:34:56.789123	false	5.55	true
+6	test0	2000-01-06	0	{now}	true	6.66	false
+7	test1	2000-01-07	1	2012-01-07 12:34:56.789123	false	7.77	true
+8	test2	2000-01-08	0	{now}	true	8.88	false
+9	test0	2000-01-09	1	2012-01-09 12:34:56.789123	false	9.99	true"""
+
+    assert (
+        expected_output
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY a").strip()
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_1"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_2"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d == 1
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_3"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d != 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_4"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d > 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_5"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d < 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_6"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND 1 >= d
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_7"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d <= 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_8"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE c == toDate('2000-01-08')
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_9"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE c == '2000-01-08'
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_10"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not (h == 1)
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_11"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not h
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    query_id = f"query_with_filter_{TABLE_NAME}_12"
+    assert "Injecting fault for visitLiteralValue" in instance.query_and_get_error(
+        f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+        query_id=query_id,
+        settings={"delta_lake_throw_on_engine_predicate_error": 1},
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_13"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+            query_id=query_id,
+        )
+    )
+
+    instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )

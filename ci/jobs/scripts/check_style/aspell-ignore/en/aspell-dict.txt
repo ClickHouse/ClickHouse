@@ -3126,11 +3126,15 @@ timeSeries
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
+timeSeriesFromGrid
+timeSeriesGroupArray
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
+timeSeriesLastToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
 timeSeriesPredictLinearToGrid
+timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
