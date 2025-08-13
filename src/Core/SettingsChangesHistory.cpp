@@ -70,6 +70,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"jemalloc_enable_profiler", false, false, "New setting"},
+            {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
