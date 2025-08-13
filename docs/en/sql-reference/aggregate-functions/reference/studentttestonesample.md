@@ -76,4 +76,3 @@ SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
 - [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
-
