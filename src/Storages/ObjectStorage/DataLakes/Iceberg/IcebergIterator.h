@@ -61,13 +61,14 @@ public:
         Int32 format_version_,
         String table_location_)
         : object_storage(object_storage_)
-        , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
+        , filter_dag(filter_dag_)
         , local_context(local_context_)
         , table_snapshot(table_snapshot_)
         , data_snapshot(data_snapshot_)
         , iceberg_metadata_cache(iceberg_metadata_cache_)
         , schema_processor(schema_processor_)
-        , configuration(std::move(configuration_))
+        , data_source_description(configuration_->getDataSourceDescription())
+        , path_for_read(configuration_->getPathForRead().path)
         , use_partition_pruning(
               [this]()
               {
@@ -87,6 +88,11 @@ public:
               content_type_ == Iceberg::FileContentType::DATA ? Iceberg::ManifestFileContentType::DATA
                                                               : Iceberg::ManifestFileContentType::DELETE)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergIterator"),
+            "SingleThreadIcebergKeysIterator constructed, use_partition_pruning: {}, content_type: {}",
+            use_partition_pruning,
+            Iceberg::FileContentTypeToString(content_type));
     }
 
     std::optional<Iceberg::ManifestFileEntry> next();
@@ -103,7 +109,8 @@ private:
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     IcebergMetadataFilesCachePtr iceberg_metadata_cache;
     IcebergSchemaProcessorPtr schema_processor;
-    StorageObjectStorageConfigurationPtr configuration;
+    String data_source_description;
+    String path_for_read;
     bool use_partition_pruning;
     Int32 format_version;
     String table_location;
@@ -258,6 +265,11 @@ public:
 
     ~IcebergIterator() override
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergIterator"),
+            "Destroying IcebergIterator, position delete files: {}, format: {}",
+            position_deletes_files.size(),
+            format);
         blocking_queue.close();
         producer_task->deactivate();
     }

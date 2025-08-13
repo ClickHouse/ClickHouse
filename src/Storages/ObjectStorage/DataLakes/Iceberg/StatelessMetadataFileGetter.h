@@ -27,7 +27,8 @@ namespace DB
 
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const String & data_source_description,
+    const String & table_path_for_read,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,
     IcebergSchemaProcessorPtr schema_processor,
     Int32 format_version,
@@ -41,7 +42,8 @@ Iceberg::ManifestFilePtr getManifestFile(
 
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
+    const String & data_source_description,
+    const String & table_path_for_read,
     Int32 format_version,
     String table_location,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,

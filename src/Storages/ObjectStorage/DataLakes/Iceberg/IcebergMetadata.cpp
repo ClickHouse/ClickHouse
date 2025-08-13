@@ -193,7 +193,14 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         last_metadata_version = metadata_version;
     }
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log, compression_method);
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        configuration_ptr->getDataSourceDescription(),
+        manifest_cache,
+        local_context,
+        log,
+        compression_method);
     chassert(format_version == metadata_object->getValue<int>(f_format_version));
 
     auto previous_snapshot_id = relevant_snapshot_id;
@@ -449,7 +456,14 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
 
-    Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
+    Poco::JSON::Object::Ptr object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        configuration_ptr->getDataSourceDescription(),
+        cache_ptr,
+        local_context,
+        log,
+        compression_method);
 
     auto format_version = object->getValue<int>(f_format_version);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr);
@@ -506,7 +520,8 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
 
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (manifest_cache)
-        manifest_file_cache_keys = manifest_cache->getOrSetManifestFileCacheKeys(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+        manifest_file_cache_keys = manifest_cache->getOrSetManifestFileCacheKeys(
+            IcebergMetadataFilesCache::getKey(configuration_ptr->getDataSourceDescription(), filename), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
@@ -524,7 +539,14 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         return metadata_version == last_metadata_version;
     }());
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log, compression_method);
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        configuration_ptr->getDataSourceDescription(),
+        manifest_cache,
+        local_context,
+        log,
+        compression_method);
     chassert([&]()
     {
         SharedLockGuard lock(mutex);
@@ -630,7 +652,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     {
         auto manifest_file_ptr = getManifestFile(
             object_storage,
-            configuration.lock(),
+            configuration.lock()->getDataSourceDescription(),
+            configuration.lock()->getPathForRead().path,
             manifest_cache,
             schema_processor,
             format_version,
@@ -673,7 +696,8 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     {
         auto manifest_file_ptr = getManifestFile(
             object_storage,
-            configuration.lock(),
+            configuration.lock()->getDataSourceDescription(),
+            configuration.lock()->getPathForRead().path,
             manifest_cache,
             schema_processor,
             format_version,
@@ -701,9 +725,17 @@ ObjectIterator IcebergMetadata::iterate(
 {
     SharedLockGuard lock(mutex);
 
+    LOG_DEBUG(
+        log,
+        "Creating IcebergIterator for metadata version {}, snapshot id {}, schema id {}, filter_dag exists: {}",
+        last_metadata_version,
+        relevant_snapshot_id,
+        relevant_snapshot_schema_id,
+        filter_dag != nullptr);
+
     auto table_snapshot
         = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
-    current_iterator = std::make_shared<IcebergIterator>(
+    auto iterator = std::make_shared<IcebergIterator>(
         local_context,
         configuration.lock(),
         filter_dag,
@@ -715,7 +747,8 @@ ObjectIterator IcebergMetadata::iterate(
         schema_processor,
         format_version,
         table_location);
-    return current_iterator;
+    current_iterator = iterator;
+    return iterator;
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
@@ -758,6 +791,16 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     String delete_object_format = configuration_ptr->format;
     String delete_object_compression_method = configuration_ptr->compression_method;
 
+    auto current_iterator_ptr = current_iterator.lock();
+
+    if (!current_iterator_ptr)
+    {
+        throw DB::Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Current iterator is not set, cannot create position delete transformer for object {}",
+            iceberg_object_info->getPath());
+    }
+
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
         header,
         iceberg_object_info,
@@ -766,7 +809,7 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
         context_,
         delete_object_format,
         delete_object_compression_method,
-        current_iterator->getPositionDeletesFiles());
+        current_iterator_ptr->getPositionDeletesFiles());
 }
 }
 

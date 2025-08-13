@@ -124,7 +124,7 @@ private:
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
 
-    mutable std::shared_ptr<IcebergIterator> current_iterator;
+    mutable std::weak_ptr<IcebergIterator> current_iterator;
 
     const String table_location;
 

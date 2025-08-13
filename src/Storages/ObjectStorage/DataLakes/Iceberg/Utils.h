@@ -47,7 +47,7 @@ namespace DB
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
+    const String & data_source_description,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     LoggerPtr log,

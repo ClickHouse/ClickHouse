@@ -690,7 +690,8 @@ IcebergStorageSink::IcebergStorageSink(
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
-    metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+    metadata = getMetadataJSONObject(
+        metadata_path, object_storage, configuration->getDataSourceDescription(), nullptr, context, log, compression_method);
 
     auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')

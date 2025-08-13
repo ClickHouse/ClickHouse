@@ -244,7 +244,7 @@ std::string normalizeUuid(const std::string & uuid)
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
+    const String & data_source_description,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     LoggerPtr log,
@@ -274,7 +274,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
     String metadata_json_str;
     if (cache_ptr)
-        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+        metadata_json_str
+            = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(data_source_description, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
 
@@ -636,7 +637,14 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
+            auto metadata_file_object = getMetadataJSONObject(
+                metadata_file_path,
+                object_storage,
+                configuration_ptr->getDataSourceDescription(),
+                cache_ptr,
+                local_context,
+                log,
+                compression_method);
             if (table_uuid.has_value())
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))

@@ -60,7 +60,8 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const String & data_source_description,
+    const String & table_path_for_read,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,
     IcebergSchemaProcessorPtr schema_processor,
     Int32 format_version,
@@ -87,7 +88,7 @@ Iceberg::ManifestFilePtr getManifestFile(
             manifest_file_deserializer,
             filename,
             format_version,
-            configuration->getPathForRead().path,
+            table_path_for_read,
             *schema_processor,
             inherited_sequence_number,
             inherited_snapshot_id,
@@ -99,7 +100,7 @@ Iceberg::ManifestFilePtr getManifestFile(
     if (iceberg_metadata_cache)
     {
         auto manifest_file
-            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
+            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(data_source_description, filename), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -107,7 +108,8 @@ Iceberg::ManifestFilePtr getManifestFile(
 
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
+    const String & data_source_description,
+    const String & table_path_for_read,
     Int32 format_version,
     String table_location,
     IcebergMetadataFilesCachePtr iceberg_metadata_cache,
@@ -115,10 +117,6 @@ ManifestFileCacheKeys getManifestList(
     const String & filename,
     LoggerPtr log)
 {
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-
     auto create_fn = [&]()
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
@@ -136,7 +134,7 @@ ManifestFileCacheKeys getManifestList(
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
             const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
+            const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, table_path_for_read, table_location);
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -161,7 +159,7 @@ ManifestFileCacheKeys getManifestList(
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (iceberg_metadata_cache)
         manifest_file_cache_keys = iceberg_metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+            IcebergMetadataFilesCache::getKey(data_source_description, filename), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;

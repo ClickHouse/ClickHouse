@@ -60,16 +60,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 {
     if (source_dag == nullptr)
     {
-        LOG_DEBUG(&Poco::Logger::get("Iceberg Manifest Pruner"), "Filter DAG is empty, no pruning will be applied.");
         return nullptr;
-    }
-    else
-    {
-        LOG_DEBUG(
-            &Poco::Logger::get("Iceberg Manifest Pruner"),
-            "Filter DAG is not empty, pruning will be applied., address: {}, stacktrace: {}",
-            static_cast<const void *>(source_dag),
-            StackTrace().toString());
     }
 
     const auto & inputs = source_dag->getInputs();
@@ -105,12 +96,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
         node = &dag_with_renames.addAlias(*node, column->name);
         dag_with_renames.getOutputs().push_back(node);
     }
-    LOG_DEBUG(
-        &Poco::Logger::get("Iceberg Manifest Pruner"),
-        "Transformed filter DAG for manifest with {} used columns, dag_with_renames address: {}, initial source dag address: {}",
-        used_columns_in_filter.size(),
-        static_cast<void *>(&dag_with_renames),
-        static_cast<const void *>(source_dag));
     auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
     result->removeUnusedActions();
     return result;

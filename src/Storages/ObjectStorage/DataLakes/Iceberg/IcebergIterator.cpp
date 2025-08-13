@@ -78,7 +78,8 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
             }
             current_manifest_file_content = getManifestFile(
                 object_storage,
-                configuration,
+                data_source_description,
+                path_for_read,
                 iceberg_metadata_cache,
                 schema_processor,
                 format_version,
@@ -123,6 +124,12 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                     *current_manifest_file_content,
                     local_context);
             }
+            LOG_DEBUG(
+                log,
+                "Current pruner exists: {}, Manifest file entry: {}, schema id: {}",
+                current_pruner.has_value(),
+                manifest_file_entry.file_path,
+                manifest_file_entry.schema_id);
             auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
             switch (pruning_status)
             {
@@ -152,7 +159,7 @@ SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 {
     LOG_DEBUG(
         &Poco::Logger::get("IcebergIterator"),
-        "SingleThreadIcebergKeysIterator destroyed, pruned files: {}, partition pruned files: {}",
+        "SingleThreadIcebergKeysIterator destroyed, min max pruned files: {}, partition pruned files: {}",
         min_max_index_pruned_files,
         partition_pruned_files);
     if (partition_pruned_files > 0)
