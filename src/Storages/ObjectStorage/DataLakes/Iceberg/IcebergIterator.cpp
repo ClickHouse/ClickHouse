@@ -57,6 +57,11 @@ extern const Event IcebergMinMaxIndexPrunedFiles;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 namespace Setting
 {
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;

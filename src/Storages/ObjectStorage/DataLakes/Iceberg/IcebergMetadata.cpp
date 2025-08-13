@@ -70,7 +70,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int UNSUPPORTED_METHOD;
 extern const int TABLE_ALREADY_EXISTS;
 }
 

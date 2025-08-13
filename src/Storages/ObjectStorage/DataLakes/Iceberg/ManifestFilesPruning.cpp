@@ -23,12 +23,6 @@
 
 using namespace DB;
 
-namespace ProfileEvents
-{
-    extern const Event IcebergPartitionPrunedFiles;
-    extern const Event IcebergMinMaxIndexPrunedFiles;
-}
-
 namespace DB::Iceberg
 {
 

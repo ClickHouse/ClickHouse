@@ -12,17 +12,14 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
-
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <base/defines.h>
 #include <Common/SharedMutex.h>
 
 
-namespace DB {
-
-
+namespace DB
+{
 struct IcebergDataObjectInfo : public RelativePathWithMetadata
 {
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, const std::vector<Iceberg::ManifestFileEntry> & position_deletes_, const String& format);

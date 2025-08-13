@@ -25,7 +25,8 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-namespace {
+namespace
+{
 
 using namespace DB::Iceberg;
 
@@ -71,7 +72,8 @@ std::pair<size_t, size_t> definePositionDeletesSpan(
 
 }
 
-namespace DB {
+namespace DB
+{
 
 using namespace Iceberg;
 

@@ -20,20 +20,14 @@
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
-namespace CurrentMetrics
+namespace DB
 {
-    extern const Metric StorageObjectStorageThreads;
-    extern const Metric StorageObjectStorageThreadsActive;
-    extern const Metric StorageObjectStorageThreadsScheduled;
-}
-namespace DB {
 
 namespace Iceberg
 {
@@ -89,7 +83,7 @@ private:
 
 }
 
-class IcebergIterator : public IObjectIterator 
+class IcebergIterator : public IObjectIterator
 {
 public:
     template <typename... Args>

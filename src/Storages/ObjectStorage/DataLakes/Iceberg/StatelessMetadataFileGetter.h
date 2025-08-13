@@ -1,25 +1,26 @@
 
+#pragma once
 #include "config.h"
 #if USE_AVRO
 
-#    include <cstddef>
-#    include <Common/Exception.h>
+#include <cstddef>
+#include <Common/Exception.h>
 
 
-#    include <Core/NamesAndTypes.h>
-#    include <Core/Settings.h>
-#    include <Databases/DataLake/Common.h>
-#    include <Databases/DataLake/ICatalog.h>
-#    include <Disks/ObjectStorages/StoredObject.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Interpreters/Context.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 
 namespace DB::Iceberg

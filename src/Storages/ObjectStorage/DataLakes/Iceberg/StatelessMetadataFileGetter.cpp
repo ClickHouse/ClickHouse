@@ -49,12 +49,14 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
-namespace DB {
-
+namespace DB
+{
 
 namespace ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Iceberg

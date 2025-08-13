@@ -116,7 +116,7 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;        
+    const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
