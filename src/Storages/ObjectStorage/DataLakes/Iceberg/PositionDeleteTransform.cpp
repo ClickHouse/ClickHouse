@@ -28,7 +28,6 @@ extern const SettingsNonZeroUInt64 max_block_size;
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -208,7 +207,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
 
     size_t total_previous_chunks_size = chunk_info->row_num_offset;
     if (previous_chunk_offset && previous_chunk_offset.value() > total_previous_chunks_size)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Chunks offsets should increase.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");
     previous_chunk_offset = total_previous_chunks_size;
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
