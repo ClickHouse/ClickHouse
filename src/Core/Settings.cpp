@@ -6811,6 +6811,15 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Int64, optimize_const_name_size, 256, R"(
+Replace with scalar and use hash as a name for large constants (size is estimated by name length).
+
+Possible values:
+
+- positive integer - max length of the name,
+- 0 — always,
+- negative integer - never.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
