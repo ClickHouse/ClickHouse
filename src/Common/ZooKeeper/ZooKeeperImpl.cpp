@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -1794,15 +1795,18 @@ int64_t ZooKeeper::getConnectionXid() const
 
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    if (zk_log)
+    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
     {
-        return zk_log;
+        return maybe_zk_log;
     }
 
-    if (const auto global_context = Context::getGlobalContextInstance())
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
     {
-        zk_log = global_context->getZooKeeperLog();
-        return zk_log;
+        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
+        {
+            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
+            return maybe_zk_log;
+        }
     }
 
     return nullptr;
@@ -1811,15 +1815,18 @@ std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 
 std::shared_ptr<LightweightZooKeeperLog> ZooKeeper::getLightweightZooKeeperLog()
 {
-    if (lightweight_zookeeper_log)
+    if (auto maybe_lightweight_zookeeper_log = std::atomic_load_explicit(&lightweight_zookeeper_log, std::memory_order_relaxed))
     {
-        return lightweight_zookeeper_log;
+        return maybe_lightweight_zookeeper_log;
     }
 
-    if (const auto global_context = Context::getGlobalContextInstance())
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
     {
-        lightweight_zookeeper_log = global_context->getLightweightZooKeeperLog();
-        return lightweight_zookeeper_log;
+        if (auto maybe_lightweight_zookeeper_log = maybe_global_context->getLightweightZooKeeperLog())
+        {
+            std::atomic_store_explicit(&lightweight_zookeeper_log, maybe_lightweight_zookeeper_log, std::memory_order_relaxed);
+            return maybe_lightweight_zookeeper_log;
+        }
     }
 
     return nullptr;
