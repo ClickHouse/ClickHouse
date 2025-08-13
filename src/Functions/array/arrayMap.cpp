@@ -11,7 +11,7 @@ Returns an array obtained from the original arrays by applying a lambda function
 )";
     FunctionDocumentation::Syntax syntax = "arrayMap(func, arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"arr", "N arrays to process.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array from the lambda results", {"Array(T)"}};

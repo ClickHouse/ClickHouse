@@ -31,7 +31,7 @@ namespace ErrorCodes
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
     UInt64 client_revision_,
-    const Block & header_,
+    SharedHeader header_,
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
@@ -110,7 +110,7 @@ size_t NativeWriter::write(const Block & block)
 
     /// Additional information about the block.
     if (client_revision > 0)
-        block.info.write(ostr);
+        block.info.write(ostr, client_revision);
 
     block.checkNumberOfRows();
 

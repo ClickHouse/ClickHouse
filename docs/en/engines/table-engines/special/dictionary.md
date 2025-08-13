@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/dictionary
 title: 'Dictionary Table Engine'
 ---
 
-# Dictionary Table Engine
+# Dictionary table engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 
@@ -81,7 +81,7 @@ CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 Usage example:
 
 ```sql
-create table products (product_id UInt64, title String) Engine = Dictionary(products);
+CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
 ```
 
       Ok
@@ -89,7 +89,7 @@ create table products (product_id UInt64, title String) Engine = Dictionary(prod
 Take a look at what's in the table.
 
 ```sql
-select * from products limit 1;
+SELECT * FROM products LIMIT 1;
 ```
 
 ```text

@@ -11,7 +11,6 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from ci_utils import Shell
-from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
@@ -56,7 +55,6 @@ def get_run_command(
     repo_tests_path: Path,
     server_log_path: Path,
     additional_envs: List[str],
-    ci_logs_args: str,
     image: DockerImage,
     upgrade_check: bool,
 ) -> str:
@@ -74,7 +72,6 @@ def get_run_command(
         "--privileged "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        f"{ci_logs_args}"
         "--tmpfs /tmp/clickhouse "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
@@ -175,10 +172,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = temp_path / "run.log"
-    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
 
     additional_envs = get_additional_envs(check_name)
 
@@ -188,7 +181,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         repo_tests_path,
         server_log_path,
         additional_envs,
-        ci_logs_args,
         docker_image,
         upgrade_check,
     )
@@ -202,7 +194,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path

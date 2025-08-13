@@ -287,7 +287,7 @@ To retain only the sorted elements use `arrayResize`.
     )";
     syntax = "arrayPartialSort([f,] arr [, arr1, ... ,arrN], limit)";
     arguments = {
-        {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda"}},
+        {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda function"}},
         {"arr", "Array to be sorted.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}},
         {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}}

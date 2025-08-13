@@ -1,11 +1,11 @@
-#include "Databases/DataLake/HiveCatalog.h"
+#include <Databases/DataLake/HiveCatalog.h>
 #include <algorithm>
 #include <cctype>
 #if USE_AVRO && USE_HIVE
 #include <optional>
-#include "Common/Exception.h"
-#include "Core/Names.h"
-#include "Databases/DataLake/ICatalog.h"
+#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>

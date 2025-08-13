@@ -55,4 +55,3 @@ Unsigned integer types have the following aliases:
 | `UInt16` | `SMALLINT UNSIGNED`                                      |
 | `UInt32` | `MEDIUMINT UNSIGNED`, `INT UNSIGNED`, `INTEGER UNSIGNED` |
 | `UInt64` | `UNSIGNED`, `BIGINT UNSIGNED`, `BIT`, `SET`              |
-

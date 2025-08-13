@@ -14,7 +14,7 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 
 namespace DB

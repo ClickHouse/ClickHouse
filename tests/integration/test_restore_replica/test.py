@@ -43,6 +43,10 @@ def fill_table():
     node_1.query("INSERT INTO test SELECT number + 800 FROM numbers(200)")
     check_data(499500, 1000)
 
+def drop_tables():
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS test SYNC")
+
 
 # kazoo.delete may throw NotEmptyError on concurrent modifications of the path
 def zk_rmr_with_retries(zk, path):
@@ -124,6 +128,7 @@ def test_restore_replica_sequential(start_cluster):
     node_3.query("SYSTEM SYNC REPLICA test")
 
     check_after_restoration()
+    drop_tables()
 
 
 def test_restore_replica_parallel(start_cluster):
@@ -152,6 +157,7 @@ def test_restore_replica_parallel(start_cluster):
     node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)")
 
     check_after_restoration()
+    drop_tables()
 
 
 def test_restore_replica_alive_replicas(start_cluster):
@@ -181,6 +187,7 @@ def test_restore_replica_alive_replicas(start_cluster):
     node_3.query("SYSTEM SYNC REPLICA test")
 
     check_after_restoration()
+    drop_tables()
 
 
 def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
@@ -227,3 +234,6 @@ def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
     assert_eq_with_retry(
         node_2, "SELECT count() FROM test_ttl", "0\n", retry_count=60, sleep_time=1
     )
+
+    for node in [node_1, node_2]:
+        node.query("DROP TABLE IF EXISTS test_ttl SYNC")

@@ -413,17 +413,19 @@ REGISTER_FUNCTION(BitSlice)
     FunctionDocumentation::Arguments arguments = {
         {"s", "The String or Fixed String to slice.", {"String", "FixedString"}},
         {"offset", R"(
-The starting bit position (1-based indexing). [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float32/64`](/sql-reference/data-types/float).
-  - Positive values: count from the beginning of the string.
-  - Negative values: count from the end of the string.
-        )"},
+Returns the starting bit position (1-based indexing).
+- Positive values: count from the beginning of the string.
+- Negative values: count from the end of the string.
+
+        )", {"(U)Int8/16/32/64", "Float*"}},
         {"length", R"(
-Optional. The number of bits to extract. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float32/64`](/sql-reference/data-types/float).
-  - Positive values: extract `length` bits.
-  - Negative values: extract from the offset to `(string_length - |length|)`.
-  - Omitted: extract from offset to end of string.
-  - If length is not a multiple of 8, the result is padded with zeros on the right.
-    )"}};
+Optional. The number of bits to extract.
+- Positive values: extract `length` bits.
+- Negative values: extract from the offset to `(string_length - |length|)`.
+- Omitted: extract from offset to end of string.
+- If length is not a multiple of 8, the result is padded with zeros on the right.
+        )", {"(U)Int8/16/32/64", "Float*"}}
+    };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(

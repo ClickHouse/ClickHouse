@@ -35,8 +35,9 @@ function test_snapshot_sharing()
 
     local found_delay=0
     for _ in $( seq 1 $(((delay+1)*10)) ); do
-        $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-        if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot' SETTINGS max_rows_to_read = 0") -eq 2 ]]; then
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SYSTEM FLUSH LOGS text_log"
+        # We need to wait until the second subquery will enter MergeTreeData::getStorageSnapshot(), and then before the artificial delay finishes inject OPTIMIZE
+        if [[ $(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot' SETTINGS max_rows_to_read = 0") -eq 2 ]]; then
             found_delay=1
             break
         fi
@@ -62,6 +63,8 @@ function test_snapshot_sharing()
     # else
     #     wait $PID
     # fi
+
+    # This will print either 0/1 (depends on whether snapshot had been shared or not)
     wait $PID
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE events"
@@ -86,7 +89,7 @@ function test_snapshot_not_shared()
     local result
     for _ in {1..10}; do
         # NOTE: when snapshot should not be shared, the test is sensitive to the merge_tree_storage_snapshot_sleep_ms
-        result=$(test_snapshot_sharing 5 --enable_shared_storage_snapshot_in_query=0)
+        result=$(test_snapshot_sharing 7 --enable_shared_storage_snapshot_in_query=0)
         if [ "$result" = 0 ]; then
             echo "With snapshot sharing disabled: $result"
             return

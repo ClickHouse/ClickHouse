@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Generating Random Numbers'
-sidebar_label: 'Random Numbers'
-sidebar_position: 145
+sidebar_label: 'Random number'
 slug: /sql-reference/functions/random-functions
 title: 'Functions for Generating Random Numbers'
 ---
@@ -617,7 +616,7 @@ randomFixedString(length);
 Query:
 
 ```sql
-SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 Result:
@@ -650,7 +649,7 @@ randomPrintableASCII(length)
 **Example**
 
 ```sql
-SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers LIMIT 3
 ```
 
 ```text

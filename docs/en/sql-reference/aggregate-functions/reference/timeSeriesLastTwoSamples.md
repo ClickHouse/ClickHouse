@@ -111,7 +111,7 @@ The aggregated table stores only last 2 values for each 15-second aligned timest
 -- Calculate idelta and irate from the raw data
 WITH
     '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
-    start_ts + interval 60 second AS end_ts,   -- end of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
     15 AS step_seconds,   -- step of timestamp grid
     45 AS window_seconds  -- "staleness" window
 SELECT
@@ -131,7 +131,7 @@ GROUP BY metric_id;
 -- Calculate idelta and irate from the re-sampled data
 WITH
     '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
-    start_ts + interval 60 second AS end_ts,   -- end of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
     15 AS step_seconds,   -- step of timestamp grid
     45 AS window_seconds  -- "staleness" window
 SELECT
@@ -141,8 +141,8 @@ SELECT
 FROM (
     SELECT
         metric_id,
-        finalizeAggregation(samples).1 as timestamps,
-        finalizeAggregation(samples).2 as values
+        finalizeAggregation(samples).1 AS timestamps,
+        finalizeAggregation(samples).2 AS values
     FROM t_resampled_timeseries_15_sec
     WHERE metric_id = 3 AND grid_timestamp BETWEEN start_ts - interval window_seconds seconds AND end_ts
 )

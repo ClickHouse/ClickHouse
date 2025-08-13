@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -31,11 +31,12 @@ protected:
 
     virtual Chunk generate();
     virtual std::optional<Chunk> tryGenerate();
+    virtual void onFinish() {}
 
     void progress(size_t read_rows, size_t read_bytes);
 
 public:
-    explicit ISource(Block header, bool enable_auto_progress = true);
+    explicit ISource(SharedHeader header, bool enable_auto_progress = true);
     ~ISource() override;
 
     Status prepare() override;

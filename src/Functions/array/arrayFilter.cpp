@@ -52,9 +52,9 @@ REGISTER_FUNCTION(ArrayFilter)
     FunctionDocumentation::Description description = "Returns an array containing only the elements in the source array for which a lambda function returns true.";
     FunctionDocumentation::Syntax syntax = "arrayFilter(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])]";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Lambda"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a subset of the source array", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {

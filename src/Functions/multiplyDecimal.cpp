@@ -72,7 +72,7 @@ In case you don't really need controlled precision and/or need fast computation,
     FunctionDocumentation::Arguments arguments = {
         {"a", "First value.", {"Decimal"}},
         {"b", "Second value.", {"Decimal"}},
-        {"result_scale", "Scale of result.", {"Int*", "UInt*"}}
+        {"result_scale", "Scale of result.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The result of multiplication with the given scale. Type:", {"Decimal256"}};
     FunctionDocumentation::Examples examples = {

@@ -292,7 +292,7 @@ REGISTER_FUNCTION(ArrayFold)
     FunctionDocumentation::Description description = "Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.";
     FunctionDocumentation::Syntax syntax = "arrayFold(λ(acc, x1 [, x2, x3, ... xN]), arr1 [, arr2, arr3, ... arrN], acc)";
     FunctionDocumentation::Arguments arguments = {
-        {"λ(x, x1 [, x2, x3, ... xN])", "A lambda function `λ(acc, x1 [, x2, x3, ... xN]) → F(acc, x1 [, x2, x3, ... xN])` where `F` is an operation applied to `acc` and array values from `x` with the result of `acc` re-used.", {"Lambda"}},
+        {"λ(x, x1 [, x2, x3, ... xN])", "A lambda function `λ(acc, x1 [, x2, x3, ... xN]) → F(acc, x1 [, x2, x3, ... xN])` where `F` is an operation applied to `acc` and array values from `x` with the result of `acc` re-used.", {"Lambda function"}},
         {"arr1 [, arr2, arr3, ... arrN]", "N arrays over which to operate.", {"Array(T)"}},
         {"acc", "Accumulator value with the same type as the return type of the Lambda function."}
     };

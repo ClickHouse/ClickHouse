@@ -95,7 +95,7 @@ Returns the current value of a custom setting.
 )",
         .syntax = "getSetting('custom_setting')",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."}
+            {"custom_setting", "The setting name.", {"String"}}
         },
         .returned_value = {"The setting's current value."},
         .examples = {

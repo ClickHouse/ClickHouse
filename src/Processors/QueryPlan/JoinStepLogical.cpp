@@ -101,8 +101,8 @@ String formatJoinCondition(const JoinCondition & join_condition)
 }
 
 JoinStepLogical::JoinStepLogical(
-    const Block & left_header_,
-    const Block & right_header_,
+    SharedHeader left_header_,
+    SharedHeader right_header_,
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
@@ -200,7 +200,7 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
 
 void JoinStepLogical::updateOutputHeader()
 {
-    Header & header = output_header.emplace();
+    Block header;
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
     for (const auto * node : expression_actions.post_join_actions->getInputs())
@@ -211,7 +211,7 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
     }
 
-    if (!header)
+    if (header.empty())
     {
         for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
         {
@@ -220,6 +220,8 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
         }
     }
+
+    output_header = std::make_shared<const Block>(std::move(header));
 }
 
 JoinActionRef addNewOutput(const ActionsDAG::Node & node, ActionsDAGPtr & actions_dag)
@@ -298,8 +300,16 @@ const ActionsDAG::Node & findOrAddInput(const ActionsDAGPtr & actions_dag, const
 
 JoinActionRef predicateToCondition(const JoinPredicate & predicate, const ActionsDAGPtr & actions_dag)
 {
-    const auto & left_node = findOrAddInput(actions_dag, predicate.left_node.getColumn());
-    const auto & right_node = findOrAddInput(actions_dag, predicate.right_node.getColumn());
+    ColumnWithTypeAndName left_column = predicate.left_node.getColumn();
+    ColumnWithTypeAndName right_column = predicate.right_node.getColumn();
+
+    /// Constant columns from the JOIN condition will be materialized during the JOIN,
+    /// that's why we can't use them as constants for actions building.
+    left_column.column = nullptr;
+    right_column.column = nullptr;
+
+    const auto & left_node = findOrAddInput(actions_dag, left_column);
+    const auto & right_node = findOrAddInput(actions_dag, right_column);
 
     auto operator_function = FunctionFactory::instance().get(operatorToFunctionName(predicate.op), nullptr);
     const auto & result_node = actions_dag->addFunction(operator_function, {&left_node, &right_node}, {});
@@ -375,7 +385,7 @@ void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActi
             expression_actions.left_pre_join_actions);
     }
 
-    if (!join_context.prepared_join_storage && !right_type->equals(*common_type))
+    if (!right_type->equals(*common_type) && (!join_context.prepared_join_storage || join_context.prepared_join_storage->storage_key_value))
     {
         const std::string & result_name = join_context.is_using ? right_node.getColumnName() : "";
         right_node = addNewOutput(
@@ -495,12 +505,13 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
 
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
-static Block blockWithColumns(ColumnsWithTypeAndName columns)
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
-    Block block;
-    for (const auto & column : columns)
-        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
-    return block;
+    ColumnsWithTypeAndName columns;
+    columns.reserve(actions_dag.getOutputs().size());
+    for (const auto & node : actions_dag.getOutputs())
+        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    return std::make_shared<const Block>(Block{columns});
 }
 
 static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
@@ -730,8 +741,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     table_join->setUsedColumns(expression_actions.post_join_actions->getRequiredColumnsNames());
     table_join->setJoinInfo(join_info);
 
-    Block left_sample_block = blockWithColumns(expression_actions.left_pre_join_actions->getResultColumns());
-    Block right_sample_block = blockWithColumns(expression_actions.right_pre_join_actions->getResultColumns());
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(*expression_actions.left_pre_join_actions);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(*expression_actions.right_pre_join_actions);
 
     if (swap_inputs)
     {
@@ -790,7 +801,7 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
         ActionsDAG result = std::move(*actions_dag);
         *actions_dag = std::move(new_dag);
 
-        updateInputHeader(result.getResultColumns(), side == JoinTableSide::Left ? 0 : 1);
+        updateInputHeader(std::make_shared<const Block>(result.getResultColumns()), side == JoinTableSide::Left ? 0 : 1);
 
         return result;
     }

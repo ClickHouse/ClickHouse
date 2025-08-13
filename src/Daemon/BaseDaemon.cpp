@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
-#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -48,7 +47,9 @@
 #include <filesystem>
 
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 
@@ -144,7 +145,7 @@ BaseDaemon::~BaseDaemon()
         tryLogCurrentException(&logger());
     }
 
-    disableLogging();
+    stopLogging();
 }
 
 
@@ -561,7 +562,14 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
+        /// Temporarily close the logging thread and open it in each process later
+        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
+        if (async_channel)
+            async_channel->close();
         pid = fork();
+
+        if (async_channel)
+            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -624,10 +632,10 @@ void BaseDaemon::setupWatchdog()
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (auto * channel = dynamic_cast<OwnSplitChannelBase *>(logger().getChannel()))
         {
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));

@@ -1,4 +1,4 @@
-#include "Interpreters/OpenTelemetrySpanLog.h"
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <random>
 #include <base/getThreadId.h>

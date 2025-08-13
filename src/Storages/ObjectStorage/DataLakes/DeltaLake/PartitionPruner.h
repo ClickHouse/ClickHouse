@@ -24,6 +24,7 @@ public:
         const DB::ActionsDAG & filter_dag,
         const DB::NamesAndTypesList & table_schema_,
         const DB::Names & partition_columns_,
+        const DB::NameToNameMap & physical_names_map_,
         DB::ContextPtr context);
 
     bool canBePruned(const DB::ObjectInfo & object_info) const;
@@ -31,6 +32,7 @@ public:
 private:
     std::optional<DB::KeyCondition> key_condition;
     DB::KeyDescription partition_key;
+    DB::Names physical_partition_columns;
 };
 
 }

@@ -502,7 +502,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 )";
     FunctionDocumentation::Syntax syntax_roc = "arrayROCAUC(scores, labels[, scale[, partial_offsets]])";
     FunctionDocumentation::Arguments arguments_roc = {
-        {"scores", "Scores prediction model gives.", {"Array((U)Int*)", "Float*"}},
+        {"scores", "Scores prediction model gives.", {"Array((U)Int*)", "Array(Float*)"}},
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Enum"}},
         {"scale", "Optional. Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true.", {"Bool"}},
         {"partial_offsets", R"(

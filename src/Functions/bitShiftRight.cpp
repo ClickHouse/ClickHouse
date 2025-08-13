@@ -165,7 +165,7 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
         {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
         {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`.", {"(U)Int*", "String", "FixedString"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`."};
     FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
         R"(
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);

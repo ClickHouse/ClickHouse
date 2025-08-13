@@ -86,21 +86,21 @@ function check_last_line_exception() {
 function check_exception_handling() {
     format=TSV \
     check_last_line_exception \
-        "max_block_size=30000&max_result_rows=400000&buffer_size=1048577&wait_end_of_query=0" 111222333444
+        "max_block_size=30000&max_result_rows=400000&http_response_buffer_size=1048577&http_wait_end_of_query=0" 111222333444
 
     check_only_exception "max_result_bytes=1000"                        1001
 
-    check_only_exception "max_result_bytes=1000&wait_end_of_query=1"    1001
+    check_only_exception "max_result_bytes=1000&http_wait_end_of_query=1"    1001
 
-    check_last_line_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
-    check_only_exception      "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
+    check_last_line_exception "max_result_bytes=1048576&http_response_buffer_size=1048576&http_wait_end_of_query=0" 1048577
+    check_only_exception      "max_result_bytes=1048576&http_response_buffer_size=1048576&http_wait_end_of_query=1" 1048577
 
-    check_only_exception "max_result_bytes=1500000&buffer_size=2500000&wait_end_of_query=0" 1500001
-    check_only_exception "max_result_bytes=1500000&buffer_size=1500000&wait_end_of_query=1" 1500001
+    check_only_exception "max_result_bytes=1500000&http_response_buffer_size=2500000&http_wait_end_of_query=0" 1500001
+    check_only_exception "max_result_bytes=1500000&http_response_buffer_size=1500000&http_wait_end_of_query=1" 1500001
 
-    check_only_exception         "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=1" 5000000
-    check_only_exception         "max_result_bytes=4000000&wait_end_of_query=1" 5000000
-    check_last_line_exception    "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
+    check_only_exception         "max_result_bytes=4000000&http_response_buffer_size=2000000&http_wait_end_of_query=1" 5000000
+    check_only_exception         "max_result_bytes=4000000&http_wait_end_of_query=1" 5000000
+    check_last_line_exception    "max_result_bytes=4000000&http_response_buffer_size=2000000&http_wait_end_of_query=0" 5000000
 }
 
 check_exception_handling
@@ -115,8 +115,8 @@ corner_sizes="1048576 $(seq 500000 1000000 3500000)"
 
 function cmp_cli_and_http() {
     $CLICKHOUSE_CLIENT -q "$(query "$1")" > "${CLICKHOUSE_TMP}"/res1
-    ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > "${CLICKHOUSE_TMP}"/res2
-    ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > "${CLICKHOUSE_TMP}"/res3
+    ch_url "http_response_buffer_size=$2&http_wait_end_of_query=0" "$1" > "${CLICKHOUSE_TMP}"/res2
+    ch_url "http_response_buffer_size=$2&http_wait_end_of_query=1" "$1" > "${CLICKHOUSE_TMP}"/res3
     cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 && cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3 || echo FAIL 5 "$@"
     rm -rf "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 "${CLICKHOUSE_TMP}"/res3
 }
@@ -138,8 +138,8 @@ check_cli_and_http
 function cmp_http_compression() {
     $CLICKHOUSE_CLIENT -q "$(query "$1")" > "${CLICKHOUSE_TMP}"/res0
     ch_url 'compress=1' "$1" | "${CLICKHOUSE_COMPRESSOR}" --decompress > "${CLICKHOUSE_TMP}"/res1
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" "$1" | "${CLICKHOUSE_COMPRESSOR}" --decompress > "${CLICKHOUSE_TMP}"/res2
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" "$1" | "${CLICKHOUSE_COMPRESSOR}" --decompress > "${CLICKHOUSE_TMP}"/res3
+    ch_url "compress=1&http_response_buffer_size=$2&http_wait_end_of_query=0" "$1" | "${CLICKHOUSE_COMPRESSOR}" --decompress > "${CLICKHOUSE_TMP}"/res2
+    ch_url "compress=1&http_response_buffer_size=$2&http_wait_end_of_query=1" "$1" | "${CLICKHOUSE_COMPRESSOR}" --decompress > "${CLICKHOUSE_TMP}"/res3
     cmp "${CLICKHOUSE_TMP}"/res0 "${CLICKHOUSE_TMP}"/res1
     cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2
     cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3

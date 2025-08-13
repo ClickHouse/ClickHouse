@@ -394,16 +394,17 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 )";
     FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
     FunctionDocumentation::Arguments arguments = {
-        {"v1", "First vector.", {"Array(Numeric)", "Tuple(Numeric)"}},
-        {"v2", "Second vector.", {"Array(Numeric)", "Tuple(Numeric)"}},
+        {"v1", "First vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v2", "Second vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
-The dot product of the two vectors. [Numeric](/native-protocol/columns#numeric-types).
+The dot product of the two vectors.
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
 :::
-)"};
+
+)", {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples = {
         {"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
         {"Tuple example", "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);", "32    Float64"}

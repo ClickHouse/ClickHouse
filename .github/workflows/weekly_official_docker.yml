@@ -6,8 +6,9 @@ env:
 
 "on":
   schedule:
-    # Fridays 09:55 UTC
-    - cron: '55 9 * * 5'
+    # Thurstays 15:55 UTC
+    # autorelease are done at the moment, and we'll have the whole Friday to fix any issues
+    - cron: '55 15 * * 4'
   workflow_dispatch:
     inputs:
       dry-run:
