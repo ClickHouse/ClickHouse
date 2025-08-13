@@ -100,29 +100,35 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
                 parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Time the group was flushed."});
 
+    result.add({"session_id",
+                std::make_shared<DataTypeInt64>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Session id."});
+
     result.add({"parent_path",
                 std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Prefix of the path."});
 
     result.add({"operation",
                 getOperationEnumType(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Type of ZooKeeper operation."});
 
     result.add({"count",
                 std::make_shared<DataTypeUInt32>(),
-                "Number of operations in the (parent_path, operation) group."});
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Number of operations in the (session_id, parent_path, operation) group."});
 
     result.add({"errors",
                 std::make_shared<DataTypeMap>(getErrorEnumType(), std::make_shared<DataTypeUInt32>()),
-                "Errors in the (parent_path, operation) group."});
-
-    result.add({"total_latency",
-                std::make_shared<DataTypeUInt64>(),
-                "Sum of all latencies in (parent_path, operation) group, in microseconds."});
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Errors in the (session_id, parent_path, operation) group."});
 
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
-                "Average latency across all operations in (parent_path, operation) group, in microseconds."});
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
     return result;
 }
 
@@ -132,11 +138,11 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
+    columns[i++]->insert(session_id);
     columns[i++]->insert(parent_path);
     columns[i++]->insert(operation);
     columns[i++]->insert(count);
     errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
-    columns[i++]->insert(total_latency_microseconds);
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
 

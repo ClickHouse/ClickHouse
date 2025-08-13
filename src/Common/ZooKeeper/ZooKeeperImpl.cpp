@@ -1867,7 +1867,7 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
     if (auto maybe_lightweight_zookeeper_log = getLightweightZooKeeperLog(); maybe_lightweight_zookeeper_log && request)
     {
         chassert(elapsed_microseconds > 0);
-        maybe_lightweight_zookeeper_log->observe(request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
+        maybe_lightweight_zookeeper_log->observe(session_id, request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
     }
 }
 

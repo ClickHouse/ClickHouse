@@ -16,6 +16,7 @@ struct LightweightZooKeeperLogElement
 {
     /// Identifying a group.
     time_t event_time;
+    Int64 session_id;
     String parent_path;
     Coordination::OpNum operation;
 
@@ -42,6 +43,7 @@ protected:
         {
             LightweightZooKeeperLogElement element{
                 .event_time = std::chrono::system_clock::to_time_t(current_time),
+                .session_id = entry_key.session_id,
                 .parent_path = entry_key.parent_path,
                 .operation = entry_key.operation,
                 .count = entry_stats.count,
@@ -54,21 +56,22 @@ protected:
     }
 
 public:
-    void observe(Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
+    void observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
     {
         std::lock_guard lock(stats_mutex);
-        stats[EntryKey{.operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
+        stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
     }
 
 private:
     struct EntryKey
     {
+        Int64 session_id;
         Coordination::OpNum operation;
         String parent_path;
 
         bool operator==(const EntryKey & other) const
         {
-            return operation == other.operation && parent_path == other.parent_path;
+            return session_id == other.session_id && operation == other.operation && parent_path == other.parent_path;
         }
     };
     struct EntryKeyHash
@@ -76,6 +79,7 @@ private:
         size_t operator()(const EntryKey & entry_key) const
         {
             SipHash hash;
+            hash.update(entry_key.session_id);
             hash.update(entry_key.operation);
             hash.update(entry_key.parent_path);
             return hash.get64();
