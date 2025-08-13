@@ -22,8 +22,8 @@ SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'R
 SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010;
 
 SELECT '---normal : contains only projections ---';
-SYSTEM START MERGES normal;
-ALTER TABLE normal MATERIALIZE PROJECTION p_normal SETTINGS mutations_sync = 2;
+TRUNCATE TABLE normal;
+INSERT INTO normal select number as key, number as value from numbers(10100);
 
 SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010;
@@ -50,8 +50,8 @@ SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'R
 SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
 
 SELECT '---agg : contains only projections ---';
-SYSTEM START MERGES agg;
-ALTER TABLE agg MATERIALIZE PROJECTION p_agg SETTINGS mutations_sync = 2;
+TRUNCATE TABLE agg;
+INSERT INTO agg SELECT number AS key, number AS value FROM numbers(200);
 
 SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(value) AS v FROM agg where key > 90 AND key < 110) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
