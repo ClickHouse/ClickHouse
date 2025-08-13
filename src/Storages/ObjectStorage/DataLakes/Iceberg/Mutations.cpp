@@ -16,8 +16,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Poco/JSON/Object.h>
-#include "IO/CompressionMethod.h"
-#include "Processors/Chunk.h"
+#include <IO/CompressionMethod.h>
+#include <Processors/Chunk.h>
 
 namespace DB::ErrorCodes
 {
