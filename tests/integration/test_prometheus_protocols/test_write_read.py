@@ -101,7 +101,7 @@ def test_remote_read_auth():
 
     read_response = receive_protobuf_from_remote_read(
         node.ip_address,
-        cluster.prometheus_remote_read_handler_port,
+        9093,
         "read_auth_ok",
         read_request,
     )
@@ -112,7 +112,7 @@ def test_remote_read_auth():
 
     auth_fail_response = get_response_to_remote_read(
         node.ip_address,
-        cluster.prometheus_remote_read_handler_port,
+        9093,
         "read_auth_fail",
         read_request,
     )

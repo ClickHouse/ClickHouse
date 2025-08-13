@@ -17,8 +17,7 @@ services:
           - job_name: "prometheus"
             static_configs:
               - targets: ["localhost:${PROMETHEUS_WRITER_PORT}"]
-        remote_write:
-          - url: "${PROMETHEUS_REMOTE_WRITE_HANDLER}"
+        remote_write: ${PROMETHEUS_REMOTE_WRITE_HANDLERS}
         storage:
           tsdb:
             out_of_order_time_window: 100y
@@ -55,8 +54,7 @@ services:
         exit 0
       fi
       cat << EOF > /etc/prometheus/prometheus.yml
-        remote_read:
-          - url: "${PROMETHEUS_REMOTE_READ_HANDLER}"
+        remote_read: ${PROMETHEUS_REMOTE_READ_HANDLERS}
         storage:
           tsdb:
             out_of_order_time_window: 100y

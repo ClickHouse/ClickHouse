@@ -757,12 +757,8 @@ class ClickHouseCluster:
         self.prometheus_receiver_ip = None
         self.prometheus_receiver_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_receiver/logs"))
         self.prometheus_servers = []
-        self.prometheus_remote_write_handler_host = None
-        self.prometheus_remote_write_handler_port = None
-        self.prometheus_remote_write_handler_path = None
-        self.prometheus_remote_read_handler_host = None
-        self.prometheus_remote_read_handler_port = None
-        self.prometheus_remote_read_handler_path = None
+        self.prometheus_remote_write_handlers = []
+        self.prometheus_remote_read_handlers = []
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1656,14 +1652,15 @@ class ClickHouseCluster:
             env_variables[f"{prefix}_LOGS"] = self.prometheus_receiver_logs_dir
             env_variables[f"{prefix}_LOGS_FS"] = "bind"
 
-        if self.prometheus_remote_write_handler_host:
-            env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
-                f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
-            )
-        if self.prometheus_remote_read_handler_host:
-            env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
-                f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
-            )
+        handler_urls = []
+        for handler_host, handler_port, handler_path in self.prometheus_remote_write_handlers:
+            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+
+        handler_urls = []
+        for handler_host, handler_port, handler_path in self.prometheus_remote_read_handlers:
+            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_READ_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
 
         if not self.with_prometheus:
             self.with_prometheus = True
@@ -2129,11 +2126,9 @@ class ClickHouseCluster:
         if with_prometheus_receiver:
             self.prometheus_servers.append('receiver')
         if handle_prometheus_remote_write:
-            self.prometheus_remote_write_handler_host = instance.hostname
-            (self.prometheus_remote_write_handler_port, self.prometheus_remote_write_handler_path) = handle_prometheus_remote_write
+            self.prometheus_remote_write_handlers.append((instance.hostname,) + handle_prometheus_remote_write)
         if handle_prometheus_remote_read:
-            self.prometheus_remote_read_handler_host = instance.hostname
-            (self.prometheus_remote_read_handler_port, self.prometheus_remote_read_handler_path) = handle_prometheus_remote_read
+            self.prometheus_remote_read_handlers.append((instance.hostname,) + handle_prometheus_remote_read)
         if self.prometheus_servers:
             cmds.append(
                 self.setup_prometheus_cmd(
