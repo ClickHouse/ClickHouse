@@ -807,9 +807,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
 {
     String buf;
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-    const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(fc.allow_hardcoded_inserts && !in_parallel);
     const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
-    const uint32_t generate_random = 15;
+    const uint32_t generate_random = 30;
     const uint32_t insert_select = 10;
     const uint32_t prob_space = hardcoded_insert + random_values + generate_random + insert_select;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
