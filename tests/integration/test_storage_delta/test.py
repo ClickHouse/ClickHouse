@@ -1990,8 +1990,8 @@ deltaLake(
     )
 
 
-@pytest.mark.parametrize("new_analyzer", ["1", "0"])
-def test_cluster_function(started_cluster, new_analyzer):
+@pytest.mark.parametrize("new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"], ["0", "azure"]])
+def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
     instance_old = started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2002,47 +2002,79 @@ def test_cluster_function(started_cluster, new_analyzer):
         pa.array(["aa", "bb", "cc", "aa", "bb"], type=pa.string()),
     ]
 
-    storage_options = {
-        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
-        "AWS_ACCESS_KEY_ID": minio_access_key,
-        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
-        "AWS_ALLOW_HTTP": "true",
-        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
-    }
-    path = f"s3://root/{table_name}"
-    table = pa.Table.from_arrays(data, schema=schema)
-    write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
+    if storage_type == "s3" :
+        storage_options = {
+            "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "AWS_ACCESS_KEY_ID": minio_access_key,
+            "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+            "AWS_ALLOW_HTTP": "true",
+            "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+        }
+        path = f"s3://root/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
 
-    table_function = f"""
-deltaLakeCluster(cluster,
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
-    """
-    instance.query(
-        f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
-    assert 5 == int(
+        table_function = f"""
+    deltaLakeCluster(cluster,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+            SETTINGS allow_experimental_delta_kernel_rs=1)
+        """
         instance.query(
-            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
-    )
-    assert "1\taa\n"
-    "2\tbb\n"
-    "3\tcc\n"
-    "4\taa\n"
-    "5\tbb\n" == instance.query(
-        f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
-    )
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
+        )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
 
-    table_function_old = f"""
-deltaLakeCluster(cluster_old,
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
-    """
+        table_function_old = f"""
+    deltaLakeCluster(cluster_old,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+            SETTINGS allow_experimental_delta_kernel_rs=1)
+        """
+    elif storage_type == "azure":
+        storage_options = {
+            "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
+            "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+        }
+        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
+
+        table_function = f"""
+        deltaLakeAzureCluster(cluster, azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}')
+        """
+        instance.query(
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
+        )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+
+        table_function_old = f"""
+            deltaLakeAzureCluster(cluster_old, azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}')
+        """
 
     assert 5 == int(
         instance_old.query(
