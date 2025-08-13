@@ -1005,10 +1005,6 @@ static std::vector<String> getSanitizerNames()
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
-#endif
-
 #if USE_SSL
     ::ssh::LibSSHInitializer::instance();
     ::ssh::libsshLogger::initialize();
@@ -1022,6 +1018,10 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+#if USE_JEMALLOC
+    setupJemalloc(server_settings);
+#endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
@@ -2586,10 +2586,6 @@ try
 
     if (has_trace_collector)
         global_context->initializeTraceCollector();
-
-#if USE_JEMALLOC
-    setupJemallocSampleCollecting();
-#endif
 
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();

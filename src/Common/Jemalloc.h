@@ -11,6 +11,8 @@
 namespace DB
 {
 
+struct ServerSettings;
+
 void purgeJemallocArenas();
 
 void checkJemallocProfilingEnabled();
@@ -43,7 +45,7 @@ T getJemallocValue(const char * name)
     return value;
 }
 
-void setupJemallocSampleCollecting();
+void setupJemalloc(const ServerSettings & server_settings);
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)

@@ -2,6 +2,7 @@
 
 #if USE_JEMALLOC
 
+#include <Core/ServerSettings.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
@@ -18,6 +19,14 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool jemalloc_enable_profiler;
+    extern const ServerSettingsBool jemalloc_collect_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+}
 
 namespace ErrorCodes
 {
@@ -130,10 +139,19 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
 
 }
 
-void setupJemallocSampleCollecting()
+void setupJemalloc(const ServerSettings & server_settings)
 {
-    setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
-    setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+    setJemallocValue("prof.active", server_settings[ServerSetting::jemalloc_enable_profiler].value);
+    setJemallocBackgroundThreads(server_settings[ServerSetting::jemalloc_enable_background_threads].value);
+
+    if (server_settings[ServerSetting::jemalloc_max_background_threads_num])
+        setJemallocValue("max_background_threads", server_settings[ServerSetting::jemalloc_max_background_threads_num].value);
+
+    if (server_settings[ServerSetting::jemalloc_collect_profile_samples_in_trace_log])
+    {
+        setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+        setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+    }
 }
 
 }

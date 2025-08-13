@@ -1134,6 +1134,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
+    DECLARE(Bool, jemalloc_enable_profiler, 0, R"(Enable jemalloc profiler)", 0) \
+    DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, 1, R"(Store jemalloc sampled allocations in system.trace_log)", 0) \
+    DECLARE(Bool, jemalloc_enable_background_threads, 1, R"(Enable jemalloc background threads)", 0) \
+    DECLARE(UInt64, jemalloc_max_background_threads_num, 0, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
+
 
 // clang-format on
 
