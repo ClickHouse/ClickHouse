@@ -1786,6 +1786,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
 
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(table_to_replace_name);
 
         UInt64 name_hash = sipHash64(create.getDatabase() + create.getTable());
         UInt16 random_suffix = thread_local_rng();
