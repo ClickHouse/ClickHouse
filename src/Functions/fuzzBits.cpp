@@ -194,7 +194,7 @@ Flips the bits of the input string `s`, with probability `prob` for each bit.
         "Usage example",
         R"(
 SELECT fuzzBits(materialize('abacaba'), 0.1)
-FROM numbers(3)        
+FROM numbers(3)
         )",
         R"(
 ┌─fuzzBits(materialize('abacaba'), 0.1)─┐
