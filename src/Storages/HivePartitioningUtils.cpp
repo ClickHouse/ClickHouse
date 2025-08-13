@@ -21,6 +21,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace HivePartitioningUtils
@@ -130,28 +131,27 @@ void addPartitionColumnsToChunk(
     }
 }
 
-void assertHivePartitionColumnsAreNotTheOnlyColumns(const NamesAndTypesList & hive_partition_columns_to_read_from_file_path, const ColumnsDescription & storage_columns)
+void sanityCheckSchemaAndHivePartitionColumns(const NamesAndTypesList & hive_partition_columns_to_read_from_file_path, const ColumnsDescription & storage_columns)
 {
-    if (hive_partition_columns_to_read_from_file_path.size() != storage_columns.size())
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
     {
-        return;
-    }
-
-    /// Initially I assumed checking for size would be enough, but it's not.
-    /// Example of that is a bucket that already contains hive partitioned data partition by the same amount of columns
-    /// that were specified in the schema (and the schema is missing the partition columns)
-    /// In that case, the hive columns will have the same size as the storage columns, but they are completely different.
-    for (const auto & column : storage_columns)
-    {
-        if (!hive_partition_columns_to_read_from_file_path.contains(column.name))
+        if (!storage_columns.has(column.name))
         {
-            return;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "All hive partitioning columns must be present in the schema. Missing column: {}. "
+                "If you do not want to use hive partitioning, try `use_hive_partitioning=0` and/or `partition_strategy != hive`",
+                column.name);
         }
     }
 
-    throw Exception(
-        ErrorCodes::INCORRECT_DATA,
-        "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+    if (storage_columns.size() == hive_partition_columns_to_read_from_file_path.size())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "A hive partitioned file can't contain only partition columns. "
+            "Try reading it with `use_hive_partitioning=0` and/or `partition_strategy != hive`");
+    }
 }
 
 void extractPartitionColumnsFromPathAndEnrichStorageColumns(
@@ -177,7 +177,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
         }
     }
 
-    assertHivePartitionColumnsAreNotTheOnlyColumns(hive_partition_columns_to_read_from_file_path, storage_columns);
+    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, storage_columns);
 }
 
 }

@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-fasttest, no-random-settings
 
+SET allow_suspicious_low_cardinality_types=1;
+
 DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format;
 
 CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
@@ -74,7 +76,11 @@ INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_parquet', format=Parquet, par
 -- Schema specified, but the hive partition column is missing in the schema (present in the data tho)
 INSERT INTO FUNCTION s3(s3_conn, filename='half_baked', format=Parquet, partition_strategy='hive') PARTITION BY year SELECT 1 AS key, 2020 AS year;
 
-CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet);
+-- Should fail because schema does not match since it is lacking the partition columns and `use_hive_partitioning=1`
+CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=1; -- {serverError BAD_ARGUMENTS}
+
+-- Should succeed because hive is off
+CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=0;
 
 -- Should succeed and not return hive columns. Distinct because maybe MinIO isn't cleaned up
 SELECT DISTINCT * FROM s3_table_half_schema_with_format;
@@ -135,4 +141,4 @@ CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/
 -- Should throw and it should not be a LOGICAL_ERROR
 CREATE TABLE t_03363_hive_requires_format (c0 Int) ENGINE = S3(s3_conn, partition_strategy = 'hive') PARTITION BY (c0); -- {serverError BAD_ARGUMENTS}
 
-DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;
+DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format;
