@@ -35,7 +35,6 @@ PredicateRewriteVisitorData::PredicateRewriteVisitorData(
 
 void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_query, ASTPtr &)
 {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
     for (size_t index = 0; index < internal_select_list.size(); ++index)
@@ -167,7 +166,6 @@ static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IASTHash> & ha
 
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
 {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     if ((!optimize_final && subquery.final())
         || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), getContext())))
         || subquery.withFill()

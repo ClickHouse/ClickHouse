@@ -32,8 +32,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/inlined_vector.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -136,17 +134,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 
     if (type == ActionType::FUNCTION)
         map.add("Compiled", is_function_compiled);
-}
-
-std::string ActionsDAG::Node::dump() const
-{
-    JSONBuilder::JSONMap map;
-    toTree(map);
-    WriteBufferFromOwnString out;
-    JSONBuilder::FormatContext context{.out = out};
-    JSONBuilder::FormatSettings settings = {{}, 2, true, true};
-    map.format(settings, context);
-    return out.str();
 }
 
 UInt64 ActionsDAG::Node::getHash() const
@@ -2730,8 +2717,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     if (predicate->type == ActionType::COLUMN)
         return {};
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "predicate->dump()={}", predicate->dump());
-
     auto get_input_nodes = [this](const Names & inputs_names)
     {
         std::unordered_set<const Node *> allowed_nodes;
@@ -2757,27 +2742,12 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    auto dump = [](const auto & nods)
-    {
-        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        for (const auto * node : nods)
-            ss << node->dump() << "\n";
-        return ss.str();
-    };
-
-    LOG_DEBUG(&Poco::Logger::get("debug"), "left_stream_allowed_nodes:\n{}", dump(left_stream_allowed_nodes));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "right_stream_allowed_nodes:\n{}", dump(right_stream_allowed_nodes));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "both_streams_allowed_nodes:\n{}", dump(both_streams_allowed_nodes));
-
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
-
-    LOG_DEBUG(&Poco::Logger::get("debug"), "left_stream_allowed_conjunctions:\n{}", dump(left_stream_allowed_conjunctions));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "right_stream_allowed_conjunctions:\n{}", dump(right_stream_allowed_conjunctions));
 
     std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
     std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
@@ -2804,38 +2774,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "rejected_conjunctions:\n{}", dump(rejected_conjunctions));
-
-    // if (rejected_conjunctions.size() == 1)
-    // {
-    //     chassert(rejected_conjunctions.front()->result_type);
-    //
-    //     bool left_stream_push_constant
-    //         // = std::ranges::all_of(left_stream_allowed_conjunctions, [](const Node * node) { return node->type == ActionType::COLUMN; });
-    //         = !left_stream_allowed_conjunctions.empty() && left_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
-    //     bool right_stream_push_constant
-    //         // = std::ranges::all_of(right_stream_allowed_conjunctions, [](const Node * node) { return node->type == ActionType::COLUMN; });
-    //         = !right_stream_allowed_conjunctions.empty() && right_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
-    //
-    //     if ((left_stream_push_constant && right_stream_push_constant)
-    //         && !rejected_conjunctions.front()->result_type->equals(*predicate->result_type))
-    //     {
-    //         /// No further optimization can be done
-    //         return {};
-    //     }
-    // }
-
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
-
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "left_stream_filter_to_push_down:\n{}",
-        left_stream_filter_to_push_down ? left_stream_filter_to_push_down->dag.dumpDAG() : "null");
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "right_stream_filter_to_push_down:\n{}",
-        right_stream_filter_to_push_down ? right_stream_filter_to_push_down->dag.dumpDAG() : "null");
 
     auto replace_equivalent_columns_in_filter = [](
         const ActionsDAG & filter,
