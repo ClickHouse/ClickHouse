@@ -468,8 +468,8 @@ size_t ManifestFileContent::getSizeInMemory() const
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
     total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
-    total_size += data_files.capacity() * sizeof(ManifestFileEntry);
-    total_size += position_deletes_files.capacity() * sizeof(ManifestFileEntry);
+    total_size += data_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
+    total_size += position_deletes_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
     return total_size;
 }
 
@@ -497,7 +497,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 }
 
 
-std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcudingDeleted() const
+std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
     for (const auto & file : data_files_without_deleted)
