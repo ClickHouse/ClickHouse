@@ -375,7 +375,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
 
-	        const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
+            const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
