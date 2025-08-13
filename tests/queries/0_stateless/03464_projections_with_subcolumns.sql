@@ -1,3 +1,4 @@
+-- Tags: long
 
 set enable_analyzer=1;
 set mutations_sync=1;
