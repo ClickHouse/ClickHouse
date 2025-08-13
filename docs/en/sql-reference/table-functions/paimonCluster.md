@@ -16,14 +16,11 @@ Allows processing files from Apache [Paimon](https://paimon.apache.org/) in para
 ## Syntax {#syntax}
 
 ```sql
-paimonS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-paimonS3Cluster(cluster_name, named_collection[, option=value [,..]])
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 
 paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-paimonAzureCluster(cluster_name, named_collection[, option=value [,..]])
 
 paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
-paimonHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
 ## Arguments {#arguments}
@@ -34,12 +31,6 @@ paimonHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 **Returned value**
 
 A table with the specified structure for reading data from cluster in the specified Paimon table.
-
-**Examples**
-
-```sql
-SELECT * FROM paimonS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
-```
 
 ## Virtual Columns {#virtual-columns}
 
