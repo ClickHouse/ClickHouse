@@ -37,15 +37,6 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
-
 #include <Poco/Logger.h>
 
 namespace DB
