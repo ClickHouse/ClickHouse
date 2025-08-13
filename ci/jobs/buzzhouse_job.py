@@ -187,7 +187,7 @@ def main():
             "compare_success_results": False,  # This can give false positives, so disable it
             "allow_infinite_tables": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
-            "disallowed_error_codes": "9,11,13,15,99,100,101,102,104,108,127,159,162,165,166,167,168,172,209,230,231,233,234,235,246,255,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
+            "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,159,162,165,166,167,168,172,209,230,231,233,234,235,246,255,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
             "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,386,403,467",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
