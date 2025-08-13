@@ -237,7 +237,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
             hive_partition_columns_to_read_from_file_path,
             configuration->getRawPath().path,
             true,
-            std::nullopt,
+            format_settings,
             context_
         );
     }
