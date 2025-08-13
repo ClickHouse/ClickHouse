@@ -9,7 +9,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
-#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {
