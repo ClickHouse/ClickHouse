@@ -1,6 +1,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
 #include <filesystem>
+#include <iomanip>
 
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
@@ -20,7 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Poco/String.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -184,15 +185,7 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        // quote arguments
-        std::vector<std::string> quoted_args;
-        for (const auto& arg : command_arguments_with_parameters)
-        {
-            quoted_args.push_back("\"" + arg + "\"");
-        }
-        String args_str = Poco::cat(String(", "), quoted_args.begin(), quoted_args.end());
-
-        // catch UDF execution error and throw it as UDF_EXECUTION_FAILED
+        /// Catch UDF execution error and throw it as UDF_EXECUTION_FAILED
         try
         {
             ColumnWithTypeAndName result(result_type, configuration.result_name);
@@ -246,6 +239,11 @@ public:
         }
         catch (...)
         {
+            std::vector<String> quoted_arguments_with_parameters;
+            for (const auto & argument : command_arguments_with_parameters)
+                quoted_arguments_with_parameters.push_back("\"" + argument + "\"");
+            String quoted_arguments_string = boost::algorithm::join(quoted_arguments_with_parameters, ", ");
+
             String error_message = getCurrentExceptionMessage(true /* with_stacktrace */);
 
             throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
@@ -254,7 +252,7 @@ public:
                 "Original error: {}",
                 getName(),
                 command_with_parameters,
-                args_str,
+                quoted_arguments_string,
                 error_message);
         }
         UNREACHABLE();
@@ -264,7 +262,7 @@ private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
     String command_with_parameters;
-    std::vector<std::string> command_arguments_with_parameters;
+    std::vector<String> command_arguments_with_parameters;
 };
 
 }
