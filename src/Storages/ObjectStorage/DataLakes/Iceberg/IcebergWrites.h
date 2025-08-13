@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
 #include "config.h"
 
@@ -47,7 +48,7 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_);
+    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
 
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
@@ -71,6 +72,7 @@ private:
     String storage_data_dir;
     String storage_metadata_dir;
     bool use_uuid_in_metadata;
+    CompressionMethod compression_method;
 
     Int32 initial_version = 0;
 };
@@ -198,6 +200,7 @@ private:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
+    CompressionMethod metadata_compression_method;
 };
 
 }

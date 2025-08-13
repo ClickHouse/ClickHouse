@@ -32,12 +32,9 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
@@ -64,9 +61,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -138,7 +132,6 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
-demangle
 dictGet
 dictGetAll
 dictGetChildren
@@ -307,7 +300,6 @@ isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
 jaroSimilarity
 jaroWinklerSimilarity
@@ -326,7 +318,6 @@ log
 log10
 log1p
 log2
-logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
@@ -546,13 +537,6 @@ shardNum
 showCertificate
 sigmoid
 sign
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
 sin
 sinh
 sipHash128
@@ -593,7 +577,6 @@ tanh
 tcpPort
 tgamma
 throwIf
-tid
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
