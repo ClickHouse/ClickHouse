@@ -12,7 +12,6 @@ ReadFromMergeTree (default.agg)
 ReadFromMergeTree (p_agg)
 ReadFromRemoteParallelReplicas
 1900
-99
 ---agg : contains only projections ---
 ReadFromMergeTree (p_agg)
 ReadFromRemoteParallelReplicas

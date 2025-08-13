@@ -96,7 +96,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     {
         fiu_do_on(FailPoints::slowdown_parallel_replicas_local_plan_read,
         {
-            sleepForMilliseconds(100);
+            sleepForMilliseconds(30);
         });
         return coordinator->handleRequest(std::move(req));
     };
