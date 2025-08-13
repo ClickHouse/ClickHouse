@@ -305,7 +305,7 @@ public:
 
 struct HasTokenIndexImpl
 {
-    static constexpr auto name = "hasTokenIndex";
+    static constexpr auto name = "_hasToken_index";
     using ResultType = UInt8;
 
 };

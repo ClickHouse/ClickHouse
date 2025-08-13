@@ -568,7 +568,7 @@ bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunction
 {
     const String& function_name = function_node.getFunctionName();
 
-    if (!function_name.ends_with("Index"))
+    if (!function_name.ends_with("_index"))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function: {}, Does not seem to be an index function", function_name);
 
     const size_t function_arguments_size = function_node.getArgumentsSize();

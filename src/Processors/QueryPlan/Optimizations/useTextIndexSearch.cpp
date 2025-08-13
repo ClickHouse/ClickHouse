@@ -86,7 +86,7 @@ static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
 ///
 /// this class will replace some nodes in the dag (and the references to them) in order to create an equivalent query
 ///
-/// select count() from table where hasTokenIndex('mytextcolumn_index', 'myword', _part_index, _part_offset)
+/// select count() from table where _hasToken_index('mytextcolumn_index', 'myword', _part_index, _part_offset)
 ///
 /// The new query will execute in a time fraction of the original one because:
 /// 1. It does not require direct access to mytextcolumn but only to mytextcolumn_index (intended to be much smaller than the text column)
@@ -214,7 +214,7 @@ class FunctionReplacerDAG {
         const ContextPtr context = FunctionReplacerDAG::extractFunctionContext(original_function_node);
 
         // TODO: JAM This should go to the virtual function
-        const String replacement_function_name = std::format("{}Index", original_function_node.function->getName());
+        const String replacement_function_name = std::format("_{}_index", original_function_node.function->getName());
 
         /// At the moment I assume that the substitution function receives the same arguments than the original, but:
         /// 1. Substituting the indexed column with the index name (string column)
