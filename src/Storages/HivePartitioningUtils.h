@@ -10,7 +10,7 @@ class Chunk;
 
 namespace HivePartitioningUtils
 {
-using HivePartitioningKeysAndValues = std::map<std::string_view, std::string_view>;
+using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const std::string & path);
 

@@ -635,20 +635,19 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
     /*
      * View based PairWriter, no copies at all
      * */
-    template <typename MAP>
-    class TPairWriter
+    class PairWriter
     {
-        MAP & map;
+        absl::flat_hash_map<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit TPairWriter(MAP & map_)
+        explicit PairWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 
-        ~TPairWriter()
+        ~PairWriter()
         {
             // Make sure that ColumnString invariants are not broken.
             if (!isKeyEmpty())
@@ -732,8 +731,6 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
             return value;
         }
     };
-
-    using PairWriter = TPairWriter<absl::flat_hash_map<std::string_view, std::string_view>>;
 
     template <typename ... Args>
     explicit ReferencesMapStateHandler(Args && ... args)

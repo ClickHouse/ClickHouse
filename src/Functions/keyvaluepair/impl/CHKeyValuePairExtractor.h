@@ -37,7 +37,7 @@ public:
     }
 
 protected:
-    uint64_t extractImpl(std::string_view data, auto & pair_writer)
+    uint64_t extractImpl(std::string_view data, typename StateHandler::PairWriter & pair_writer)
     {
         auto state =  State::WAITING_KEY;
 
@@ -173,10 +173,9 @@ struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extr
     explicit KeyValuePairExtractorReferenceMap(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
         : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
-    template <typename MAP>
-    uint64_t extract(std::string_view data, MAP & map)
+    uint64_t extract(std::string_view data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
-        auto pair_writer = typename StateHandler::TPairWriter<MAP>(map);
+        auto pair_writer = typename StateHandler::PairWriter(map);
         return extractImpl(data, pair_writer);
     }
 };
