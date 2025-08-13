@@ -20,7 +20,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
-#include "base/scope_guard.h"
+#include <base/scope_guard.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
