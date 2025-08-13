@@ -54,8 +54,10 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"count_distinct_optimization", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
        {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
+       {"enable_analyzer", trueOrFalseSetting},
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
        {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
+       {"enable_parallel_replicas", trueOrFalseSetting},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg)
@@ -1045,22 +1047,17 @@ std::unordered_map<String, CHSetting> formatSettings;
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
-    if (fc.enable_parallel_replicas && !fc.clusters.empty())
+    if (!fc.clusters.empty())
     {
         serverSettings.insert(
             {{"cluster_for_parallel_replicas",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)},
-             {"enable_parallel_replicas", trueOrFalseSetting}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});
     }
     if (!fc.caches.empty())
     {
         serverSettings.insert(
             {{"filesystem_cache_name",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.caches) + "'"; }, {}, false)}});
-    }
-    if (fc.disable_new_analyzer)
-    {
-        performanceSettings.insert({{"enable_analyzer", trueOrFalseSetting}});
     }
     for (const auto & setting : performanceSettings)
     {

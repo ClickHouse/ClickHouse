@@ -3,8 +3,6 @@
 namespace BuzzHouse
 {
 
-static DB::Strings storagePolicies, disks;
-
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg)
     {
@@ -270,6 +268,8 @@ std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> all
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
+std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
+
 std::unordered_map<String, CHSetting> restoreSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
        {"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
@@ -303,13 +303,10 @@ std::unordered_map<String, CHSetting> backupSettings
        {"structure_only", CHSetting(trueOrFalse, {}, false)},
        {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
 
-
-std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
-
-std::unordered_map<String, CHSetting> flatLayoutSettings
+static std::unordered_map<String, CHSetting> flatLayoutSettings
     = {{"INITIAL_ARRAY_SIZE", CHSetting(bytesRange, {}, false)}, {"MAX_ARRAY_SIZE", CHSetting(bytesRange, {}, false)}};
 
-std::unordered_map<String, CHSetting> hashedLayoutSettings
+static std::unordered_map<String, CHSetting> hashedLayoutSettings
     = {{"MAX_LOAD_FACTOR", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "0.5" : "0.99"; }, {}, false)},
        {"SHARD_LOAD_QUEUE_BACKLOG",
         CHSetting(
@@ -322,13 +319,13 @@ std::unordered_map<String, CHSetting> hashedLayoutSettings
             false)},
        {"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)}};
 
-std::unordered_map<String, CHSetting> hashedArrayLayoutSettings
+static std::unordered_map<String, CHSetting> hashedArrayLayoutSettings
     = {{"SHARDS", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)}};
 
-std::unordered_map<String, CHSetting> rangeHashedLayoutSettings
+static std::unordered_map<String, CHSetting> rangeHashedLayoutSettings
     = {{"RANGE_LOOKUP_STRATEGY", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'min'" : "'max'"; }, {}, false)}};
 
-std::unordered_map<String, CHSetting> cachedLayoutSettings
+static std::unordered_map<String, CHSetting> cachedLayoutSettings
     = {{"ALLOW_READ_EXPIRED_KEYS", CHSetting(trueOrFalse, {}, false)},
        {"MAX_THREADS_FOR_UPDATES", threadSetting},
        {"MAX_UPDATE_QUEUE_SIZE",
@@ -341,15 +338,15 @@ std::unordered_map<String, CHSetting> cachedLayoutSettings
             {},
             false)}};
 
-std::unordered_map<String, CHSetting> ssdCachedLayoutSettings
+static std::unordered_map<String, CHSetting> ssdCachedLayoutSettings
     = {{"BLOCK_SIZE", CHSetting(bytesRange, {}, false)},
        {"FILE_SIZE", CHSetting(bytesRange, {}, false)},
        {"READ_BUFFER_SIZE", CHSetting(bytesRange, {}, false)},
        {"WRITE_BUFFER_SIZE", CHSetting(bytesRange, {}, false)}};
 
-std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FROM_ATTRIBUTES", CHSetting(trueOrFalse, {}, false)}};
+static std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO_KEY_FROM_ATTRIBUTES", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> dataLakeSettings
+static std::unordered_map<String, CHSetting> dataLakeSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
        {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
@@ -358,7 +355,7 @@ const std::unordered_map<String, CHSetting> dataLakeSettings
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> fileTableSettings
+static std::unordered_map<String, CHSetting> fileTableSettings
     = {{"engine_file_allow_create_multiple_files", CHSetting(trueOrFalse, {}, false)},
        {"engine_file_empty_if_not_exists", CHSetting(trueOrFalse, {}, false)},
        {"engine_file_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
@@ -373,7 +370,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             {},
             false)}};
 
-const std::unordered_map<String, CHSetting> distributedTableSettings
+static std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
        {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
        {"flush_on_detach", CHSetting(trueOrFalse, {}, false)},
@@ -381,29 +378,29 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
        {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
        {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> memoryTableSettings
+static std::unordered_map<String, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep", CHSetting(bytesRange, {}, false)},
        {"max_bytes_to_keep", CHSetting(bytesRange, {}, false)},
        {"min_rows_to_keep", CHSetting(rowsRange, {}, false)},
        {"max_rows_to_keep", CHSetting(rowsRange, {}, false)},
        {"compress", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+static std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> joinTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+static std::unordered_map<String, CHSetting> joinTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
+static std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
     {"optimize_for_bulk_insert", CHSetting(trueOrFalse, {}, false)},
     {"bulk_insert_block_size", CHSetting(highRange, {}, false)},
 };
 
-const std::unordered_map<String, CHSetting> mySQLTableSettings
+static std::unordered_map<String, CHSetting> mySQLTableSettings
     = {{"connection_pool_size",
         CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
        {"connection_max_tries", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
        {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
 
-const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
+static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", CHSetting(highRange, {}, false)}, {"max_compress_block_size", CHSetting(highRange, {}, false)}};
 
 
@@ -417,17 +414,15 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 
     if (!fc.storage_policies.empty())
     {
-        storagePolicies.insert(storagePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
         const auto & storage_policy_setting
-            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(storagePolicies) + "'"; }, {}, false);
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.storage_policies) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"storage_policy", storage_policy_setting}});
         logTableSettings.insert({{"storage_policy", storage_policy_setting}});
         restoreSettings.insert({{"storage_policy", storage_policy_setting}});
     }
     if (!fc.disks.empty())
     {
-        disks.insert(disks.end(), fc.disks.begin(), fc.disks.end());
-        const auto & disk_setting = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(disks) + "'"; }, {}, false);
+        const auto & disk_setting = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.disks) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
     }
@@ -465,6 +460,32 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {"s3queue_processing_threads_num", threadSetting},
          {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
 
+    for (const auto & entry : fc.disallowed_settings)
+    {
+        mergeTreeTableSettings.erase(entry);
+        restoreSettings.erase(entry);
+        backupSettings.erase(entry);
+        flatLayoutSettings.erase(entry);
+        hashedLayoutSettings.erase(entry);
+        hashedArrayLayoutSettings.erase(entry);
+        rangeHashedLayoutSettings.erase(entry);
+        cachedLayoutSettings.erase(entry);
+        ssdCachedLayoutSettings.erase(entry);
+        dataLakeSettings.erase(entry);
+        fileTableSettings.erase(entry);
+        distributedTableSettings.erase(entry);
+        memoryTableSettings.erase(entry);
+        setTableSettings.erase(entry);
+        joinTableSettings.erase(entry);
+        embeddedRocksDBTableSettings.erase(entry);
+        mySQLTableSettings.erase(entry);
+        mergeTreeColumnSettings.erase(entry);
+        s3Settings.erase(entry);
+        s3QueueTableSettings.erase(entry);
+        azureBlobStorageSettings.erase(entry);
+        azureQueueSettings.erase(entry);
+        logTableSettings.erase(entry);
+    }
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
