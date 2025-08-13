@@ -136,7 +136,7 @@ void assertHivePartitionColumnsAreNotTheOnlyColumns(const NamesAndTypesList & hi
     {
         return;
     }
-    
+
     /// Initially I assumed checking for size would be enough, but it's not.
     /// Example of that is a bucket that already contains hive partitioned data partition by the same amount of columns
     /// that were specified in the schema (and the schema is missing the partition columns)
