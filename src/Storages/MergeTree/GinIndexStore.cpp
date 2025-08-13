@@ -530,10 +530,10 @@ GinIndexStore::Statistics GinIndexStore::getStatistics()
     return {
         .num_terms = current_postings.size(),
         .current_size = current_size,
-        .metadata_file_size = metadata_file_stream ? metadata_file_stream->offset() : 0,
-        .bloom_filter_file_size = bloom_filter_file_stream ? bloom_filter_file_stream->offset() : 0,
-        .dictionary_file_size = dict_file_stream ? dict_file_stream->offset() : 0,
-        .posting_lists_file_size = postings_file_stream ? postings_file_stream->offset() : 0,
+        .metadata_file_size = metadata_file_stream ? metadata_file_stream->count() : 0,
+        .bloom_filter_file_size = bloom_filter_file_stream ? bloom_filter_file_stream->count() : 0,
+        .dictionary_file_size = dict_file_stream ? dict_file_stream->count() : 0,
+        .posting_lists_file_size = postings_file_stream ? postings_file_stream->count() : 0,
     };
 }
 
@@ -784,7 +784,7 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
         "Done reading the bloom filter of text index '{}' segment id {}: size = {}",
         store->getName(),
         segment_id,
-        ReadableSize(bloom_filter_file_stream->offset() - seg_dict->bloom_filter_start_offset));
+        ReadableSize(bloom_filter_file_stream->count() - seg_dict->bloom_filter_start_offset));
 }
 
 void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDictionaryPtr segment_dictionary)
@@ -834,7 +834,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDict
         "Done reading the dictionary (FST) of text index '{}' segment id {}: size = {}",
         store->getName(),
         segment_id,
-        ReadableSize(dict_file_stream->offset() - segment_dictionary->dict_start_offset));
+        ReadableSize(dict_file_stream->count() - segment_dictionary->dict_start_offset));
 }
 
 GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
@@ -881,7 +881,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             term,
             store->getName(),
             segment_id,
-            ReadableSize(postings_file_stream->offset() - seg_dict.second->postings_start_offset));
+            ReadableSize(postings_file_stream->count() - seg_dict.second->postings_start_offset));
     }
     return container;
 }
