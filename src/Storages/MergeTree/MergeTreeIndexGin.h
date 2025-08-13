@@ -68,7 +68,7 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
     bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, PostingsCacheForStore & cache_store) const;
 
-	std::shared_ptr<const GinFilter> getGinFilter(const std::string &token) const;
+    std::shared_ptr<const GinFilter> getGinFilter(const std::string &token) const;
 
 private:
     struct KeyTuplePositionMapping

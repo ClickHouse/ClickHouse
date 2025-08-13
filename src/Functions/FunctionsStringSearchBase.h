@@ -14,7 +14,8 @@ protected:
 
 public:
 
-    const enum Info {
+    const enum Info
+    {
         None,
         Optimizable,
         Optimized

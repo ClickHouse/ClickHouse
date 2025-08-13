@@ -19,7 +19,8 @@ class IndexContextInfo
 public:
     using IndexPostingsCacheForStoreMap = std::unordered_map<String, std::shared_ptr<const PostingsCacheForStore>>;
 
-    struct PartInfo {
+    struct PartInfo
+    {
         DataPartPtr data_part;
         MarkRanges ranges;
         IndexPostingsCacheForStoreMap postings_cache_for_store_part;

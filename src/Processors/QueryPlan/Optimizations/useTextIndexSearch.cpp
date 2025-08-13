@@ -20,7 +20,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <__format/format_functions.h>
-#include "base/defines.h"
+#include <base/defines.h>
 #include <algorithm>
 #include <memory>
 #include <format>
@@ -99,7 +99,8 @@ static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
 ///
 /// Some of the functions implemented here could be added to ActionsDAG directly, but this wrapper approach simplifies the work by avoiding
 /// conflicts and minimizing coupling between this optimization and ActionsDAG.
-class FunctionReplacerDAG {
+class FunctionReplacerDAG
+{
 
     ActionsDAG &dag;
     const std::map<String, String> &columns_to_index_name;
@@ -155,7 +156,7 @@ class FunctionReplacerDAG {
         Field cast_type_constant_value(map_it->second);
 
         ColumnWithTypeAndName tmp;
-        tmp.name = std::format("'{}'_String", map_it->second);
+        tmp.name = fmt::format("'{}'_String", map_it->second);
         tmp.type = std::make_shared<DataTypeString>();
         tmp.column = tmp.type->createColumnConst(0, cast_type_constant_value);
 
@@ -278,7 +279,8 @@ class FunctionReplacerDAG {
         /// 3. Redirect parent references to function_node -> replacement_node
         for (ActionsDAG::Nodes::iterator it = dag.nodes.begin(); it != dag.nodes.end(); ++it)
         {
-            if (&*it == &function_node) {
+            if (&*it == &function_node)
+            {
                 function_it = it;
                 continue;           // continue here to not count this references.
             }
@@ -416,7 +418,7 @@ public:
 ///     WHERE text_function(text, criteria), [...]
 /// where
 /// - text_function is some of the text matching functions 'hasToken',
-///    TODO: JAM add support fot the others, but I will start with this one
+///    TODO: JAM add support for the others, but I will start with this one
 ///    TODO: JAM as a latter step we need to add AND and OR operators
 /// - text is a column of text with a text index associated,
 /// - criteria is the text criteria to search for
@@ -428,7 +430,7 @@ public:
 ///
 /// (*) Text search only makes sense if a text index exists on text. In the scope of this function, we don't care.
 ///     That check is left to query runtime, ReadFromMergeTree specifically.
-size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & )
+size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings &)
 {
     QueryPlan::Node * node = parent_node;
 

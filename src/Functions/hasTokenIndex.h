@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <Columns/ColumnVector.h>
 #include <Common/StringSearcher.h>
-#include "Storages/MergeTree/MarkRange.h"
-#include "Storages/MergeTree/MergeTreeIndices.h"
-#include "base/defines.h"
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <base/defines.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
@@ -41,8 +41,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_INITIALIZED;
 }
+
 
 template <typename T>
 concept FunctionIndexConcept = requires(T t)
@@ -52,7 +52,6 @@ concept FunctionIndexConcept = requires(T t)
     //{ t.executeImplIndex() } -> std::same_as<typename T::ResultType>;
 
 } && std::is_arithmetic_v<typename T::ResultType>;
-
 
 
 template <FunctionIndexConcept Impl>
@@ -107,7 +106,7 @@ class FunctionIndex : public FunctionsStringSearchBase
 
 
     static void postingArrayToOutput(
-        const std::vector<uint32_t> matching_rows,
+        const std::vector<UInt32> matching_rows,
         const ColumnVector<UInt64> * col_part_offset_vector,
         PaddedPODArray<typename Impl::ResultType> & result)
     {
@@ -119,7 +118,7 @@ class FunctionIndex : public FunctionsStringSearchBase
 
         const UInt64 *end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
 
-        for (uint32_t row : matching_rows)
+        for (UInt32 row : matching_rows)
         {
             const size_t match_offset = row - 1;
 
@@ -282,7 +281,7 @@ public:
             context->getVectorSimilarityIndexCache().get(),
             MergeTreeReaderSettings::Create(context, SelectQueryInfo()));
 
-        for ( const auto &[index_mark, subranges] : ranges_map)
+        for (const auto &[index_mark, subranges] : ranges_map)
         {
             MergeTreeIndexGranulePtr granule = nullptr;
             reader.read(index_mark, granule);
@@ -291,7 +290,7 @@ public:
             if (!granule_gin)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
-            const std::vector<uint32_t> matching_rows
+            const std::vector<UInt32> matching_rows
                 = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get(), subranges);
 
             if (!matching_rows.empty())

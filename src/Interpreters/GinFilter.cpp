@@ -239,8 +239,8 @@ std::vector<uint32_t> GinFilter::getIndices(
 
             if (container_it == container.cend()
                 || container_it->second->maximum() < range.range_start
-                || container_it->second->minimum() > range.range_end) {
-
+                || container_it->second->minimum() > range.range_end)
+            {
                 range_matches.removeRange(range.range_start, range.range_end + 1);
                 break;
             }

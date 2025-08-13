@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 namespace DB
 {

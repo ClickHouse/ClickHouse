@@ -26,7 +26,8 @@ class FunctionNode;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-namespace QueryPlanOptimizations {
+namespace QueryPlanOptimizations
+{
     class FunctionReplacerDAG;
 }
 
