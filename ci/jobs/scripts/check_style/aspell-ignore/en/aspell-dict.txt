@@ -2680,6 +2680,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
