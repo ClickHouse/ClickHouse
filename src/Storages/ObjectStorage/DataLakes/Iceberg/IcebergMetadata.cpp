@@ -367,7 +367,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     SharedLockGuard lock(mutex);
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     chassert(iceberg_object_info != nullptr);
-    return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
+    return (iceberg_object_info->read_schema_id != relevant_snapshot_schema_id)
         ? schema_processor->getClickhouseTableSchemaById(iceberg_object_info->read_schema_id)
         : nullptr;
 }
@@ -377,7 +377,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     SharedLockGuard lock(mutex);
     chassert(iceberg_object_info != nullptr);
-    return (iceberg_object_info->read_schema_id == relevant_snapshot_schema_id)
+    return (iceberg_object_info->read_schema_id != relevant_snapshot_schema_id)
         ? schema_processor->getSchemaTransformationDagByIds(iceberg_object_info->read_schema_id, relevant_snapshot_schema_id)
         : nullptr;
 }

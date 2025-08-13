@@ -22,7 +22,7 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
 
     /// Is Iceberg object
-    bool is_iceberg_object;
+    UInt8 is_iceberg_object = 0;
 
     /// Iceberg read schema ID
     Int32 read_schema_id;

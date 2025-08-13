@@ -33,7 +33,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     IcebergDataObjectInfoPtr iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
     if (iceberg_object_info)
     {
-        is_iceberg_object = true;
+        is_iceberg_object = 1;
         data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
         read_schema_id = iceberg_object_info->read_schema_id;
         position_deletes_objects_range = iceberg_object_info->position_deletes_objects_range;
