@@ -328,6 +328,14 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     for (const auto & [column, subcolumns_indexes] : column_to_subcolumns_indexes)
     {
+        auto pos = data_part_info_for_read->getColumnPosition(column);
+        /// If there is no such column in the part, the subcolumns order doesn't matter.
+        if (!pos)
+        {
+            subcolumns_deserialization_order[column] = subcolumns_indexes;
+            continue;
+        }
+
         std::vector<ISerialization::SubstreamData> subcolumns_data;
         subcolumns_data.reserve(subcolumns_indexes.size());
         for (size_t index : subcolumns_indexes)
@@ -337,7 +345,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
                                           .withDeserializeState(deserialize_binary_bulk_state_map_for_subcolumns[columns_to_read[index].name]));
         }
 
-        auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(column), enumerate_settings);
+        auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings);
         subcolumns_deserialization_order[column].reserve(subcolumns_indexes.size());
         for (size_t i : order)
             subcolumns_deserialization_order[column].push_back(subcolumns_indexes[i]);

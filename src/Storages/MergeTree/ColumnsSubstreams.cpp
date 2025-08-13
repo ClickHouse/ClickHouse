@@ -85,17 +85,6 @@ size_t ColumnsSubstreams::getLastSubstreamPosition(size_t column_position) const
     return getSubstreamPosition(column_position, columns_substreams[column_position].second.back());
 }
 
-const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(const String & column) const
-{
-    for (const auto & [column_, substreams] : columns_substreams)
-    {
-        if (column == column_)
-            return substreams;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get substreams of column {}: there is no such column", column);
-}
-
 const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(size_t column_position) const
 {
     if (column_position >= columns_substreams.size())
