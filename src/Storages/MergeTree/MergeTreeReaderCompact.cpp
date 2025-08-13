@@ -89,7 +89,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
         if (!column_positions[i])
             findPositionForMissedNested(i);
 
-        if (column_to_read.isSubcolumn())
+        if (column_positions[i] && column_to_read.isSubcolumn())
         {
             has_subcolumns = true;
             column_to_subcolumns_indexes[column_to_read.getNameInStorage()].push_back(i);
