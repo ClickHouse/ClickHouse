@@ -1,7 +1,6 @@
 #include <bit>
 #include <cstdint>
 #include <type_traits>
-#include <alloca.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
