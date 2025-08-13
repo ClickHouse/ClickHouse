@@ -143,7 +143,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (uuid)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLUMN_UUID" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ostr << ' '  << "COLUMN_UUID"  << ' ';
         uuid->format(ostr, format_settings, state, frame);
     }
 }
