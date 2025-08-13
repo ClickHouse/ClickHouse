@@ -275,6 +275,7 @@ private:
         const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
 
     bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
     bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
 
     /// Marks the element of the queue as running.
