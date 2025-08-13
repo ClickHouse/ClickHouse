@@ -5,7 +5,8 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+
 
 namespace DB
 {

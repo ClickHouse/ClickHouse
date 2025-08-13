@@ -2,51 +2,51 @@
 #include "config.h"
 #if USE_AVRO
 
-#    include <cstddef>
-#    include <memory>
-#    include <optional>
-#    include <Formats/FormatFilterInfo.h>
-#    include <Formats/FormatParserSharedResources.h>
-#    include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Stringifier.h>
-#    include <Common/Exception.h>
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
 
 
-#    include <Core/NamesAndTypes.h>
-#    include <Core/Settings.h>
-#    include <Databases/DataLake/Common.h>
-#    include <Databases/DataLake/ICatalog.h>
-#    include <Disks/ObjectStorages/StoredObject.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Interpreters/Context.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 
-#    include <IO/CompressedReadBufferWrapper.h>
-#    include <Interpreters/ExpressionActions.h>
-#    include <Storages/ObjectStorage/DataLakes/Common.h>
-#    include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <IO/CompressedReadBufferWrapper.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-#    include <Storages/ColumnsDescription.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
-#    include <Common/SharedLockGuard.h>
-#    include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -78,7 +78,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
             }
             current_manifest_file_content = getManifestFile(
                 object_storage,
-                configuration,
+                configuration.lock(),
                 iceberg_metadata_cache,
                 schema_processor,
                 format_version,

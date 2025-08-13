@@ -703,19 +703,18 @@ ObjectIterator IcebergMetadata::iterate(
 
     auto table_snapshot
         = std::make_shared<IcebergTableStateSnapshot>(last_metadata_version, relevant_snapshot_schema_id, relevant_snapshot_id);
-    current_iterator = std::make_shared<IcebergIterator>(
+    return std::make_shared<IcebergIterator>(
+        object_storage,
         local_context,
         configuration.lock(),
         filter_dag,
         callback,
-        object_storage,
         table_snapshot,
         relevant_snapshot,
         manifest_cache,
         schema_processor,
         format_version,
         table_location);
-    return current_iterator;
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
@@ -728,45 +727,6 @@ std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
 {
     SharedLockGuard lock(mutex);
     return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id);
-}
-
-bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const
-{
-    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
-    if (!iceberg_object_info)
-        return false;
-
-    return iceberg_object_info->position_deletes_objects_range.first < iceberg_object_info->position_deletes_objects_range.second;
-}
-
-std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
-    const ObjectInfoPtr & object_info,
-    const SharedHeader & header,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context_) const
-{
-    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
-    if (!iceberg_object_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The object info is not IcebergDataObjectInfo");
-
-    auto configuration_ptr = configuration.lock();
-    if (!configuration_ptr)
-    {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg configuration has expired");
-    }
-
-    String delete_object_format = configuration_ptr->format;
-    String delete_object_compression_method = configuration_ptr->compression_method;
-
-    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header,
-        iceberg_object_info,
-        object_storage,
-        format_settings,
-        context_,
-        delete_object_format,
-        delete_object_compression_method,
-        current_iterator->getPositionDeletesFiles());
 }
 }
 

@@ -28,7 +28,7 @@
 #    include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
-
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 #include <mutex>
 
@@ -49,11 +49,11 @@ class SingleThreadIcebergKeysIterator
 {
 public:
     SingleThreadIcebergKeysIterator(
+        ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
         Iceberg::FileContentType content_type_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ActionsDAG * filter_dag_,
-        ObjectStoragePtr object_storage_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
         IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
@@ -75,7 +75,8 @@ public:
                   {
                       throw DB::Exception(
                           DB::ErrorCodes::LOGICAL_ERROR,
-                          "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
+                          "Context is required with non-empty filter_dag to implement "
+                          "partition pruning for Iceberg table");
                   }
                   return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
               }())
@@ -103,7 +104,7 @@ private:
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     IcebergMetadataFilesCachePtr iceberg_metadata_cache;
     IcebergSchemaProcessorPtr schema_processor;
-    StorageObjectStorageConfigurationPtr configuration;
+    StorageObjectStorageConfigurationWeakPtr configuration;
     bool use_partition_pruning;
     Int32 format_version;
     String table_location;
@@ -197,15 +198,23 @@ class IcebergIterator : public IObjectIterator
 public:
     template <typename... Args>
     explicit IcebergIterator(
+        ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ActionsDAG * filter_dag_,
         IDataLakeMetadata::FileProgressCallback callback_,
         Args &&... args)
         : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
-        , data_files_iterator(local_context_, Iceberg::FileContentType::DATA, configuration_, filter_dag.get(), std::forward<Args>(args)...)
+        , object_storage(std::move(object_storage_))
+        , data_files_iterator(
+              object_storage, local_context_, Iceberg::FileContentType::DATA, configuration_, filter_dag.get(), std::forward<Args>(args)...)
         , position_deletes_iterator(
-              local_context_, Iceberg::FileContentType::POSITION_DELETE, configuration_, filter_dag.get(), std::forward<Args>(args)...)
+              object_storage,
+              local_context_,
+              Iceberg::FileContentType::POSITION_DELETE,
+              configuration_,
+              filter_dag.get(),
+              std::forward<Args>(args)...)
         , blocking_queue(100)
         , producer_task(local_context_->getSchedulePool().createTask(
               "IcebergMetaReaderThread",
@@ -221,7 +230,8 @@ public:
                   }
                   blocking_queue.close();
               }))
-        , format(configuration_->format)
+        , format(configuration_.lock()->format)
+        , compression_method(configuration_.lock()->compression_method)
         , callback(std::move(callback_))
     {
         producer_task->activateAndSchedule();
@@ -262,16 +272,31 @@ public:
         producer_task->deactivate();
     }
 
-    const std::vector<Iceberg::ManifestFileEntry> & getPositionDeletesFiles() const { return position_deletes_files; }
+    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & object_info,
+        const SharedHeader & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+        if (!iceberg_object_info)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "The object with path '{}' info is not IcebergDataObjectInfo", object_info->getPath());
+
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
+    }
 
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
+    ObjectStoragePtr object_storage;
     SingleThreadIcebergKeysIterator data_files_iterator;
     SingleThreadIcebergKeysIterator position_deletes_iterator;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     BlockingMCSP<Iceberg::ManifestFileEntry> blocking_queue;
     BackgroundSchedulePool::TaskHolder producer_task;
     String format;
+    String compression_method;
     IDataLakeMetadata::FileProgressCallback callback;
 };
 }

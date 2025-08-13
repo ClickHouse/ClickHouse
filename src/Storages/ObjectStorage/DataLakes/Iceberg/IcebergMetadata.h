@@ -23,9 +23,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
 namespace DB
 {
@@ -74,14 +74,6 @@ public:
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override;
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /* object_info */,
-        const SharedHeader & /* header */,
-        const std::optional<FormatSettings> & /* format_settings */,
-        ContextPtr /* context */) const override;
-
     bool supportsSchemaEvolution() const override { return true; }
 
     static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
@@ -99,11 +91,8 @@ public:
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
 protected:
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
-        size_t list_batch_size,
-        ContextPtr local_context) const override;
+    ObjectIterator
+    iterate(const ActionsDAG * filter_dag, FileProgressCallback callback, size_t list_batch_size, ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -123,8 +112,6 @@ private:
     Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
-
-    mutable std::shared_ptr<IcebergIterator> current_iterator;
 
     const String table_location;
 
