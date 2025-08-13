@@ -2759,7 +2759,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     auto dump = [](const auto & nods)
     {
-        std::stringstream ss;
+        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         for (const auto * node : nods)
             ss << node->dump() << "\n";
         return ss.str();
