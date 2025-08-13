@@ -80,7 +80,6 @@ public:
     bool needOldPatch(const ReadResult &, const PatchReadResult &) const override { return true; }
 
 private:
-    void filterRangesByMinMaxIndex(MarkRanges & ranges, const Block & result_block, const String & column_name);
     PatchJoinCache * patch_join_cache;
 };
 

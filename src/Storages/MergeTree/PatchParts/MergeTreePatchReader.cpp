@@ -156,7 +156,7 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
 }
 
-static PatchRangeStats getResultBlockStats(const Block & result_block, const String & column_name)
+static MinMaxStats getResultBlockStats(const Block & result_block, const String & column_name)
 {
     const auto & column = result_block.getByName(column_name).column;
 
@@ -167,18 +167,16 @@ static PatchRangeStats getResultBlockStats(const Block & result_block, const Str
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 
-void MergeTreePatchReaderJoin::filterRangesByMinMaxIndex(MarkRanges & ranges, const Block & result_block, const String & column_name)
+static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ranges)
 {
-    const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
-    if (!loaded_part_info)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
+    std::set<MarkRange> read_ranges_set(read_ranges.begin(), read_ranges.end());
 
-    auto stats = getPatchRangesStats(loaded_part_info->getDataPart(), ranges, column_name);
-
-    if (stats.has_value())
+    for (auto it = all_ranges.begin(); it != all_ranges.end();)
     {
-        auto result_stats = getResultBlockStats(result_block, column_name);
-        ranges = filterPatchRanges(ranges, stats.value(), result_stats);
+        if (read_ranges_set.contains(*it))
+            it = all_ranges.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -196,23 +194,11 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
 
     MarkRanges ranges_to_read = ranges;
     auto result_block = result_header.cloneWithColumns(main_result.columns);
-
-    filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockNumberColumn::name);
-    if (!ranges_to_read.empty())
-        filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockOffsetColumn::name);
-
-    if (ranges_to_read.empty())
-        return results;
-
-    std::set<MarkRange> ranges_set(ranges.begin(), ranges.end());
-    for (const auto & range : ranges_to_read)
-        ranges_set.erase(range);
-
-    ranges = MarkRanges(ranges_set.begin(), ranges_set.end());
     auto patch_read_result = std::make_shared<PatchJoinReadResult>();
 
     if (!patch_join_cache)
     {
+        ranges.clear();
         auto read_result = readPatchRanges(ranges_to_read);
         auto & entry = patch_read_result->entries.emplace_back(std::make_shared<PatchJoinCache::Entry>());
 
@@ -221,12 +207,30 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
         return results;
     }
 
+    const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
+    if (!loaded_part_info)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
+
+    auto stats_entry = patch_join_cache->getStatsEntry(loaded_part_info->getDataPart());
+
+    if (!stats_entry->stats.empty())
+    {
+        PatchStats result_stats;
+        result_stats.block_number_stats = getResultBlockStats(result_block, BlockNumberColumn::name);
+        result_stats.block_offset_stats = getResultBlockStats(result_block, BlockOffsetColumn::name);
+        ranges_to_read = filterPatchRanges(ranges_to_read, stats_entry->stats, result_stats);
+    }
+
+    if (ranges_to_read.empty())
+        return results;
+
     auto reader = [this, &sample_block](const MarkRanges & task_ranges)
     {
         auto read_result = readPatchRanges(task_ranges);
         return sample_block.cloneWithColumns(read_result.columns);
     };
 
+    filterReadRanges(ranges, ranges_to_read);
     patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(reader));
     results.push_back(std::move(patch_read_result));
     return results;

@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
@@ -45,6 +47,55 @@ void PatchJoinCache::init(const RangesInPatchParts & ranges_in_pathces)
             entries.push_back(std::make_shared<PatchJoinCache::Entry>());
         }
     }
+}
+
+PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartPtr & patch_part)
+{
+    auto stats_entry = getOrCreatePatchStats(patch_part->name);
+    std::lock_guard lock(stats_entry->mutex);
+
+    if (stats_entry->initialized)
+        return stats_entry;
+
+    MarkRanges all_patch_ranges;
+    auto it = ranges_to_buckets.find(patch_part->name);
+
+    if (it == ranges_to_buckets.end())
+    {
+        stats_entry->initialized = true;
+        return stats_entry;
+    }
+
+    for (const auto & [range, _] : it->second)
+        all_patch_ranges.push_back(range);
+
+    auto block_number_stats = getPatchRangesStats(patch_part, all_patch_ranges, BlockNumberColumn::name);
+    auto block_offset_stats = getPatchRangesStats(patch_part, all_patch_ranges, BlockOffsetColumn::name);
+
+    if (block_number_stats && block_offset_stats)
+    {
+        chassert(block_number_stats->size() == all_patch_ranges.size());
+        chassert(block_offset_stats->size() == all_patch_ranges.size());
+
+        for (size_t i = 0; i < all_patch_ranges.size(); ++i)
+        {
+            auto & range_stats = stats_entry->stats[all_patch_ranges[i]];
+            range_stats.block_number_stats = (*block_number_stats)[i];
+            range_stats.block_offset_stats = (*block_offset_stats)[i];
+        }
+    }
+
+    stats_entry->initialized = true;
+    return stats_entry;
+}
+
+PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getOrCreatePatchStats(const String & patch_name)
+{
+    std::lock_guard lock(mutex);
+    auto & entry = stats_cache[patch_name];
+    if (!entry)
+        entry = std::make_shared<PatchStatsEntry>();
+    return entry;
 }
 
 PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader)
@@ -194,8 +245,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
     const auto & data_version_column = getColumnUInt64Data(read_block, PartDataVersionColumn::name);
 
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    UInt64 lock_min_block = std::numeric_limits<UInt64>::max();
-    UInt64 lock_max_block = 0;
+    UInt64 local_min_block = std::numeric_limits<UInt64>::max();
+    UInt64 local_max_block = 0;
     OffsetsHashMap * offsets_hash_map = nullptr;
 
     for (size_t i = 0; i < num_read_rows; ++i)
@@ -208,8 +259,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
             prev_block_number = block_number;
             offsets_hash_map = &local_hash_map[block_number];
 
-            lock_min_block = std::min(lock_min_block, block_number);
-            lock_max_block = std::max(lock_max_block, block_number);
+            local_min_block = std::min(local_min_block, block_number);
+            local_max_block = std::max(local_max_block, block_number);
         }
 
         auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
@@ -222,8 +273,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
     {
         std::lock_guard lock(mutex);
 
-        min_block = std::min(min_block, lock_min_block);
-        max_block = std::max(max_block, lock_max_block);
+        min_block = std::min(min_block, local_min_block);
+        max_block = std::max(max_block, local_max_block);
 
         for (auto & [block_number, offsets_map] : local_hash_map)
         {

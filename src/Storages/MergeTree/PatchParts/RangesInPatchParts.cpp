@@ -296,33 +296,42 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
             continue;
 
         reader.read(ranges[i].begin, granule);
-        std::tie(stats.min_value, stats.max_value) = getMinMaxValues(*granule);
+        std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
             reader.read(j, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
-            stats.min_value = std::min(stats.min_value, min);
-            stats.max_value = std::max(stats.max_value, max);
+            stats.min = std::min(stats.min, min);
+            stats.max = std::max(stats.max, max);
         }
     }
 
     return result;
 }
 
-MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchRangesStats & patch_stats, const PatchRangeStats & result_stats)
+bool intersects(const MinMaxStats & lhs, const MinMaxStats & rhs)
+{
+    return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
+}
+
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
     chassert(ranges.size() == patch_stats.size());
 
     MarkRanges result;
-    for (size_t i = 0; i < ranges.size(); ++i)
+    for (auto range : ranges)
     {
-        if (result_stats.max_value < patch_stats[i].min_value || result_stats.min_value > patch_stats[i].max_value)
-            continue;
+        auto it = patch_stats.find(range);
 
-        result.push_back(ranges[i]);
+        if (it != patch_stats.end()
+            && intersects(result_stats.block_number_stats, it->second.block_number_stats)
+            && intersects(result_stats.block_offset_stats, it->second.block_offset_stats))
+        {
+            result.push_back(range);
+        }
     }
 
     return result;

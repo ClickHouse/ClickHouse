@@ -8,6 +8,7 @@
 #include <Core/Block_fwd.h>
 #include <IO/SharedThreadPools.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <absl/container/flat_hash_map.h>
 
 namespace DB
@@ -41,25 +42,36 @@ struct PatchJoinCache
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
-
         mutable SharedMutex mutex;
 
         void addBlock(Block read_block);
         std::vector<std::shared_future<void>> addRangesAsync(const MarkRanges & ranges, Reader reader);
     };
 
+    struct PatchStatsEntry
+    {
+        bool initialized = false;
+        std::map<MarkRange, PatchStats> stats;
+        mutable std::mutex mutex;
+    };
+
     using EntryPtr = std::shared_ptr<Entry>;
     using Entries = std::vector<EntryPtr>;
+    using PatchStatsEntryPtr = std::shared_ptr<PatchStatsEntry>;
 
     void init(const RangesInPatchParts & ranges_in_pathces);
+    PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part);
     Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);
 
 private:
     std::pair<Entries, std::vector<MarkRanges>> getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges);
+    PatchStatsEntryPtr getOrCreatePatchStats(const String & patch_name);
 
     size_t num_buckets;
     mutable std::mutex mutex;
+
     absl::flat_hash_map<String, Entries> cache;
+    absl::flat_hash_map<String, PatchStatsEntryPtr> stats_cache;
     absl::flat_hash_map<String, std::map<MarkRange, size_t>> ranges_to_buckets;
 };
 
