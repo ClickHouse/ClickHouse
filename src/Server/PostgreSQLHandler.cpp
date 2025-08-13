@@ -10,6 +10,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
