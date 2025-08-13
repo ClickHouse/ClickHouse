@@ -90,7 +90,7 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
     ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
     ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
-    return Result{ .size = bytes_read, .offset = request.ignore };
+    return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
 }
 
 }
