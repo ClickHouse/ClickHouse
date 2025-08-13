@@ -124,12 +124,12 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContentType content_type) const
+const std::vector<ManifestFileEntry> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
 {
     if (content_type == FileContentType::DATA)
-        return data_files;
+        return data_files_without_deleted;
     else if (content_type == FileContentType::POSITION_DELETE)
-        return position_deletes_files;
+        return position_deletes_files_without_deleted;
     else
         throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
 }
@@ -223,6 +223,10 @@ ManifestFileContent::ManifestFileContent(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: files of content type {} are not supported", content_type);
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
+
+        if (status == ManifestEntryStatus::DELETED)
+            continue;
+
         const auto snapshot_id_value = manifest_file_deserializer.getValueFromRowByName(i, f_snapshot_id);
         Int64 snapshot_id;
 
@@ -367,11 +371,13 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files.emplace_back(
+                this->data_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
                     status,
-                    added_sequence_number, snapshot_id, schema_id,
+                    added_sequence_number,
+                    snapshot_id,
+                    schema_id,
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
@@ -386,11 +392,13 @@ ManifestFileContent::ManifestFileContent(
                         = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
                               .safeGet<String>();
                 }
-                this->position_deletes_files.emplace_back(
+                this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
                     status,
-                    added_sequence_number, snapshot_id, schema_id,
+                    added_sequence_number,
+                    snapshot_id,
+                    schema_id,
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
@@ -402,7 +410,7 @@ ManifestFileContent::ManifestFileContent(
                     ErrorCodes::UNSUPPORTED_METHOD, "FileContentType {} is not supported", content_type);
         }
     }
-    sortManifestEntriesBySchemaId(data_files);
+    sortManifestEntriesBySchemaId(data_files_without_deleted);
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
@@ -469,7 +477,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 {
     Int64 result = 0;
 
-    for (const auto & file : getFiles(content))
+    for (const auto & file : getFilesWithoutDeleted(content))
     {
         /// Have at least one column with rows count
         bool found = false;
@@ -477,8 +485,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
         {
             if (column_info.rows_count.has_value())
             {
-                if (file.status != ManifestEntryStatus::DELETED)
-                    result += *column_info.rows_count;
+                result += *column_info.rows_count;
                 found = true;
                 break;
             }
@@ -490,10 +497,10 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 }
 
 
-std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
+std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcudingDeleted() const
 {
     Int64 result = 0;
-    for (const auto & file : data_files)
+    for (const auto & file : data_files_without_deleted)
     {
         /// Have at least one column with bytes count
         bool found = false;

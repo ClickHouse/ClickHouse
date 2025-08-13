@@ -116,7 +116,7 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
+    const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;        
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -127,7 +127,7 @@ public:
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
-    std::optional<Int64> getBytesCountInAllDataFiles() const;
+    std::optional<Int64> getBytesCountInAllDataFilesExcudingDeleted() const;
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
@@ -143,9 +143,9 @@ private:
 
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> data_files;
+    std::vector<ManifestFileEntry> data_files_without_deleted;
     // Partition level deletes files
-    std::vector<ManifestFileEntry> position_deletes_files;
+    std::vector<ManifestFileEntry> position_deletes_files_without_deleted;
 
     std::set<Int32> column_ids_which_have_bounds;
     String path_to_manifest_file;

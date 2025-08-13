@@ -90,14 +90,9 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
         }
-        while (internal_data_index < current_manifest_file_content->getFiles(content_type).size())
+        while (internal_data_index < current_manifest_file_content->getFilesWithoutDeleted(content_type).size())
         {
-            const auto & manifest_file_entry = current_manifest_file_content->getFiles(content_type)[internal_data_index++];
-            if (manifest_file_entry.status == ManifestEntryStatus::DELETED)
-            {
-                continue;
-            }
-
+            const auto & manifest_file_entry = current_manifest_file_content->getFilesWithoutDeleted(content_type)[internal_data_index++];
             if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry.schema_id;

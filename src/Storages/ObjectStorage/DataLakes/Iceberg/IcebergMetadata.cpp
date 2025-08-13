@@ -683,7 +683,7 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
             manifest_list_entry.manifest_file_path,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id);
-        auto count = manifest_file_ptr->getBytesCountInAllDataFiles();
+        auto count = manifest_file_ptr->getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 
