@@ -7,7 +7,6 @@
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "base/types.h"
 #include "config.h"
 
 namespace DB

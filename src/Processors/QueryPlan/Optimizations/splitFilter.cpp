@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
-#include "Common/logger_useful.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -12,7 +11,6 @@ QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG a
 
 size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
-    LOG_TRACE(getLogger("DEBUGGING!"), "trySplitJoin");
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
     if (!join_step || node->children.size() != 2)
         return 0;

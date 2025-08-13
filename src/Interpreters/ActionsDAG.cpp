@@ -2602,139 +2602,6 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 
 }
 
-/// Decompose OR predicates into individual table filters for JOIN pushdown
-/// For example: ((a > 5 AND c < 10) OR (a > 6 AND c < 11)) becomes:
-/// - table1 filter: (a > 5) OR (a > 6)
-/// - table2 filter: (c < 10) OR (c < 11)
-struct DecomposedORPredicates
-{
-    std::vector<const ActionsDAG::Node *> left_stream_predicates;
-    std::vector<const ActionsDAG::Node *> right_stream_predicates;
-    bool decomposition_successful = false;
-};
-
-DecomposedORPredicates decomposeORPredicatesForJoinPushdown(
-    const ActionsDAG::Node * predicate,
-    const std::unordered_set<const ActionsDAG::Node *> & left_stream_allowed_nodes,
-    const std::unordered_set<const ActionsDAG::Node *> & right_stream_allowed_nodes)
-{
-    DecomposedORPredicates result;
-
-    if (!predicate || predicate->type != ActionsDAG::ActionType::FUNCTION)
-        return result;
-
-    // find OR predicates within the predicate tree (could be nested in AND conditions)
-    std::vector<const ActionsDAG::Node *> or_predicates;
-    std::stack<const ActionsDAG::Node *> stack;
-    stack.push(predicate);
-
-    while (!stack.empty())
-    {
-        const auto * node = stack.top();
-        stack.pop();
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            if (node->function_base->getName() == "or")
-            {
-                or_predicates.push_back(node);
-            }
-            else if (node->function_base->getName() == "and")
-            {
-                // check AND children to find nested OR predicates
-                for (const auto * child : node->children)
-                    stack.push(child);
-            }
-        }
-    }
-
-    if (or_predicates.empty())
-    {
-        return result;
-    }
-
-    for (const auto * or_predicate : or_predicates)
-    {
-        std::vector<std::vector<const ActionsDAG::Node *>> left_predicates_per_branch;
-        std::vector<std::vector<const ActionsDAG::Node *>> right_predicates_per_branch;
-
-        for (const auto * or_child : or_predicate->children)
-        {
-
-            std::vector<const ActionsDAG::Node *> left_branch_predicates;
-            std::vector<const ActionsDAG::Node *> right_branch_predicates;
-
-            std::unordered_set<const ActionsDAG::Node *> empty_allowed_nodes;
-            auto branch_conjunctions = getConjunctionNodes(const_cast<ActionsDAG::Node *>(or_child), empty_allowed_nodes, false);
-
-            // Categorize predicates by which table they belong to
-            for (const auto * pred : branch_conjunctions.allowed)
-            {
-                bool belongs_to_left = false;
-                bool belongs_to_right = false;
-
-                std::stack<const ActionsDAG::Node *> node_stack;
-                node_stack.push(pred);
-
-                while (!node_stack.empty())
-                {
-                    const auto * node = node_stack.top();
-                    node_stack.pop();
-
-                    if (node->type == ActionsDAG::ActionType::INPUT)
-                    {
-                        if (left_stream_allowed_nodes.contains(node))
-                            belongs_to_left = true;
-                        else if (right_stream_allowed_nodes.contains(node))
-                            belongs_to_right = true;
-                    }
-
-                    for (const auto * child : node->children)
-                        node_stack.push(child);
-                }
-
-                if (belongs_to_left && !belongs_to_right)
-                {
-                    left_branch_predicates.push_back(pred);
-                }
-                else if (belongs_to_right && !belongs_to_left)
-                {
-                    right_branch_predicates.push_back(pred);
-                }
-            }
-
-            left_predicates_per_branch.push_back(std::move(left_branch_predicates));
-            right_predicates_per_branch.push_back(std::move(right_branch_predicates));
-        }
-
-        // collect all unique predicates for each stream
-        std::unordered_set<const ActionsDAG::Node *> left_pred_set;
-        std::unordered_set<const ActionsDAG::Node *> right_pred_set;
-
-        for (const auto & branch : left_predicates_per_branch)
-        {
-            for (const auto * pred : branch)
-                left_pred_set.insert(pred);
-        }
-
-        for (const auto & branch : right_predicates_per_branch)
-        {
-            for (const auto * pred : branch)
-                right_pred_set.insert(pred);
-        }
-
-        for (const auto * pred : left_pred_set)
-            result.left_stream_predicates.push_back(pred);
-
-        for (const auto * pred : right_pred_set)
-            result.right_stream_predicates.push_back(pred);
-    }
-
-    result.decomposition_successful = !result.left_stream_predicates.empty() || !result.right_stream_predicates.empty();
-
-    return result;
-}
-
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
 ///
@@ -3190,29 +3057,37 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
             filter_name,
             dumpDAG());
+
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
     if (predicate->type == ActionType::COLUMN)
         return {};
+
     auto get_input_nodes = [this](const Names & inputs_names)
     {
         std::unordered_set<const Node *> allowed_nodes;
+
         std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
         for (const auto & input_node : inputs)
             inputs_map[input_node->result_name].emplace_back(input_node);
+
         for (const auto & name : inputs_names)
         {
             auto & inputs_list = inputs_map[name];
             if (inputs_list.empty())
                 continue;
+
             allowed_nodes.emplace(inputs_list.front());
             inputs_list.pop_front();
         }
+
         return allowed_nodes;
     };
+
     auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
+
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
@@ -3227,6 +3102,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     {
         if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
             left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+
         if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
             right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
     }
@@ -3281,21 +3157,28 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             const auto & alias_node = updated_filter.addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
             updated_filter.getOutputs()[0] = &alias_node;
         }
+
         std::unordered_map<std::string, std::list<const Node *>> updated_filter_inputs;
+
         for (const auto & input : updated_filter.getInputs())
             updated_filter_inputs[input->result_name].push_back(input);
+
         for (const auto & input : filter.getInputs())
         {
             if (updated_filter_inputs.contains(input->result_name))
                 continue;
+
             const Node * updated_filter_input_node = nullptr;
+
             auto it = columns_to_replace.find(input->result_name);
             if (it != columns_to_replace.end())
                 updated_filter_input_node = &updated_filter.addInput(it->second);
             else
                 updated_filter_input_node = &updated_filter.addInput({input->column, input->result_type, input->result_name});
+
             updated_filter_inputs[input->result_name].push_back(updated_filter_input_node);
         }
+
         for (const auto & input_column : stream_header.getColumnsWithTypeAndName())
         {
             const Node * input;
@@ -3309,9 +3192,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
                 input = list.front();
                 list.pop_front();
             }
+
             if (input != updated_filter.getOutputs()[0])
                 updated_filter.outputs.push_back(input);
         }
+
         return updated_filter;
     };
 

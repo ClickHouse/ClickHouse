@@ -5,6 +5,17 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 
+#include <QueryPipeline/QueryPipelineBuilder.h>	
+#include <Processors/Transforms/JoiningTransform.h>	
+#include <Interpreters/IJoin.h>	
+#include <Interpreters/TableJoin.h>	
+#include <Interpreters/Context.h>	
+#include <IO/Operators.h>	
+#include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>	
+#include <Interpreters/HashJoin/HashJoin.h>	
+#include <Interpreters/ExpressionActions.h>	
+#include <Storages/StorageJoin.h>
 #include <ranges>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -264,6 +275,7 @@ JoinActionRef concatConditionsWithFunction(
 
 JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "dag: {}", actions_dag->dumpDAG());
     if (use_or_semantics)
     {
         LOG_TRACE(getLogger("DEBUGGING!"), "1");
