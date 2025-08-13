@@ -109,7 +109,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
     for (const auto & token : token_extractor->getTokens(data, length))
-        gin_filter.add(token.data(), token.length(), rowID, store);
+        gin_filter.add(token, rowID, store);
 }
 
 void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
@@ -482,8 +482,8 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
                 return false;
             const auto & value = element.safeGet<String>();
             gin_filters.emplace_back(GinFilter());
-            gin_filters.back().addTerm(value.data(), value.size());
-            gin_filters.back().setQueryString(value.data(), value.size());
+            gin_filters.back().addTerm(value);
+            gin_filters.back().setQueryString(value);
         }
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};

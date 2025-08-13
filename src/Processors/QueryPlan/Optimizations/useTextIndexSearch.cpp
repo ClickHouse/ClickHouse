@@ -215,7 +215,7 @@ class FunctionReplacerDAG
         const ContextPtr context = FunctionReplacerDAG::extractFunctionContext(original_function_node);
 
         // TODO: JAM This should go to the virtual function
-        const String replacement_function_name = std::format("_{}_index", original_function_node.function->getName());
+        const String replacement_function_name = fmt::format("_{}_index", original_function_node.function->getName());
 
         /// At the moment I assume that the substitution function receives the same arguments than the original, but:
         /// 1. Substituting the indexed column with the index name (string column)
