@@ -5,6 +5,8 @@
 
 SET allow_experimental_analyzer = 1;
 
+SYSTEM DROP QUERY CONDITION CACHE;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;
