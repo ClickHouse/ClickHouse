@@ -361,11 +361,10 @@ void buildJoinClauseImpl(
         else
         {
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            /// If join_use_nulls = true, the columns nullability will be changed later which make this expression not right.
             if (!join_use_nulls)
             {
                 /// expression involves both tables.
-                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
                 join_clause.addResidualCondition(node);
             }

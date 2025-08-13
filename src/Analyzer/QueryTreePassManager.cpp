@@ -62,7 +62,7 @@ namespace ErrorCodes
 namespace
 {
 
-// #if defined(DEBUG_OR_SANITIZER_BUILD)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 /** This visitor checks if Query Tree structure is valid after each pass
   * in debug build.
@@ -162,7 +162,7 @@ private:
 
     String pass_name;
 };
-// #endif
+#endif
 
 }
 
@@ -186,9 +186,9 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     for (size_t i = 0; i < passes_size; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-// #if defined(DEBUG_OR_SANITIZER_BUILD)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
-// #endif
+#endif
     }
 }
 

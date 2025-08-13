@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
+#include "base/types.h"
 #include "config.h"
 
 namespace DB
@@ -96,7 +97,7 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
-        size_t getHash() const;
+        UInt64 getHash() const;
         void updateHash(SipHash & hash_state) const;
     };
 
@@ -396,11 +397,6 @@ public:
 
     struct ActionsForJOINFilterPushDown;
 
-    static std::optional<ActionsForFilterPushDown> createActionsForMixed(
-        NodeRawConstPtrs conjunction_nodes,
-        NodeRawConstPtrs disjunction_nodes,
-        const ColumnsWithTypeAndName & all_inputs);
-
     /** Split actions for JOIN filter push down.
       *
       * @param filter_name - name of filter node in current DAG.
@@ -483,12 +479,11 @@ private:
 
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
     static std::optional<ActionsForFilterPushDown> createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs);
-    static std::optional<ActionsForFilterPushDown> buildDisjunctionFilter(const std::vector<NodeRawConstPtrs> & branches, const ColumnsWithTypeAndName & stream_inputs);
-    static ActionsDAG replace_equivalent_columns_in_filter(
-        const ActionsDAG & filter,
-        size_t filter_pos,
-        const Block & stream_header,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace);
+
+    static std::optional<ActionsForFilterPushDown> createActionsForMixed(
+        NodeRawConstPtrs conjunction_nodes,
+        NodeRawConstPtrs disjunction_nodes,
+        const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
@@ -509,26 +504,10 @@ struct ActionsDAG::ActionsForFilterPushDown
 
 struct ActionsDAG::ActionsForJOINFilterPushDown
 {
-    // New fields for separate handling of conjunction and disjunction nodes
-    std::optional<ActionsDAG> left_stream_conjunction_filter;
-    bool left_stream_conjunction_removes_filter = true;
-
-    std::optional<ActionsDAG> right_stream_conjunction_filter;
-    bool right_stream_conjunction_removes_filter = true;
-    
-    std::optional<ActionsDAG> left_stream_disjunction_filter;
-    bool left_stream_disjunction_removes_filter = true;
-
-    std::optional<ActionsDAG> right_stream_disjunction_filter;
-    bool right_stream_disjunction_removes_filter = true;
-
-    // For backward compatibility with code that uses the old field names
-    // These are defined as properties that access the appropriate fields
-    std::optional<ActionsDAG> & left_stream_filter_to_push_down = left_stream_conjunction_filter;
-    bool & left_stream_filter_removes_filter = left_stream_conjunction_removes_filter;
-    
-    std::optional<ActionsDAG> & right_stream_filter_to_push_down = right_stream_conjunction_filter;
-    bool & right_stream_filter_removes_filter = right_stream_conjunction_removes_filter;
+    std::optional<ActionsDAG> left_stream_filter_to_push_down;
+    bool left_stream_filter_removes_filter;
+    std::optional<ActionsDAG> right_stream_filter_to_push_down;
+    bool right_stream_filter_removes_filter;
 };
 
 class FindOriginalNodeForOutputName
