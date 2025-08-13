@@ -165,4 +165,4 @@ SELECT trimLeft(explain) AS explain FROM (
     )
 WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%';
 
--- DROP TABLE tab2;
+DROP TABLE tab2;
