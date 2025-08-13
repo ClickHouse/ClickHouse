@@ -349,7 +349,7 @@ void ISerialization::addColumnToSubstreamsCache(SubstreamsCache * cache, const S
 
 ColumnPtr ISerialization::getColumnFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
 {
-    auto element = getElementFromSubstreamsCache(cache, path);
+    auto * element = getElementFromSubstreamsCache(cache, path);
     return element ? assert_cast<SubstreamsCacheColumnElement *>(element)->column : nullptr;
 }
 
