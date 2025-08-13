@@ -51,52 +51,52 @@ struct DataFilePlan
     UInt64 new_records_count = 0;
 };
 
-class ParititonEncoder
-{
-public:
-    size_t encodePartition(const Row & row)
-    {
-        if (auto it = partition_value_to_index.find(row); it != partition_value_to_index.end())
-            return it->second;
-
-        partition_value_to_index[row] = partition_values.size();
-        partition_values.push_back(row);
-        return partition_value_to_index[row];
-    }
-
-    const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
-
-private:
-    struct PartitionValueHasher
-    {
-        std::hash<String> hasher;
-        size_t operator()(const Row & row) const
-        {
-            size_t result = 0;
-            for (const auto & value : row)
-                result ^= hasher(value.dump());
-            return result;
-        }
-    };
-
-    std::unordered_map<Row, size_t, PartitionValueHasher> partition_value_to_index;
-    std::vector<Row> partition_values;
-};
-
 /// Plan of compaction consists information about all data files and what delete files should be applied for them.
 /// Also it contains some other information about previous metadata.
 struct Plan
 {
     bool need_optimize = false;
-    using Partition = std::vector<std::shared_ptr<DataFilePlan>>;
-    std::vector<Partition> partitions;
+    using PartitionPlan = std::vector<std::shared_ptr<DataFilePlan>>;
+    std::vector<PartitionPlan> partitions;
     IcebergMetadata::IcebergHistory history;
     std::unordered_map<String, Int64> manifest_file_to_first_snapshot;
     std::unordered_map<String, std::vector<String>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
     std::unique_ptr<IcebergMetadata> iceberg_metadata;
-    ParititonEncoder partition_encoder;
+
+
+    class ParititonEncoder
+    {
+    public:
+        size_t encodePartition(const Row & row)
+        {
+            if (auto it = partition_value_to_index.find(row); it != partition_value_to_index.end())
+                return it->second;
+
+            partition_value_to_index[row] = partition_values.size();
+            partition_values.push_back(row);
+            return partition_value_to_index[row];
+        }
+
+        const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
+
+    private:
+        struct PartitionValueHasher
+        {
+            std::hash<String> hasher;
+            size_t operator()(const Row & row) const
+            {
+                size_t result = 0;
+                for (const auto & value : row)
+                    result ^= hasher(value.dump());
+                return result;
+            }
+        };
+
+        std::unordered_map<Row, size_t, PartitionValueHasher> partition_value_to_index;
+        std::vector<Row> partition_values;
+    } partition_encoder;
 };
 
 Plan getPlan(
@@ -457,7 +457,8 @@ void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & 
 
 /// Only 1 thread at certain moment of time can compact table.
 /// TODO: implement CAS for ObjectStoragePtr
-bool tryGetLock(
+/// TODO: Move lock into keeper
+bool tryGetLockCompaction(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration)
 {
@@ -469,7 +470,7 @@ bool tryGetLock(
     return true;
 }
 
-void unlock(
+void unlockCompaction(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration)
 {
@@ -490,7 +491,7 @@ void compactIcebergTable(
     if (plan.need_optimize)
     {
         bool need_merge = true;
-        while (!tryGetLock(object_storage_, configuration_))
+        while (!tryGetLockCompaction(object_storage_, configuration_))
         {
             /// In this case we will wait until another thread will optimize our table.
             if (!wait_concurrent_compaction)
@@ -505,7 +506,7 @@ void compactIcebergTable(
             writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
             writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
             clearOldFiles(object_storage_, old_files);
-            unlock(object_storage_, configuration_);
+            unlockCompaction(object_storage_, configuration_);
         }
     }
 }

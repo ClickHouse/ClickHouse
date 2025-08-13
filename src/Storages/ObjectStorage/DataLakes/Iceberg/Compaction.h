@@ -8,6 +8,10 @@ namespace Iceberg
 {
 #if USE_AVRO
 
+void unlockCompaction(
+    DB::ObjectStoragePtr object_storage,
+    DB::StorageObjectStorageConfigurationPtr configuration);
+
 void compactIcebergTable(
     DB::ObjectStoragePtr object_storage_,
     DB::StorageObjectStorageConfigurationPtr configuration_,

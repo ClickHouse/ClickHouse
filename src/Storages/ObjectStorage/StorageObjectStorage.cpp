@@ -2,6 +2,8 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include "Common/Exception.h"
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -76,13 +78,27 @@ void scheduleCompactionJob(
     std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
     /// Compaction thread poll responses for compaction tasks.
     context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
-        Iceberg::compactIcebergTable(
-            object_storage,
-            configuration,
-            format_settings,
-            sample_block,
-            context
-        );
+        auto log = getLogger("IcebergCompaction");
+        try
+        {
+            Iceberg::compactIcebergTable(
+                object_storage,
+                configuration,
+                format_settings,
+                sample_block,
+                context
+            );
+        }
+        catch (Exception & ex)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed {}", ex.what());
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed with unknown error");
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
     });
 
     /// Compaction Scheduler thread poll responses for task like "sleep for N seconds and schedule compaction of table".
@@ -590,7 +606,7 @@ bool StorageObjectStorage::optimize(
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enalble 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
         }
     }
 #endif
