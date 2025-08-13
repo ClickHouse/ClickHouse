@@ -110,6 +110,9 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
+    std::optional<String> partitionKey(ContextPtr) const override;
+    std::optional<String> sortingKey(ContextPtr) const override;
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

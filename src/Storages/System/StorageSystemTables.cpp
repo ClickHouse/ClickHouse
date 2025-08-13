@@ -22,6 +22,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -595,18 +597,56 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    bool inserted = false;
+
+                    // Extract from specific DataLake metadata if suitable
+                    if (auto * obj = typeid_cast<StorageObjectStorage *>(table.get()))
+                    {
+                        if (auto * dl_meta = obj->getExternalMetadata(context))
+                        {
+                            if (auto p = dl_meta->partitionKey(context); p.has_value())
+                            {
+                                res_columns[res_index++]->insert(*p);
+                                inserted = true;
+                            }
+                        }
+
+                    }
+
+                    if (!inserted)
+                    {
+                        if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                            res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    bool inserted = false;
+
+                    // Extract from specific DataLake metadata if suitable
+                    if (auto * obj = typeid_cast<StorageObjectStorage *>(table.get()))
+                    {
+                        if (auto * dl_meta = obj->getExternalMetadata(context))
+                        {
+                            if (auto p = dl_meta->sortingKey(context); p.has_value())
+                            {
+                                res_columns[res_index++]->insert(*p);
+                                inserted = true;
+                            }
+                        }
+
+                    }
+
+                    if (!inserted)
+                    {
+                        if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                            res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])

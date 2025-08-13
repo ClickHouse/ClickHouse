@@ -17,6 +17,8 @@ struct IcebergSnapshot
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
+    std::optional<String> partition_key;
+    std::optional<String> sorting_key;
 
     std::optional<size_t> getTotalRows() const
     {
