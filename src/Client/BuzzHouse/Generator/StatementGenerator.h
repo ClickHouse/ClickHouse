@@ -302,7 +302,7 @@ private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void entryOrConstant(RandomGenerator & rg, const ColumnPathChain & entry, Expr * expr);
-    void colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & t, const ColumnPathChain & entry, Expr * expr);
+    void colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg) const;
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
