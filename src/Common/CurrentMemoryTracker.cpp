@@ -3,6 +3,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/ProfileEvents.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -16,6 +17,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 }
+
+namespace ProfileEvents
+{
+    extern const Event Allocations;
+    extern const Event Deallocations;
+    extern const Event MemoryTrackerAllocations;
+    extern const Event MemoryTrackerDeallocations;
+}
+
 
 namespace
 {
@@ -50,9 +60,12 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
     if (auto * memory_tracker = getMemoryTracker())
     {
+        ProfileEvents::increment(ProfileEvents::Allocations);
+
         if (!current_thread)
         {
             /// total_memory_tracker only, ignore untracked_memory
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocations);
             return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
@@ -77,6 +90,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
             try
             {
+                ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocations);
                 return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
             }
             catch (...)
@@ -114,8 +128,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
+        ProfileEvents::increment(ProfileEvents::Deallocations);
+
         if (!current_thread)
         {
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocations);
             return memory_tracker->free(size);
         }
 
@@ -131,6 +148,8 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
+
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocations);
             return memory_tracker->free(-untracked_memory);
         }
 

@@ -62,6 +62,12 @@
     M(PageCacheWeightLost, "Number of bytes evicted from the userspace page cache", ValueType::Bytes) \
     M(PageCacheResized, "Number of times the userspace page cache was auto-resized (typically happens a few times per second, controlled by memory_worker_period_ms).", ValueType::Number) \
     M(PageCacheOvercommitResize, "Number of times the userspace page cache was auto-resized to free memory during a memory allocation.", ValueType::Number) \
+    M(Allocations, "Total number of allocations (malloc/new)", ValueType::Number) \
+    M(Deallocations, "Total number of deallocations (free/delete)", ValueType::Number) \
+    M(MemoryTrackerAllocations, "Total number of allocations that flushed to server/query levels (only these allocations can fail the query with MEMORY_LIMIT_EXCEEDED)", ValueType::Number) \
+    M(MemoryTrackerDeallocations, "Total number of deallocations that flushed to server (MemoryTracking metric)/query levels", ValueType::Number) \
+    M(MemoryTrackerAllocationsNested, "Total number of allocations that flushed, including nested trackers", ValueType::Number) \
+    M(MemoryTrackerDeallocationsNested, "Total number of deallocations that flushed, including nested trackers", ValueType::Number) \
     M(PageCacheReadBytes, "Number of bytes read from userspace page cache.", ValueType::Bytes) \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.", ValueType::Number) \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.", ValueType::Number) \

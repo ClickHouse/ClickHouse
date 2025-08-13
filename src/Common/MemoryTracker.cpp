@@ -122,6 +122,9 @@ namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
     extern const Event PageCacheOvercommitResize;
+
+    extern const Event MemoryTrackerAllocationsNested;
+    extern const Event MemoryTrackerDeallocationsNested;
 }
 
 using namespace std::chrono_literals;
@@ -234,6 +237,8 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocationsNested);
+
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
@@ -496,6 +501,8 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 
 AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocationsNested);
+
     if (_sample_probability < 0)
         _sample_probability = sample_probability;
 
