@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -80,7 +81,7 @@ private:
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
 
 
-/// This class exists in the scope of a query or a sub-query.
+/// An object of this class exists in the scope of a query or a sub-query.
 /// AddRanges() creates/updates entries for the query condition cache (one entry per part), finalize() inserts them into the cache.
 class QueryConditionCacheWriter
 {
@@ -105,7 +106,7 @@ private:
     const String condition;
     const double selectivity_threshold;
 
-    std::unordered_map<QueryConditionCache::Key, QueryConditionCache::Entry, QueryConditionCache::KeyHasher> new_entries;
+    std::unordered_map<QueryConditionCache::Key, QueryConditionCache::Entry, QueryConditionCache::KeyHasher> new_entries TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 
     LoggerPtr logger = getLogger("QueryConditionCache");

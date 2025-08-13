@@ -102,9 +102,6 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         always_false = always_false || ConstantFilterDescription(*column).always_false;
-
-    if (condition.has_value())
-        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
