@@ -11,8 +11,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from tests.integration.integration_test_images import IMAGES
+
 import ci.jobs.scripts.integration_tests_runner as runner
-from ci.jobs.scripts.integration_test_images import IMAGES
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
