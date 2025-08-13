@@ -1186,9 +1186,6 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
         rel1 = rel2;
         rel2 = rel3;
     }
-    const SQLRelationCol & col1 = rg.pickRandomly(rel1->cols);
-    const SQLRelationCol & col2 = rg.pickRandomly(rel2->cols);
-
     if (rg.nextSmallNumber() < 9)
     {
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
@@ -1206,6 +1203,9 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
         expr1 = sfc->add_args()->mutable_expr();
         expr2 = sfc->add_args()->mutable_expr();
     }
+    /// Here a copy is needed, because in `addSargableColRef`, rel1 and rel2 may get invalidated
+    const SQLRelationCol col1 = rg.pickRandomly(rel1->cols);
+    const SQLRelationCol col2 = rg.pickRandomly(rel2->cols);
     addSargableColRef(rg, col1, expr1);
     addSargableColRef(rg, col2, expr2);
 }
