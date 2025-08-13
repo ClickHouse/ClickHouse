@@ -10,6 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
 
@@ -192,7 +193,14 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        auto query_tree = buildQueryTree(constraint->as<ASTConstraintDeclaration>()->expr->ptr(), context);
+        auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
+        if (dynamic_cast<ASTSubquery *>(expr.get()))
+        {
+            auto list = std::make_shared<ASTExpressionList>();
+            list->children.push_back(expr);
+            expr = list;
+        }
+        auto query_tree = buildQueryTree(expr, context);
         pass.run(query_tree, context);
 
         const auto cnf = Analyzer::CNF::toCNF(query_tree, context)
