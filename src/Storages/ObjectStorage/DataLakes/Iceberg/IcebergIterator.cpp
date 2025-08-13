@@ -197,6 +197,79 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
 {
 }
 
+IcebergIterator::IcebergIterator(
+    ObjectStoragePtr object_storage_,
+    ContextPtr local_context_,
+    StorageObjectStorageConfigurationWeakPtr configuration_,
+    const ActionsDAG * filter_dag_,
+    IDataLakeMetadata::FileProgressCallback callback_,
+    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
+    Iceberg::IcebergDataSnapshotPtr data_snapshot_,
+    IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
+    IcebergSchemaProcessorPtr schema_processor_,
+    Int32 format_version_,
+    String table_location_)
+    : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
+    , object_storage(std::move(object_storage_))
+    , data_files_iterator(
+          object_storage,
+          local_context_,
+          Iceberg::FileContentType::DATA,
+          configuration_,
+          filter_dag.get(),
+          table_snapshot_,
+          data_snapshot_,
+          iceberg_metadata_cache_,
+          schema_processor_,
+          format_version_,
+          table_location_)
+    , position_deletes_iterator(
+          object_storage,
+          local_context_,
+          Iceberg::FileContentType::POSITION_DELETE,
+          configuration_,
+          filter_dag.get(),
+          table_snapshot_,
+          data_snapshot_,
+          iceberg_metadata_cache_,
+          schema_processor_,
+          format_version_,
+          table_location_)
+    , blocking_queue(100)
+    , producer_task(local_context_->getSchedulePool().createTask(
+          "IcebergMetaReaderThread",
+          [this]
+          {
+              while (!blocking_queue.isFinished())
+              {
+                  auto info = data_files_iterator.next();
+                  if (!info.has_value())
+                      break;
+                  [[maybe_unused]] auto pushed = blocking_queue.push(std::move(info.value()));
+              }
+              blocking_queue.finish();
+          }))
+    , callback(std::move(callback_))
+    , format(configuration_.lock()->format)
+    , compression_method(configuration_.lock()->compression_method)
+    , position_deletes_files(
+          [this]()
+          {
+              producer_task->activateAndSchedule();
+
+              std::vector<Iceberg::ManifestFileEntry> position_deletes_files_tmp;
+              auto position_delete = position_deletes_iterator.next();
+              while (position_delete.has_value())
+              {
+                  position_deletes_files_tmp.push_back(std::move(position_delete.value()));
+                  position_delete = position_deletes_iterator.next();
+              }
+              std::sort(position_deletes_files_tmp.begin(), position_deletes_files_tmp.end());
+              return position_deletes_files_tmp;
+          }())
+{
+}
+
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
     Iceberg::ManifestFileEntry manifest_file_entry;

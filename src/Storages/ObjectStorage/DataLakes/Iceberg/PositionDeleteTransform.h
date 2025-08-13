@@ -1,4 +1,5 @@
 #pragma once
+#include <Processors/Formats/IInputFormat.h>
 #include "config.h"
 
 #if USE_AVRO
