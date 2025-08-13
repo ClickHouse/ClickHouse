@@ -1129,7 +1129,7 @@ Checks for the existence of the provided value(s) in the JSON document.
             {"json", "JSON string to parse", {"String"}},
             {"indices_or_keys", "A list of zero or more arguments.", {"String", "(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"(U)Int8/16/32/64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"UInt8"}};
         FunctionDocumentation::Examples example = {
         {
             "Usage example",
