@@ -671,19 +671,12 @@ static void constructPhysicalStep(
 
     node.children.resize(1);
 
-    // std::cerr << "constructPhysicalStep" << std::endl;
     auto * join_left_node = node.children[0];
-    // std::cerr << join_left_node->step->getOutputHeader().dumpStructure() << std::endl;
     makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, "Left Join Actions");
 
-    // std::cerr << join_left_node->step->getOutputHeader().dumpStructure() << std::endl;
-    // std::cerr << left_pre_join_actions.dumpDAG() << std::endl;
-    node.step = std::make_unique<FilledJoinStep>(
-        join_left_node->step->getOutputHeader(),
-        join_ptr,
-        join_settings.max_block_size);
-    // std::cerr << node.step->getOutputHeader().dumpStructure() << std::endl;
-    // std::cerr << post_join_actions.dumpDAG() << std::endl;
+    node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
         node, std::move(post_join_actions),
         residual_filter_condition.first, residual_filter_condition.second,
@@ -736,6 +729,7 @@ static void constructPhysicalStep(
 
     node.children = {join_left_node, join_right_node};
 
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
         node, std::move(post_join_actions),
         residual_filter_condition.first, residual_filter_condition.second,
