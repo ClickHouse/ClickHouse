@@ -15,6 +15,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 #include <memory>
 
