@@ -377,6 +377,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"https_servers", [&](const JSONObjectType & value) { https_servers = loadArray(value); }},
         {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
+        {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},

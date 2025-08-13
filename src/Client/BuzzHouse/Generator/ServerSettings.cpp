@@ -1220,21 +1220,18 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 
     /// Set hot settings
-    if (!fc.hot_settings.empty())
+    for (const auto & entry : fc.hot_settings)
     {
-        for (const auto & entry : fc.hot_settings)
+        if (serverSettings.find(entry) == serverSettings.end())
         {
-            if (serverSettings.find(entry) == serverSettings.end())
-            {
-                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
-            }
-            const auto & next = serverSettings.at(entry);
-            if (next.oracle_values.empty())
-            {
-                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Server setting {} can't be set as hot", entry);
-            }
-            hotSettings.insert({entry, next});
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
         }
+        const auto & next = serverSettings.at(entry);
+        if (next.oracle_values.empty())
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Server setting {} can't be set as hot", entry);
+        }
+        hotSettings.insert({entry, next});
     }
     for (const auto & [key, value] : serverSettings)
     {
@@ -1320,6 +1317,20 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               false)},
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle}});
+
+    /// Remove disallowed settings
+    for (const auto & entry : fc.disallowed_settings)
+    {
+        hotSettings.erase(entry);
+        serverSettings.erase(entry);
+        performanceSettings.erase(entry);
+        queryOracleSettings.erase(entry);
+        formatSettings.erase(entry);
+    }
+    if (serverSettings.empty() || performanceSettings.empty() || queryOracleSettings.empty() || formatSettings.empty())
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Settings map can't be empty");
+    }
 }
 
 std::unique_ptr<SQLType> size_tp, null_tp;
