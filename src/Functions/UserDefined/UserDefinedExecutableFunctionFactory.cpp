@@ -185,7 +185,6 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        /// Catch UDF execution error and throw it as UDF_EXECUTION_FAILED
         try
         {
             ColumnWithTypeAndName result(result_type, configuration.result_name);
