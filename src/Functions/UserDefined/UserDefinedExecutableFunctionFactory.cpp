@@ -184,9 +184,16 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
+        // quote arguments
+        std::vector<std::string> quoted_args;
+        for (const auto& arg : command_arguments_with_parameters) {
+            quoted_args.push_back("\"" + arg + "\"");
+        }
+        String args_str = Poco::cat(String(", "), quoted_args.begin(), quoted_args.end());
+
         // catch UDF execution error and throw it as UDF_EXECUTION_FAILED
-        String args_str = Poco::cat(String(", "), command_arguments_with_parameters.begin(), command_arguments_with_parameters.end());
-        try {
+        try
+        {
             ColumnWithTypeAndName result(result_type, configuration.result_name);
             Block result_block({result});
 
@@ -236,38 +243,18 @@ public:
 
             return result_column;
         }
-        catch (const Exception & e)
-        {
-            // ClickHouse exceptions
-            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
-                "User defined function '{}' failed: {} (Error code: {}). "
-                "Command: '{}', Arguments: [{}]",
-                getName(),
-                e.message(),
-                e.code(),
-                command_with_parameters,
-                args_str);
-        }
-        catch (const std::exception & e)
-        {
-            // Standard library exceptions
-            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
-                "User defined function '{}' failed: {}. "
-                "Command: '{}', Arguments: [{}]",
-                getName(),
-                e.what(),
-                command_with_parameters,
-                args_str);
-        }
         catch (...)
         {
-            // Unknown exceptions
+            String error_message = getCurrentExceptionMessage(true /* with_stacktrace */);
+
             throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
-                "User defined function '{}' failed with unknown error. "
-                "Command: '{}', Arguments: [{}]",
+                "User defined function '{}' failed. "
+                "Command: '{}', Arguments: [{}]. "
+                "Original error: {}",
                 getName(),
                 command_with_parameters,
-                args_str);
+                args_str,
+                error_message);
         }
         UNREACHABLE();
     }
