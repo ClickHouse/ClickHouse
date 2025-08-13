@@ -936,6 +936,9 @@ def test_backup_restore_with_s3_throttle(broken_s3):
     node = cluster.instances["node"]
     backup_settings = {
         "backup_restore_s3_retry_attempts": "10",
+        "backup_restore_s3_retry_initial_backoff_ms": "100",
+        "backup_restore_s3_retry_max_backoff_ms": "10000",
+        "backup_restore_s3_retry_jitter_factor": "0.1",
         "backup_threads": 16,
         "enable_s3_requests_logging": "1",
         "backup_slow_all_threads_after_retryable_s3_error": "true",
