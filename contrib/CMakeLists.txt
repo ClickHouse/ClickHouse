@@ -238,6 +238,8 @@ add_contrib (ulid-c-cmake ulid-c)
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
+add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib (numactl-cmake numactl)
 
@@ -263,6 +265,16 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
+if (ENABLE_FASTPFOR AND ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64))
+    if (ARCH_AARCH64)
+        add_contrib(simde-cmake simde)
+    endif()
+    add_contrib(FastPFOR-cmake FastPFOR) # requires simde (only on ARM)
+else ()
+    message(STATUS "Not using FastPFOR")
+endif ()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

@@ -44,11 +44,18 @@ class PocoHTTPClient;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
+    struct RetryStrategy
+    {
+        unsigned int max_retries = 10;
+        unsigned int initial_delay_ms = 25;
+        unsigned int max_delay_ms = 5000;
+        double jitter_factor = 0;
+    };
     std::function<ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
-    unsigned int s3_retry_attempts;
+    RetryStrategy retry_strategy;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
@@ -81,7 +88,7 @@ private:
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
-        unsigned int s3_retry_attempts,
+        RetryStrategy retry_strategy_,
         bool s3_slow_all_threads_after_network_error_,
         bool s3_slow_all_threads_after_retryable_error_,
         bool enable_s3_requests_logging_,

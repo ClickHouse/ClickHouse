@@ -1,3 +1,4 @@
+#include <limits>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -30,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -525,9 +527,19 @@ void StorageObjectStorage::truncate(
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
+    {
         objects.emplace_back(key.path);
-
+    }
     object_storage->removeObjectsIfExist(objects);
+}
+
+void StorageObjectStorage::drop()
+{
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        catalog->dropTable(namespace_name, table_name);
+    }
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -602,9 +614,9 @@ void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 }
 
-SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
+SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
 {
-    if (storage_type_name == "s3")
+    if (storage_engine_name == "s3")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt(
@@ -612,25 +624,25 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "hdfs")
+    if (storage_engine_name == "hdfs")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "azure")
+    if (storage_engine_name == "azure")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "local")
+    if (storage_engine_name == "local")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
 
 }

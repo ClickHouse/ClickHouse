@@ -274,6 +274,14 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        docker_exec(postgresql_java_client_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
 
 def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
@@ -528,6 +536,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
@@ -676,6 +685,12 @@ class ClickHouseCluster:
         self.postgresql_java_client_host = "java"
         self.postgresql_java_client_docker_id = self.get_instance_docker_id(
             self.postgresql_java_client_host
+        )
+
+        # available when with_mysql_dotnet_client = True
+        self.mysql_dotnet_client_host = "dotnet"
+        self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.mysql_dotnet_client_host
         )
 
         # available when with_mysql_client == True
@@ -959,7 +974,7 @@ class ClickHouseCluster:
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
-                print("Got exception getting docker handle", str(ex))
+                logging.debug(f"Got exception getting docker handle {ex}")
                 time.sleep(0.5)
                 exception = ex
         raise exception
@@ -1242,6 +1257,25 @@ class ClickHouseCluster:
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        )
+
+    def setup_mysql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_mysql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_mysql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
         )
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1658,6 +1692,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_arrowflight=False,
@@ -1818,6 +1853,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
@@ -1920,6 +1956,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
+            cmds.append(
+                self.setup_mysql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql8:
@@ -1979,7 +2022,7 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
             )
-            
+
         if with_arrowflight and not self.with_arrowflight:
             cmds.append(
                 self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2537,6 +2580,22 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_mysql_dotnet_client(self, timeout=30):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_mysql_dotnet_client_is_available(
+                    self.mysql_dotnet_client_docker_id
+                ):
+                    logging.debug("MySQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find MySQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait MySQL C# Client container")
+
+
     def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
@@ -2924,10 +2983,10 @@ class ClickHouseCluster:
         self.wait_for_url(
             f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
         )
-        
+
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
-        
+
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3128,7 +3187,7 @@ class ClickHouseCluster:
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
-                print("Setup MySQL")
+                logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
@@ -3171,6 +3230,17 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_postgresql_java_client()
+
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                logging.debug("Setup MySQL C# Client")
+                subprocess_check_call(
+                    self.base_mysql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_mysql_dotnet_client()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
@@ -3745,6 +3815,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
@@ -3819,6 +3890,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
@@ -4895,10 +4967,12 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
-        yield
-        self.exec_in_container(
-            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
-        )
+        try:
+            yield
+        finally:
+            self.exec_in_container(
+                ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+            )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -4932,7 +5006,7 @@ class ClickHouseInstance:
         instance_config_dir = p.abspath(p.join(self.path, "configs"))
         os.makedirs(instance_config_dir)
 
-        print(
+        logging.debug(
             f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}"
         )
 
@@ -5160,7 +5234,7 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
-            
+
         if self.with_arrowflight:
             depends_on.append("arrowflight1")
 
