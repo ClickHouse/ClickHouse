@@ -9,11 +9,15 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
+using ColumnIdentifier = std::string;
+using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+
 class EvaluateCommonSubqueryStep : public ITransformingStep
 {
 public:
     EvaluateCommonSubqueryStep(
         const SharedHeader & header_,
+        ColumnIdentifiers columns_to_save_,
         StoragePtr storage_,
         ContextPtr context_);
 
@@ -29,6 +33,7 @@ public:
 private:
     StoragePtr storage;
     ContextPtr context;
+    ColumnIdentifiers columns_to_save;
 };
 
 }

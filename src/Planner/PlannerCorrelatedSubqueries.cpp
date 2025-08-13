@@ -8,8 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include "Core/QueryProcessingStage.h"
-#include "Processors/QueryPlan/EvaluateCommonSubqueryStep.h"
-#include "Processors/QueryPlan/ReadFromMemoryStorageStep.h"
+#include "Storages/ColumnsDescription.h"
 #include "Storages/ConstraintsDescription.h"
 #include "Storages/IStorage.h"
 
@@ -34,6 +33,7 @@
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/EvaluateCommonSubqueryStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -60,10 +60,11 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 
-extern const SettingsBool join_use_nulls;
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
-extern const SettingsUInt64 max_block_size;
+extern const SettingsBool correlated_subqueries_use_input_buffer;
+extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;
+extern const SettingsUInt64 max_block_size;
 
 }
 
@@ -278,47 +279,59 @@ QueryPlan decorrelateQueryPlan(
             }
         }
 
+        QueryPlan rhs_plan;
         /// The rest of the query plan doesn't use any correlated columns.
-        auto temp_table_desc = ColumnsDescription::fromNamesAndTypes(context.query_plan.getCurrentHeader()->getNamesAndTypes());
-        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "Creating temporary table for correlated subquery:\n{}", temp_table_desc.toString());
-        auto external_storage_holder = TemporaryTableHolder(
-            context.planner_context->getQueryContext(),
-            temp_table_desc,
-            ConstraintsDescription{},
-            nullptr /*query*/,
-            true /*create_for_global_subquery*/);
+        if (settings[Setting::correlated_subqueries_use_input_buffer])
+        {
+            ColumnsDescription columns_description;
+            for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            {
+                const auto column = context.query_plan.getCurrentHeader()->getByName(correlated_column_identifier);
+                columns_description.add(ColumnDescription(column.name, column.type));
+            }
 
-        auto in_memory_storage = external_storage_holder.getTable();
-        auto table_out = in_memory_storage->write({}, in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext(), /*async_insert=*/false);
+            auto external_storage_holder = TemporaryTableHolder(
+                context.planner_context->getQueryContext(),
+                columns_description,
+                ConstraintsDescription{},
+                nullptr /*query*/,
+                true /*create_for_global_subquery*/); // Is it correct to set true here?
 
-        /// Save the correlated subquery input stream to the temporary table.
-        context.query_plan.addStep(std::make_unique<EvaluateCommonSubqueryStep>(
-            context.query_plan.getCurrentHeader(),
-            in_memory_storage,
-            context.planner_context->getQueryContext()));
+            auto in_memory_storage = external_storage_holder.getTable();
 
-        UInt64 max_block_size = settings[Setting::max_block_size];
-        size_t max_streams = settings[Setting::max_threads];
+            /// Save the correlated subquery input stream to the temporary table.
+            context.query_plan.addStep(std::make_unique<EvaluateCommonSubqueryStep>(
+                context.query_plan.getCurrentHeader(),
+                context.correlated_subquery.correlated_column_identifiers,
+                in_memory_storage,
+                context.planner_context->getQueryContext()));
 
-        QueryPlan new_rhs_plan;
-        SelectQueryInfo query_info;
-        in_memory_storage->read(
-            new_rhs_plan,
-            context.correlated_subquery.correlated_column_identifiers,
-            in_memory_storage->getStorageSnapshot(in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext()),
-            query_info,
-            context.planner_context->getQueryContext(),
-            QueryProcessingStage::Complete,
-            max_block_size,
-            max_streams
-        );
+            UInt64 max_block_size = settings[Setting::max_block_size];
+            size_t max_streams = settings[Setting::max_threads];
 
-        // auto rhs_plan = context.query_plan.clone();
+            SelectQueryInfo query_info;
+            in_memory_storage->read(
+                rhs_plan,
+                context.correlated_subquery.correlated_column_identifiers,
+                in_memory_storage->getStorageSnapshot(in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext()),
+                query_info,
+                context.planner_context->getQueryContext(),
+                QueryProcessingStage::Complete,
+                max_block_size,
+                max_streams
+            );
 
-        // projectCorrelatedColumns(rhs_plan, context.correlated_subquery.correlated_column_identifiers);
+            String temporary_table_name = "input_stream_" + context.correlated_subquery.action_node_name;
+            context.planner_context->getMutableQueryContext()->addExternalTable(temporary_table_name, std::move(external_storage_holder));
+        }
+        else
+        {
+            rhs_plan = context.query_plan.clone();
+            /// Remove all columns except used in correlated subquery.
+            projectCorrelatedColumns(rhs_plan, context.correlated_subquery.correlated_column_identifiers);
+        }
 
-        auto rhs_plan_header = new_rhs_plan.getCurrentHeader();
-        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "RHS plan header:\n{}", rhs_plan_header->dumpStructure());
+        auto rhs_plan_header = rhs_plan.getCurrentHeader();
 
         ColumnsWithTypeAndName output_columns_and_types;
         output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header->getColumnsWithTypeAndName());
@@ -352,20 +365,13 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN
         QueryPlan result_plan;
 
-        auto new_lhs_plan = context.correlated_query_plan.extractSubplan(node);
-        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "RHS final plan:\n{}", dumpQueryPlan(new_rhs_plan));
-        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "LHS final plan:\n{}", dumpQueryPlan(new_lhs_plan));
+        auto lhs_plan = context.correlated_query_plan.extractSubplan(node);
 
         std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(new_lhs_plan)));
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(new_rhs_plan)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
-        LOG_DEBUG(getLogger("PlannerCorrelatedSubqueries"), "Decorrelated JOIN:\n{}", decorrelated_join->getInputHeaders().size());
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
-
-        String temporary_table_name = "input_stream_" + context.correlated_subquery.action_node_name;
-
-        context.planner_context->getMutableQueryContext()->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
         return result_plan;
     }

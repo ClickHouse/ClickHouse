@@ -5526,6 +5526,9 @@ Serialize query plan for distributed processing
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \
+    DECLARE(Bool, correlated_subqueries_use_input_buffer, true, R"(
+Use in-memory buffer for correlated subquery input. If disabled, input subplan will be executed separately for correlated subquery result evaluation.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
