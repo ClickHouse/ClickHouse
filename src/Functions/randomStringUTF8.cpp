@@ -153,6 +153,27 @@ public:
 
 REGISTER_FUNCTION(RandomStringUTF8)
 {
-    factory.registerFunction<FunctionRandomStringUTF8>();
+    FunctionDocumentation::Description description = R"(
+Generates a random string of a specified length.
+The resulting string contains valid UTF-8 code points.
+The value of code points may be outside of the range of assigned Unicode.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomStringUTF8(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in code points.", {"U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random UTF-8 characters.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomStringUTF8(13)", R"(
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+└──────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomStringUTF8>(documentation);
 }
 }

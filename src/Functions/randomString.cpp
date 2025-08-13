@@ -131,7 +131,33 @@ private:
 
 REGISTER_FUNCTION(RandomString)
 {
-    factory.registerFunction<FunctionRandomString>();
+    FunctionDocumentation::Description description = R"(
+Generates a string of the specified length filled with random bytes (including zero bytes)
+Not all characters may be printable.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomString(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in bytes.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;", R"(
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomString>(documentation);
 }
 
 }

@@ -47,13 +47,20 @@ public:
 
 REGISTER_FUNCTION(CanonicalRand)
 {
-    factory.registerFunction<FunctionCanonicalRand>(FunctionDocumentation{
-        .description=R"(
-The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1).
-Non-deterministic. Return type is Float64.
-        )",
-        .examples{{"randCanonical", "SELECT randCanonical()", ""}},
-        .category = FunctionDocumentation::Category::RandomNumber});
+    FunctionDocumentation::Description description = R"(
+Returns a random `Float64` number.
+    )";
+    FunctionDocumentation::Syntax syntax = "randCanonical()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value between `0` (inclusive) and `1` (exclusive).", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randCanonical();", "0.3452178901234567 - Note: The actual output will be a random Float64 number between 0 and 1, not the specific number shown in the example."}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCanonicalRand>(documentation);
 }
 
 }

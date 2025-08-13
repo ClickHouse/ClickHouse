@@ -120,7 +120,30 @@ public:
 
 REGISTER_FUNCTION(RandomPrintableASCII)
 {
-    factory.registerFunction<FunctionRandomPrintableASCII>();
+    FunctionDocumentation::Description description = R"(
+Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) characters.
+All characters are printable.
+If you pass `length < 0`, the behavior of the function is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "String length in bytes.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers LIMIT 3", R"(
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomPrintableASCII>(documentation);
 }
 
 }
