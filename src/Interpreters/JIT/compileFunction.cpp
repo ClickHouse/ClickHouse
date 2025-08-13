@@ -1,4 +1,4 @@
-#include "compileFunction.h"
+#include <Interpreters/JIT/compileFunction.h>
 
 #if USE_EMBEDDED_COMPILER
 

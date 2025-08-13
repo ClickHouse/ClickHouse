@@ -34,7 +34,11 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
         if (type.starts_with("const "))
             type = type.substr(6); // Remove "const " prefix
 
-        if (type == "String" || type == "String literal")
+        if (type == "NULL")
+            result += "`](/sql-reference/syntax#null)";
+        else if (type == "Any")
+            result += "`](/sql-reference/data-types)";
+        else if (type == "String" || type == "String literal")
             result += "`](/sql-reference/data-types/string)";
         else if (type.starts_with("FixedString"))
             result += "`](/sql-reference/data-types/fixedstring)";
@@ -201,6 +205,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::File, "File"},
+        {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},
         {Category::Introspection, "Introspection"},
@@ -210,7 +215,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Map, "Map"},
         {Category::Mathematical, "Mathematical"},
         {Category::NLP, "Natural Language Processing"},
-        {Category::Nullable, "Nullable"},
+        {Category::Null, "Null"},
         {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
         {Category::RandomNumber, "Random Number"},

@@ -234,10 +234,10 @@ public:
     /// or redirect() has been called.
     std::shared_ptr<WriteBuffer> send();
 
-    /// Dangerous, it is not a virtual method in HTTPResponse but it is redefined here
-    /// Override to correctly mark that the data send had been started for
-    /// zero-copy response (i.e. replicated fetches).
-    void beginWrite(std::ostream & ostr);
+    void writeStatus(std::ostream & ostr);
+    void writeHeaders(std::ostream & ostr);
+
+    void writeStatusAndHeaders(std::ostream & ostr);
 
     /// Sends the response header to the client, followed
     /// by the contents of the given buffer.
@@ -280,11 +280,15 @@ public:
     void allowKeepAliveIFFRequestIsFullyRead();
 
 private:
+    /// The semantic is changed dramaticly, hide this function to avoid wrong ussage
+    /// Even more, HTTPResponse::beginWrite is not a virtual
+    using HTTPResponse::write;
+    using HTTPResponse::beginWrite;
+
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
     std::shared_ptr<WriteBuffer> stream;
-    std::shared_ptr<WriteBuffer> header_stream;
     mutable bool send_started = false;
 };
 

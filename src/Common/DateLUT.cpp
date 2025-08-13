@@ -1,4 +1,4 @@
-#include "DateLUT.h"
+#include <Common/DateLUT.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -155,26 +155,26 @@ const DateLUTImpl & DateLUT::instance()
 {
     const auto & date_lut = getInstance();
 
-    std::string timezone_from_context;
+    std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
         const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
         if (query_context)
-            timezone_from_context = query_context->getSettingsRef()[DB::Setting::session_timezone];
+            timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
 
-    if (timezone_from_context.empty())
+    if (!timezone_from_context.has_value())
     {
         /// On the server side, timezone is passed in query_context,
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
         const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
         if (global_context)
-            timezone_from_context = global_context->getSettingsRef()[DB::Setting::session_timezone];
+            timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
 
-    if (!timezone_from_context.empty())
-        return date_lut.getImplementation(timezone_from_context);
+    if (timezone_from_context.has_value() && !timezone_from_context->empty())
+        return date_lut.getImplementation(*timezone_from_context);
 
     return serverTimezoneInstance();
 }

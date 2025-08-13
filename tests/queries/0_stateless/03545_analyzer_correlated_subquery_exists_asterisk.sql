@@ -22,7 +22,15 @@ ORDER BY ();
 
 INSERT INTO test VALUES (1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
+SET correlated_subqueries_substitute_equivalent_expressions = 0;
+
 EXPLAIN actions = 1
+SELECT 1 FROM test AS t1
+WHERE EXISTS (
+    SELECT * FROM test AS t2
+    WHERE t1.i1 = t2.i2
+);
+
 SELECT 1 FROM test AS t1
 WHERE EXISTS (
     SELECT * FROM test AS t2

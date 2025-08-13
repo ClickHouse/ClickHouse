@@ -1,4 +1,4 @@
-#include "ColumnVector.h"
+#include <Columns/ColumnVector.h>
 
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
@@ -994,6 +994,13 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
         res_data[offsets[i]] = data[i + shift];
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
 }
 
 DECLARE_DEFAULT_CODE(
