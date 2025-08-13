@@ -655,7 +655,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
 
-void StorageObjectStorage::mutate(const MutationCommands & commands, ContextPtr context_)
+void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
 #if USE_AVRO
     if (configuration->supportsWrites())
