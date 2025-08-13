@@ -1148,6 +1148,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
