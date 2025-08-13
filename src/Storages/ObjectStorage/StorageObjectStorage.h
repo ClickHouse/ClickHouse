@@ -81,6 +81,8 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
