@@ -478,9 +478,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     while (!where_conditions.empty())
     {
         /// Move the best condition to PREWHERE if it is viable.
-
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
-        std::cout << "move condition:" << it->toString() << std::endl;
 
         if (!it->viable)
             break;
