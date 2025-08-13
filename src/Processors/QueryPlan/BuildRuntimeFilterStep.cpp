@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 namespace DB
 {
@@ -33,12 +34,14 @@ static ITransformingStep::Traits getTraits()
 BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     const SharedHeader & input_header_,
     String filter_column_name_,
+    const DataTypePtr & filter_column_type_,
     String filter_name_)
     : ITransformingStep(
         input_header_,
         input_header_,
         getTraits())
     , filter_column_name(std::move(filter_column_name_))
+    , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
 {
 }
@@ -47,7 +50,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
 {
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
     {
-        return std::make_shared<BuildRuntimeFilterTransform>(header, filter_column_name, filter_name);
+        return std::make_shared<BuildRuntimeFilterTransform>(header, filter_column_name, filter_column_type, filter_name);
     });
 }
 
@@ -59,6 +62,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
 {
     writeStringBinary(filter_column_name, ctx.out);
+    encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(filter_name, ctx.out);
 }
 
@@ -70,10 +74,12 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
+    DataTypePtr filter_column_type = decodeDataType(ctx.in);
+
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
-    return std::make_unique<BuildRuntimeFilterStep>(ctx.input_headers.front(), std::move(filter_column_name), std::move(filter_name));
+    return std::make_unique<BuildRuntimeFilterStep>(ctx.input_headers.front(), std::move(filter_column_name), filter_column_type, std::move(filter_name));
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const

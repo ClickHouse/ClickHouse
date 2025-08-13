@@ -7,19 +7,16 @@
 namespace DB
 {
 
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+
 /// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
 /// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
 /// a special function 'filterContains'
 class BuildRuntimeFilterTransform : public ISimpleTransform
 {
 public:
-    BuildRuntimeFilterTransform(SharedHeader header_, String filter_column_name_, String filter_name_)
-        : ISimpleTransform(header_, header_, true)
-        , filter_column_name(filter_column_name_)
-        , filter_name(filter_name_)
-        , filter_column_position(header_->getPositionByName(filter_column_name))
-        , built_filter(std::make_unique<BloomFilter>(512*1024, 3, 845897321))
-    {}
+    BuildRuntimeFilterTransform(SharedHeader header_, String filter_column_name_, const DataTypePtr & filter_column_type_, String filter_name_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
@@ -29,8 +26,12 @@ public:
 
 private:
     const String filter_column_name;
-    const String filter_name;
     const size_t filter_column_position = -1;
+    const DataTypePtr filter_column_original_type;
+    const DataTypePtr filter_column_target_type;
+    const String filter_name;
+
+    FunctionBasePtr cast_to_target_type;
 
     std::unique_ptr<BloomFilter> built_filter;
 

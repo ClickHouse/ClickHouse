@@ -1,9 +1,9 @@
 #include <memory>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
 
 
@@ -23,7 +24,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column)
+const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column, const DataTypePtr & filter_element_type)
 {
     const auto & filter_name_node = actions_dag.addColumn(
         ColumnWithTypeAndName(
@@ -32,9 +33,14 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
             filter_name));
 
     const auto & key_column_node = actions_dag. findInOutputs(key_column.name);
+    const auto * filter_argument = &key_column_node;
+
+    /// Cast to the type of filter element if needed
+    if (!key_column.type->equals(*filter_element_type))
+        filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {});
 
     auto filter_function = FunctionFactory::instance().get("filterContains", /*query_context*/nullptr);
-    const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, &key_column_node}, {});
+    const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
     return condition;
 }
 
@@ -75,6 +81,36 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         join_keys_b.push_back(predicate.right_node.getColumn());
     }
 
+    /// Extract expressions for calculating join on keys
+    /// Move them into separate nodes
+    /// Replace pre-join actions in the join step with pass-through (no-op) actions
+    {
+        const auto & actions = join_step->getExpressionActions();
+
+        /// Replaces the internals of ActionsDAG with no-op actions that just pass specified columns without any transformations
+        /// This is done in-place because JoinActionRef-s store column names and pointers to ActionsDAG-s
+        auto replace_with_pass_through_actions = [](ActionsDAG & actions_dag, const Block & header)
+        {
+            actions_dag = ActionsDAG(); /// Clear the actions DAG
+            for (const auto & column : header.getColumnsWithTypeAndName())
+                actions_dag.addOrReplaceInOutputs(actions_dag.addInput(column));
+        };
+
+        if (actions.left_pre_join_actions)
+        {
+            source_a = makeExpressionNodeOnTopOf(source_a, std::move(*actions.left_pre_join_actions), {}, nodes);
+            replace_with_pass_through_actions(*actions.left_pre_join_actions, *source_a->step->getOutputHeader());
+            join_step->updateInputHeader(source_a->step->getOutputHeader(), 0);
+        }
+
+        if (actions.right_pre_join_actions)
+        {
+            source_b = makeExpressionNodeOnTopOf(source_b, std::move(*actions.right_pre_join_actions), {}, nodes);
+            replace_with_pass_through_actions(*actions.right_pre_join_actions, *source_b->step->getOutputHeader());
+            join_step->updateInputHeader(source_b->step->getOutputHeader(), 1);
+        }
+    }
+
     const String filter_name_prefix = fmt::format("_runtime_filter_{}", thread_local_rng());
 
     QueryPlan::Node * apply_filter_a_node = nullptr;
@@ -90,21 +126,43 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
         for (size_t i = 0; i < join_keys_a.size(); ++i)
         {
-            /// Make unique filter name that will be used at runtime to "connect" build side and apply side
+            /// Make unique filter name for each of the predicates. If will be used at runtime to "connect" build side and apply side
             const String filter_name = filter_name_prefix + "_" + toString(i);
 
-            /// Add filter lookup to the left subtree
+            const auto & join_key_a = join_keys_a[i];
+            const auto & join_key_b = join_keys_b[i];
+
+            /// If types of left and right columns do not match then we need to deduce common super type for them
+            /// and add CAST-s to this type to build and apply sides
+            DataTypePtr common_type;
+            if (!join_key_a.type->equals(*join_key_b.type))
             {
-                const auto & join_key = join_keys_a[i];
-                all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key));
+                try
+                {
+                    common_type = getLeastSupertype(DataTypes{join_key_a.type, join_key_b.type});
+                }
+                catch (Exception & ex)
+                {
+                    ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                        join_key_a.name, join_key_a.type->getName(),
+                        join_key_a.name, join_key_b.type->getName());
+                    throw;
+                }
             }
+            else
+            {
+                common_type = join_key_a.type;
+            }
+
+            /// Add filter lookup to the left subtree
+            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_a, common_type));
 
             /// Add building filter to the right subtree of join
             {
                 QueryPlan::Node * build_filter_node = nullptr;
                 build_filter_node = &nodes.emplace_back();
-                build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(source_b->step->getOutputHeader(), join_keys_b[i].name, filter_name);
-                build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_keys_b[i].name, filter_name));
+                build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(source_b->step->getOutputHeader(), join_key_b.name, common_type, filter_name);
+                build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_b.name, filter_name));
                 build_filter_node->children = {build_fliter_b_node};
 
                 build_fliter_b_node = build_filter_node;

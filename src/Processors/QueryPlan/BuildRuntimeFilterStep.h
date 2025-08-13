@@ -13,6 +13,7 @@ public:
     BuildRuntimeFilterStep(
         const SharedHeader & input_header_,
         String filter_column_name_,
+        const DataTypePtr & filter_column_type_,
         String filter_name_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
@@ -37,6 +38,7 @@ private:
     void updateOutputHeader() override;
 
     String filter_column_name;
+    DataTypePtr filter_column_type;
     String filter_name;
 };
 
