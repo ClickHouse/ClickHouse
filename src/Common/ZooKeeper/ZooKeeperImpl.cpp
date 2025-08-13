@@ -1794,17 +1794,35 @@ int64_t ZooKeeper::getConnectionXid() const
 
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    return zk_log
-        ? zk_log
-        : zk_log = Context::getGlobalContextInstance()->getZooKeeperLog();
+    if (zk_log)
+    {
+        return zk_log;
+    }
+
+    if (const auto global_context = Context::getGlobalContextInstance())
+    {
+        zk_log = global_context->getZooKeeperLog();
+        return zk_log;
+    }
+
+    return nullptr;
 }
 
 
 std::shared_ptr<LightweightZooKeeperLog> ZooKeeper::getLightweightZooKeeperLog()
 {
-    return lightweight_zookeeper_log
-        ? lightweight_zookeeper_log
-        : lightweight_zookeeper_log = Context::getGlobalContextInstance()->getLightweightZooKeeperLog();
+    if (lightweight_zookeeper_log)
+    {
+        return lightweight_zookeeper_log;
+    }
+
+    if (const auto global_context = Context::getGlobalContextInstance())
+    {
+        lightweight_zookeeper_log = global_context->getLightweightZooKeeperLog();
+        return lightweight_zookeeper_log;
+    }
+
+    return nullptr;
 }
 
 
