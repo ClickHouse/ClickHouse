@@ -27,10 +27,7 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
@@ -201,7 +198,6 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
 javaHash
 javaHashUTF16LE
