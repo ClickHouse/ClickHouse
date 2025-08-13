@@ -2087,6 +2087,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(table_to_replace_name);
     }
 
     {
