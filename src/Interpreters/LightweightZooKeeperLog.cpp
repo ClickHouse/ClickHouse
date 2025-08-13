@@ -146,7 +146,7 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
 
- void LightweightZooKeeperLog::stepFunction(TimePoint current_time)
+void LightweightZooKeeperLog::stepFunction(TimePoint current_time)
 {
     std::lock_guard lock(stats_mutex);
     for (auto & [entry_key, entry_stats] : stats)
