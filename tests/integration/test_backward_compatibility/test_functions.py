@@ -212,6 +212,8 @@ def test_string_functions(start_cluster):
         "filesystemAvailable",
         # Exclude it for now. Looks like the result depends on the build type.
         "farmHash64",
+        # Depends on the in-memory format of String columns, that we legitimately changed.
+        "byteSize",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 
