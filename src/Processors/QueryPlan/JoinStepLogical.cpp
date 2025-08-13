@@ -8,10 +8,6 @@
 #include <algorithm>
 #include <ranges>
 #include <Core/Settings.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/PasteJoin.h>
-#include <Interpreters/JoinUtils.h>
-#include <Planner/PlannerJoins.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
@@ -19,6 +15,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Planner/PlannerJoins.h>
@@ -202,9 +199,22 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
     return result_nodes;
 }
 
-IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
+IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
-    required_output_columns = required_outputs;
+    {
+        Names new_required_output_columns;
+        new_required_output_columns.reserve(required_outputs.size());
+        for (const auto * output : expression_actions.post_join_actions->getOutputs())
+        {
+            auto it = required_outputs.find(output->result_name);
+            if(it == required_outputs.end())
+                continue;
+            new_required_output_columns.push_back(output->result_name);
+            required_outputs.erase(it);
+        }
+        required_output_columns = std::move(new_required_output_columns);
+    }
+
     NameSet left_required_outputs{};
     NameSet right_required_outputs{};
 

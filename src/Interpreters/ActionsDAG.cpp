@@ -505,20 +505,19 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
     return required_nodes;
 }
 
-ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(const Names & possible_output_names) const
+ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(NameMultiSet possible_output_names) const
 {
-    std::unordered_set<std::string_view> output_names_set;
-    for (const auto * node : outputs)
-        output_names_set.insert(node->result_name);
-
     SplitPossibleOutputNamesResult result;
-    for (const auto & name : possible_output_names)
+    for (const auto * output : outputs)
     {
-        if (output_names_set.contains(name))
-            result.output_names.push_back(name);
-        else
-            result.not_output_names.push_back(name);
+        if (auto it = possible_output_names.find(output->result_name); it != possible_output_names.end())
+    {
+            auto extracted_node = possible_output_names.extract(it);
+            result.output_names.insert(std::move(extracted_node.value()));
+        }
     }
+    result.not_output_names.reserve(possible_output_names.size());
+    result.not_output_names.assign(std::make_move_iterator(possible_output_names.begin()), std::make_move_iterator(possible_output_names.end()));
     return result;
 }
 
@@ -3876,6 +3875,21 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     dag.outputs = std::move(outputs);
 
     return dag;
+}
+
+Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag)
+{
+    Names new_required_outputs;
+    new_required_outputs.reserve(required_outputs.size());
+    for (const auto & output: actions_dag.getOutputs())
+    {
+        if (auto it = required_outputs.find(output->result_name); it != required_outputs.end())
+        {
+            auto node = required_outputs.extract(it);
+            new_required_outputs.push_back(std::move(node.value()));
+        }
+    }
+    return new_required_outputs;
 }
 
 }

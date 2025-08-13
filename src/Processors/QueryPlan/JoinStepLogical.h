@@ -113,7 +113,7 @@ public:
     bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
     bool canRemoveUnusedColumns() const override { return true; }
-    UnusedColumnRemovalResult removeUnusedColumns(const Names & required_outputs, bool remove_inputs) override;
+    UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
 protected:

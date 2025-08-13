@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <iterator>
+#include <Core/Names.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -7,6 +9,16 @@ namespace DB
 {
 namespace QueryPlanOptimizations
 {
+
+namespace
+{
+NameMultiSet getNameMultiSetFromNames(Names && names)
+{
+    NameMultiSet name_multi_set;
+    name_multi_set.insert(std::move_iterator(names.begin()), std::move_iterator(names.end()));
+    return name_multi_set;
+}
+}
 
 bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
 {
@@ -25,11 +37,10 @@ bool removeChildrenOutputs(const QueryPlan::Node & node)
     {
         auto & child_step = node.children[child_id]->step;
         chassert(child_step->canRemoveUnusedColumns());
-        const auto & required_outputs = parent_inputs[child_id];
 
-        // Here we never want to remove inputs because the grandchildren might cannot remove outputs`
-        const auto updated_anything = child_step->removeUnusedColumns(required_outputs->getNames(), false).updated_anything;
-
+        // Here we never want to remove inputs because the grandchildren might cannot remove outputs
+        const auto updated_anything
+            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false).updated_anything;
         // TODO(antaljanosbenjamin): compare the header with name and types
         if (updated_anything || !blocksHaveEqualStructure(*child_step->getOutputHeader(), *parent_inputs[child_id]))
             node.step->updateInputHeader(child_step->getOutputHeader(), child_id);
@@ -62,8 +73,8 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 
         const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
 
-        const auto & required_outputs = parent_inputs[child_id];
-        const auto remove_result = child_step->removeUnusedColumns(required_outputs->getNames(), can_remove_inputs);
+        const auto remove_result
+            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), can_remove_inputs);
 
         if (remove_result.updated_anything)
         {

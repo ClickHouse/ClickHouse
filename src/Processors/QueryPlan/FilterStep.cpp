@@ -20,10 +20,10 @@
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -291,20 +291,21 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
 
-IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
+IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
-    auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
+    if (output_header == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
+
+    const auto required_output_count = required_outputs.size();
+    auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
-    const auto required_columns_contains_filter = std::any_of(
-        split_results.output_names.begin(),
-        split_results.output_names.end(),
-        [this](const String & required_column) { return required_column == filter_column_name; });
+    if (!split_results.output_names.contains(filter_column_name))
+        split_results.output_names.insert(filter_column_name);
 
-    if (!required_columns_contains_filter)
-        split_results.output_names.push_back(filter_column_name);
+    const auto actions_dag_required_outputs = getRequiredOutputNamesInOrder(std::move(split_results.output_names), actions_dag);
 
-    auto updated_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
+    auto updated_actions = actions_dag.removeUnusedActions(actions_dag_required_outputs, remove_inputs);
 
     const auto & input_header = input_headers.front();
     // Number of input columns that are not removed by actions
@@ -335,11 +336,13 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
         updated_actions = true;
     }
 
-    if (!updated_actions && output_header != nullptr && output_header->columns() == required_outputs.size())
+    // If the actions are not updated and no outputs has to be removed, then there is nothing to update
+    // Note: required_outputs must be a subset of already existing outputs
+    if (!updated_actions && output_header->columns() == required_output_count)
         return UnusedColumnRemovalResult{false, false};
 
-    // There cannot be more inputs in the DAG than columns in the input header
-    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0)->columns());
+    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
     const auto update_inputs = remove_inputs
         && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());

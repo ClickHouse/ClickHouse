@@ -169,12 +169,12 @@ public:
 
     struct SplitPossibleOutputNamesResult
     {
-        Names output_names;
+        NameMultiSet output_names;
         Names not_output_names;
     };
 
     /// Returns the names from possible_result_names that are among the outputs.
-    SplitPossibleOutputNamesResult splitPossibleOutputNames(const Names & possible_output_names) const;
+    SplitPossibleOutputNamesResult splitPossibleOutputNames(NameMultiSet possible_output_names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -199,22 +199,22 @@ public:
 
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
-    /// Outputs might be changed even if actions are not removed.
+    /// Outputs remain unchanged.
     bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
     /// Returns true if any of the actions were removed.
-    /// Outputs might be changed even if actions are not removed.
+    /// Outputs remain unchanged.
     bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
-    /// Outputs might be changed even if actions are not removed.
+    /// The order of outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
-    /// Outputs might be changed even if actions are not removed.
+    /// The order of outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     void removeAliasesForFilter(const std::string & filter_name);
@@ -548,5 +548,9 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
+
+/// required_outputs must contain only output names from actions_dag
+/// Returns the output names in their order in the output of the actions dag.
+Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag);
 
 }
