@@ -887,7 +887,45 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
+This setting determines how nested structures such as Tuples, Maps, and Arrays are displayed within the `data` array when using the JSON output format.
+
+For example, instead of output:
+
+```json
+"data":
+[
+  {
+    "tuple": {"a":1,"b":2,"c":3},
+    "array": [1,2,3],
+    "map": {"a":1,"b":2,"c":3}
+  }
+],
+```
+
+The output will be formatted as:
+
+```json
+"data":
+[
+    {
+        "tuple": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "array": [
+            1,
+            2,
+            3
+        ],
+        "map": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        }
+    }
+],
+```
 
 Enabled by default.
 )", 0) \
@@ -1250,6 +1288,9 @@ Target row index stride in ORC output format
 )", 0) \
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
+)", 0) \
+    DECLARE(UInt64, output_format_orc_compression_block_size, 262144, R"(
+The size of the compression block in bytes for ORC output format.
 )", 0) \
     DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
 The time zone name for ORC writer, the default ORC writer's time zone is GMT.

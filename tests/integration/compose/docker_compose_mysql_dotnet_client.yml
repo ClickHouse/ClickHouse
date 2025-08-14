@@ -1,0 +1,5 @@
+services:
+  dotnet:
+    image: clickhouse/mysql_dotnet_client:${mysql:-latest}
+    # to keep container running
+    command: sleep infinity
