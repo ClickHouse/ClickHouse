@@ -72,7 +72,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     part_level_statistics.update(block, metadata_snapshot);
 }
 
-MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & gathered_data)
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & all_gathered_data)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
@@ -80,7 +80,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     writer->fillChecksums(checksums, checksums_to_remove);
 
     for (const auto & filename : checksums_to_remove)
-        gathered_data.checksums.files.erase(filename);
+        all_gathered_data.checksums.files.erase(filename);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
     {
@@ -91,10 +91,10 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     }
 
     if (part_level_statistics.build_explicit_stats)
-        gathered_data.part_level_statistics.explicit_stats.replace(part_level_statistics.explicit_stats);
+        all_gathered_data.part_level_statistics.explicit_stats.replace(part_level_statistics.explicit_stats);
 
     if (part_level_statistics.build_stats_for_serialization)
-        gathered_data.part_level_statistics.stats_for_serialization.replace(part_level_statistics.stats_for_serialization);
+        all_gathered_data.part_level_statistics.stats_for_serialization.replace(part_level_statistics.stats_for_serialization);
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
@@ -103,10 +103,11 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     for (const String & removed_file : removed_files)
     {
         new_part->getDataPartStorage().removeFileIfExists(removed_file);
-        gathered_data.checksums.files.erase(removed_file);
+        all_gathered_data.checksums.files.erase(removed_file);
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    new_part->checksums = all_gathered_data.checksums;
     return checksums;
 }
 

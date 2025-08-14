@@ -28,7 +28,7 @@ public:
 
     void write(const Block & block) override;
 
-    MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & gathered_data);
+    MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & all_gathered_data);
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }
     const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }

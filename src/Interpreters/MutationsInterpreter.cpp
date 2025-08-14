@@ -1153,6 +1153,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (column.statistics.empty())
+            continue;
+
+        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
+            materialized_statistics.insert(column.name);
+    }
+
     /// Stages might be empty when we materialize skip indices or projections which don't add any
     /// column dependencies.
     if (stages.empty())
