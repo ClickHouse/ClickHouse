@@ -6,6 +6,9 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -159,6 +162,44 @@ void materializeChunk(Chunk & chunk)
 
     materializeColumns(columns);
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & type, ISerialization::Kind kind)
+{
+    ColumnPtr res = column;
+
+    if (kind != ISerialization::Kind::SPARSE)
+    {
+        res = recursiveRemoveSparse(res);
+    }
+
+    if (kind != ISerialization::Kind::LOW_CARDINALITY)
+    {
+        res = recursiveRemoveNonNativeLowCardinality(res);
+    }
+    else if (kind == ISerialization::Kind::LOW_CARDINALITY && !res->lowCardinality())
+    {
+        auto new_column = createEmptyLowCardinalityColumn(type, false);
+        auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
+
+        column_lc.insertRangeFromFullColumn(*res, 0, res->size());
+        res = std::move(new_column);
+    }
+
+    return res;
+}
+
+void convertToSerializations(Block & block, const SerializationInfoByName & infos)
+{
+    for (auto & column : block)
+    {
+        auto kind = infos.getKind(column.name);
+
+        if (kind != ISerialization::Kind::DEFAULT)
+        {
+            column.column = convertToSerialization(column.column, *column.type, kind);
+        }
+    }
 }
 
 }

@@ -462,35 +462,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void convertToCorrectSerializations(Block & block, const SerializationInfoByName & infos)
-{
-    for (auto & column : block)
-    {
-        auto kind = infos.getKind(column.name);
-
-        if (kind != ISerialization::Kind::SPARSE)
-        {
-            column.column = recursiveRemoveSparse(column.column);
-        }
-
-        if (!column.type->lowCardinality())
-        {
-            if (kind != ISerialization::Kind::LOW_CARDINALITY)
-            {
-                column.column = recursiveRemoveNonNativeLowCardinality(column.column);
-            }
-            else if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
-            {
-                auto new_column = createEmptyLowCardinalityColumn(*column.type, false);
-                auto & column_lc = assert_cast<ColumnLowCardinality &>(*new_column);
-
-                column_lc.insertRangeFromFullColumn(*column.column, 0, column.column->size());
-                column.column = std::move(new_column);
-            }
-        }
-    }
-}
-
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
@@ -499,7 +470,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     Block block_to_write = block;
-    convertToCorrectSerializations(block_to_write, serialization_infos);
+    convertToSerializations(block_to_write, serialization_infos);
     writer->write(block_to_write, permutation);
 
     part_level_statistics.update(block_to_write, metadata_snapshot);

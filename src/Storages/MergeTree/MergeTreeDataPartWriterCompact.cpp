@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -379,7 +380,8 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
             return &buf;
         };
 
-        const auto & column = sample.getByName(name_and_type.name);
+        auto column = sample.getByName(name_and_type.name);
+        column.column = convertToSerialization(column.column, *column.type, getSerialization(name_and_type.name)->getKind());
         writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, column.column->size(), 0, settings);
     }
 }

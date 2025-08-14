@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-extern const MergeTreeSettingsString default_compression_codec;
+    extern const MergeTreeSettingsString default_compression_codec;
 }
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)

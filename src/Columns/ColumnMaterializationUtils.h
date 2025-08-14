@@ -1,11 +1,13 @@
 #pragma once
 #include <Columns/IColumn.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
 class Block;
 class Chunk;
+class SerializationInfoByName;
 
 /// Remove Sparse recursively from all nested columns.
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
@@ -23,5 +25,8 @@ void materializeBlockInplace(Block & block);
 
 void materializeColumns(Columns & columns);
 void materializeChunk(Chunk & chunk);
+
+ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & type, ISerialization::Kind kind);
+void convertToSerializations(Block & block, const SerializationInfoByName & infos);
 
 }
