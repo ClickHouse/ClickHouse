@@ -270,7 +270,7 @@ void HTTPHandler::processQuery(
 
         if (has_external_data)
         {
-            /// For external data we have unspecified parametrs which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
             /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
             /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
             /// because some of them are used in the query as a settings, like 'date_time_input_format',
