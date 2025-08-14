@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -74,7 +75,12 @@ public:
         ASTs rewritten_queries = InterpreterImpl::getRewrittenQueries(query, getContext(), mapped_to_database, mysql_database);
 
         for (const auto & rewritten_query : rewritten_queries)
-            executeQuery("/* Rewritten MySQL DDL Query */ " + rewritten_query->formatWithSecretsOneLine(), getContext(), QueryFlags{ .internal = true });
+        {
+            auto query_context = Context::createCopy(getContext());
+            query_context->makeQueryContext();
+            query_context->setCurrentQueryId("");
+            executeQuery("/* Rewritten MySQL DDL Query */ " + rewritten_query->formatWithSecretsOneLine(), std::move(query_context), QueryFlags{ .internal = true });
+        }
 
         return BlockIO{};
     }

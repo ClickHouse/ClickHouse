@@ -194,7 +194,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
             io.query_scope_holder = std::make_unique<CurrentThread::QueryScope>(context_copy);
         }
 
-        context_copy->setCurrentQueryId(fmt::format("ClickHouseDictionarySource::{}", getRandomASCIIString(16)));
+        context_copy->setCurrentQueryId("");
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
@@ -215,6 +215,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
+    context_copy->setCurrentQueryId("");
 
     if (configuration.is_local)
     {

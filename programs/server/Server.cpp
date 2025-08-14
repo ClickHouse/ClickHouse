@@ -883,6 +883,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+                startup_context->setCurrentQueryId("");
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -912,6 +913,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+            startup_context->setCurrentQueryId("");
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 

@@ -433,11 +433,11 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
 
-    auto select_query_context = Context::createCopy(getContext());
-    select_query_context->makeQueryContext();
-    select_query_context->setCurrentQueryId("");
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
 
-    auto io = executeQuery(select_query, std::move(select_query_context), QueryFlags{ .internal = true }).second;
+    auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
     while (res.empty() && executor.pull(res));
