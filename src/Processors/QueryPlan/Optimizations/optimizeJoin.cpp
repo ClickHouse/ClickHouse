@@ -346,9 +346,9 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
-    std::vector<std::tuple<BitSet, BitSet, JoinKind>> dependencies;
-    std::vector<std::pair<BitSet, ActionsDAG::NodeRawConstPtrs>> type_changes;
-    std::unordered_map<JoinActionRef, std::pair<BitSet, BitSet>> pinned;
+    std::unordered_map<size_t, JoinKind> join_kinds;
+    std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
+    std::unordered_map<JoinActionRef, size_t> pinned;
 
     struct BuilderContext
     {
@@ -403,26 +403,15 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
     lhs.inputs.append_range(std::move(rhs.inputs));
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
-    for (auto && dep : rhs.dependencies)
-    {
-        auto [left_mask, right_mask, join_kind] = dep;
-        left_mask.shift(shift);
-        right_mask.shift(shift);
-        lhs.dependencies.push_back(std::make_tuple(std::move(left_mask), std::move(right_mask), join_kind));
-    }
+
+    for (auto [id, kind] : rhs.join_kinds)
+        lhs.join_kinds[id + shift] = kind;
 
     for (auto && [sources, nodes] : rhs.type_changes)
-    {
-        sources.shift(shift);
-        lhs.type_changes.emplace_back(sources, std::move(nodes));
-    }
+        lhs.type_changes[sources + shift] = std::move(nodes);
 
-    for (auto & [action, pin] : rhs_pinned_raw)
-    {
-        pin.first.shift(shift);
-        pin.second.shift(shift);
-        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = pin;
-    }
+    for (auto [action, pin] : rhs_pinned_raw)
+        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = pin + shift;
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
@@ -452,19 +441,26 @@ static bool isTrivialStep(const QueryPlan::Node * node)
     return isPassthroughActions(expression_step->getExpression());
 }
 
+void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label, int join_steps_limit)
 {
     if (isTrivialStep(node))
         node = node->children[0];
 
     auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && !child_join_step->isOptimized() && graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1)
+    if (child_join_step && !child_join_step->isOptimized())
     {
-        QueryGraphBuilder child_graph(graph.context);
-        buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
-        size_t count = child_graph.inputs.size();
-        uniteGraphs(graph, std::move(child_graph));
-        return count;
+        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1)
+        {
+            QueryGraphBuilder child_graph(graph.context);
+            buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+            size_t count = child_graph.inputs.size();
+            uniteGraphs(graph, std::move(child_graph));
+            return count;
+        }
+        /// Optimize child subplan before continuing to get size estimation
+        optimizeJoinLogical(*node, nodes, graph.context->optimization_settings);
     }
 
     graph.inputs.push_back(node);
@@ -492,9 +488,23 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     QueryPlan::Node * lhs_plan = node.children[0];
     QueryPlan::Node * rhs_plan = node.children[1];
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, join_steps_limit - 1);
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, join_steps_limit - lhs_count);
+    auto join_kind = join_step->getJoinOperator().kind;
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, isInnerOrLeft(join_kind) ? join_steps_limit - 1 : 0);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, isInnerOrRight(join_kind) ? join_steps_limit - lhs_count : 0);
+
     size_t total_inputs = query_graph.inputs.size();
+    if (isRightOrFull(join_kind))
+    {
+        if (lhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
+        query_graph.join_kinds[0] = join_kind;
+    }
+    if (isLeftOrFull(join_kind))
+    {
+        if (rhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
+        query_graph.join_kinds[total_inputs - 1] = join_kind;
+    }
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
@@ -510,12 +520,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
 
     ActionsDAG::NodeRawConstPtrs join_outputs = query_graph.expression_actions.getActionsDAG()->getOutputs();
-
-    // for (auto & output : join_outputs)
-    // {
-    //     if (auto it = node_mapping.find(output); it != node_mapping.end())
-    //         output = it->second;
-    // }
 
     JoinExpressionActions::NodeToSourceMapping new_sources;
     for (const auto & [old_node, sources] : expression_actions_sources)
@@ -544,21 +548,19 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
-        if (source.count() == 0)
+        if (source.count() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine source relations for node {}", out_node->result_name);
-        else if (isSubsetOf(source, left_mask))
+        auto id = source.findFirstSet();
+        if (id == 0)
             left_changes_types.push_back(out_node);
-        else if (isSubsetOf(source, right_mask))
-            right_changes_types.push_back(out_node);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine source relations for node {}", out_node->result_name);
+            right_changes_types.push_back(out_node);
     }
 
     if (!left_changes_types.empty())
-        query_graph.type_changes.emplace_back(left_mask, std::move(left_changes_types));
+        query_graph.type_changes[0] = std::move(left_changes_types);
     if (!right_changes_types.empty())
-        query_graph.type_changes.emplace_back(right_mask, std::move(right_changes_types));
-
+        query_graph.type_changes[total_inputs - 1] = std::move(right_changes_types);
 
     /// During-join predicates cannot be pushed past preserved-row tables;
     /// After-join predicates (those in WHERE) cannot be pushed past null-supplying tables.
@@ -567,43 +569,28 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
-        auto sources = edge.getSourceRelations();
-        auto & pinned = query_graph.pinned[edge];
-        for (auto & [null_side, other_side, join_kind] : query_graph.dependencies)
+
+        if (isRightOrFull(join_kind))
         {
-            if (sources & null_side)
+            query_graph.pinned[edge] = 0;
+        }
+        else if (isLeftOrFull(join_kind))
+        {
+            query_graph.pinned[edge] = total_inputs - 1;
+        }
+        else
+        {
+            auto sources = edge.getSourceRelations();
+            for (auto rel_id : sources)
             {
-                if (null_side & left_mask)
+                auto it = query_graph.join_kinds.find(rel_id);
+                if (it != query_graph.join_kinds.end() && it->second != JoinKind::Inner)
                 {
-                    pinned.first = null_side;
-                    pinned.second = right_mask;
-                }
-                else if (null_side & right_mask)
-                {
-                    pinned.first = left_mask;
-                    pinned.second = null_side;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot determine pinned relations for node {} joinging [{}] and [{}] with null side {}",
-                        new_node->result_name, toString(left_mask), toString(right_mask), toString(null_side));
+                    query_graph.pinned[edge] = total_inputs - 1;
                 }
             }
         }
-
-        if (isLeftOrFull(join_operator.kind))
-            pinned.first = left_mask;
-        if (isRightOrFull(join_operator.kind))
-            pinned.second = right_mask;
     }
-
-    bool allow_reorder = query_graph.context->optimization_settings.optimize_join_order;
-    /// Non-reorderable joins
-    if (isLeftOrFull(join_operator.kind) || !allow_reorder)
-        query_graph.dependencies.emplace_back(right_mask, left_mask, join_operator.kind);
-    if (isRightOrFull(join_operator.kind) || !allow_reorder)
-        query_graph.dependencies.emplace_back(left_mask, right_mask, reverseJoinKind(join_operator.kind));
 
     UNUSED(residual_filter);
 }
@@ -656,7 +643,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
-    query_graph.dependencies = std::move(query_graph_builder.dependencies);
+    query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.pinned = std::move(query_graph_builder.pinned);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
@@ -799,9 +786,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
             auto joined_mask = entry->relations;
-            for (const auto & [sources, new_inputs] : query_graph_builder.type_changes)
+            for (const auto & [source_id, new_inputs] : query_graph_builder.type_changes)
             {
-                if (isSubsetOf(sources, left_rels) || isSubsetOf(sources, right_rels))
+                if ((left_rels.count() == 1 && left_rels.test(source_id)) ||
+                    (right_rels.count() == 1 && right_rels.test(source_id)))
                 {
                     for (const auto * new_input : new_inputs)
                     {
@@ -982,14 +970,17 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
     if (!optimization_settings.optimize_joins ||
         join_step->getJoinOperator().strictness != JoinStrictness::All ||
-        join_step->getJoinOperator().kind == JoinKind::Paste)
+        join_step->getJoinOperator().kind == JoinKind::Paste ||
+        join_step->getJoinOperator().kind == JoinKind::Full)
     {
         join_step->setOptimized();
         return;
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    buildQueryGraph(query_graph_builder, node, nodes, 64);
+
+    int query_graph_size_limit = optimization_settings.optimize_join_order ? 64 : 1;
+    buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes);
 }
 

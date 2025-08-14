@@ -81,7 +81,7 @@ private:
     std::shared_ptr<DPJoinEntry> solveDP();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    std::optional<JoinKind> isValidJoinOrder(const BitSet & lhs, const BitSet & rhs) const;
+    std::optional<JoinKind> getJoinKind(const BitSet & lhs, const BitSet & rhs) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
@@ -230,11 +230,15 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (!isSubsetOf(edge_sources, joined_rels))
             continue;
 
-        const auto & pinned = query_graph.pinned[edge];
-        bool can_place = (isSubsetOf(pinned.first, left) && isSubsetOf(pinned.second, right))
-                      || (isSubsetOf(pinned.first, right) && isSubsetOf(pinned.second, left));
-        if (!can_place)
-            continue;
+        auto pin_it = query_graph.pinned.find(edge);
+        if (pin_it != query_graph.pinned.end())
+        {
+            bool can_apply = (left.count() == 1 && left.test(pin_it->second)) ||
+                             (right.count() == 1 && right.test(pin_it->second));
+            if (!can_apply)
+                /// Pinned to different join
+                continue;
+        }
 
         applicable.push_back(&edge);
     }
@@ -266,7 +270,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto left = components[i];
                 auto right = components[j];
 
-                auto join_kind = isValidJoinOrder(left->relations, right->relations);
+                auto join_kind = getJoinKind(left->relations, right->relations);
                 if (!join_kind)
                     continue;
 
@@ -316,7 +320,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
             if (best_i == best_j)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
-            if (!isValidJoinOrder(components[best_i]->relations, components[best_j]->relations))
+            if (!getJoinKind(components[best_i]->relations, components[best_j]->relations))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
@@ -356,30 +360,39 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
     return nullptr;
 }
 
-std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & lhs, const BitSet & rhs) const
+std::optional<JoinKind> JoinOrderOptimizer::getJoinKind(const BitSet & lhs, const BitSet & rhs) const
 {
-    JoinKind join_type = JoinKind::Inner;
+    JoinKind left_join_type = JoinKind::Inner;
+    JoinKind right_join_type = JoinKind::Inner;
 
-    for (const auto & [first, second, join_kind_bound] : query_graph.dependencies)
+    if (lhs.count() == 1)
     {
-        if (lhs == first)
-            join_type = reverseJoinKind(join_kind_bound);
-        if (rhs == first)
-            join_type = join_kind_bound;
-
-        auto check = [&](const auto & a, const auto & b)
+        auto it = query_graph.join_kinds.find(safe_cast<size_t>(lhs.findFirstSet()));
+        if (it != query_graph.join_kinds.end())
         {
-            /// false positive clang-tidy warning
-            return ((a & first) == BitSet() /// NOLINT
-                || (a == first && (b & second))
-                || (a & second)
-                || isSubsetOf(b, first));
-        };
-
-        if (!check(lhs, rhs) || !check(rhs, lhs))
-            return {};
+            left_join_type = it->second;
+        }
     }
-    return join_type;
+
+    if (rhs.count() == 1)
+    {
+        auto it = query_graph.join_kinds.find(safe_cast<size_t>(rhs.findFirstSet()));
+        if (it != query_graph.join_kinds.end())
+        {
+            right_join_type = it->second;
+        }
+    }
+
+    if (left_join_type == JoinKind::Inner)
+        return right_join_type;
+    if (right_join_type == JoinKind::Inner)
+        return left_join_type;
+
+    /// Conflict, join is not possible:
+    /// FROM t1 LEFT JOIN t2 LEFT JOIN t3
+    /// t1 -> Inner, t2 -> Left, t3 -> Left
+    /// Cannot do (t2 x t3)
+    return {};
 }
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph)
