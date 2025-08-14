@@ -178,7 +178,7 @@ For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:
 )";
         FunctionDocumentation::Syntax syntax = "roundBankers(x[, N])";
         FunctionDocumentation::Arguments arguments = {
-            {"x", "A number to round.", {"Float*", "Decimal*", "(U)Int*"}},
+            {"x", "A number to round.", {"(U)Int*", "Decimal*", "Float*"}},
             {"[, N]", "Optional. The number of decimal places to round to. Defaults to `0`.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a value rounded by the banker's rounding method.", {"(U)Int*", "Decimal*", "Float*"}};
