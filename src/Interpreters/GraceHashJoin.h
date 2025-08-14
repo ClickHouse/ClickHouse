@@ -69,7 +69,7 @@ public:
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     void setTotals(const Block & block) override;
 
