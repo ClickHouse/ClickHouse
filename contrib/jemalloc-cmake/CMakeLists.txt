@@ -44,7 +44,7 @@ if (OS_LINUX)
     # Increasing from default 6(64x) to 8(256x) allows these coalesced blocks to be split and reused.
     # See: https://github.com/ClickHouse/ClickHouse/pull/80245
     # https://github.com/jemalloc/jemalloc/pull/2842
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
     set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,lg_extent_max_active_fit:8")
 endif()
@@ -62,6 +62,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/arena.c"
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
+    "${LIBRARY_DIR}/src/batcher.c"
     "${LIBRARY_DIR}/src/bin.c"
     "${LIBRARY_DIR}/src/bin_info.c"
     "${LIBRARY_DIR}/src/bitmap.c"
@@ -106,6 +107,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/prof_recent.c"
     "${LIBRARY_DIR}/src/prof_stats.c"
     "${LIBRARY_DIR}/src/prof_sys.c"
+    "${LIBRARY_DIR}/src/prof_threshold.c"
     "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
     "${LIBRARY_DIR}/src/safety_check.c"
@@ -120,6 +122,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/thread_event.c"
     "${LIBRARY_DIR}/src/ticker.c"
     "${LIBRARY_DIR}/src/tsd.c"
+    "${LIBRARY_DIR}/src/util.c"
     "${LIBRARY_DIR}/src/witness.c"
 )
 if (OS_DARWIN)

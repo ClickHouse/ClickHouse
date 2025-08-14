@@ -468,6 +468,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+#if USE_JEMALLOC
+            if (!jemalloc_profile_path.empty())
+            {
+                print_keyword(" TO ");
+                ostr << quoteString(jemalloc_profile_path);
+            }
+#endif
+            break;
+        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
@@ -489,7 +500,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

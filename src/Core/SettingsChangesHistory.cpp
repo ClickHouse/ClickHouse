@@ -74,6 +74,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"jemalloc_enable_profiler", false, false, "New setting"},
+            {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",

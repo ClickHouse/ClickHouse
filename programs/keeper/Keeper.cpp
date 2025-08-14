@@ -304,7 +304,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config());
+    Jemalloc::setup(server_settings);
 #endif
     Poco::Logger * log = &logger();
 
