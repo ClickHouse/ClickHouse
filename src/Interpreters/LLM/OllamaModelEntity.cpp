@@ -1,4 +1,4 @@
-#include <Interpreters/LLM/ModelEntity.h>
+#include <Interpreters/LLM/OllamaModelEntity.h>
 #include <Interpreters/LLM/ModelEntityFactory.h>
 #include <Interpreters/LLM/PromptRender.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -52,29 +52,57 @@ void OllamaModelEntity::processCompletion(const ContextPtr context, const nlohma
     ColumnString::Chars & res_data,
     ColumnString::Offsets & res_offsets) const
 {
+
+    /// Make request to llm.
     WriteBufferFromOwnString prompt_buffer;
     PromptTemplate::render(prompt_buffer, user_prompt, data, offsets, offset, size);
     auto request = makeRequest(model, prompt_buffer.str(), size);
 
-    DB::HTTPHeaderEntries headers {};
-    headers.emplace_back("Content-Type", "application/json");
-    const auto request_string = request.dump();
-    Poco::URI url(getCompletionURL());
-    auto wb = DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-        .withSettings(context->getReadSettings())
-        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-        .withHostFilter(&context->getRemoteHostFilter())
-        .withHeaders(headers)
-        .withOutCallback([&request_string](std::ostream & os) { os << request_string; })
-        .withSkipNotFound(false)
-        .create({});
-    String json_str;
-    readStringUntilEOF(json_str, *wb);
-    auto parsed = nlohmann::json::parse(json_str);
+    String response_string;
+    /// Send the request and receive response
+    try
+    {
+        DB::HTTPHeaderEntries headers {};
+        headers.emplace_back("Content-Type", "application/json");
+        const auto request_string = request.dump();
+        Poco::URI url(getCompletionURL());
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+            .withSettings(context->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&context->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withOutCallback([&request_string](std::ostream & os) { os << request_string; })
+            .withSkipNotFound(false)
+            .create({});
+        readStringUntilEOF(response_string, *wb);
+    }
+    catch (const Exception & exception)
+    {
+        LOG_ERROR(log, "Failed to send request to the endpoint {}. The reason for the failure is: {}.", getCompletionURL(), exception.displayText());
+        throw;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Cannot send request to {}", getCompletionURL()));
+        throw;
+    }
 
-    parseReply(parsed, res_data, res_offsets, offset, size);
+    /// Check response.
+    auto response = nlohmann::json::parse(response_string);
+    if (response.contains("error"))
+    {
+        auto reason = response["error"].dump();
+        LOG_ERROR(log, "The request was refused due to exception: {}", reason);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", reason);
+    }
+    else if ((response.contains("done_reason") && response["done_reason"] != "stop") || (response.contains("done") && !response["done"].is_null() && response["done"].get<bool>() != true))
+    {
+        auto reason = response.contains("done_reason") ? response["done_reason"].dump() : "internal error";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The Ollama API return error {}", reason);
+    }
+    parseReply(response, res_data, res_offsets, offset, size);
 }
 
 nlohmann::json OllamaModelEntity::makeRequest(const nlohmann::json & model, const String & user_prompt, size_t batch_size_) const
@@ -83,21 +111,35 @@ nlohmann::json OllamaModelEntity::makeRequest(const nlohmann::json & model, cons
         {"model", name},
         {"prompt", user_prompt},
         {"stream", false},
+        {"format", {{"type", "object"},
+                    {"properties", {{"items", {{"type", "array"}, {"minItems", batch_size_}, {"maxItems", batch_size_}, {"items", {{"type", "string"}}}}}}},
+                    {"required", {"items"}}}}
     };
     if (model.contains("parameters"))
         request_payload.update(model["parameters"]);
     else
         request_payload.update(parameters);
-    request_payload["format"]= {
-        {"type", "object"},
-        {"properties", {{"items", {{"type", "array"}, {"minItems", batch_size_}, {"maxItems", batch_size_}, {"items", {{"type", "string"}}}}}}},
-        {"required", {"items"}}};
     return request_payload;
 }
 
 void OllamaModelEntity::parseReply(const nlohmann::json & parsed, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets, size_t offset, size_t size) const
 {
+    if (!parsed.contains("repsonse") || !parsed["response"].is_string())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "key 'response' missing or not a string");
+#if 0
+    nlohmann::json responses;
+    try
+    {
+
+    }
+    catch (const Exception & exception)
+    {
+
+    }
+#endif
     auto responses = nlohmann::json::parse(parsed["response"].get<std::string>());
+    if (!responses.contains("items"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "");
     auto items = responses["items"];
     assert(size == items.size());
     size_t res_curr_offset = res_data.size();

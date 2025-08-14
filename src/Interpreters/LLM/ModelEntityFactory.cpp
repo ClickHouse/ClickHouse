@@ -2,7 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
-#include <Interpreters/LLM/ModelEntity.h>
+#include <Interpreters/LLM/IModelEntity.h>
 
 namespace DB
 {

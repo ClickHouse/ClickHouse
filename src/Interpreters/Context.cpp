@@ -136,7 +136,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
-#include <Interpreters/LLM/ModelEntity.h>
+#include <Interpreters/LLM/IModelEntity.h>
 #include <Interpreters/LLM/ModelEntityFactory.h>
 
 namespace fs = std::filesystem;
