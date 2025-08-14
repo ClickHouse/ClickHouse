@@ -21,7 +21,7 @@ struct ParsedDataFileInfo
     }
 };
 
-struct IcebergDataObjectInfo : public ObjectInfoBase
+struct IcebergDataObjectInfo : public ReadableObject
 {
     IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_);
     ParsedDataFileInfo parsed_data_file_info;

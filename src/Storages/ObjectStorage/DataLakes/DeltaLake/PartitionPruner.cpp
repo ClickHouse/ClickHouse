@@ -89,7 +89,7 @@ PartitionPruner::PartitionPruner(
     }
 }
 
-bool PartitionPruner::canBePruned(const DB::ObjectInfoBase & object_info) const
+bool PartitionPruner::canBePruned(const DB::ReadableObject & object_info) const
 {
     if (!key_condition.has_value())
         return false;
