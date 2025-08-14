@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>

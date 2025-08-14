@@ -8,12 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
     std::string generatePath(const std::string & prefix)

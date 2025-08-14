@@ -25,8 +25,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
 

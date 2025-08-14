@@ -2984,13 +2984,14 @@ def test_concurrent_queries(started_cluster, partitioned):
         )
 
     num_threads = 50
+    num_rows = 50
     errors = ["" for _ in range(num_threads)]
     success = [0 for _ in range(num_threads)]
 
     def insert(i):
         try:
             instance.query(
-                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(1000)",
+                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({num_rows})",
             )
             success[i] += 1
         except Exception as e:
@@ -3008,7 +3009,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
     select(0)
 
-    assert sum(success) * 1000 == int(
+    assert sum(success) * num_rows == int(
         instance.query(
             f"SELECT count() FROM {TABLE_NAME}",
         )
@@ -3027,6 +3028,38 @@ def test_concurrent_queries(started_cluster, partitioned):
         ):
             file_names.append(obj.object_name)
     if partitioned:
-        assert len(file_names) == sum(success) * 1000
+        assert len(file_names) == sum(success) * num_rows
     else:
         assert len(file_names) == sum(success)
+
+
+def test_empty_format_header(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_empty_format_header")
+    result_file = f"{TABLE_NAME}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    df = spark.createDataFrame([(1, "keko"), (2, "puka"), (3, "mora")]).toDF(
+        "id", "name"
+    )
+    df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+
+    assert (
+        "1\n2\n3"
+        == instance.query(
+            f"SELECT id FROM {TABLE_NAME} ORDER BY all",
+        ).strip()
+    )
