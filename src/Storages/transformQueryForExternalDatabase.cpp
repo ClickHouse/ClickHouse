@@ -390,6 +390,7 @@ String transformQueryForExternalDatabaseImpl(
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
         /*one_line=*/true,
+        /*hilite=*/false,
         /*identifier_quoting_rule=*/identifier_quoting_rule,
         /*identifier_quoting_style=*/identifier_quoting_style,
         /*show_secrets_=*/true,

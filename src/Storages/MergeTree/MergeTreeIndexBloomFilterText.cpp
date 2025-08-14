@@ -637,18 +637,22 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
-        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
+        String required_substring;
+        bool dummy_is_trivial;
+        bool dummy_required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
 
-        if (result.required_substring.empty() && result.alternatives.empty())
+        if (required_substring.empty() && alternatives.empty())
             return false;
 
         /// out.set_bloom_filters means alternatives exist
         /// out.bloom_filter means required_substring exists
-        if (!result.alternatives.empty())
+        if (!alternatives.empty())
         {
             std::vector<std::vector<BloomFilter>> bloom_filters;
             bloom_filters.emplace_back();
-            for (const auto & alternative : result.alternatives)
+            for (const auto & alternative : alternatives)
             {
                 bloom_filters.back().emplace_back(params);
                 token_extractor->substringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back(), false, false);
@@ -656,10 +660,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.set_bloom_filters = std::move(bloom_filters);
         }
         else
-        {
-            token_extractor->substringToBloomFilter(
-                result.required_substring.data(), result.required_substring.size(), *out.bloom_filter, false, false);
-        }
+            token_extractor->substringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter, false, false);
 
         return true;
     }
@@ -774,12 +775,12 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == DefaultTokenExtractor::getName())
+    if (index.type == SplitTokenExtractor::getName())
     {
         BloomFilterParameters params(
             index.arguments[0].safeGet<size_t>(), index.arguments[1].safeGet<size_t>(), index.arguments[2].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<DefaultTokenExtractor>();
+        auto tokenizer = std::make_unique<SplitTokenExtractor>();
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
@@ -814,7 +815,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         if (index.arguments.size() != 4)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
     }
-    else if (index.type == DefaultTokenExtractor::getName())
+    else if (index.type == SplitTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");

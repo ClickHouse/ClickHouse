@@ -7,7 +7,7 @@
 #undef LOG_FATAL
 #endif
 
-#include <Common/MatchGenerator.h>
+#include "MatchGenerator.h"
 
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
