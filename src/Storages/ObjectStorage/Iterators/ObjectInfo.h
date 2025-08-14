@@ -22,6 +22,7 @@ struct ObjectInfo
     virtual RelativePathWithMetadata& getUnderlyingObject() = 0;
     virtual const RelativePathWithMetadata& getUnderlyingObject() const = 0;
     virtual std::optional<DataLakeObjectMetadata>& getDataLakeMetadata() = 0;
+    virtual const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const = 0;
     virtual void setDataLakeMetadata(std::optional<DataLakeObjectMetadata> metadata) = 0;
 
 
@@ -32,9 +33,10 @@ using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 
 struct ObjectInfoOneFile : public ObjectInfo {
-
-    ObjectInfoOneFile(String relative_path_, std::optional<ObjectMetadata> metadata_)
-        : relative_path_with_metadata(std::move(relative_path_), std::move(metadata_)) {}
+    explicit ObjectInfoOneFile(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+        : relative_path_with_metadata(std::move(relative_path_), std::move(metadata_))
+    {
+    }
 
     RelativePathWithMetadata& getUnderlyingObject() override {
         return relative_path_with_metadata;
@@ -57,12 +59,18 @@ private:
 
 struct ObjectInfoPlain : public ObjectInfoOneFile
 {
-    ObjectInfoPlain(String relative_path_, std::optional<ObjectMetadata> metadata_)
-        : ObjectInfoOneFile(std::move(relative_path_), std::move(metadata_)) {}
+    explicit ObjectInfoPlain(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+        : ObjectInfoOneFile(std::move(relative_path_), std::move(metadata_))
+    {
+    }
 
     bool hasPositionDeleteTransformer() const override { return false; }
     bool suitableForNumsRowCache() const override { return true; }
     std::optional<DataLakeObjectMetadata>& getDataLakeMetadata() override  {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const override
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
     }
     void setDataLakeMetadata(std::optional<DataLakeObjectMetadata>) override {
@@ -113,6 +121,10 @@ struct ObjectInfoInArchive : public ObjectInfo
     bool hasPositionDeleteTransformer() const override { return false; }
 
     std::optional<DataLakeObjectMetadata>& getDataLakeMetadata() override  {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const override
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
     }
     void setDataLakeMetadata(std::optional<DataLakeObjectMetadata>) override {

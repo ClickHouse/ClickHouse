@@ -76,14 +76,14 @@ Iceberg::ManifestFilePtr getManifestFile(
 {
     auto create_fn = [&]()
     {
-        RelativePathWithMetadata manifest_object_info(filename);
+        ObjectInfoPtr manifest_object_info = std::make_shared<ObjectInfoPlain>(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
+        auto buffer = createReadBuffer(*manifest_object_info, object_storage, local_context, log, read_settings);
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
         return std::make_shared<Iceberg::ManifestFileContent>(

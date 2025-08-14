@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectInfo.h>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
@@ -283,12 +284,12 @@ public:
                 continue;
             }
 
-            object->metadata = object_storage->getObjectMetadata(object->getPath());
+            object->getUnderlyingObject().metadata = object_storage->getObjectMetadata(object->getPath());
 
             if (callback)
             {
-                chassert(object->metadata);
-                callback(DB::FileProgress(0, object->metadata->size_bytes));
+                chassert(object->getUnderlyingObject().metadata);
+                callback(DB::FileProgress(0, object->getUnderlyingObject().metadata->size_bytes));
             }
             return object;
         }
@@ -341,7 +342,7 @@ public:
         }
 
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        auto object = std::make_shared<DB::ObjectInfoDataLake>(std::move(full_path));
 
         if (transform && !context->partition_columns.empty())
         {
@@ -350,7 +351,7 @@ public:
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+            object->setDataLakeMetadata(DB::DataLakeObjectMetadata{.transform = parsed_transform});
 
             LOG_TEST(
                 context->log,

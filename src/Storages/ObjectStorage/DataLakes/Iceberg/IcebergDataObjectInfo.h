@@ -5,7 +5,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
-#include <Storages/ObjectStorage/DataLakes/DataLakeObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
 #include <base/defines.h>
@@ -13,7 +12,7 @@
 
 namespace DB
 {
-struct IcebergDataObjectInfo : public DB::ObjectInfoDataLake
+struct IcebergDataObjectInfo : public DB::ObjectInfoOneFile
 {
 #if USE_AVRO
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, const std::vector<Iceberg::ManifestFileEntry> & position_deletes_, const String& format);
@@ -33,6 +32,20 @@ struct IcebergDataObjectInfo : public DB::ObjectInfoDataLake
     {
         return position_deletes_objects_range.first < position_deletes_objects_range.second;
     }
+    std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    void setDataLakeMetadata(std::optional<DataLakeObjectMetadata>) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+
+    bool suitableForNumsRowCache() const override { return false; }
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

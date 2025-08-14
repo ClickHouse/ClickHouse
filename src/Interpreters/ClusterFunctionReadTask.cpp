@@ -6,6 +6,7 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
@@ -27,16 +28,19 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
 
-    if (object->data_lake_metadata.has_value())
-        data_lake_metadata = object->data_lake_metadata.value();
-
-    IcebergDataObjectInfoPtr iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
+    auto * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object.get());
     if (iceberg_object_info)
     {
         is_iceberg_object = 1;
         data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
         read_schema_id = iceberg_object_info->read_schema_id;
         position_deletes_objects_range = iceberg_object_info->position_deletes_objects_range;
+    }
+
+    auto * data_lake_object_info = dynamic_cast<ObjectInfoDataLake *>(object.get());
+    if (data_lake_object_info && data_lake_object_info->getDataLakeMetadata().has_value())
+    {
+        data_lake_metadata = data_lake_object_info->getDataLakeMetadata().value();
     }
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
@@ -55,16 +59,20 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     if (is_iceberg_object)
     {
-        auto object
-            = std::make_shared<IcebergDataObjectInfo>(path, data_object_file_path_key, read_schema_id, position_deletes_objects_range);
-        object->data_lake_metadata = data_lake_metadata;
-        return object;
+        return std::make_shared<IcebergDataObjectInfo>(path, data_object_file_path_key, read_schema_id, position_deletes_objects_range);
     }
     else
     {
-        auto object = std::make_shared<ObjectInfo>(path);
-        object->data_lake_metadata = data_lake_metadata;
-        return object;
+        if (data_lake_metadata.transform)
+        {
+            auto object = std::make_shared<ObjectInfoDataLake>(path);
+            object->setDataLakeMetadata(data_lake_metadata);
+            return object;
+        }
+        else
+        {
+            return std::make_shared<ObjectInfoPlain>(path);
+        }
     }
 }
 
