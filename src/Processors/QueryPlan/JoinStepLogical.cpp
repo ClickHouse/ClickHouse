@@ -215,7 +215,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
         for (const auto * output : expression_actions.post_join_actions->getOutputs())
         {
             auto it = required_outputs.find(output->result_name);
-            if(it == required_outputs.end())
+            if (it == required_outputs.end())
                 continue;
             new_required_output_columns.push_back(output->result_name);
             required_outputs.erase(it);
