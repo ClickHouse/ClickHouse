@@ -57,9 +57,6 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 {
     auto & parent = node->step;
 
-    if (parent->getOutputHeader()->columns() == 0)
-        return 0;
-
     bool updated_child = false;
     bool updated_grandchild = false;
 

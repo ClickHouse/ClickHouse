@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -245,17 +246,66 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
     for (const auto & condition : join_info.expression.disjunctive_conditions)
         collect_required_outputs_from_condition(condition);
 
-    // Join needs to have at least one output and calculateOutputHeader will produce a deterministic result
+    if (required_output_columns.empty())
+    {
+        auto find_new_required_output_column = [&post_join_actions = expression_actions.post_join_actions](
+                                                   const std::vector<JoinPredicate> & predicates) -> std::optional<String>
+        {
+            for (const auto & predicate : predicates)
+            {
+                if (const auto * output = post_join_actions->tryFindInOutputs(predicate.left_node.getColumnName()))
+                    return output->result_name;
+                if (const auto * output = post_join_actions->tryFindInOutputs(predicate.right_node.getColumnName()))
+                    return output->result_name;
+            }
+            return std::nullopt;
+        };
+        // Prefer one of the predicates as predicates whenever it is possible, because those columns are needed for join and couldn't be removed in any case
+        if (auto maybe_new_required_column_name = find_new_required_output_column(join_info.expression.condition.predicates))
+            required_output_columns.push_back(std::move(*maybe_new_required_column_name));
+
+        for (const auto & condition : join_info.expression.disjunctive_conditions)
+            if (auto maybe_new_required_column_name = find_new_required_output_column(condition.predicates))
+            {
+                required_output_columns.push_back(std::move(*maybe_new_required_column_name));
+                break;
+            }
+
+        // If we still didn't find a required column, let's pick one from one of the left/right required columns,
+        // because they are necessary for the join, so let's just pass them through
+        if (required_output_columns.empty())
+        {
+            const auto fill_required_output_columns_from = [&](const NameSet & names, ActionsDAG & actions_dag)
+            {
+                if (!names.empty())
+                {
+                    const auto & new_column_name = *names.begin();
+                    const auto & output = actions_dag.findInOutputs(new_column_name);
+                    required_output_columns.push_back(output.result_name);
+                    const auto & new_output = expression_actions.post_join_actions->addInput(output.result_name, output.result_type);
+                    expression_actions.post_join_actions->addOrReplaceInOutputs(new_output);
+                }
+            };
+
+            if (!left_required_outputs.empty())
+                fill_required_output_columns_from(left_required_outputs, *expression_actions.left_pre_join_actions);
+            else if (!right_required_outputs.empty())
+                fill_required_output_columns_from(right_required_outputs, *expression_actions.right_pre_join_actions);
+        }
+
+        // If we still don't have any (can this happen?) then let's pick a random column
     if (required_output_columns.empty())
         required_output_columns = calculateOutputHeader({})->getNames();
+    }
 
     // We can always remove inputs from post join actions, that doesn't affect the inputs of this step
     bool removed_any_actions = expression_actions.post_join_actions->removeUnusedActions(required_output_columns);
     const auto & new_post_join_inputs = expression_actions.post_join_actions->getInputs();
 
-    for (const auto * post_join_input: new_post_join_inputs)
+    for (const auto * post_join_input : new_post_join_inputs)
     {
-        if (const auto * left_output = expression_actions.left_pre_join_actions->tryFindInOutputs(post_join_input->result_name); nullptr != left_output)
+        if (const auto * left_output = expression_actions.left_pre_join_actions->tryFindInOutputs(post_join_input->result_name);
+            nullptr != left_output)
             left_required_outputs.insert(post_join_input->result_name);
         else
             right_required_outputs.insert(post_join_input->result_name);
