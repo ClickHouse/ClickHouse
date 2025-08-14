@@ -7,12 +7,17 @@
 namespace DB
 {
 
+/// Represents a patch that can be applied to the result block to update the data.
 struct PatchToApply
 {
-    PaddedPODArray<UInt64> result_row_indices;
-    PaddedPODArray<UInt64> patch_col_indices;
-    PaddedPODArray<UInt64> patch_row_indices;
+    /// Blocks with data from patch parts.
     std::vector<Block> patch_blocks;
+    /// Index of row to update in the result block.
+    PaddedPODArray<UInt64> result_row_indices;
+    /// Index of patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_col_indices;
+    /// Index of row in patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_row_indices;
 
     bool empty() const { return patch_blocks.empty(); }
     size_t getNumSources() const { return patch_blocks.size(); }

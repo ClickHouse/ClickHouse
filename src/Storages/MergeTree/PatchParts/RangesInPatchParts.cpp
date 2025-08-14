@@ -319,9 +319,8 @@ bool intersects(const MinMaxStats & lhs, const MinMaxStats & rhs)
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
-    chassert(ranges.size() == patch_stats.size());
-
     MarkRanges result;
+
     for (auto range : ranges)
     {
         auto it = patch_stats.find(range);

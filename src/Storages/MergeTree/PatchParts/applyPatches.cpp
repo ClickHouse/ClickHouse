@@ -6,8 +6,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -378,7 +378,7 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
         return patch_to_apply;
 
     patch_to_apply->patch_blocks.emplace_back(patch_block);
-    Stopwatch watch;
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesMergeMicroseconds);
 
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
     const auto & patch_offset_data = getColumnUInt64Data(patch_block, "_part_offset");
@@ -437,9 +437,6 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
         }
     }
 
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::BuildPatchesMergeMicroseconds, elapsed);
-
     return patch_to_apply;
 }
 
@@ -460,7 +457,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     if (num_rows == 0 || join_entry.hash_map.empty())
         return patch_to_apply;
 
-    Stopwatch watch;
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
     auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
     auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
@@ -503,9 +500,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
         }
     }
 
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::BuildPatchesJoinMicroseconds, elapsed);
-
     return patch_to_apply;
 }
 
@@ -518,17 +512,13 @@ void applyPatchesToBlock(
     if (patches.empty())
         return;
 
-    Stopwatch watch;
-
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
     auto updated_header = getUpdatedHeader(patches, result_block);
 
     if (canApplyPatchesRaw(patches))
         applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);
     else
         applyPatchesToBlockCombined(result_block, versions_block, patches, updated_header, source_data_version);
-
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::ApplyPatchesMicroseconds, elapsed);
 }
 
 }

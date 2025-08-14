@@ -16,19 +16,25 @@ namespace DB
 
 struct RangesInPatchParts;
 
-/// We use two-level hash map (_block_number -> (_block_offset -> (patch_block_idx, row_number))).
-/// Block numbers are usually the same for the large ranges of consecutive rows.
-/// Therefore, we switch between hash maps for blocks rarely.
-/// It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (patch_block_idx, row_number)).
+/**  We use two-level hash map (_block_number -> (_block_offset -> (patch_block_idx, row_number))).
+  *  Block numbers are usually the same for large ranges of consecutive rows.
+  *  Therefore, we rarely switch between hash maps for blocks.
+  *  It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (patch_block_idx, row_number)).
+  */
 using OffsetsHashMap = absl::flat_hash_map<UInt64, std::pair<UInt64, UInt64>, DefaultHash<UInt64>>;
 using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
 
-/// A cache for hash tables and blocks for applying patch parts in Join mode.
-/// It avoids re-reading the same ranges of patch parts and rebuilding hash tables multiple times.
-/// The cache (and patch hash table) is optimized for the case when patch parts are almost sorted by _block_number,
-/// i.e., when data is inserted almost in the order of the order key (the order key has a timestamp value), which is the typical case.
-/// Cache entries are created for each patch part. Each entry is split into buckets by ranges of the patch part to avoid lock contention.
-/// Each bucket has contiguous ranges of the patch part and all buckets are sorted by the mark numbers in ranges.
+/**  A cache of hash tables and blocks for applying patch parts in Join mode.
+  *  It avoids re-reading the same ranges of patch parts and rebuilding hash tables multiple times.
+  *  The cache (and patch hash table) is optimized for the case when patch parts are almost sorted by _block_number,
+  *  i.e., when data is inserted almost in the order of the order key (the order key has a timestamp value), which is the typical case.
+  *
+  *  The cache allows reading data from patches by small ranges and lowers the amount of patch parts (hash tables)
+  *  to apply by aggregating data from multiple patch parts into a single hash table in the entry.
+  *
+  *  A cache entry is created for each patch part. To lower lock contention, each entry is split into buckets by the patch part's ranges.
+  *  Each bucket has contiguous ranges of the patch part, and is sorted by the range's beginning.
+  */
 struct PatchJoinCache
 {
     using Reader = std::function<Block(const MarkRanges &)>;
@@ -59,7 +65,10 @@ struct PatchJoinCache
     using Entries = std::vector<EntryPtr>;
     using PatchStatsEntryPtr = std::shared_ptr<PatchStatsEntry>;
 
+    /// Initializes the cache, creates a mapping from the ranges to buckets.
+    /// Cache entries should be get for the same ranges later.
     void init(const RangesInPatchParts & ranges_in_pathces);
+
     PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part);
     Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);
 

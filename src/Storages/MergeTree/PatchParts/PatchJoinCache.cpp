@@ -5,10 +5,10 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 namespace ProfileEvents
 {
@@ -28,23 +28,28 @@ void PatchJoinCache::init(const RangesInPatchParts & ranges_in_pathces)
     const auto & all_ranges = ranges_in_pathces.getRanges();
 
     /// Spread ranges among buckets.
+    /// We assume that ranges are already sorted
+    /// and put contiguous ranges into the same bucket.
     for (const auto & [patch_name, ranges] : all_ranges)
     {
         if (ranges.empty())
             continue;
 
-        size_t current_buckets = std::min(num_buckets, ranges.size());
-        size_t num_ranges_in_bucket = ranges.size() / current_buckets;
-
         auto & entries = cache[patch_name];
         auto & buckets = ranges_to_buckets[patch_name];
 
+        size_t current_buckets = std::min(num_buckets, ranges.size());
+        size_t num_ranges_in_bucket = (ranges.size() + current_buckets - 1) / current_buckets;
+
         entries.reserve(current_buckets);
+        for (size_t i = 0; i < current_buckets; ++i)
+            entries.push_back(std::make_shared<PatchJoinCache::Entry>());
+
         for (size_t i = 0; i < ranges.size(); ++i)
         {
             size_t idx = i / num_ranges_in_bucket;
+            chassert(idx < entries.size());
             buckets[ranges[i]] = idx;
-            entries.push_back(std::make_shared<PatchJoinCache::Entry>());
         }
     }
 }
@@ -224,7 +229,7 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
 
 void PatchJoinCache::Entry::addBlock(Block read_block)
 {
-    Stopwatch watch;
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
     size_t new_block_idx = 0;
     size_t num_read_rows = read_block.rows();
@@ -238,12 +243,12 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
         blocks.push_back(std::make_shared<Block>(read_block));
     }
 
-    PatchHashMap local_hash_map;
-
     const auto & block_number_column = getColumnUInt64Data(read_block, BlockNumberColumn::name);
     const auto & block_offset_column = getColumnUInt64Data(read_block, BlockOffsetColumn::name);
     const auto & data_version_column = getColumnUInt64Data(read_block, PartDataVersionColumn::name);
 
+    /// Build hash map locally and then merge it with the global one under the lock.
+    PatchHashMap local_hash_map;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
     UInt64 local_min_block = std::numeric_limits<UInt64>::max();
     UInt64 local_max_block = 0;
@@ -286,9 +291,6 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
                 it->second.insert(offsets_map.begin(), offsets_map.end());
         }
     }
-
-    auto elapsed = watch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::BuildPatchesJoinMicroseconds, elapsed);
 }
 
 }
