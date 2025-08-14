@@ -64,6 +64,7 @@ def main():
                 "bool",
                 "uint",
                 "int8",
+                "int16",
                 "int64",
                 "int128",
                 "float",
@@ -89,6 +90,7 @@ def main():
                 "ipv4",
                 "ipv6",
                 "geo",
+                "fixedstring",
             ]
             random.shuffle(disabled_types)
             disabled_types_str = ",".join(
@@ -141,6 +143,8 @@ def main():
                 "materializedpostgresql",
                 "replicated",
                 "shared",
+                "datalakecatalog",
+                "arrowflight",
             ]
             random.shuffle(disabled_engines)
             disabled_engines_str = ",".join(
@@ -186,8 +190,9 @@ def main():
             "test_with_fill": random.choice([True, False]),
             "compare_success_results": False,  # This can give false positives, so disable it
             "allow_infinite_tables": random.choice([True, False]),
+            "allow_hardcoded_inserts": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
-            "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,159,162,165,166,167,168,172,209,230,231,233,234,235,246,255,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
+            "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,233,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
             "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,386,403,467",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
@@ -204,6 +209,23 @@ def main():
             "truncate_output": True,
             # Don't always run transactions, makes many statements fail
             "allow_transactions": random.randint(1, 5) == 1,
+            "remote_servers": ["localhost:9000"],
+            "remote_secure_servers": ["localhost:9440"],
+            "http_servers": ["localhost:8123"],
+            "https_servers": ["localhost:8443"],
+            # These settings are slow
+            "disallowed_settings": [
+                "enable_analyzer",
+                "apply_settings_from_server",
+                "grace_hash_join_initial_buckets",
+                "join_default_strictness",
+                "restore_replace_external_dictionary_source_to_null",
+                "restore_replace_external_engines_to_null",
+                "restore_replace_external_table_functions_to_null",
+                "send_logs_level",
+                "query_plan_max_limit_for_lazy_materialization",
+                "max_download_buffer_size",
+            ],
         }
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
