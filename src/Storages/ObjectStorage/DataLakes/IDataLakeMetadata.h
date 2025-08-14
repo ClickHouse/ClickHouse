@@ -9,6 +9,9 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Storages/MutationCommands.h>
+#include <Interpreters/StorageID.h>
+#include <Databases/DataLake/ICatalog.h>
 
 namespace DataLake
 {
@@ -94,6 +97,16 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("write"); }
+
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
+
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
 protected:
     virtual ObjectIterator createKeysIterator(

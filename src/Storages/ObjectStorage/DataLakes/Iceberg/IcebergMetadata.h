@@ -119,6 +119,16 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
+    bool supportsDelete() const override { return true; }
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override;
+
+    void checkMutationIsPossible(const MutationCommands & commands) override;
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

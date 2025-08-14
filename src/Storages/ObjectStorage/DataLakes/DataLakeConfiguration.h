@@ -119,6 +119,29 @@ public:
         );
     }
 
+    bool supportsDelete() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsDelete();
+    }
+
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        current_metadata->mutate(commands, context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    void checkMutationIsPossible(const MutationCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkMutationIsPossible(commands);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
