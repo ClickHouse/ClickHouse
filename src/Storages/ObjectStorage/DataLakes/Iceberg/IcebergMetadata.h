@@ -1,5 +1,4 @@
 #pragma once
-#include "IO/CompressionMethod.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -23,6 +22,8 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+
+#include <IO/CompressionMethod.h>
 
 namespace DB
 {
