@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
-
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -15,7 +13,9 @@ namespace DB
 {
 struct IcebergDataObjectInfo : public RelativePathWithMetadata
 {
+#if USE_AVRO
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, const std::vector<Iceberg::ManifestFileEntry> & position_deletes_, const String& format);
+#endif
     explicit IcebergDataObjectInfo(
         String data_object_file_path_,
         String data_object_file_path_key_,
@@ -36,6 +36,3 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
 }
-
-
-#endif

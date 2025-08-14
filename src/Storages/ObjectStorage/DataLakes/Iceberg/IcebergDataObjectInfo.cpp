@@ -25,6 +25,7 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+#if USE_AVRO
 namespace
 {
 
@@ -72,11 +73,15 @@ std::pair<size_t, size_t> definePositionDeletesSpan(
 
 }
 
+#endif
+
 namespace DB
 {
 
 using namespace Iceberg;
 
+
+#if USE_AVRO
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_manifest_file_entry_,
     const std::vector<Iceberg::ManifestFileEntry> & position_deletes_,
@@ -86,6 +91,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     , read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects_range(definePositionDeletesSpan(data_manifest_file_entry_, position_deletes_, format))
 {}
+#endif
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     String data_object_file_path_,
