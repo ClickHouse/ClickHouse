@@ -65,11 +65,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return false;
     }
 
-    QueryPlan::Node * source_a = node.children[0];
-    QueryPlan::Node * source_b = node.children[1];
+    QueryPlan::Node * apply_filter_node = node.children[0];
+    QueryPlan::Node * build_filter_node = node.children[1];
 
-    std::vector<ColumnWithTypeAndName> join_keys_a;
-    std::vector<ColumnWithTypeAndName> join_keys_b;
+    std::vector<ColumnWithTypeAndName> join_keys_probe_side;
+    std::vector<ColumnWithTypeAndName> join_keys_build_side;
 
     const auto & join_condition = join_info.expression.condition;
     for (const auto & predicate : join_condition.predicates)
@@ -77,8 +77,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (predicate.op != PredicateOperator::Equals)
             return false;
 
-        join_keys_a.push_back(predicate.left_node.getColumn());
-        join_keys_b.push_back(predicate.right_node.getColumn());
+        join_keys_probe_side.push_back(predicate.left_node.getColumn());
+        join_keys_build_side.push_back(predicate.right_node.getColumn());
     }
 
     /// Extract expressions for calculating join on keys
@@ -98,74 +98,79 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (actions.left_pre_join_actions)
         {
-            source_a = makeExpressionNodeOnTopOf(source_a, std::move(*actions.left_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.left_pre_join_actions, *source_a->step->getOutputHeader());
-            join_step->updateInputHeader(source_a->step->getOutputHeader(), 0);
+            apply_filter_node = makeExpressionNodeOnTopOf(apply_filter_node, std::move(*actions.left_pre_join_actions), {}, nodes);
+            replace_with_pass_through_actions(*actions.left_pre_join_actions, *apply_filter_node->step->getOutputHeader());
+            join_step->updateInputHeader(apply_filter_node->step->getOutputHeader(), 0);
         }
 
         if (actions.right_pre_join_actions)
         {
-            source_b = makeExpressionNodeOnTopOf(source_b, std::move(*actions.right_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.right_pre_join_actions, *source_b->step->getOutputHeader());
-            join_step->updateInputHeader(source_b->step->getOutputHeader(), 1);
+            build_filter_node = makeExpressionNodeOnTopOf(build_filter_node, std::move(*actions.right_pre_join_actions), {}, nodes);
+            replace_with_pass_through_actions(*actions.right_pre_join_actions, *build_filter_node->step->getOutputHeader());
+            join_step->updateInputHeader(build_filter_node->step->getOutputHeader(), 1);
         }
+    }
+
+    const bool swap_join_tables = join_step->areInputsSwapped();
+    if (swap_join_tables)
+    {
+        std::swap(build_filter_node, apply_filter_node);
+        std::swap(join_keys_build_side, join_keys_probe_side);
     }
 
     const String filter_name_prefix = fmt::format("_runtime_filter_{}", thread_local_rng());
 
-    QueryPlan::Node * apply_filter_a_node = nullptr;
-    QueryPlan::Node * build_fliter_b_node = source_b;
     {
         ActionsDAG filter_dag;
 
-        /// Pass all columns from source_a
-        for (const auto & column : source_a->step->getOutputHeader()->getColumnsWithTypeAndName())
+        /// Pass all columns on probe side
+        for (const auto & column : apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName())
             filter_dag.addOrReplaceInOutputs(filter_dag.addInput(column));
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
-        for (size_t i = 0; i < join_keys_a.size(); ++i)
+        for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
             /// Make unique filter name for each of the predicates. If will be used at runtime to "connect" build side and apply side
             const String filter_name = filter_name_prefix + "_" + toString(i);
 
-            const auto & join_key_a = join_keys_a[i];
-            const auto & join_key_b = join_keys_b[i];
+            const auto & join_key_build_side = join_keys_build_side[i];
+            const auto & join_key_probe_side = join_keys_probe_side[i];
 
             /// If types of left and right columns do not match then we need to deduce common super type for them
             /// and add CAST-s to this type to build and apply sides
             DataTypePtr common_type;
-            if (!join_key_a.type->equals(*join_key_b.type))
+            if (!join_key_build_side.type->equals(*join_key_probe_side.type))
             {
                 try
                 {
-                    common_type = getLeastSupertype(DataTypes{join_key_a.type, join_key_b.type});
+                    common_type = getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
                 }
                 catch (Exception & ex)
                 {
                     ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                        join_key_a.name, join_key_a.type->getName(),
-                        join_key_a.name, join_key_b.type->getName());
+                        join_key_probe_side.name, join_key_probe_side.type->getName(),
+                        join_key_build_side.name, join_key_build_side.type->getName());
                     throw;
                 }
             }
             else
             {
-                common_type = join_key_a.type;
+                common_type = join_key_build_side.type;
             }
 
-            /// Add filter lookup to the left subtree
-            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_a, common_type));
+            /// Add filter lookup to the probe subtree
+            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
 
-            /// Add building filter to the right subtree of join
+            /// Add building filter to the build subtree of join
             {
-                QueryPlan::Node * build_filter_node = nullptr;
-                build_filter_node = &nodes.emplace_back();
-                build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(source_b->step->getOutputHeader(), join_key_b.name, common_type, filter_name);
-                build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_b.name, filter_name));
-                build_filter_node->children = {build_fliter_b_node};
+                QueryPlan::Node * new_build_filter_node = nullptr;
+                new_build_filter_node = &nodes.emplace_back();
+                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(build_filter_node->step->getOutputHeader(), join_key_build_side.name, common_type, filter_name);
+                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name));
+                new_build_filter_node->children = {build_filter_node};
 
-                build_fliter_b_node = build_filter_node;
+                build_filter_node = new_build_filter_node;
             }
         }
 
@@ -185,13 +190,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
 //        std::cerr << filter_dag.dumpDAG() << "\n+++++++++++++++++++++++++++\n\n\n";
 
-        apply_filter_a_node = &nodes.emplace_back();
-        apply_filter_a_node->step = std::make_unique<FilterStep>(source_a->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
-        apply_filter_a_node->step->setStepDescription("Apply runtime join filter");
-        apply_filter_a_node->children = {source_a};
+        QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
+        new_apply_filter_node->step = std::make_unique<FilterStep>(apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
+        new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
+        new_apply_filter_node->children = {apply_filter_node};
+
+        apply_filter_node = new_apply_filter_node;
     }
 
-    node.children = {apply_filter_a_node, build_fliter_b_node};
+    if (swap_join_tables)
+        node.children = {build_filter_node, apply_filter_node};
+    else
+        node.children = {apply_filter_node, build_filter_node};
 
     return true;
 }
