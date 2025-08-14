@@ -27,4 +27,10 @@ insert into tab select ['a1', 'a2'], [[1, 2, 3], [4, 5, 6]], [['b1', 'b2', 'b3']
 
 -- { echoOn }
 
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 0;
+select x from tab;
+select y, y.b.first, y.b.second from tab array join x as y; -- { serverError UNKNOWN_IDENTIFIER }
+
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 1;
+select x from tab;
 select y, y.b.first, y.b.second from tab array join x as y;

@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", false, true, "New setting."},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
         });
