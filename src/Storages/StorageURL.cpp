@@ -1686,6 +1686,7 @@ void registerStorageURL(StorageFactory & factory)
             ASTs & engine_args = args.engine_args;
             auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
@@ -1699,7 +1700,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                args.getContext(),
+                context,
                 configuration.compression_method,
                 configuration.headers,
                 configuration.http_method,

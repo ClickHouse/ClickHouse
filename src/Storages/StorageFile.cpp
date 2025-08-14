@@ -2198,9 +2198,10 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
-                WithContext(factory_args.getContext()),
+                WithContext(context),
                 factory_args.table_id,
                 {},
                 {},
@@ -2287,7 +2288,7 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_fd, storage_args);
 
             /// User's file
-            return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
+            return std::make_shared<StorageFile>(source_path, context->getUserFilesPath(), false, storage_args);
         },
         storage_features);
 }
