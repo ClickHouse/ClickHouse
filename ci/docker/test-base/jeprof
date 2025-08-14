@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
 # Wrapper for jeprof with llvm toolchain (binutils are too slow)
-exec jeprof.orig --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt "$@"
+exec jeprof.orig --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/llvm-objdump-$LLVM_VERSION,c++filt:/usr/bin/llvm-cxxfilt-$LLVM_VERSION "$@"
