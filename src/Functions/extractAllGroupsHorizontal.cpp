@@ -18,7 +18,7 @@ namespace DB
 REGISTER_FUNCTION(ExtractAllGroupsHorizontal)
 {
     FunctionDocumentation::Description description = R"(
-Matches all groups of a string using a regular expression and returns an array of arrays, where each array contains all captures from the same capturing group, organized by group number.
+Matches all groups of a string using the provided regular expression and returns an array of arrays, where each array contains all captures from the same capturing group, organized by group number.
 )";
     FunctionDocumentation::Syntax syntax = "extractAllGroupsHorizontal(s, regexp)";
     FunctionDocumentation::Arguments arguments = {

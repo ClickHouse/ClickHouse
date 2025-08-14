@@ -124,7 +124,7 @@ Empty substrings may be selected if the separator occurs at the beginning or end
 
 :::note Behavior change from ClickHouse v22.11
 The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11.
-In odler versions, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
+In older versions, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
 For example, in v22.10:
 
 ```sql
@@ -149,7 +149,11 @@ Returns:
 ['a','b']
 ```
 
-A behavior similar to ClickHouse pre-v22.11 can be achieved by setting `splitby_max_substrings_includes_remaining_string`.
+A behavior similar to ClickHouse pre-v22.11 can be achieved by setting [`splitby_max_substrings_includes_remaining_string`](/operations/settings/settings#splitby_max_substrings_includes_remaining_string).
+Empty substrings may be selected when:
+- A separator occurs at the beginning or end of the string
+- There are multiple consecutive separators
+- The original string `s` is empty
 )";
     FunctionDocumentation::Syntax syntax = "splitByChar(separator, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
@@ -157,7 +161,7 @@ A behavior similar to ClickHouse pre-v22.11 can be achieved by setting `splitby_
         {"s", "The string to split.", {"String"}},
         {"[, max_substrings]", "Optional. If `max_substrings > 0`, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible. The default value is `0`. ", {"Int64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings. Empty substrings may be selected when: a separator occurs at the beginning or end of the string, there are multiple consecutive separators, or the original string `s` is empty.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

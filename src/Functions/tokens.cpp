@@ -175,7 +175,7 @@ REGISTER_FUNCTION(Tokens)
 Splits a string into tokens using the given tokenizer.
 The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
-In case of the `split` tokenizer: if the tokens do not form a prefix code, you likely want that the matching prefers longer separators first.
+In case of the `split` tokenizer, if the tokens do not form a prefix code, you likely want that the matching prefers longer separators first.
 To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 )";
