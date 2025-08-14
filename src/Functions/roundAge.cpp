@@ -38,17 +38,39 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveM
 REGISTER_FUNCTION(RoundAge)
 {
     FunctionDocumentation::Description description = R"(
-Accepts a number within various commonly used ranges of human age and returns either a maximum or a minimum within that range.
+Takes a number representing a human age, compares it to standard age ranges, and returns either the highest or lowest value within the range it falls in.
+
+- Returns `0`, for $age \lt 1$.
+- Returns `17`, for $1 \leq age \leq 17$.
+- Returns `18`, for $18 \leq age \leq 24$.
+- Returns `25`, for $25 \leq age \leq 34$.
+- Returns `35`, for $35 \leq age \leq 44$.
+- Returns `45`, for $45 \leq age \leq 54$.
+- Returns `55`, for $age \geq 55$.
 )";
     FunctionDocumentation::Syntax syntax = "roundAge(num)";
     FunctionDocumentation::Arguments arguments = {
-        {"age", "A number representing an age in years.", {"`UInt`/`Float`"}}
+        {"age", "A number representing an age in years.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`, for age < 1. Returns `17`, for 1 ≤ age ≤ 17. Returns `18`, for 18 ≤ age ≤ 24. Returns `25`, for 25 ≤ age ≤ 34. Returns `35`, for 35 ≤ age ≤ 44. Returns `45`, for 45 ≤ age ≤ 54. Returns `55`, for age ≥ 55.", {"`UInt8`"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns either the highest or lowest age of the range `age` falls within.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54, 72);", "┌─number─┬─roundAge(number)─┐\n│      0 │                0 │\n│      5 │               17 │\n│     20 │               18 │\n│     31 │               25 │\n│     37 │               35 │\n│     54 │               45 │\n│     72 │               55 │\n└────────┴──────────────────┘"}
+    {
+        "Usage example",
+        "SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54, 72);",
+        R"(
+┌─number─┬─roundAge(number)─┐
+│      0 │                0 │
+│      5 │               17 │
+│     20 │               18 │
+│     31 │               25 │
+│     37 │               35 │
+│     54 │               45 │
+│     72 │               55 │
+└────────┴──────────────────┘
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionRoundAge>(documentation);
