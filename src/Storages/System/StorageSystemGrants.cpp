@@ -27,7 +27,7 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
         {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues()), "Access parameters for ClickHouse user account."},
         {"parameter", std::make_shared<DataTypeString>(), "Parameter for access_type. Contains: "
             "1 - Name of the source type for READ/WRITE grants."
-            "2 - Name of the source type for TABLE ENGINE  grants."
+            "2 - Name of the table engine for TABLE ENGINE  grants."
         },
         {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a database."},
         {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a table."},
