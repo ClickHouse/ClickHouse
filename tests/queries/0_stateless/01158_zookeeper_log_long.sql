@@ -66,6 +66,6 @@ system flush logs zookeeper_log;
 select 'duration_microseconds';
 select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_microseconds > 0;
 
-system flush logs lighweight_zookeeper_log;
+system flush logs lightweight_zookeeper_log;
 select 'lightweight_zookeeper_log';
 select count() > 0, errors['ZOK'] > 0, average_latency > 0 where parent_path = '/test/01158/' || currentDatabase() || '/rmt' and operation = 'Create'
