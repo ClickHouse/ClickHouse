@@ -2305,7 +2305,7 @@ def test_concurrent_reads(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_concurrent_queries")
+    TABLE_NAME = randomize_table_name("test_concurrent_reads")
     result_file = f"{TABLE_NAME}"
     partition_columns = []
 
@@ -2960,7 +2960,7 @@ def test_writes(started_cluster):
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
     )
 
-    s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
     file_name = None
     for obj in s3_objects:
         print(f"File: {obj.object_name}")
@@ -3047,7 +3047,7 @@ def test_partitioned_writes(started_cluster):
     )
 
     def check_files(expected):
-        s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+        s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
         file_names = []
         for obj in s3_objects:
             print(f"File: {obj.object_name}")
@@ -3200,7 +3200,7 @@ def test_concurrent_queries(started_cluster, partitioned):
     for e in non_empty_errors:
         assert "commit conflict at version" in e
 
-    s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
     file_names = []
     for obj in s3_objects:
         print(f"File: {obj.object_name}")
