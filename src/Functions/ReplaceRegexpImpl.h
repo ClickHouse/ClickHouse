@@ -27,7 +27,7 @@ enum class ReplaceRegexpTraits : uint8_t
 
 /// Please note that it is not necessarily the canonical behavior.
 /// Many programming languages, libraries, and databases disagree on how the global replacement function
-/// should work in the presense of empty string matches, especially at the beginning or the end of the string:
+/// should work in the presence of empty string matches, especially at the beginning or the end of the string:
 
 /// $ perl -e 'my $x = "x"; $x =~ s/^|.*/Hello/g; print $x';
 /// HelloHelloHello
