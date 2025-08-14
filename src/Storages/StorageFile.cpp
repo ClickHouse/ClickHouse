@@ -1148,19 +1148,12 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-           storage_columns,
-           hive_partition_columns_to_read_from_file_path,
-           sample_path,
-           args.columns.empty(),
-           format_settings,
-           args.getContext());
-    }
-
-    /// If the `partition_strategy` argument is ever implemented for File storage, this must be updated
-    file_columns = storage_columns.getAllPhysical();
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        sample_path,
+        args.columns.empty(),
+        format_settings,
+        args.getContext());
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);

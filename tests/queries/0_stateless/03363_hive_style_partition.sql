@@ -138,7 +138,10 @@ CREATE TABLE t_invalid_expression (year UInt16, country String, counter Float64)
 CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='WILDCARD'); -- {serverError BAD_ARGUMENTS}
 CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='HIVE'); -- {serverError BAD_ARGUMENTS}
 
--- Should throw and it should not be a LOGICAL_ERROR
+-- Should throw because format is not present and it is mandatory for hive strategy and it should not be a LOGICAL_ERROR
 CREATE TABLE t_03363_hive_requires_format (c0 Int) ENGINE = S3(s3_conn, partition_strategy = 'hive') PARTITION BY (c0); -- {serverError BAD_ARGUMENTS}
+
+-- Should throw because hive strategy does not allow partition columns to be the only columns
+CREATE TABLE t_03363_hive_only_partition_columns (country String, year UInt16) ENGINE = S3(s3_conn, partition_strategy='hive') PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
 
 DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format;

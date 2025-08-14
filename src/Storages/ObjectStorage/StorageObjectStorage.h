@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Core/NamesAndTypes.h"
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -154,7 +155,7 @@ protected:
     bool update_configuration_on_read_write = true;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    ColumnsDescription file_columns;
+    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 

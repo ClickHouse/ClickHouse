@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Core/NamesAndTypes.h>
 
 namespace DB
 {
@@ -18,14 +20,23 @@ void addPartitionColumnsToChunk(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path);
 
-void extractPartitionColumnsFromPathAndEnrichStorageColumns(
-    ColumnsDescription & storage_columns,
-    NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const std::string & path,
+std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForObjectStorage(
+    ColumnsDescription & columns,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & sample_path,
+    bool inferred_schema,
+    std::optional<FormatSettings> format_settings,
+    ContextPtr context);
+
+std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForFileURLLikeStorage(
+    ColumnsDescription & columns,
+    const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context);
 
 }
+
+
 
 }

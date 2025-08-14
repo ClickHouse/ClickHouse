@@ -176,8 +176,96 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
             }
         }
     }
+}
 
-    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, storage_columns);
+std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForObjectStorage(
+    ColumnsDescription & columns,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::string & sample_path,
+    bool inferred_schema,
+    std::optional<FormatSettings> format_settings,
+    ContextPtr context)
+{
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
+
+    /*
+     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
+     * There is no need to read from the file's path.
+     *
+     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
+     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
+     */
+     if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+     {
+         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+     }
+     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+     {
+        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            columns,
+            hive_partition_columns_to_read_from_file_path,
+            sample_path,
+            inferred_schema,
+            format_settings,
+            context);
+     }
+
+     sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
+
+     if (configuration->partition_columns_in_data_file)
+     {
+         file_columns = columns.getAllPhysical();
+     }
+     else
+     {
+         std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+
+         for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+         {
+             hive_partition_columns_to_read_from_file_path_set.insert(name);
+         }
+
+         for (const auto & [name, type] : columns.getAllPhysical())
+         {
+             if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
+             {
+                file_columns.emplace_back(name, type);
+             }
+         }
+     }
+
+     return {hive_partition_columns_to_read_from_file_path, file_columns};
+}
+
+std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForFileURLLikeStorage(
+    ColumnsDescription & columns,
+    const std::string & sample_path,
+    bool inferred_schema,
+    std::optional<FormatSettings> format_settings,
+    ContextPtr context)
+{
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            columns,
+            hive_partition_columns_to_read_from_file_path,
+            sample_path,
+            inferred_schema,
+            format_settings,
+            context);
+    }
+
+    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
+
+    /// Partition strategy is not implemented for File/URL storages,
+    /// so there is no option to set whether hive partition columns are in the data file or not.
+    file_columns = columns.getAllPhysical();
+
+    return {hive_partition_columns_to_read_from_file_path, file_columns};
 }
 
 }

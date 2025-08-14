@@ -190,19 +190,12 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            storage_columns,
-            hive_partition_columns_to_read_from_file_path,
-            getSampleURI(uri, context_),
-            columns_.empty(),
-            format_settings,
-            context_);
-    }
-
-    /// If the `partition_strategy` argument is ever implemented for URL storage, this must be updated
-    file_columns = storage_columns.getAllPhysical();
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        getSampleURI(uri, context_),
+        columns_.empty(),
+        format_settings,
+        context_);
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
