@@ -626,7 +626,6 @@ protected:
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
 
-
         Container * container;
         cell_type * ptr;
         cell_type * prefetch_ptr = nullptr;
@@ -646,7 +645,7 @@ protected:
 
         Derived & operator++()
         {
-            if (CouldPrefetchKey<cell_type>)
+            if constexpr (CouldPrefetchKey<cell_type>)
             {
 
                 if (ptr->isZero(*container)) [[unlikely]]
@@ -697,37 +696,33 @@ protected:
 
         void prefetch()
         {
-            auto * buf_end = container->buf + container->grower.bufSize();
-            iter_count++;
-            if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
+            if constexpr (CouldPrefetchKey<cell_type>)
             {
-                if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
-                    prefetch_ahead = prefetching.calcPrefetchLookAhead();
-                auto n = prefetch_ahead - prefetched_count;
-                cell_type * last_ptr = nullptr;
-                for (size_t i = 0; i < n; ++i)
+                auto * buf_end = container->buf + container->grower.bufSize();
+                iter_count++;
+                if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
                 {
-                    while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
+                    if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
+                        prefetch_ahead = prefetching.calcPrefetchLookAhead();
+                    auto n = prefetch_ahead - prefetched_count;
+                    cell_type * last_ptr = nullptr;
+                    for (size_t i = 0; i < n; ++i)
                     {
-                        ++prefetch_ptr;
+                        while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
+                           ++prefetch_ptr;
+
+                        if (prefetch_ptr < buf_end) [[likely]]
+                        {
+                            last_ptr = prefetch_ptr;
+                            prefetch_ptr++;
+                            prefetched_count++;
+                        }
+                        else
+                            break;
                     }
 
-                    if (prefetch_ptr < buf_end) [[likely]]
-                    {
-                        last_ptr = prefetch_ptr;
-                        prefetch_ptr++;
-                        prefetched_count++;
-                    }
-                    else
-                        break;
-                }
-
-                if (last_ptr) [[likely]]
-                {
-                    if constexpr (CouldPrefetchKey<cell_type>)
-                    {
+                    if (last_ptr) [[likely]]
                         KeyPrefetch(last_ptr->getKey());
-                    }
                 }
             }
         }
