@@ -99,6 +99,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (actions.left_pre_join_actions)
         {
             apply_filter_node = makeExpressionNodeOnTopOf(apply_filter_node, std::move(*actions.left_pre_join_actions), {}, nodes);
+            apply_filter_node->step->setStepDescription("Compute join keys");
             replace_with_pass_through_actions(*actions.left_pre_join_actions, *apply_filter_node->step->getOutputHeader());
             join_step->updateInputHeader(apply_filter_node->step->getOutputHeader(), 0);
         }
@@ -106,6 +107,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (actions.right_pre_join_actions)
         {
             build_filter_node = makeExpressionNodeOnTopOf(build_filter_node, std::move(*actions.right_pre_join_actions), {}, nodes);
+            apply_filter_node->step->setStepDescription("Compute join keys");
             replace_with_pass_through_actions(*actions.right_pre_join_actions, *build_filter_node->step->getOutputHeader());
             join_step->updateInputHeader(build_filter_node->step->getOutputHeader(), 1);
         }
