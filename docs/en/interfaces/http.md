@@ -42,7 +42,7 @@ Also see: [HTTP response codes caveats](#http_response_codes_caveats).
 ClickHouse includes a web user interface, which can be accessed from the following address: 
 
 ```text
-http://localhost:8123/play`
+http://localhost:8123/play
 ```
 
 The web UI supports displaying progress during query runtime, query cancellation, and result streaming.

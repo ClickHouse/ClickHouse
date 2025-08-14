@@ -5,6 +5,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Common/Exception.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -447,6 +448,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* partition_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
+}
+
+void DatabaseDataLake::dropTable( /// NOLINT
+    ContextPtr context_,
+    const String & name,
+    bool /*sync*/)
+{
+    auto table = tryGetTable(name, context_);
+    if (table)
+        table->drop();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
