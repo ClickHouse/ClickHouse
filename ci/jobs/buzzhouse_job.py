@@ -182,6 +182,7 @@ def main():
                 )
                 else random.randint(1, 5)
             ),
+            "max_number_alters": 1 if random.randint(1, 2) == 1 else random.randint(1, 4),
             "fuzz_floating_points": random.choice([True, False]),
             "enable_fault_injection_settings": random.choice([True, False]),
             "enable_force_settings": random.choice([True, False]),

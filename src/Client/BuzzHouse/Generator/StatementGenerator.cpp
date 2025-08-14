@@ -1249,7 +1249,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     std::optional<String> cluster;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-    const uint32_t nalters = rg.nextBool() ? 1 : ((rg.nextMediumNumber() % 4) + 1);
+    const uint32_t nalters = rg.randomInt<uint32_t>(1, fc.max_number_alters);
 
     if (alter_view && nopt2 < (alter_view + 1))
     {
