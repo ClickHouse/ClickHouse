@@ -751,24 +751,24 @@ class JobConfigs:
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/compatibility_check.py",
+        runs_on=["#from param"],
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/jobs/compatibility_check.py",
+                "./tests/ci/compatibility_check.py",
                 "./ci/docker/compatibility",
             ],
         ),
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_release",
+            parameter="release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
-            requires=[ArtifactNames.DEB_AMD_RELEASE],
+            requires=["Build (amd_release)"],
         ),
         Job.ParamSet(
-            parameter="arm_release",
+            parameter="aarch64",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            requires=[ArtifactNames.DEB_ARM_RELEASE],
+            requires=["Build (arm_release)"],
         ),
     )
     ast_fuzzer_jobs = Job.Config(

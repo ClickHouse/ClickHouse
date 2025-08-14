@@ -59,14 +59,27 @@ class BuzzHouseGenerator(Generator):
         if "clickhouse" in buzz_config:
             buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
 
+        # Set available servers
+        for entry in [
+            ("remote_servers", "9000"),
+            ("remote_secure_servers", "9440"),
+            ("http_servers", "8123"),
+            ("https_servers", "8443"),
+        ]:
+            buzz_config[entry[0]] = [
+                f"{val.hostname}:{entry[1]}" for val in cluster.instances.values()
+            ]
+        if args.with_arrowflight:
+            buzz_config["arrow_flight_servers"] = ["arrowflight1:5005"]
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
-                "database": "/" + cluster.minio_bucket + "/data",
+                "database": "/" + cluster.minio_bucket,
                 "server_hostname": cluster.minio_host,
                 "port": cluster.minio_port,
                 "user": "minio",
                 "password": minio_secret_key,
+                "named_collection": "s3",
             }
             if args.with_glue:
                 buzz_config["minio"]["glue"] = {
@@ -139,6 +152,7 @@ class BuzzHouseGenerator(Generator):
                 "container": "cont",
                 "user": "devstoreaccount1",
                 "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+                "named_collection": "azure",
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"

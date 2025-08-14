@@ -1540,11 +1540,6 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
-String MinIOIntegration::getConnectionURL(const bool client)
-{
-    return fmt::format("http://{}:{}{}/", client ? sc.client_hostname : sc.server_hostname, sc.port, sc.database);
-}
-
 void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
@@ -1614,10 +1609,7 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
 {
     const Catalog * cat = nullptr;
 
-    te->add_params()->set_svalue(b.getTablePath(fc, false));
-    te->add_params()->set_svalue(sc.user);
-    te->add_params()->set_svalue(sc.password);
-
+    te->add_params()->set_rvalue(sc.named_collection);
     switch (b.catalog)
     {
         case CatalogTable::Glue:
@@ -1677,56 +1669,24 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
 
 void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(getConnectionURL(false) + filename);
-    br->add_out_params(sc.user);
-    br->add_out_params(sc.password);
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
 bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
 {
-    const bool isDataLake = b.isDeltaLakeS3Engine() || b.isIcebergS3Engine();
-    const uint32_t glue_cat = 5 * static_cast<uint32_t>(isDataLake && sc.glue_catalog.has_value());
-    const uint32_t hive_cat = 5 * static_cast<uint32_t>(isDataLake && sc.hive_catalog.has_value());
-    const uint32_t rest_cat = 5 * static_cast<uint32_t>(isDataLake && sc.rest_catalog.has_value());
-    const uint32_t no_cat = 15;
-    const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
-
-    if (glue_cat && (nopt < glue_cat + 1))
-    {
-        b.catalog = CatalogTable::Glue;
-        return true;
-    }
-    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-    {
-        b.catalog = CatalogTable::Hive;
-        return true;
-    }
-    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-    {
-        b.catalog = CatalogTable::REST;
-        return true;
-    }
-    return sendRequest(fmt::format("{}/file{}", sc.database, b.tname));
+    return b.catalog != CatalogTable::None || sendRequest(fmt::format("{}/{}", sc.database, b.getTablePath(rg, fc, true)));
 }
 
-void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.server_hostname);
-    te->add_params()->set_svalue(sc.container);
-    te->add_params()->set_svalue(b.getTablePath(fc, false));
-    te->add_params()->set_svalue(sc.user);
-    te->add_params()->set_svalue(sc.password);
+    te->add_params()->set_rvalue(sc.named_collection);
 }
 
 void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(sc.server_hostname);
-    br->add_out_params(sc.container);
-    br->add_out_params(filename);
-    br->add_out_params(sc.user);
-    br->add_out_params(sc.password);
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
 bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
@@ -1734,9 +1694,9 @@ bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase &, const 
     return true;
 }
 
-void HTTPIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String &, TableEngine * te)
 {
-    te->add_params()->set_svalue(b.getTablePath(fc, false));
+    te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
 }
 
 bool HTTPIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)

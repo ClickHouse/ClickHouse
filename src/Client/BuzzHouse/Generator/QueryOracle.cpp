@@ -239,7 +239,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
     }
     else
     {
@@ -268,7 +268,7 @@ void QueryOracle::generateExportQuery(
     ff->set_outformat(outf);
     if (rg.nextSmallNumber() < 4)
     {
-        ff->set_fcomp(rg.pickRandomly(BuzzHouse::StatementGenerator::compression));
+        ff->set_fcomp(rg.pickRandomly(compressionMethods));
     }
     if (rg.nextSmallNumber() < 10)
     {
@@ -389,7 +389,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             gen.setBackupDestination(rg, bac);
             res->set_backup_number(bac->backup_number());
             res->set_out(bac->out());
-            res->mutable_out_params()->CopyFrom(bac->out_params());
+            res->mutable_params()->CopyFrom(bac->params());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
@@ -493,7 +493,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
         {
-            const auto & toPickFrom = rg.nextMediumNumber() < 6 ? hotSettings : queryOracleSettings;
+            const auto & toPickFrom = (hotSettings.empty() || rg.nextMediumNumber() < 94) ? queryOracleSettings : hotSettings;
             const String & setting = rg.pickRandomly(toPickFrom);
             const CHSetting & chs = queryOracleSettings.at(setting);
             SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();

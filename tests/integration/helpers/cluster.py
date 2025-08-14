@@ -53,6 +53,7 @@ from dict2xml import dict2xml
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
+from filelock import FileLock, Timeout
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
@@ -69,6 +70,27 @@ DEFAULT_ENV_NAME = ".env"
 DEFAULT_BASE_CONFIG_DIR = os.environ.get(
     "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
 )
+
+DEFAULT_THREAD_FUZZER_SETTINGS = {
+    "THREAD_FUZZER_CPU_TIME_PERIOD_US" : "1000",
+    "THREAD_FUZZER_SLEEP_PROBABILITY" : "0.1",
+    "THREAD_FUZZER_SLEEP_TIME_US_MAX" : "100000",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY" : "0.01",
+    "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY" : "0.01"
+}
+
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
@@ -88,6 +110,11 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
+NET_LOCK_PATH = "/tmp/docker_net.lock"
+try:
+    os.remove(NET_LOCK_PATH)
+except Exception:
+    pass
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -433,6 +460,8 @@ class ClickHouseCluster:
         zookeeper_certfile=None,
         with_spark=False,
         custom_keeper_configs=[],
+        enable_thread_fuzzer=False,
+        thread_fuzzer_settings={},
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -480,6 +509,8 @@ class ClickHouseCluster:
             self.project_name += f"-{xdist_worker}"
             self.instances_dir_name += f"-{xdist_worker}"
 
+        self.docker_net_lock = None
+
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
@@ -491,6 +522,13 @@ class ClickHouseCluster:
         self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+
+        if enable_thread_fuzzer:
+            for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():
+                thread_fuzzer_settings.setdefault(key, value)
+            for key, value in thread_fuzzer_settings.items():
+                self.env_variables[key] = value
+
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
@@ -3023,6 +3061,19 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
+        if self.with_net_trics:
+            # Tests might share same subnet, check file docker_compose_net.yml
+            logging.info(f"Attempting to acquire lock at {NET_LOCK_PATH}...")
+            self.docker_net_lock = FileLock(NET_LOCK_PATH)
+            try:
+                self.docker_net_lock.acquire(timeout=60*10)
+                logging.info(f"Lock acquired at {NET_LOCK_PATH}")
+            except Timeout:
+                raise Exception(
+                    f"Could not acquire the lock {NET_LOCK_PATH} within 10 minutes. "
+                    f"Another process may be holding it for too long, or it might be stale."
+                )
+
         try:
             self.cleanup()
         except Exception as e:
@@ -3612,6 +3663,12 @@ class ClickHouseCluster:
             )
 
         self.cleanup()
+
+        if self.with_net_trics:
+            try:
+                self.docker_net_lock.release()
+            except Exception as e:
+                logging.warning(f"Failed to release lock: {e}")
 
         self.is_up = False
 

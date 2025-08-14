@@ -78,6 +78,7 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 }
 
@@ -938,8 +939,12 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     String delete_object_format = configuration_ptr->format;
     String delete_object_compression_method = configuration_ptr->compression_method;
 
-    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    else
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
 ParsedDataFileInfo::ParsedDataFileInfo(
