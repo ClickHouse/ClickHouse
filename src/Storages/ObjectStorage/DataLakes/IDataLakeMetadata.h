@@ -76,6 +76,9 @@ public:
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
+    virtual std::optional<String> partitionKey(ContextPtr) const { return {}; }
+    virtual std::optional<String> sortingKey(ContextPtr) const { return {}; }
+
 protected:
     virtual ObjectIterator createKeysIterator(
         Strings && data_files_,

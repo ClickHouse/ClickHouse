@@ -252,6 +252,198 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
 }
 
+namespace
+{
+
+using IdToName = std::unordered_map<Int32, String>;
+
+IdToName buildIdToNameMap(const Poco::JSON::Object::Ptr & metadata_obj)
+{
+    IdToName map;
+    if (!metadata_obj || !metadata_obj->has("current-schema-id") || !metadata_obj->has("schemas"))
+        return map;
+
+    const auto current_schema_id = metadata_obj->getValue<Int32>("current-schema-id");
+    auto schemas = metadata_obj->getArray("schemas");
+    if (!schemas)
+        return map;
+
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(i);
+        if (!schema || !schema->has("schema-id"))
+            continue;
+        if (schema->getValue<Int32>("schema-id") != current_schema_id)
+            continue;
+
+        if (auto fields = schema->getArray("fields"))
+        {
+            for (size_t j = 0; j < fields->size(); ++j)
+            {
+                auto f = fields->getObject(j);
+                if (!f || !f->has("id") || !f->has("name"))
+                    continue;
+                map.emplace(f->getValue<Int32>("id"), f->getValue<String>("name"));
+            }
+        }
+        break;
+    }
+    return map;
+}
+
+String formatTransform(
+    const String & transform,
+    const Poco::JSON::Object::Ptr & field_obj,
+    const IdToName & id_to_name)
+{
+    Int32 source_id = (field_obj && field_obj->has("source-id"))
+        ? field_obj->getValue<Int32>("source-id")
+        : -1;
+
+    const auto it = id_to_name.find(source_id);
+    const String col = (it != id_to_name.end()) ? it->second : ("col_" + toString(source_id));
+
+    String base = transform;
+    String param;
+    if (const auto lpos = transform.find('['); lpos != String::npos && transform.back() == ']')
+    {
+        base = transform.substr(0, lpos);
+        param = transform.substr(lpos + 1, transform.size() - lpos - 2); // strip [ and ]
+    }
+
+    String result;
+    if (base == "identity")
+        result = col;
+    else if (base == "year" || base == "month" || base == "day" || base == "hour")
+        result = base + "(" + col + ")";
+    else if (base != "void")
+    {
+        if (!param.empty())
+            result = base + "(" + param + ", " + col + ")";
+        else
+            result = base + "(" + col + ")";
+    }
+    return result;
+}
+
+Poco::JSON::Array::Ptr findActivePartitionFields(const Poco::JSON::Object::Ptr & metadata_obj)
+{
+    if (!metadata_obj)
+        return nullptr;
+
+    if (metadata_obj->has("partition-spec"))
+        return metadata_obj->getArray("partition-spec");
+
+    // If for some reason there is no partition-spec, try partition-specs + default-
+    if (metadata_obj->has("partition-specs") && metadata_obj->has("default-spec-id"))
+    {
+        const auto default_spec_id = metadata_obj->getValue<Int32>("default-spec-id");
+        if (auto specs = metadata_obj->getArray("partition-specs"))
+        {
+            for (size_t i = 0; i < specs->size(); ++i)
+            {
+                auto spec = specs->getObject(i);
+                if (!spec || !spec->has("spec-id"))
+                    continue;
+                if (spec->getValue<Int32>("spec-id") == default_spec_id)
+                    return spec->has("fields") ? spec->getArray("fields") : nullptr;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+Poco::JSON::Array::Ptr findActiveSortFields(const Poco::JSON::Object::Ptr & metadata_obj)
+{
+    if (!metadata_obj || !metadata_obj->has("default-sort-order-id") || !metadata_obj->has("sort-orders"))
+        return nullptr;
+
+    const auto default_sort_order_id = metadata_obj->getValue<Int32>("default-sort-order-id");
+    auto orders = metadata_obj->getArray("sort-orders");
+    if (!orders)
+        return nullptr;
+
+    for (size_t i = 0; i < orders->size(); ++i)
+    {
+        auto order = orders->getObject(i);
+        if (!order || !order->has("order-id"))
+            continue;
+        if (order->getValue<Int32>("order-id") == default_sort_order_id)
+            return order->has("fields") ? order->getArray("fields") : nullptr;
+    }
+    return nullptr;
+}
+
+String composeList(
+    const Poco::JSON::Array::Ptr & fields,
+    const IdToName & id_to_name,
+    bool lookup_sort_modifiers)
+{
+    if (!fields || fields->size() == 0)
+        return {};
+
+    Strings parts;
+    parts.reserve(fields->size());
+
+    for (size_t i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(i);
+        if (!field)
+            continue;
+
+        const String transform = field->has("transform") ? field->getValue<String>("transform") : "identity";
+        String expr = formatTransform(transform, field, id_to_name);
+        if (expr.empty())
+            continue;
+
+        if (lookup_sort_modifiers)
+        {
+            if (field->has("direction"))
+            {
+                auto d = field->getValue<String>("direction");
+                expr += (Poco::icompare(d, "desc") == 0) ? "DESC" : "ASC";
+            }
+            if (field->has("null-order"))
+            {
+                auto n = field->getValue<String>("null-order");
+                expr += (Poco::icompare(n, "nulls-last") == 0) ? "NULLS LAST" : "NULLS FIRST";
+            }
+        }
+
+        parts.push_back(std::move(expr));
+    }
+
+    if (parts.empty())
+        return {};
+
+    String res;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (i) res += ", ";
+        res += parts[i];
+    }
+    return res;
+}
+
+std::pair<std::optional<String>, std::optional<String>> extractIcebergKeys(const Poco::JSON::Object::Ptr & metadata_obj)
+{
+    std::optional<String> partition_key;
+    std::optional<String> sort_key;
+
+    if (metadata_obj)
+    {
+        auto id_to_name = buildIdToNameMap(metadata_obj);
+
+        partition_key = composeList(findActivePartitionFields(metadata_obj), id_to_name, /*lookup_sort_modifiers=*/ false);
+        sort_key = composeList(findActiveSortFields(metadata_obj), id_to_name, /*lookup_sort_modifiers=*/ true);
+    }
+
+    return {partition_key, sort_key};
+}
+
+}
+
 void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object)
 {
     auto configuration_ptr = configuration.lock();
@@ -323,10 +515,11 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             }
 #endif
 
+            auto [partition_key, sorting_key] = extractIcebergKeys(metadata_object);
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(local_context, getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, table_location)),
-                relevant_snapshot_id, total_rows, total_bytes, total_position_deletes};
+                relevant_snapshot_id, total_rows, total_bytes, total_position_deletes, partition_key, sorting_key};
 
             if (!snapshot->has(f_schema_id))
                 throw Exception(
@@ -885,6 +1078,29 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
 
     return result;
 }
+
+std::optional<String> IcebergMetadata::partitionKey(ContextPtr) const
+{
+    SharedLockGuard lock(mutex);
+    if (relevant_snapshot->partition_key.has_value())
+    {
+        return relevant_snapshot->partition_key;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<String> IcebergMetadata::sortingKey(ContextPtr) const
+{
+    SharedLockGuard lock(mutex);
+    if (relevant_snapshot->sorting_key.has_value())
+    {
+        return relevant_snapshot->sorting_key;
+    }
+
+    return std::nullopt;
+}
+
 
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
