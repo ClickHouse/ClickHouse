@@ -21,6 +21,7 @@ RUN apt-get update \
         curl \
         dnsutils \
         gnupg \
+        file \
         iputils-ping \
         lsb-release \
         xxd \
