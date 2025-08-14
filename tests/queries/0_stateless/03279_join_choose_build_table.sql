@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 CREATE TABLE sales (
     id Int32,
@@ -39,7 +39,7 @@ SELECT * FROM sales, products
 WHERE sales.product_id = products.id AND date = '2024-05-07'
 SETTINGS log_comment = '03279_join_choose_build_table_idx' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- condtitions are pushed down, but no filter by index applied
 -- build table is as it's written in query

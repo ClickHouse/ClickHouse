@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraymovingavg
+description: 'Calculates the moving average of input values.'
 sidebar_position: 144
-title: "groupArrayMovingAvg"
-description: "Calculates the moving average of input values."
+slug: /sql-reference/aggregate-functions/reference/grouparraymovingavg
+title: 'groupArrayMovingAvg'
 ---
 
 # groupArrayMovingAvg
 
 Calculates the moving average of input values.
 
-``` sql
+```sql
 groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
@@ -31,7 +31,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 
 The sample table `b`:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     `int` UInt8,
@@ -41,7 +41,7 @@ CREATE TABLE t
 ENGINE = TinyLog
 ```
 
-``` text
+```text
 ┌─int─┬─float─┬──dec─┐
 │   1 │   1.1 │ 1.10 │
 │   2 │   2.2 │ 2.20 │
@@ -52,7 +52,7 @@ ENGINE = TinyLog
 
 The queries:
 
-``` sql
+```sql
 SELECT
     groupArrayMovingAvg(int) AS I,
     groupArrayMovingAvg(float) AS F,
@@ -60,13 +60,13 @@ SELECT
 FROM t
 ```
 
-``` text
+```text
 ┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
 │ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
 └───────────┴─────────────────────────────────────┴───────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     groupArrayMovingAvg(2)(int) AS I,
     groupArrayMovingAvg(2)(float) AS F,
@@ -74,7 +74,7 @@ SELECT
 FROM t
 ```
 
-``` text
+```text
 ┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
 │ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
 └───────────┴──────────────────────────────────┴───────────────────────┘

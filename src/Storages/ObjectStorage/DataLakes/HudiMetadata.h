@@ -13,13 +13,9 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
-
     static constexpr auto name = "Hudi";
 
-    HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
-
-    Strings getDataFiles() const override;
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
@@ -31,21 +27,40 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/,
+        bool /*if_not_exists*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
+    {
+    }
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
-        ContextPtr local_context,
-        bool)
+        StorageObjectStorageConfigurationWeakPtr configuration,
+        ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }
 
+protected:
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size,
+        ContextPtr context) const override;
+
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;
+    Strings getDataFiles(const ActionsDAG * filter_dag) const;
 };
 
 }

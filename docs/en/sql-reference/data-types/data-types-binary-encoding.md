@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/data-types/data-types-binary-encoding
+description: 'Documentation for the Data types binary encoding specification'
+sidebar_label: 'Data types binary encoding specification.'
 sidebar_position: 56
-sidebar_label: Data types binary encoding specification.
+slug: /sql-reference/data-types/data-types-binary-encoding
+title: 'Data types binary encoding specification'
 ---
-
 
 # Data types binary encoding specification
 

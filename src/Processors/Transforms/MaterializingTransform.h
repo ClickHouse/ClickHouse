@@ -8,7 +8,7 @@ namespace DB
 class MaterializingTransform : public ISimpleTransform
 {
 public:
-    explicit MaterializingTransform(const Block & header, bool remove_sparse_ = true);
+    explicit MaterializingTransform(SharedHeader header, bool remove_sparse_ = true);
 
     String getName() const override { return "MaterializingTransform"; }
 

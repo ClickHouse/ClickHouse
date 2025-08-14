@@ -1,8 +1,9 @@
 ---
-description: "System table useful for C++ experts and ClickHouse engineers containing information for introspection of the `clickhouse` binary."
+description: 'System table useful for C++ experts and ClickHouse engineers containing
+  information for introspection of the `clickhouse` binary.'
+keywords: ['system table', 'symbols']
 slug: /operations/system-tables/symbols
-title: "system.symbols"
-keywords: ["system table", "symbols"]
+title: 'system.symbols'
 ---
 
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
@@ -17,11 +18,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT address_begin, address_end - address_begin AS size, demangle(symbol) FROM system.symbols ORDER BY size DESC LIMIT 10
 ```
 
-``` text
+```text
 ┌─address_begin─┬─────size─┬─demangle(symbol)──────────────────────────────────────────────────────────────────┐
 │      25000976 │ 29466000 │ icudt70_dat                                                                       │
 │     400605288 │  2097272 │ arena_emap_global                                                                 │

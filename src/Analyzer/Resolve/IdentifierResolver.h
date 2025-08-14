@@ -48,6 +48,10 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    static bool tryBindIdentifierToJoinUsingColumn(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
     static bool tryBindIdentifierToTableExpression(
         const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
@@ -61,6 +65,10 @@ public:
     static bool tryBindIdentifierToArrayJoinExpressions(
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
+
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,

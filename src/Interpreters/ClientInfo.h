@@ -37,6 +37,8 @@ public:
         LOCAL = 6,
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
+        BACKGROUND = 9, // e.g. queries from refreshable materialized views
+        ARROW_FLIGHT = 10,
     };
 
     enum class HTTPMethod : uint8_t

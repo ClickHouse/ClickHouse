@@ -47,6 +47,7 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
+    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -87,6 +88,12 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
+    bool isReadOnly() const override { return true; }
+
+private:
+    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
 
 protected:
     /// Get the object storage prefix for storing metadata files.
@@ -115,12 +122,13 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
+    void setLastModified(const String &, const Poco::Timestamp &) override
     {
-        // Noop
+        /// Noop
     }
 
-    void setLastModified(const String &, const Poco::Timestamp &) override
+    /// Required for MergeTree backups.
+    void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
     }
@@ -138,9 +146,18 @@ public:
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
 
+    /// Hard links are simulated using server-side copying.
+    void createHardLink(const std::string & path_from, const std::string & path_to) override;
+
+    void moveFile(const std::string & path_from, const std::string & path_to) override;
+
+    void replaceFile(const std::string & path_from, const std::string & path_to) override;
+
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    void commit() override;
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    void commit(const TransactionCommitOptionsVariant & options) override;
 
     bool supportsChmod() const override { return false; }
 };

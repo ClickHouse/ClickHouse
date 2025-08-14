@@ -740,6 +740,11 @@ private:
     uniform_distribution<T> distribution;
 };
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+MonotonicGenerator() -> MonotonicGenerator<Int32>;
+#pragma clang diagnostic pop
+
 auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);

@@ -13,6 +13,8 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -338,12 +341,20 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     if (limit == 0 || nested_limit)
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_offset, nested_limit, settings, state);
+    /// Even if there is no data to write, we still have to call nested serialization,
+    /// because we might need to call the stream getter for all existing substreams even
+    /// if nothing is written there. It's needed in Compact parts when we write
+    /// marks per substreams inside the stream getter.
+    else
+        nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
+
     settings.path.pop_back();
 }
 
 
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -352,6 +363,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
     size_t prev_last_offset = column_array.getOffsets().back();
+    size_t prev_offset_size = column_array.getOffsets().size();
 
     settings.path.push_back(Substream::ArraySizes);
 
@@ -362,11 +374,41 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
-            deserializeArraySizesPositionIndependent(column_array, *stream, limit);
+            deserializeArraySizesPositionIndependent(column_array, *stream, rows_offset + limit);
         else
-            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
+            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, 0, rows_offset + limit, 0);
 
+        /// Verify offsets if the data comes over the network
+        if (settings.native_format)
+        {
+            const auto & offsets = column_array.getOffsets();
+            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            if (it != offsets.end())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
+                    std::distance(offsets.begin(), it),
+                    *it);
+            }
+        }
+
+        /// The length of the offset column added to the stream cache is limit + rows_offset.
         addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
+    }
+
+    size_t skipped_nested_rows = 0;
+
+    /// Convert offsets array by removing the first rows_offset number of elements.
+    if (rows_offset)
+    {
+        ColumnArray::Offsets & offset_values = column_array.getOffsets();
+
+        size_t skipped_idx = std::min(prev_offset_size + rows_offset, offset_values.size()) - 1;
+        skipped_nested_rows = offset_values[skipped_idx] - prev_last_offset;
+
+        for (auto i = prev_offset_size; i + rows_offset < offset_values.size(); ++i)
+            offset_values[i] = offset_values[i + rows_offset] - skipped_nested_rows;
+
+        column_array.getOffsetsPtr()->assumeMutable()->popBack(rows_offset);
     }
 
     settings.path.back() = Substream::ArrayElements;
@@ -377,7 +419,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
     size_t nested_limit = last_offset - prev_last_offset;
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
@@ -386,7 +428,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(
+        nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
 
     settings.path.pop_back();
 

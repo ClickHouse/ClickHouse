@@ -43,7 +43,7 @@ def test_two_new_versions(start_cluster):
 
     query_id = str(uuid.uuid4())
     current.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables);",
+        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) settings serialize_query_plan=0;",
         query_id=query_id,
     )
 
@@ -55,7 +55,7 @@ def test_two_new_versions(start_cluster):
             """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
-ORDER BY h;"""
+ORDER BY h settings serialize_query_plan=0;"""
         )
         == TSV([["backward", "true"], ["current", "true"]])
     )
@@ -108,7 +108,7 @@ WHERE initial_query_id = '{query_id}';"""
     # to the remote server.
     query_id = str(uuid.uuid4())
     current.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1;",
+        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1, serialize_query_plan=0;",
         query_id=query_id,
     )
 

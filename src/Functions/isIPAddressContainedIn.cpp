@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,23 +24,65 @@ namespace DB::ErrorCodes
 namespace
 {
 
+enum class IPKind
+{
+    IPv4,
+    IPv6,
+    String
+};
+
+template <IPKind kind>
+struct IPTrait
+{
+};
+
+template <>
+struct IPTrait<IPKind::IPv4>
+{
+    using ColumnType = DB::ColumnIPv4;
+    using ElementType = DB::IPv4;
+};
+
+template <>
+struct IPTrait<IPKind::IPv6>
+{
+    using ColumnType = DB::ColumnIPv6;
+    using ElementType = DB::UInt128;
+};
+
+template <>
+struct IPTrait<IPKind::String>
+{
+    using ColumnType = DB::ColumnString;
+    using ElementType = std::string_view;
+};
+
 class IPAddressVariant
 {
 public:
+    explicit IPAddressVariant(DB::IPv4 addr_): addr(addr_)
+    {
+    }
 
-    explicit IPAddressVariant(std::string_view address_str)
+    explicit IPAddressVariant(UInt128 addr_)
+    {
+        addr = IPv6AddrType();
+        auto * dst = std::get<IPv6AddrType>(addr).data();
+        const char * src = reinterpret_cast<const char *>(&addr_.items);
+        memcpy(dst, src, IPV6_BINARY_LENGTH);
+    }
+
+    explicit IPAddressVariant(std::string_view addr_)
     {
         UInt32 v4;
-        if (DB::parseIPv4whole(address_str.data(), address_str.data() + address_str.size(), reinterpret_cast<unsigned char *>(&v4)))
-        {
+        if (DB::parseIPv4whole(addr_.data(), addr_.data() + addr_.size(), reinterpret_cast<unsigned char *>(&v4)))
             addr = v4;
-        }
         else
         {
             addr = IPv6AddrType();
-            bool success = DB::parseIPv6whole(address_str.data(), address_str.data() + address_str.size(), std::get<IPv6AddrType>(addr).data());
+            bool success = DB::parseIPv6whole(addr_.data(), addr_.data() + addr_.size(), std::get<IPv6AddrType>(addr).data());
             if (!success)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address_str);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", addr_);
         }
     }
 
@@ -80,13 +123,13 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
         throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The text does not contain '/': {}", std::string(cidr_str));
 
     std::string_view addr_str = cidr_str.substr(0, pos_slash);
-    IPAddressVariant addr(addr_str);
+    auto addr = IPAddressVariant(addr_str);
 
     uint8_t prefix = 0;
     auto prefix_str = cidr_str.substr(pos_slash+1);
 
     const auto * prefix_str_end = prefix_str.data() + prefix_str.size();
-    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)
@@ -122,6 +165,37 @@ namespace DB
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+        template <IPKind kind>
+        static inline IPAddressVariant parseIP(const IPTrait<kind>::ColumnType * col_addr, size_t n)
+        {
+            if constexpr (kind == IPKind::IPv4 || kind == IPKind::IPv6)
+            {
+                return IPAddressVariant(col_addr->getElement(n));
+            }
+            return IPAddressVariant(col_addr->getDataAt(n).toView());
+        }
+
+    #pragma clang diagnostic ignored "-Wshadow"
+    #define EXEC_IMPL(col, func, ...) \
+        if (const auto * ipv4_column = dynamic_cast<const ColumnIPv4 *>(&(col))) \
+            return func<IPKind::IPv4>(ipv4_column, __VA_ARGS__); \
+        else if (const auto * ipv6_column = dynamic_cast<const ColumnIPv6 *>(&(col))) \
+            return func<IPKind::IPv6>(ipv6_column, __VA_ARGS__); \
+        else if (const auto * string_column = dynamic_cast<const ColumnString *>(&(col))) \
+            return func<IPKind::String>(string_column, __VA_ARGS__);
+
+        static std::optional<IPAddressVariant> parseConstantIP(const ColumnConst & col_addr)
+        {
+            EXEC_IMPL(col_addr.getDataColumn(), parseIP, 0)
+            else if (col_addr.onlyNull())
+                return std::nullopt;
+            else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr.getDataColumn()))
+            {
+                EXEC_IMPL(nullable_column->getNestedColumn(), parseIP, 0) ///NO-LINT
+            }
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* return_type */, size_t input_rows_count) const override
         {
             const IColumn * col_addr = arguments[0].column.get();
@@ -133,7 +207,6 @@ namespace DB
                     return executeImpl(*col_addr_const, *col_cidr_const, input_rows_count);
                 return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
             }
-
             if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
                 return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
             return executeImpl(*col_addr, *col_cidr, input_rows_count);
@@ -149,14 +222,19 @@ namespace DB
             const DataTypePtr & addr_type = arguments[0];
             const DataTypePtr & prefix_type = arguments[1];
 
-            if (!isString(addr_type) || !isString(prefix_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be String", getName());
+            WhichDataType type = WhichDataType(addr_type);
+            if (const auto * nullable_type = dynamic_cast<const DataTypeNullable *>(&*addr_type))
+                type = WhichDataType(nullable_type->getNestedType());
 
-            return std::make_shared<DataTypeUInt8>();
-        }
+            if (!(type.isString() || type.isIPv4() || type.isIPv6()) || !isString(prefix_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The first argument of function {} must be one of: String, IPv4, IPv6, Nullable(String), Nullable(IPv4), or "
+                    "Nullable(IPv6) and the second argument must be String. Type of the first argument: {}, type of the second argument: {}",
+                    getName(),
+                    addr_type->getName(),
+                    prefix_type->getName());
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-        {
             return std::make_shared<DataTypeUInt8>();
         }
 
@@ -180,16 +258,15 @@ namespace DB
             const ColumnConst & col_cidr_const,
             size_t input_rows_count)
         {
-            const auto & col_addr = col_addr_const.getDataColumn();
             const auto & col_cidr = col_cidr_const.getDataColumn();
 
-            const auto addr = IPAddressVariant(col_addr.getDataAt(0).toView());
+            const auto addr = parseConstantIP(col_addr_const);
             const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(0).toView());
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(1);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
-            vec_res[0] = isAddressInRange(addr, cidr) ? 1 : 0;
+            vec_res[0] = addr.has_value() && isAddressInRange(*addr, cidr) ? 1 : 0;
 
             return ColumnConst::create(std::move(col_res), input_rows_count);
         }
@@ -197,9 +274,9 @@ namespace DB
         /// Address is constant.
         static ColumnPtr executeImpl(const ColumnConst & col_addr_const, const IColumn & col_cidr, size_t input_rows_count)
         {
-            const auto & col_addr = col_addr_const.getDataColumn();
-
-            const auto addr = IPAddressVariant(col_addr.getDataAt(0).toView());
+            const auto addr = parseConstantIP(col_addr_const);
+            if (!addr.has_value())
+                return ColumnUInt8::create(input_rows_count, 0);
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
@@ -207,42 +284,102 @@ namespace DB
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
+                vec_res[i] = isAddressInRange(*addr, cidr) ? 1 : 0;
+            }
+            return col_res;
+        }
+
+        template <IPKind kind>
+        static ColumnPtr executeImpl(const IPTrait<kind>::ColumnType * col_addr, const IPAddressCIDR & cidr, size_t input_rows_count)
+        {
+            ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
+            ColumnUInt8::Container & vec_res = col_res->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const auto addr = parseIP<kind>(col_addr, i);
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
             }
             return col_res;
+        }
+
+        template <IPKind kind>
+        static ColumnPtr executeImpl(
+            const IPTrait<kind>::ColumnType * col_addr,
+            const ColumnNullable * nullable_column,
+            const IPAddressCIDR & cidr,
+            size_t input_rows_count)
+        {
+            ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
+            ColumnUInt8::Container & vec_res = col_res->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (nullable_column->isNullAt(i))
+                    vec_res[i] = 0;
+                else
+                {
+                    const auto addr = parseIP<kind>(col_addr, i);
+                    vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
+                }
+            }
+            return col_res;
+        }
+
+        template <typename T>
+        static ColumnPtr executeImpl(const IColumn & col_addr, const T & cidr, size_t input_rows_count)
+        {
+            EXEC_IMPL(col_addr, executeImpl, cidr, input_rows_count)
+            else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr))
+            {
+                EXEC_IMPL(nullable_column->getNestedColumn(), executeImpl, nullable_column, cidr, input_rows_count)
+            }
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The IP column type must be one of: String, IPv4, IPv6, Nullable(IPv4), Nullable(IPv6), or Nullable(String).");
         }
 
         /// CIDR is constant.
         static ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count)
         {
-            const auto & col_cidr = col_cidr_const.getDataColumn();
-
-            const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(0).toView());
-
-            ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
-            ColumnUInt8::Container & vec_res = col_res->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const auto addr = IPAddressVariant(col_addr.getDataAt(i).toView());
-                vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
-            }
-            return col_res;
+            const auto cidr = parseIPWithCIDR(col_cidr_const.getDataAt(0).toView());
+            return executeImpl<IPAddressCIDR>(col_addr, cidr, input_rows_count);
         }
 
-        /// Neither are constant.
-        static ColumnPtr executeImpl(const IColumn & col_addr, const IColumn & col_cidr, size_t input_rows_count)
+        template <IPKind kind>
+        static ColumnPtr executeImpl(const IPTrait<kind>::ColumnType * col_addr, const IColumn & col_cidr, size_t input_rows_count)
         {
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto addr = IPAddressVariant(col_addr.getDataAt(i).toView());
+                const auto addr = parseIP<kind>(col_addr, i);
                 const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
-
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
             }
+            return col_res;
+        }
 
+        template <IPKind kind>
+        static ColumnPtr executeImpl(
+            const IPTrait<kind>::ColumnType * col_addr,
+            const ColumnNullable * nullable_column,
+            const IColumn & col_cidr,
+            size_t input_rows_count)
+        {
+            ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
+            ColumnUInt8::Container & vec_res = col_res->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
+                if (nullable_column->isNullAt(i))
+                    vec_res[i] = 0;
+                else
+                {
+                    const auto addr = parseIP<kind>(col_addr, i);
+                    vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
+                }
+            }
             return col_res;
         }
     };

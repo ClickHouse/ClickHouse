@@ -74,7 +74,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
                 is_definer_current_user = true;
-            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
+            else if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, definer, expected))
                 return false;
 
             continue;
@@ -177,14 +177,22 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
 
     if (granularity)
+    {
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    }
     else
     {
-        auto index_type = index->getType();
-        if (index_type->name == "vector_similarity")
-            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+
+        if (auto index_type = index->getType())
+        {
+            const std::string_view index_type_name = index_type->name;
+
+            if (index_type_name == "vector_similarity")
+                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+            else if (index_type_name == "text")
+                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+        }
     }
 
     node = index;
@@ -699,6 +707,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserNameList names_p;
 
     ASTPtr table;
+    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
     std::shared_ptr<ASTStorage> storage;
     bool is_time_series_table = false;
@@ -743,6 +752,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
+
+    if (ParserKeyword{Keyword::TO_INNER_UUID}.ignore(pos, expected))
+    {
+        ParserStringLiteral literal_p;
+        if (!literal_p.parse(pos, to_inner_uuid, expected))
+            return false;
+    }
 
     std::optional<bool> attach_as_replicated = std::nullopt;
     if (attach)
@@ -953,6 +969,21 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (to_inner_uuid)
+    {
+        if (!storage || !storage->engine || (storage->engine->name != "SharedSet" && storage->engine->name != "SharedJoin"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not inner UUID", storage->engine->name);
+
+        if (targets)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
+
+        auto view_targets = std::make_shared<ASTViewTargets>();
+        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+
+        targets = view_targets;
+    }
+
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
     query->is_clone_as = is_clone_as;

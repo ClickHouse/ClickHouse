@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/maxintersectionsposition
+description: 'Aggregate function that calculates the positions of the occurrences
+  of the maxIntersections function.'
 sidebar_position: 164
-title: maxIntersectionsPosition
-description: "Aggregate function that calculates the positions of the occurrences of the maxIntersections function."
+slug: /sql-reference/aggregate-functions/reference/maxintersectionsposition
+title: 'maxIntersectionsPosition'
 ---
 
 # maxIntersectionsPosition
@@ -32,7 +33,7 @@ CREATE TABLE my_events (
     start UInt32,
     end UInt32
 )
-Engine = MergeTree
+ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO my_events VALUES

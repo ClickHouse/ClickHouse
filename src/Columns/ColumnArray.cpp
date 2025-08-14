@@ -1,7 +1,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -17,8 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
 #include <cstring> // memcpy
 
 
@@ -497,7 +494,7 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns)
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     Columns source_data_columns;
@@ -509,8 +506,8 @@ void ColumnArray::prepareForSquashing(const Columns & source_columns)
         source_data_columns.push_back(source_array_column.getDataPtr());
     }
 
-    getOffsets().reserve_exact(new_size);
-    data->prepareForSquashing(source_data_columns);
+    getOffsets().reserve_exact(new_size * factor);
+    data->prepareForSquashing(source_data_columns, factor);
 }
 
 void ColumnArray::shrinkToFit()

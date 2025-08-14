@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
 }
 
 namespace ErrorCodes
@@ -81,9 +82,10 @@ namespace
 
 Pipes blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
+    auto header = std::make_shared<const Block>(sample_block);
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, header));
 
     return pipes;
 }
@@ -242,8 +244,6 @@ StorageLiveView::StorageLiveView(
     auto select_query_clone = query.select->clone();
     select_query_description = buildSelectQueryDescription(select_query_clone, getContext());
 
-    DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
-
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
@@ -299,7 +299,7 @@ Pipe StorageLiveView::read(
     if (!(*blocks_ptr))
         refreshImpl(lock);
 
-    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
+    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, std::make_shared<const Block>(getHeader())));
 }
 
 Pipe StorageLiveView::watch(
@@ -387,7 +387,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
     if (!is_block_processed)
     {
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block))));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
@@ -431,22 +431,26 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
             builder = interpreter.buildQueryPipeline();
         }
 
-        builder.addSimpleTransform([&](const Block & cur_header)
+        builder.addSimpleTransform([&](const SharedHeader & cur_header)
         {
             return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
         });
 
-        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const Block & stream_header)
+        bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+        if (!disable_deduplication_for_children)
         {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
+            String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+            builder.addSimpleTransform([&](const SharedHeader & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+            });
+            builder.addSimpleTransform([&](const SharedHeader & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+            });
+        }
 
-        builder.addSimpleTransform([&](const Block & cur_header)
+        builder.addSimpleTransform([&](const SharedHeader & cur_header)
         {
             return std::make_shared<MaterializingTransform>(cur_header);
         });
@@ -471,7 +475,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
     auto pipeline = completeQuery(std::move(from));
     pipeline.addChain(Chain(std::move(output)));
-    pipeline.setSinks([&](const Block & cur_header, Pipe::StreamType)
+    pipeline.setSinks([&](const SharedHeader & cur_header, Pipe::StreamType)
     {
         return std::make_shared<EmptySink>(cur_header);
     });
@@ -496,11 +500,11 @@ Block StorageLiveView::getHeader() const
 {
     std::lock_guard lock(sample_block_lock);
 
-    if (!sample_block)
+    if (sample_block.empty())
     {
         if (live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
+            sample_block = *InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
                 live_view_context,
                 SelectQueryOptions(QueryProcessingStage::Complete));
         }
@@ -508,7 +512,7 @@ Block StorageLiveView::getHeader() const
         {
             auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
             auto select_query = select_with_union_query.list_of_selects->children.at(0)->clone();
-            sample_block = InterpreterSelectQuery(select_query,
+            sample_block = *InterpreterSelectQuery(select_query,
                 live_view_context,
                 SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         }
@@ -581,7 +585,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
         builder = interpreter.buildQueryPipeline();
     }
 
-    builder.addSimpleTransform([&](const Block & cur_header)
+    builder.addSimpleTransform([&](const SharedHeader & cur_header)
     {
         return std::make_shared<MaterializingTransform>(cur_header);
     });
@@ -657,7 +661,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         builder = interpreter.buildQueryPipeline();
     }
 
-    builder.addSimpleTransform([&](const Block & cur_header)
+    builder.addSimpleTransform([&](const SharedHeader & cur_header)
     {
         return std::make_shared<MaterializingTransform>(cur_header);
     });
@@ -666,7 +670,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
     builder.addSimpleTransform(
-        [&](const Block & cur_header)
+        [&](const SharedHeader & cur_header)
         {
             return std::make_shared<SquashingTransform>(
                 cur_header,

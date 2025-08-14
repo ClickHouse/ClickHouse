@@ -27,13 +27,13 @@ for read_method in "${read_methods[@]}"; do
     query_id=$(random_str 10)
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "select * from data format Null settings max_local_read_bandwidth='1M', local_filesystem_read_method='$read_method'"
     $CLICKHOUSE_CLIENT -m -q "
-        SYSTEM FLUSH LOGS;
+        SYSTEM FLUSH LOGS query_log;
         SELECT
             '$read_method',
             query_duration_ms >= 7e3,
             ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] > 8e6,
-            ProfileEvents['LocalReadThrottlerBytes'] > 8e6,
-            ProfileEvents['LocalReadThrottlerSleepMicroseconds'] > 7e6*0.5
+            ProfileEvents['QueryLocalReadThrottlerBytes'] > 8e6,
+            ProfileEvents['QueryLocalReadThrottlerSleepMicroseconds'] > 7e6*0.5
         FROM system.query_log
         WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
     "

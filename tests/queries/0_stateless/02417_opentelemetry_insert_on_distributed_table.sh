@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, distributed, long
+# Tags: no-fasttest, distributed, long, no-async-insert
+# no-async-insert: sync and async inserts are tested
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,7 +29,7 @@ function insert()
 function check_span()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
 
     SELECT operation_name,
            attribute['clickhouse.cluster'] AS cluster,
@@ -51,7 +52,7 @@ ${CLICKHOUSE_CLIENT} -q "
 function check_span_kind()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
 
     SELECT count()
     FROM system.opentelemetry_span_log
