@@ -919,13 +919,19 @@ bool IcebergStorageSink::initializeMetadata()
 
     auto cleanup = [&] ()
     {
-        for (const auto & [_, data_filename] : data_filenames)
-            object_storage->removeObjectIfExists(StoredObject(data_filename));
+        try
+        {
+            for (const auto & [_, data_filename] : data_filenames)
+                object_storage->removeObjectIfExists(StoredObject(data_filename));
 
-        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
-        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        }
+        catch (...)
+        {
+        }
     };
 
     try

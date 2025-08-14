@@ -209,13 +209,19 @@ bool writeMetadataFiles(
 
     auto cleanup = [&]()
     {
-        for (const auto & [_, data_file] : delete_filenames)
-            object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
+        try
+        {
+            for (const auto & [_, data_file] : delete_filenames)
+                object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
 
-        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
-        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        }
+        catch (...)
+        {
+        }
     };
 
     try
