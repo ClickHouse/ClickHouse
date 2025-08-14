@@ -331,6 +331,17 @@ def create_iceberg_table(
     )
 
 
+def drop_iceberg_table(
+    node,
+    table_name,
+    if_exists=False,
+):
+    if if_exists:
+        node.query(f"DROP TABLE IF EXISTS {table_name};")
+    else:
+        node.query(f"DROP TABLE {table_name};")
+
+
 def create_initial_data_file(
     cluster, node, query, table_name, compression_method="none"
 ):
