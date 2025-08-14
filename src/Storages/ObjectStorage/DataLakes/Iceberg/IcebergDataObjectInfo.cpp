@@ -76,10 +76,9 @@ std::pair<size_t, size_t> definePositionDeletesSpan(
 namespace DB
 {
 
-using namespace Iceberg;
-
 
 #if USE_AVRO
+
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_manifest_file_entry_,
     const std::vector<Iceberg::ManifestFileEntry> & position_deletes_,
