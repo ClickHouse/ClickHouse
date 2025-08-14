@@ -14,16 +14,18 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #include <memory>
 
+#include <Storages/IPartitionStrategy.h>
 namespace DB
 {
-
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct IPartitionStrategy;
 
 /**
  * A general class containing implementation for external table engines
@@ -42,11 +44,14 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        bool if_not_exists_,
+        bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,
@@ -76,6 +81,8 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -90,7 +97,7 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
+    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
@@ -141,8 +148,6 @@ protected:
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    /// Partition by expression from CREATE query.
-    const ASTPtr partition_by;
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
@@ -150,7 +155,13 @@ protected:
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;
 
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    ColumnsDescription file_columns;
+
     LoggerPtr log;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID storage_id;
 };
 
 }

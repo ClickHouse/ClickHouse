@@ -99,10 +99,6 @@
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
 
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
-
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1796,8 +1792,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        sendCancel(std::current_exception());
-        receiveEndOfQueryForInsert();
+        if (sendCancel(std::current_exception()))
+            receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -2122,7 +2118,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
     }
 }
 
-void ClientBase::sendCancel(std::exception_ptr exception_ptr)
+bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
@@ -2133,9 +2129,13 @@ void ClientBase::sendCancel(std::exception_ptr exception_ptr)
             error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
         }
         error_stream << '\n';
+        return false;
     }
     else
+    {
         connection->sendCancel();
+        return true;
+    }
 }
 
 void ClientBase::cancelQuery()
@@ -2853,13 +2853,13 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI SQL generator is not initialized. "
                          << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
                          << "or configure AI settings in your configuration file. "
-                         << "See documentation for detailed setup instructions." << std::endl;
+                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
             return true;
         }
 
         if (free_text.empty())
         {
-            error_stream << "Please provide a natural language query after ??" << std::endl;
+            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
             return true;
         }
 
@@ -2881,6 +2881,7 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI query generation failed: " << e.what() << std::endl;
         }
 
+        error_stream << std::endl;
         return true;
     }
 #endif
@@ -3193,7 +3194,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
         ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
-        ("highlight", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode")
+        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
