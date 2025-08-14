@@ -19,7 +19,6 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
-#include "Common/logger_useful.h"
 #include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
