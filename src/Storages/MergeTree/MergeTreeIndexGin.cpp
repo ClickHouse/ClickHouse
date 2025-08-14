@@ -109,7 +109,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
     for (const auto & token : token_extractor->getTokensView(data, length))
-        gin_filter.add(String(token.data(), token.size()), rowID, store);
+        gin_filter.add(String(token), rowID, store);
 }
 
 void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
