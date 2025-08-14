@@ -68,4 +68,4 @@ select count()>0 from system.zookeeper_log where path like '/test/01158/' || cur
 
 system flush logs aggregated_zookeeper_log;
 select 'aggregated_zookeeper_log';
-select count() > 0, errors['ZOK'] > 0, average_latency > 0 from system.aggregated_zookeeper_log where parent_path = '/test/01158/' || currentDatabase() || '/rmt' and operation = 'Create';
+select sum(errors['ZOK']) > 0, sum(average_latency) > 0 from system.aggregated_zookeeper_log where parent_path = '/test/01158/' || currentDatabase() || '/rmt' and operation = 'Create';
