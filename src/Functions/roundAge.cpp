@@ -38,7 +38,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveM
 REGISTER_FUNCTION(RoundAge)
 {
     FunctionDocumentation::Description description = R"(
-Takes a number representing a human age, compares it to standard age ranges, and returns either the highest or lowest value within the range it falls in.
+Takes a number representing a human age, compares it to standard age ranges, and returns either the highest or lowest value of the range the number falls within.
 
 - Returns `0`, for $age \lt 1$.
 - Returns `17`, for $1 \leq age \leq 17$.

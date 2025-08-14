@@ -9,7 +9,7 @@ REGISTER_FUNCTION(Round)
 {
     {
         FunctionDocumentation::Description description = R"(
-Returns the largest rounded number less than or equal `x`, where the rounded number is a multiple of `1 / 10 * N`, or the nearest number of the appropriate data type if `1 / 10 * N` isn't exact.
+Returns the largest rounded number less than or equal to `x`, where the rounded number is a multiple of `1 / 10 * N`, or the nearest number of the appropriate data type if `1 / 10 * N` isn't exact.
 
 Integer arguments may be rounded with a negative `N` argument.
 With non-negative `N` the function returns `x`.
@@ -19,7 +19,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
         FunctionDocumentation::Syntax syntax = "floor(x[, N])";
         FunctionDocumentation::Arguments arguments = {
             {"x", "The value to round.", {"Float*", "Decimal*", "(U)Int*"}},
-            {"[, N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer. Can be negative.", {"(U)Int*"}}
+            {"[N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer. Can be negative.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a rounded number of the same type as `x`.", {"Float*", "Decimal*", "(U)Int*"}};
         FunctionDocumentation::Examples examples = {
@@ -50,12 +50,12 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
 
     {
         FunctionDocumentation::Description description = R"(
-Like [`floor`](#floor) but returns the smallest rounded number greater than or equal `x`.
+Like [`floor`](#floor) but returns the smallest rounded number greater than or equal to `x`.
 )";
         FunctionDocumentation::Syntax syntax = "ceiling(x[, N])";
         FunctionDocumentation::Arguments arguments = {
             {"x", "The value to round.", {"Float*", "Decimal*", "(U)Int*"}},
-            {"[, N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer. Can be negative.", {"(U)Int*"}}
+            {"[N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer. Can be negative.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a rounded number of the same type as `x`.", {"Float*", "Decimal*", "(U)Int*"}};
         FunctionDocumentation::Examples examples = {
@@ -91,7 +91,7 @@ Like [`floor`](#floor) but returns the rounded number with the largest absolute 
         FunctionDocumentation::Syntax syntax = "truncate(x[, N])";
         FunctionDocumentation::Arguments arguments = {
             {"x", "The value to round.", {"Float*", "Decimal*", "(U)Int*"}},
-            {"[, N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer.", {"(U)Int*"}}
+            {"[N]", "Optional. The number of decimal places to round to. Defaults to zero, which means rounding to an integer.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a rounded number of the same type as `x`.", {"Float*", "Decimal*", "(U)Int*"}};
         FunctionDocumentation::Examples examples = {
@@ -117,7 +117,7 @@ If the input value has equal distance to two neighboring numbers, the function u
         FunctionDocumentation::Syntax syntax = "round(x[, N])";
         FunctionDocumentation::Arguments arguments = {
             {"x", "A number to round.", {"Float*", "Decimal*", "(U)Int*"}},
-            {"[, N]", "Optional. The number of decimal places to round to. Defaults to `0`.", {"(U)Int*"}}
+            {"[N]", "Optional. The number of decimal places to round to. Defaults to `0`.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a rounded number of the same type as `x`.", {"Float*", "Decimal*", "(U)Int*"}};
         FunctionDocumentation::Examples examples = {
