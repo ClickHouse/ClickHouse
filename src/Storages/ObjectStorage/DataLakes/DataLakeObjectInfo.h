@@ -2,7 +2,8 @@
 #include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
-namespace DB {
+namespace DB
+{
 
 // Object info for DeltaLake and Hudi storages, but not for Iceberg (Iceberg has its own object info)
 struct ObjectInfoDataLake : public DB::ObjectInfoOneFile
@@ -24,7 +25,4 @@ struct ObjectInfoDataLake : public DB::ObjectInfoOneFile
 private:
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
 };
-
-
-
 }
