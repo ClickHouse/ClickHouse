@@ -91,10 +91,6 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
 
 def test_s3_question_mark_wildcards(started_cluster):
-    """
-    Test to verify that S3 URI with question mark wildcards in path works correctly.
-    This test verifies the fix for the issue where question marks in s3:// paths were not handled correctly.
-    """
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -125,22 +121,22 @@ def test_s3_question_mark_wildcards(started_cluster):
         """
     )
     
-    # with question mark wildcard in s3:// URL scheme
+    # Test with question mark wildcard in s3:// URL scheme
     result_s3_scheme = node.query(
         f"""
         SELECT count(*), groupArray(distinct id) as ids FROM s3
         (
-            's3://root/data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}'
+            's3://data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}'
         );
         """
     )
     
-    # Compare with the same query using http:// URL scheme which should also work correctly
+    # Compare with the same query using http:// URL scheme which was working correctly
     result_http_scheme = node.query(
         f"""
         SELECT count(*), groupArray(distinct id) as ids FROM s3
         (
-            'http://minio1:9001/root/data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}'
+            'http://minio1:9001/data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}'
         );
         """
     )
