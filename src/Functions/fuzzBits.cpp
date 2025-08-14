@@ -183,7 +183,7 @@ REGISTER_FUNCTION(FuzzBits)
     FunctionDocumentation::Description description = R"(
 Flips the bits of the input string `s`, with probability `p` for each bit.
     )";
-    FunctionDocumentation::Syntax syntax = "fuzzBits(s, prob)";
+    FunctionDocumentation::Syntax syntax = "fuzzBits(s, p)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "String or FixedString to perform bit fuzzing on", {"String", "FixedString"}},
         {"p", "Probability of flipping each bit as a number between `0.0` and `1.0`", {"Float*"}}

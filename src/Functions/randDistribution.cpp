@@ -206,8 +206,7 @@ struct PoissonDistribution
 /** Function which will generate values according to the specified distribution
   * Accepts only constant arguments
   * Similar to the functions rand and rand64 an additional 'tag' argument could be added to the
-  * end of arguments list (this argument will be ignored) which will guarantee that functions are not sticked together
-  * during optimizations.
+  * end of arguments list (this argument will be ignored) which suppresses common subexpression elimination.
   * Example: SELECT randNormal(0, 1, 1), randNormal(0, 1, 2) FROM numbers(10)
   * This query will return two different columns
   */
@@ -323,10 +322,11 @@ REGISTER_FUNCTION(Distribution)
     FunctionDocumentation::Description description = R"(
 Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$.
     )";
-    FunctionDocumentation::Syntax syntax = "randUniform(min, max)";
+    FunctionDocumentation::Syntax syntax = "randUniform(min, max[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"min", "Left boundary of the range (inclusive).", {"Float64"}},
-        {"max", "Right boundary of the range (inclusive).", {"Float64"}}
+        {"max", "Right boundary of the range (inclusive).", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random number drawn uniformly from the interval formed by `min` and `max`.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -349,10 +349,11 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     FunctionDocumentation::Description description_normal = R"(
 Returns a random Float64 number drawn from a [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_normal = "randNormal(mean, stddev)";
+    FunctionDocumentation::Syntax syntax_normal = "randNormal(mean, stddev[, x])";
     FunctionDocumentation::Arguments arguments_normal = {
         {"mean", "The mean value of distribution", {"Float64"}},
-        {"stddev", "The standard deviation of the distribution", {"Float64"}}
+        {"stddev", "The standard deviation of the distribution", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_normal = {"Returns a random Float64 number drawn from the specified normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_normal = {
@@ -376,10 +377,11 @@ Returns a random Float64 number drawn from a [normal distribution](https://en.wi
     FunctionDocumentation::Description description_lognormal = R"(
 Returns a random Float64 number drawn from a [log-normal distribution](https://en.wikipedia.org/wiki/Log-normal_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_lognormal = "randLogNormal(mean, stddev)";
+    FunctionDocumentation::Syntax syntax_lognormal = "randLogNormal(mean, stddev[, x])";
     FunctionDocumentation::Arguments arguments_lognormal = {
         {"mean", "The mean value of distribution.", {"Float64"}},
-        {"stddev", "The standard deviation of the distribution.", {"Float64"}}
+        {"stddev", "The standard deviation of the distribution.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lognormal = {"Returns a random Float64 number drawn from the specified log-normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_lognormal = {
@@ -403,9 +405,10 @@ Returns a random Float64 number drawn from a [log-normal distribution](https://e
     FunctionDocumentation::Description description_exponential = R"(
 Returns a random Float64 number drawn from an [exponential distribution](https://en.wikipedia.org/wiki/Exponential_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_exponential = "randExponential(lambda)";
+    FunctionDocumentation::Syntax syntax_exponential = "randExponential(lambda[, x])";
     FunctionDocumentation::Arguments arguments_exponential = {
-        {"lambda", "Rate parameter or lambda value of the distribution", {"Float64"}}
+        {"lambda", "Rate parameter or lambda value of the distribution", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_exponential = {"Returns a random Float64 number drawn from the specified exponential distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_exponential = {
@@ -429,9 +432,10 @@ Returns a random Float64 number drawn from an [exponential distribution](https:/
     FunctionDocumentation::Description description_chisquared = R"(
 Returns a random Float64 number drawn from a [chi-square distribution](https://en.wikipedia.org/wiki/Chi-squared_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_chisquared = "randChiSquared(degree_of_freedom)";
+    FunctionDocumentation::Syntax syntax_chisquared = "randChiSquared(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_chisquared = {
-        {"degree_of_freedom", "Degrees of freedom.", {"Float64"}}
+        {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_chisquared = {"Returns a random Float64 number drawn from the specified chi-square distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_chisquared = {
@@ -454,9 +458,10 @@ Returns a random Float64 number drawn from a [chi-square distribution](https://e
     FunctionDocumentation::Description description_studentt = R"(
 Returns a random Float64 number drawn from a [Student's t-distribution](https://en.wikipedia.org/wiki/Student%27s_t-distribution).
     )";
-    FunctionDocumentation::Syntax syntax_studentt = "randStudentT(degree_of_freedom)";
+    FunctionDocumentation::Syntax syntax_studentt = "randStudentT(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_studentt = {
-        {"degree_of_freedom", "Degrees of freedom.", {"Float64"}}
+        {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_studentt = {"Returns a random Float64 number drawn from the specified Student's t-distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_studentt = {
@@ -480,10 +485,11 @@ Returns a random Float64 number drawn from a [Student's t-distribution](https://
     FunctionDocumentation::Description description_fisherf = R"(
 Returns a random Float64 number drawn from an [F-distribution](https://en.wikipedia.org/wiki/F-distribution).
     )";
-    FunctionDocumentation::Syntax syntax_fisherf = "randFisherF(d1, d2)";
+    FunctionDocumentation::Syntax syntax_fisherf = "randFisherF(d1, d2[, x])";
     FunctionDocumentation::Arguments arguments_fisherf = {
         {"d1", "d1 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
-        {"d2", "d2 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}}
+        {"d2", "d2 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_fisherf = {"Returns a random Float64 number drawn from the specified F-distribution", {"Float64"}};
     FunctionDocumentation::Examples examples_fisherf = {
@@ -507,9 +513,10 @@ Returns a random Float64 number drawn from an [F-distribution](https://en.wikipe
     FunctionDocumentation::Description description_bernoulli = R"(
 Returns a random Float64 number drawn from a [Bernoulli distribution](https://en.wikipedia.org/wiki/Bernoulli_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_bernoulli = "randBernoulli(probability)";
+    FunctionDocumentation::Syntax syntax_bernoulli = "randBernoulli(probability[, x])";
     FunctionDocumentation::Arguments arguments_bernoulli = {
-        {"probability", "The probability of success as a value between `0` and `1`.", {"Float64"}}
+        {"probability", "The probability of success as a value between `0` and `1`.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_bernoulli = {"Returns a random Float64 number drawn from the specified Bernoulli distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_bernoulli = {
@@ -533,10 +540,11 @@ Returns a random Float64 number drawn from a [Bernoulli distribution](https://en
     FunctionDocumentation::Description description_binomial = R"(
 Returns a random Float64 number drawn from a [binomial distribution](https://en.wikipedia.org/wiki/Binomial_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_binomial = "randBinomial(experiments, probability)";
+    FunctionDocumentation::Syntax syntax_binomial = "randBinomial(experiments, probability[, x])";
     FunctionDocumentation::Arguments arguments_binomial = {
         {"experiments", "The number of experiments", {"UInt64"}},
-        {"probability", "The probability of success in each experiment as a value between `0` and `1`", {"Float64"}}
+        {"probability", "The probability of success in each experiment as a value between `0` and `1`", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_binomial = {"Returns a random Float64 number drawn from the specified binomial distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_binomial = {
@@ -560,10 +568,11 @@ Returns a random Float64 number drawn from a [binomial distribution](https://en.
     FunctionDocumentation::Description description_negativebinomial = R"(
 Returns a random Float64 number drawn from a [negative binomial distribution](https://en.wikipedia.org/wiki/Negative_binomial_distribution).
     )";
-    FunctionDocumentation::Syntax syntax_negativebinomial = "randNegativeBinomial(experiments, probability)";
+    FunctionDocumentation::Syntax syntax_negativebinomial = "randNegativeBinomial(experiments, probability[, x])";
     FunctionDocumentation::Arguments arguments_negativebinomial = {
         {"experiments", "The number of experiments.", {"UInt64"}},
-        {"probability", "`The probability of failure in each experiment as a value between `0` and `1`.", {"Float64"}}
+        {"probability", "`The probability of failure in each experiment as a value between `0` and `1`.", {"Float64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_negativebinomial = {"Returns a random Float64 number drawn from the specified negative binomial distribution", {"UInt64"}};
     FunctionDocumentation::Examples examples_negativebinomial = {
@@ -587,9 +596,10 @@ Returns a random Float64 number drawn from a [negative binomial distribution](ht
     FunctionDocumentation::Description description_poisson = R"(
 Returns a random Float64 number drawn from a [Poisson distribution](https://en.wikipedia.org/wiki/Poisson_distribution) distribution.
     )";
-    FunctionDocumentation::Syntax syntax_poisson = "randPoisson(n)";
+    FunctionDocumentation::Syntax syntax_poisson = "randPoisson(n[, x])";
     FunctionDocumentation::Arguments arguments_poisson = {
-        {"n", "The mean number of occurrences.", {"UInt64"}}
+        {"n", "The mean number of occurrences.", {"UInt64"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_poisson = {"Returns a random Float64 number drawn from the specified Poisson distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_poisson = {
