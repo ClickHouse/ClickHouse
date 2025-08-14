@@ -45,6 +45,7 @@ tomlkit==0.13.3
 tqdm==4.67.1
 typing_extensions==4.14.0
 typing-inspection==0.4.1
+unidiff==0.7.5
 urllib3==2.4.0
 wrapt==1.17.2
 yamllint==1.26.3
