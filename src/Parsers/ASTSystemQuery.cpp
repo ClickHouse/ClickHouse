@@ -476,8 +476,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_keyword(" TO ");
                 ostr << quoteString(jemalloc_profile_path);
             }
-            break;
 #endif
+            break;
         }
         case Type::KILL:
         case Type::SHUTDOWN:
