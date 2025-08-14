@@ -141,7 +141,10 @@ def main():
         if not clickhouse_server_link.is_file():
             Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
         Shell.check(f"chmod +x {clickhouse_bin_path}")
-    # else:
+    else:
+        os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
+        os.environ["CH_USER"] = 'ci_builder'
+        os.environ["CH_PASSWORD"] = Settings.SECRET_CHCACHE_PASSWORD
     #     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
     #     os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
     #     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
