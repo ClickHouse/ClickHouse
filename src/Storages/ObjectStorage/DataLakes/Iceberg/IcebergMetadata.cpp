@@ -1,5 +1,3 @@
-#include "Disks/ObjectStorages/IObjectStorage.h"
-#include "Interpreters/StorageID.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -43,6 +41,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/StorageID.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -69,6 +69,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int UNSUPPORTED_METHOD;
 extern const int TABLE_ALREADY_EXISTS;
