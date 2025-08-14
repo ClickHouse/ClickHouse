@@ -9,10 +9,8 @@ vector_search_stress_job = Job.Config(
     command="python3 ./ci/jobs/vector_search_stress_job.py",
 )
 
-# TODO: add alert on workflow failure
-
 workflow = Workflow.Config(
-    name="Weekly",
+    name="VectorSearchStress",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[vector_search_stress_job],
