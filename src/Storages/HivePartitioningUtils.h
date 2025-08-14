@@ -38,5 +38,4 @@ std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForFileURLL
 }
 
 
-
 }
