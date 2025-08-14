@@ -421,7 +421,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     auto drop_query_context = Context::createCopy(context);
     drop_query_context->makeQueryContext();
     drop_query_context->setCurrentQueryId("");
-    
+
     String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
     context->setSetting("force_remove_data_recursively_on_drop", false);
     res = executeQuery(drop_query, std::move(drop_query_context), QueryFlags{ .internal = true }).second;
