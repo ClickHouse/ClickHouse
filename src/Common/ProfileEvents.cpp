@@ -542,12 +542,16 @@ The server successfully detected this situation and will download merged part fr
     M(S3ReadRequestsErrors, "Number of non-throttling errors in GET and HEAD requests to S3 storage.", ValueType::Number) \
     M(S3ReadRequestsThrottling, "Number of 429 and 503 errors in GET and HEAD requests to S3 storage.", ValueType::Number) \
     M(S3ReadRequestsRedirects, "Number of redirects in GET and HEAD requests to S3 storage.", ValueType::Number) \
+    M(S3ReadRequestAttempts, "Number of attempts for GET and HEAD requests, including the initial try and any retries, but excluding retries performed internally by the S3 retry strategy", ValueType::Number) \
+    M(S3ReadRequestRetryableErrors, "Number of retryable errors for GET and HEAD requests, excluding retries performed internally by the S3 retry strategy", ValueType::Number) \
     \
     M(S3WriteMicroseconds, "Time of POST, DELETE, PUT and PATCH requests to S3 storage.", ValueType::Microseconds) \
     M(S3WriteRequestsCount, "Number of POST, DELETE, PUT and PATCH requests to S3 storage.", ValueType::Number) \
     M(S3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to S3 storage.", ValueType::Number) \
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.", ValueType::Number) \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.", ValueType::Number) \
+    M(S3WriteRequestAttempts, "Number of attempts for POST, DELETE, PUT and PATCH requests, including the initial try and any retries, but excluding retries performed internally by the retry strategy", ValueType::Number) \
+    M(S3WriteRequestRetryableErrors, "Number of retryable errors for POST, DELETE, PUT and PATCH requests, excluding retries performed internally by the retry strategy", ValueType::Number) \
     \
     M(DiskS3ReadMicroseconds, "Time of GET and HEAD requests to DiskS3 storage.", ValueType::Microseconds) \
     M(DiskS3ReadRequestsCount, "Number of GET and HEAD requests to DiskS3 storage.", ValueType::Number) \

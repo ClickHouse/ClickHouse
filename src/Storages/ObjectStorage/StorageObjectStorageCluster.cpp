@@ -18,7 +18,6 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -219,7 +218,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
-    const size_t number_of_replicas) const
+    ClusterPtr cluster) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -236,9 +235,22 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
-        number_of_replicas,
+        std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
     auto callback = std::make_shared<TaskIterator>(
@@ -250,7 +262,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
 }
