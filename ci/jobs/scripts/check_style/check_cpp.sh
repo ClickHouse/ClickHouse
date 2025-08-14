@@ -373,7 +373,6 @@ CONTEXT_H_EXCLUDES=(
     --exclude "$ROOT_PATH/src/Client/ClientBase.h"
     --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
     --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
-    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.

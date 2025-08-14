@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
@@ -17,7 +15,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Interpreters/Context.h>
 #include <memory>
 #include <string>
 
@@ -35,8 +32,6 @@ namespace ErrorCodes
 {
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLakeStorageSetting
@@ -55,11 +50,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
-}
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_insert_into_iceberg;
 }
 
 template <typename T>
@@ -238,50 +228,21 @@ public:
     }
 
     SinkToStoragePtr write(
-        [[maybe_unused]] SharedHeader sample_block,
-        [[maybe_unused]] const StorageID & table_id,
-        [[maybe_unused]] ObjectStoragePtr object_storage,
-        [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
-        [[maybe_unused]] ContextPtr context,
-        [[maybe_unused]] std::shared_ptr<DataLake::ICatalog> catalog) override
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-#if USE_AVRO
-        if (dynamic_cast<const IcebergMetadata *>(current_metadata.get()))
-        {
-            if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
-            {
-                return createIcebergStorageSink(
-                    sample_block,
-                    table_id,
-                    object_storage,
-                    shared_from_this(),
-                    format_settings,
-                    context,
-                    catalog);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Insert into iceberg is experimental. "
-                    "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
-            }
-        }
-#endif
-
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-        if (auto * metadata = dynamic_cast<DeltaLakeMetadataDeltaKernel *>(current_metadata.get()))
-        {
-            return metadata->createDeltaLakeStorageSink(
-                shared_from_this(),
-                object_storage,
-                context,
-                sample_block,
-                format_settings.has_value() ? *format_settings : FormatSettings{});
-        }
-#endif
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write into data lake is not implemented");
+        return current_metadata->write(
+            sample_block,
+            table_id,
+            object_storage,
+            shared_from_this(),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
+            context,
+            catalog);
     }
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override

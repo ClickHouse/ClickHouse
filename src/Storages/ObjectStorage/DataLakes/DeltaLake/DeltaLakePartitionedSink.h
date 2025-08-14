@@ -38,7 +38,7 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         SharedHeader sample_block_,
-        const FormatSettings & format_settings_);
+        const std::optional<FormatSettings> & format_settings_);
 
     ~DeltaLakePartitionedSink() override = default;
 
@@ -61,7 +61,7 @@ private:
     const LoggerPtr log;
     const Names partition_columns;
     const ObjectStoragePtr object_storage;
-    const FormatSettings format_settings;
+    const std::optional<FormatSettings> format_settings;
     const StorageObjectStorageConfigurationPtr configuration;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;

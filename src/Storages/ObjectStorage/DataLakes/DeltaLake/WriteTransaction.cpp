@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>

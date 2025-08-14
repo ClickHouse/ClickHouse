@@ -110,6 +110,15 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -203,14 +212,6 @@ private:
     IDataLakeMetadata::FileProgressCallback callback;
 };
 
-SinkToStoragePtr createIcebergStorageSink(
-    SharedHeader sample_block,
-    const StorageID & table_id,
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog);
 }
 
 #endif

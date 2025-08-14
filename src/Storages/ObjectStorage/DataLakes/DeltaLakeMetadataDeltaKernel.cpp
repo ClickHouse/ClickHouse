@@ -147,12 +147,14 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     return info;
 }
 
-SinkToStoragePtr DeltaLakeMetadataDeltaKernel::createDeltaLakeStorageSink(
-    const StorageObjectStorageConfigurationPtr & configuration,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
+SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const FormatSettings & format_settings)
+    const StorageID & /* table_id */,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
     Names partition_columns;
     {

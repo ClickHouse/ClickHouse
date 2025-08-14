@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
+
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
@@ -23,7 +24,7 @@ DeltaLakeSink::DeltaLakeSink(
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
-    const FormatSettings & format_settings_)
+    const std::optional<FormatSettings> & format_settings_)
     : StorageObjectStorageSink(
         generatePath(metadata.getKernelHelper()->getDataPath()),
         object_storage_,

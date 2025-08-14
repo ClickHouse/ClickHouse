@@ -29,7 +29,7 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         SharedHeader sample_block_,
-        const FormatSettings & format_settings_);
+        const std::optional<FormatSettings> & format_settings_);
 
     ~DeltaLakeSink() override = default;
 
