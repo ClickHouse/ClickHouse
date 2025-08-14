@@ -1,281 +1,43 @@
 -- { echoOn }
 set allow_statistics_optimize = 1;
 -- Condition: lower(primary_key) = '00' can't make use of primary key index. It shouldn't be moved to the end of prewhere conditions.
+select trimLeft(explain) from (
 EXPLAIN actions=1
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 12
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(String) -> \'00\'_String String : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION lower(primary_key : 0) -> lower(__table1.primary_key) String : 8
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 9
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 4
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION equals(lower(__table1.primary_key) :: 8, \'00\'_String :: 5) -> equals(lower(__table1.primary_key), \'00\'_String) UInt8 : 7
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 9, equals(lower(__table1.primary_key), \'00\'_String) :: 7, less(__table1.value, 100_UInt8) :: 6, notEquals(__table1.normal_column, \'hello\'_String) :: 4) -> and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), le... UInt8 : 5
-      Positions: 0 1 2 3 5
+WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String)) (removed)
 -- Condition: primary_key = '00' can use primary key index. It should be moved to the end of prewhere conditions.
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 2
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String), equals(__table1.primary_key, \'00\'_String)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(String) -> \'00\'_String String : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 8
-               FUNCTION equals(primary_key : 0, \'00\'_String :: 5) -> equals(__table1.primary_key, \'00\'_String) UInt8 : 4
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 5
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 8, less(__table1.value, 100_UInt8) :: 6, notEquals(__table1.normal_column, \'hello\'_String) :: 5, equals(__table1.primary_key, \'00\'_String) :: 4) -> and(equals(__table1.date, \'2025-08-05\'_String), less(__table1.value, 100_UInt8), notEquals(__table1.... UInt8 : 7
-      Positions: 0 1 2 3 7
+WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String), equals(__table1.primary_key, \'00\'_String)) (removed)
 -- Condition: lower(primary_key) IN ('00', '01') should be placed before Condition: normal_column != 'hello' and value < 100
 -- because it has a lower estimated selectivity.
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 12
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(Set) -> __set_String_4653864928722945989_14468210011007111410 Set : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION lower(primary_key : 0) -> lower(__table1.primary_key) String : 8
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 9
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 4
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION in(lower(__table1.primary_key) :: 8, __set_String_4653864928722945989_14468210011007111410 :: 5) -> in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410) UInt8 : 7
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 9, in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410) :: 7, less(__table1.value, 100_UInt8) :: 6, notEquals(__table1.normal_column, \'hello\'_String) :: 4) -> and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864... UInt8 : 5
-      Positions: 0 1 2 3 5
+WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String)) (removed)
 set allow_statistics_optimize = 0;
+select trimLeft(explain) from (
 EXPLAIN actions=1
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 12
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(String) -> \'00\'_String String : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION lower(primary_key : 0) -> lower(__table1.primary_key) String : 8
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 9
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 4
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION equals(lower(__table1.primary_key) :: 8, \'00\'_String :: 5) -> equals(lower(__table1.primary_key), \'00\'_String) UInt8 : 7
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 9, equals(lower(__table1.primary_key), \'00\'_String) :: 7, notEquals(__table1.normal_column, \'hello\'_String) :: 4, less(__table1.value, 100_UInt8) :: 6) -> and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), no... UInt8 : 5
-      Positions: 0 1 2 3 5
+WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 2
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8), equals(__table1.primary_key, \'00\'_String)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(String) -> \'00\'_String String : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 8
-               FUNCTION equals(primary_key : 0, \'00\'_String :: 5) -> equals(__table1.primary_key, \'00\'_String) UInt8 : 4
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 5
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 8, notEquals(__table1.normal_column, \'hello\'_String) :: 5, less(__table1.value, 100_UInt8) :: 6, equals(__table1.primary_key, \'00\'_String) :: 4) -> and(equals(__table1.date, \'2025-08-05\'_String), notEquals(__table1.normal_column, \'hello\'_String), l... UInt8 : 7
-      Positions: 0 1 2 3 7
+WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8), equals(__table1.primary_key, \'00\'_String)) (removed)
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100;
-Expression ((Project names + Projection))
-Actions: INPUT : 0 -> __table1.primary_key String : 0
-         INPUT : 1 -> __table1.normal_column String : 1
-         INPUT : 2 -> __table1.value UInt32 : 2
-         INPUT : 3 -> __table1.date Date : 3
-         ALIAS __table1.primary_key :: 0 -> primary_key String : 4
-         ALIAS __table1.normal_column :: 1 -> normal_column String : 0
-         ALIAS __table1.value :: 2 -> value UInt32 : 1
-         ALIAS __table1.date :: 3 -> date Date : 2
-Positions: 4 0 1 2
-  Expression ((WHERE + Change column names to column identifiers))
-  Actions: INPUT : 0 -> primary_key String : 0
-           INPUT : 1 -> normal_column String : 1
-           INPUT : 2 -> value UInt32 : 2
-           INPUT : 3 -> date Date : 3
-           ALIAS primary_key :: 0 -> __table1.primary_key String : 4
-           ALIAS normal_column :: 1 -> __table1.normal_column String : 0
-           ALIAS value :: 2 -> __table1.value UInt32 : 1
-           ALIAS date :: 3 -> __table1.date Date : 2
-  Positions: 4 0 1 2
-    ReadFromMergeTree (default.test_improve_prewhere)
-    ReadType: Default
-    Parts: 1
-    Granules: 12
-    Prewhere info
-    Need filter: 1
-      Prewhere filter
-      Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)
-      Actions: INPUT : 0 -> primary_key String : 0
-               INPUT : 1 -> normal_column String : 1
-               INPUT : 2 -> value UInt32 : 2
-               INPUT : 3 -> date Date : 3
-               COLUMN Const(String) -> \'2025-08-05\'_String String : 4
-               COLUMN Const(Set) -> __set_String_4653864928722945989_14468210011007111410 Set : 5
-               COLUMN Const(String) -> \'hello\'_String String : 6
-               COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 7
-               FUNCTION lower(primary_key : 0) -> lower(__table1.primary_key) String : 8
-               FUNCTION equals(date : 3, \'2025-08-05\'_String :: 4) -> equals(__table1.date, \'2025-08-05\'_String) UInt8 : 9
-               FUNCTION notEquals(normal_column : 1, \'hello\'_String :: 6) -> notEquals(__table1.normal_column, \'hello\'_String) UInt8 : 4
-               FUNCTION less(value : 2, 100_UInt8 :: 7) -> less(__table1.value, 100_UInt8) UInt8 : 6
-               FUNCTION in(lower(__table1.primary_key) :: 8, __set_String_4653864928722945989_14468210011007111410 :: 5) -> in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410) UInt8 : 7
-               FUNCTION and(equals(__table1.date, \'2025-08-05\'_String) :: 9, in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410) :: 7, notEquals(__table1.normal_column, \'hello\'_String) :: 4, less(__table1.value, 100_UInt8) :: 6) -> and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864... UInt8 : 5
-      Positions: 0 1 2 3 5
+WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)

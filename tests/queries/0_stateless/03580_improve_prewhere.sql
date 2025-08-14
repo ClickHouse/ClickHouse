@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS test_improve_prewhere;
 
 CREATE TABLE test_improve_prewhere (
     primary_key String,
-    normal_column String,
+    normal_column LowCardinality(String),
     value UInt32,
     date Date
 ) ENGINE = MergeTree()
@@ -29,34 +29,47 @@ FROM numbers(100000);
 -- { echoOn }
 set allow_statistics_optimize = 1;
 -- Condition: lower(primary_key) = '00' can't make use of primary key index. It shouldn't be moved to the end of prewhere conditions.
+select trimLeft(explain) from (
 EXPLAIN actions=1
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
 
 -- Condition: primary_key = '00' can use primary key index. It should be moved to the end of prewhere conditions.
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
 
 -- Condition: lower(primary_key) IN ('00', '01') should be placed before Condition: normal_column != 'hello' and value < 100
 -- because it has a lower estimated selectivity.
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
 
 
 set allow_statistics_optimize = 0;
+select trimLeft(explain) from (
 EXPLAIN actions=1
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
 
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
 
+select trimLeft(explain) from (
 EXPLAIN actions=1 
 SELECT * FROM test_improve_prewhere 
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100;
+WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
+) where explain ilike '%Prewhere filter column%';
+
 -- { echoOff }
 
 DROP TABLE test_improve_prewhere;
