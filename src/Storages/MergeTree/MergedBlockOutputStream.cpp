@@ -477,7 +477,7 @@ void convertToCorrectSerializations(Block & block, const SerializationInfoByName
         {
             if (kind != ISerialization::Kind::LOW_CARDINALITY)
             {
-                column.column = recursiveRemoveLowCardinality(column.column);
+                column.column = recursiveRemoveNonNativeLowCardinality(column.column);
             }
             else if (kind == ISerialization::Kind::LOW_CARDINALITY && !column.column->lowCardinality())
             {

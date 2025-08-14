@@ -449,6 +449,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     for (const auto & key_name : key_columns_names)
     {
         auto key_materialized = materializeColumn(from_block.getByName(key_name).column);
+        key_materialized = recursiveRemoveLowCardinality(key_materialized);
         key_column_holders.push_back(key_materialized);
         key_columns.push_back(key_materialized.get());
     }
