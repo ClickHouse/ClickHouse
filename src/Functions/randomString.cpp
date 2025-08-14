@@ -138,20 +138,13 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-	    {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;", R"(
-Row 1:
-──────
-str: 3 G  :   pT ?w тi  k aV f6
-len: 30
-
-Row 2:
-──────
-str: 9 ,]    ^   )  ]??  8
-len: 30
+        {"Usage example", "SELECT randomString(5) AS str FROM numbers(2)", R"(
+���
+�v6B�
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
