@@ -161,7 +161,7 @@ If the rounding number is halfway between two numbers, the function uses a metho
 
 :::info Notes
 - When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position.
-  For example: `3.5` rounds up to `4`, `2.5` rounds down to `2`.
+For example: `3.5` rounds up to `4`, `2.5` rounds down to `2`.
 - The `round` function performs the same rounding for floating point numbers.
 - The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 - In other cases, the function rounds numbers to the nearest integer.
