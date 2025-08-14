@@ -2921,25 +2921,29 @@ def test_partitioned_writes(started_cluster):
     table_name = randomize_table_name("test_partitioned_writes")
     result_file = f"{table_name}_data"
     spark = started_cluster.spark_session
+    partition_columns = ["id", "comment"]
 
     schema = StructType(
         [
             StructField("id", IntegerType(), True),
             StructField("name", StringType(), True),
+            StructField("comment", StringType(), True),
         ]
     )
     empty_df = spark.createDataFrame([], schema)
-    empty_df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    empty_df.write.format("delta").partitionBy(partition_columns).save(
+        f"/{result_file}"
+    )
     upload_directory(minio_client, bucket, f"/{result_file}", "")
 
     instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
     instance_disabled_kernel.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
     instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
+        f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2)) FROM numbers(10)"
     )
 
     def check_files(expected):
@@ -2958,11 +2962,21 @@ def test_partitioned_writes(started_cluster):
         expected_ids.sort()
         for i in range(expected):
             expected_id = expected_ids[i]
-            assert file_names[i].startswith(f"{result_file}/id={expected_id}/")
+            comment_id = int(expected_ids[i]) % 2
+            assert file_names[i].startswith(
+                f"{result_file}/id={expected_id}/comment=comment-{comment_id}/"
+            )
             assert (
-                f"{expected_id}\t{expected_id}"
+                f"{expected_id}\t{expected_id}\tcomment-{comment_id}"
                 == instance.query(
-                    f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}')"
+                    f"SELECT id, name, comment FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}') ORDER BY all"
+                ).strip()
+            )
+            assert (
+                f"{expected_id}"
+                == instance.query(
+                    f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}')",
+                    settings={"use_hive_partitioning": 0},
                 ).strip()
             )
 
@@ -3004,15 +3018,17 @@ def test_partitioned_writes(started_cluster):
 
     check_files(10)
     check_count(10)
-    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
+    check_data(
+        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1"
+    )
 
     instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
+        f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2))  FROM numbers(10, 10)"
     )
     check_count(20)
     check_files(20)
     check_data(
-        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
+        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1\n10\t10\tcomment-0\n11\t11\tcomment-1\n12\t12\tcomment-0\n13\t13\tcomment-1\n14\t14\tcomment-0\n15\t15\tcomment-1\n16\t16\tcomment-0\n17\t17\tcomment-1\n18\t18\tcomment-0\n19\t19\tcomment-1"
     )
 
 
