@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/Context_fwd.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {
@@ -12,16 +13,25 @@ using StoragePtr = std::shared_ptr<IStorage>;
 using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 
-class EvaluateCommonSubqueryStep : public ITransformingStep
+
+struct ChunkBuffer
+{
+    std::mutex mutex;
+    Chunks chunks;
+    size_t index = 0;
+};
+
+using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
+
+class SaveSubqueryResultToBufferStep : public ITransformingStep
 {
 public:
-    EvaluateCommonSubqueryStep(
+    SaveSubqueryResultToBufferStep(
         const SharedHeader & header_,
         ColumnIdentifiers columns_to_save_,
-        StoragePtr storage_,
-        ContextPtr context_);
+        ChunkBufferPtr chunk_buffer_);
 
-    String getName() const override { return "EvaluateCommonSubquery"; }
+    String getName() const override { return "SaveSubqueryResultToBuffer"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
@@ -31,9 +41,8 @@ public:
     }
 
 private:
-    StoragePtr storage;
-    ContextPtr context;
     ColumnIdentifiers columns_to_save;
+    ChunkBufferPtr chunk_buffer;
 };
 
 }

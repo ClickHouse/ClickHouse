@@ -1,6 +1,6 @@
-#include <Processors/QueryPlan/EvaluateCommonSubqueryStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 
-#include <Processors/Transforms/EvaluateCommonSubqueryTransform.h>
+#include <Processors/Transforms/SaveSubqueryResultToBufferTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
@@ -34,22 +34,16 @@ constexpr ITransformingStep::Traits getTraits()
 
 }
 
-EvaluateCommonSubqueryStep::EvaluateCommonSubqueryStep(
+SaveSubqueryResultToBufferStep::SaveSubqueryResultToBufferStep(
     const SharedHeader & header_,
     ColumnIdentifiers columns_to_save_,
-    StoragePtr storage_,
-    ContextPtr context_
+    ChunkBufferPtr chunk_buffer_
 ) : ITransformingStep(header_, header_, getTraits())
-    , storage(std::move(storage_))
-    , context(std::move(context_))
     , columns_to_save(std::move(columns_to_save_))
-{
+    , chunk_buffer(std::move(chunk_buffer_))
+{}
 
-    if (!storage)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not set for EvaluateCommonSubqueryStep");
-}
-
-void EvaluateCommonSubqueryStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &  /*settings*/)
+void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &  /*settings*/)
 {
     const auto & input_header = getInputHeaders().front();
 
@@ -61,18 +55,12 @@ void EvaluateCommonSubqueryStep::transformPipeline(QueryPipelineBuilder & pipeli
         columns_to_save_indices.push_back(index);
     }
 
-    auto common_header = std::make_shared<Block>();
-    for (size_t index : columns_to_save_indices)
-        common_header->insert(input_header->getByPosition(index));
-
     pipeline.addSimpleTransform(
-        [this, &common_header, &columns_to_save_indices](const SharedHeader & in_header)
+        [this, &columns_to_save_indices](const SharedHeader & in_header)
         {
-            return std::make_shared<EvaluateCommonSubqueryTransform>(
+            return std::make_shared<SaveSubqueryResultToBufferTransform>(
                 in_header,
-                common_header,
-                storage,
-                context,
+                chunk_buffer,
                 columns_to_save_indices
             );
         });

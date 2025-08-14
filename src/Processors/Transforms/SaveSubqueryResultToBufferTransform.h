@@ -9,24 +9,23 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
-class EvaluateCommonSubqueryTransform : public ISimpleTransform
+struct ChunkBuffer;
+using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
+
+class SaveSubqueryResultToBufferTransform : public ISimpleTransform
 {
 public:
-    EvaluateCommonSubqueryTransform(
+    SaveSubqueryResultToBufferTransform(
         SharedHeader header_,
-        SharedHeader common_header_,
-        StoragePtr storage_,
-        ContextPtr context_,
+        ChunkBufferPtr chunk_buffer_,
         const std::vector<size_t> & columns_to_save_indices_
     );
 
-    String getName() const override { return "EvaluateCommonSubquery"; }
+    String getName() const override { return "SaveSubqueryResultToBuffer"; }
     void transform(Chunk & chunk) override;
 
 private:
-    SharedHeader common_header;
-    StoragePtr storage;
-    ContextPtr context;
+    ChunkBufferPtr chunk_buffer;
     std::vector<size_t> columns_to_save_indices;
 };
 

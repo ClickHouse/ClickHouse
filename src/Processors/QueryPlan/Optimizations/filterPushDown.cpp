@@ -12,7 +12,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/EvaluateCommonSubqueryStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -698,7 +698,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 1;
     }
 
-    if (auto updated_steps = simplePushDownOverStep<EvaluateCommonSubqueryStep>(parent_node, false, nodes, child))
+    if (auto updated_steps = simplePushDownOverStep<SaveSubqueryResultToBufferStep>(parent_node, false, nodes, child))
         return updated_steps;
 
     return 0;

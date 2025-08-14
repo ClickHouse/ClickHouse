@@ -28,11 +28,12 @@
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/EvaluateCommonSubqueryStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -289,39 +290,22 @@ QueryPlan decorrelateQueryPlan(
                 columns_description.add(ColumnDescription(column.name, column.type));
             }
 
-            auto external_storage_holder = TemporaryTableHolder(
-                context.planner_context->getQueryContext(),
-                columns_description,
-                ConstraintsDescription{},
-                nullptr /*query*/,
-                true /*create_for_global_subquery*/); // Is it correct to set true here?
-
-            auto in_memory_storage = external_storage_holder.getTable();
-
             /// Save the correlated subquery input stream to the temporary table.
-            context.query_plan.addStep(std::make_unique<EvaluateCommonSubqueryStep>(
+            auto buffer = std::make_shared<ChunkBuffer>();
+            context.query_plan.addStep(std::make_unique<SaveSubqueryResultToBufferStep>(
                 context.query_plan.getCurrentHeader(),
                 context.correlated_subquery.correlated_column_identifiers,
-                in_memory_storage,
-                context.planner_context->getQueryContext()));
+                buffer));
 
-            UInt64 max_block_size = settings[Setting::max_block_size];
             size_t max_streams = settings[Setting::max_threads];
 
-            SelectQueryInfo query_info;
-            in_memory_storage->read(
-                rhs_plan,
-                context.correlated_subquery.correlated_column_identifiers,
-                in_memory_storage->getStorageSnapshot(in_memory_storage->getInMemoryMetadataPtr(), context.planner_context->getQueryContext()),
-                query_info,
-                context.planner_context->getQueryContext(),
-                QueryProcessingStage::Complete,
-                max_block_size,
-                max_streams
-            );
+            auto buffer_header = std::make_shared<Block>();
+            for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
+            {
+                buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
+            }
 
-            String temporary_table_name = "input_stream_" + context.correlated_subquery.action_node_name;
-            context.planner_context->getMutableQueryContext()->addExternalTable(temporary_table_name, std::move(external_storage_holder));
+            rhs_plan.addStep(std::make_unique<ReadFromCommonBufferStep>(buffer_header, buffer, max_streams));
         }
         else
         {
