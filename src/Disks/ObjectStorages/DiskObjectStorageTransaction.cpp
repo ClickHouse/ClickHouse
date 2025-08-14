@@ -1116,16 +1116,6 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
     for (const auto & operation : operations_to_execute)
         operation->finalize(objects_to_remove);
 
-    auto get_debug_info = [](const std::vector<StoredObject> & objects)
-    {
-        auto new_range = objects | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {}", obj.local_path, obj.remote_path); });
-        return fmt::join(new_range, ", ");
-    };
-
-    LOG_FATAL(getLogger("DiskObjectStorageTransaction"),
-                "Trunsaction resulted in removing objects: {}",
-                get_debug_info(objects_to_remove));
-
     object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
 
@@ -1221,16 +1211,6 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
         operation->finalize(objects_to_remove);
-
-    auto get_debug_info = [](const std::vector<StoredObject> & objects)
-    {
-        auto new_range = objects | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {}", obj.local_path, obj.remote_path); });
-        return fmt::join(new_range, ", ");
-    };
-
-    LOG_FATAL(getLogger("DiskObjectStorageTransaction"),
-                "Trunsaction resulted in removing objects: {}",
-                get_debug_info(objects_to_remove));
 
     object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
