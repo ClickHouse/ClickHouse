@@ -84,12 +84,13 @@ void executeSearchAny(
     const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data, value.size);
         for (const auto & token : tokens)
         {
             if (needles.contains(token))
@@ -114,13 +115,14 @@ void executeSearchAll(
     const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
     UInt64 mask;
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
         mask = 0;
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data, value.size);
         for (const auto & token : tokens)
         {
             if (auto it = needles.find(token); it != needles.end())

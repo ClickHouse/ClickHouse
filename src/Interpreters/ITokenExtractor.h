@@ -26,7 +26,7 @@ struct ITokenExtractor
     }
 
     /// Slow implementation for tokenizers which don't support inplace tokenization.
-    virtual std::vector<String> getTokens(const char * data, size_t length) const;
+    virtual std::vector<std::string_view> getTokensView(const char * data, size_t length) const;
 
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
@@ -118,7 +118,7 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
-        const auto& tokens = getTokens(data, length);
+        const auto& tokens = getTokensView(data, length);
         for (const auto& token : tokens)
             gin_filter.addTerm(token.data(), token.size());
     }
@@ -156,7 +156,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     static const char * getName() { return "ngrambf_v1"; }
     static const char * getExternalName() { return "ngram"; }
 
-    std::vector<String> getTokens(const char * data, size_t length) const override;
+    std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
@@ -205,7 +205,7 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
     static const char * getName() { return "no_op"; }
     static const char * getExternalName() { return getName(); }
 
-    std::vector<String> getTokens(const char * data, size_t length) const override;
+    std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
