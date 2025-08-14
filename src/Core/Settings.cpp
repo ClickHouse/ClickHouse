@@ -3813,7 +3813,7 @@ This query setting overwrites its server setting equivalent, see [max_table_size
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
 Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
 
-Cloud default value: `0`.
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
