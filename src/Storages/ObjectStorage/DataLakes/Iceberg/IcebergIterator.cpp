@@ -245,7 +245,13 @@ IcebergIterator::IcebergIterator(
                   auto info = data_files_iterator.next();
                   if (!info.has_value())
                       break;
-                  [[maybe_unused]] auto pushed = blocking_queue.push(std::move(info.value()));
+                  while (!blocking_queue.push(std::move(info.value())))
+                  {
+                      if (blocking_queue.isFinished())
+                      {
+                          break;
+                      }
+                  }
               }
               blocking_queue.finish();
           }))
