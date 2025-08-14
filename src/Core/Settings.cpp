@@ -3804,7 +3804,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
 Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
 
-Cloud default value: `0`.
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
