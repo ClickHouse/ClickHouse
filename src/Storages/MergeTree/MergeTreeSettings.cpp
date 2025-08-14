@@ -1444,7 +1444,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
-    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
+    DECLARE(Bool, allow_part_offset_column_in_projections, false, R"(
     Allow ussage of '_part_offfset' column in projections select query.
     )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
