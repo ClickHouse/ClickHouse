@@ -51,7 +51,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
 appendTrailingCharIfAbsent
 asinh
@@ -122,9 +121,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
@@ -404,11 +400,6 @@ sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 space
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 substring
