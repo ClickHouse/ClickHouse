@@ -209,28 +209,29 @@ public:
         v1 = 1, /// Initial version, supports adaptive compression
     };
 
-    struct Statistics
+    class Statistics
     {
+    public:
+        explicit Statistics(const GinIndexStore & store);
+
+        String toString() const;
+
+        Statistics operator-(const Statistics & other)
+        {
+            metadata_file_size -= other.metadata_file_size;
+            bloom_filter_file_size -= other.bloom_filter_file_size;
+            dictionary_file_size -= other.dictionary_file_size;
+            posting_lists_file_size -= other.posting_lists_file_size;
+            return *this;
+        }
+
+    private:
         size_t num_terms;
         size_t current_size;
         size_t metadata_file_size;
         size_t bloom_filter_file_size;
         size_t dictionary_file_size;
         size_t posting_lists_file_size;
-
-        Statistics diff(const Statistics & other) const
-        {
-            return {
-                .num_terms = num_terms,
-                .current_size = current_size,
-                .metadata_file_size = metadata_file_size - other.metadata_file_size,
-                .bloom_filter_file_size = bloom_filter_file_size - other.bloom_filter_file_size,
-                .dictionary_file_size = dictionary_file_size - other.dictionary_file_size,
-                .posting_lists_file_size = posting_lists_file_size - other.posting_lists_file_size,
-            };
-        }
-
-        String toString() const;
     };
 
     /// Container for all term's Gin Index Postings List Builder

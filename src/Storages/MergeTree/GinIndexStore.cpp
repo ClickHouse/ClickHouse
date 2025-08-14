@@ -513,6 +513,16 @@ void GinIndexStore::cancel() noexcept
         postings_file_stream->cancel();
 }
 
+GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
+    : num_terms(store.current_postings.size())
+    , current_size(store.current_size)
+    , metadata_file_size(store.metadata_file_stream ? store.metadata_file_stream->count() : 0)
+    , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
+    , dictionary_file_size(store.dict_file_stream ? store.dict_file_stream->count() : 0)
+    , posting_lists_file_size(store.postings_file_stream ? store.postings_file_stream->count() : 0)
+{
+}
+
 String GinIndexStore::Statistics::toString() const
 {
     return fmt::format(
@@ -527,14 +537,7 @@ String GinIndexStore::Statistics::toString() const
 
 GinIndexStore::Statistics GinIndexStore::getStatistics()
 {
-    return {
-        .num_terms = current_postings.size(),
-        .current_size = current_size,
-        .metadata_file_size = metadata_file_stream ? metadata_file_stream->count() : 0,
-        .bloom_filter_file_size = bloom_filter_file_stream ? bloom_filter_file_stream->count() : 0,
-        .dictionary_file_size = dict_file_stream ? dict_file_stream->count() : 0,
-        .posting_lists_file_size = postings_file_stream ? postings_file_stream->count() : 0,
-    };
+    return Statistics(*this);
 }
 
 void GinIndexStore::initSegmentId()
@@ -606,7 +609,8 @@ void GinIndexStore::writeSegment()
     if (metadata_file_stream == nullptr)
         initFileStreams();
 
-    LOG_TRACE(logger, "Start writing text index '{}' segment id {}", name, current_segment.segment_id);
+    LOG_TRACE(
+        logger, "Start writing text index '{}' segment id {} of part '{}'", name, current_segment.segment_id, storage->getPartDirectory());
     Statistics before_write_segment_stats = getStatistics();
 
     /// Write segment
@@ -691,8 +695,14 @@ void GinIndexStore::writeSegment()
         current_segment.dict_start_offset += uncompressed_size;
     }
 
-    auto statistics = getStatistics().diff(before_write_segment_stats);
-    LOG_TRACE(logger, "Done writing text index '{}' segment id {}: {}", name, current_segment.segment_id, statistics.toString());
+    auto statistics = getStatistics() - before_write_segment_stats;
+    LOG_TRACE(
+        logger,
+        "Done writing text index '{}' segment id {} of part '{}': {}",
+        name,
+        current_segment.segment_id,
+        storage->getPartDirectory(),
+        statistics.toString());
 
     current_size = 0;
     current_postings.clear();
@@ -731,7 +741,7 @@ void GinIndexStoreDeserializer::readSegments()
 
     assert(metadata_file_stream != nullptr);
 
-    LOG_TRACE(logger, "Start reading text index '{}' segments", store->getName());
+    LOG_TRACE(logger, "Start reading text index '{}' segments of part '{}'", store->getName(), store->storage->getPartDirectory());
 
     if (store->getVersion() == GinIndexStore::Format::v1)
     {
@@ -747,7 +757,12 @@ void GinIndexStoreDeserializer::readSegments()
         }
     }
 
-    LOG_TRACE(logger, "Done reading text index '{}' segments: number of segments = {}", store->getName(), num_segments);
+    LOG_TRACE(
+        logger,
+        "Done reading text index '{}' segments of part '{}': number of segments = {}",
+        store->getName(),
+        store->storage->getPartDirectory(),
+        num_segments);
 }
 
 void GinIndexStoreDeserializer::prepareSegmentsForReading()
@@ -763,7 +778,12 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
-    LOG_TRACE(logger, "Start reading the bloom filter of text index '{}' segment id {}", store->getName(), segment_id);
+    LOG_TRACE(
+        logger,
+        "Start reading the bloom filter of text index '{}' segment id {} of part '{}'",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory());
 
     const GinSegmentDictionaryPtr & seg_dict = it->second;
     switch (auto version = store->getVersion(); version)
@@ -781,9 +801,10 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 
     LOG_TRACE(
         logger,
-        "Done reading the bloom filter of text index '{}' segment id {}: size = {}",
+        "Done reading the bloom filter of text index '{}' segment id {} of part '{}': size = {}",
         store->getName(),
         segment_id,
+        store->storage->getPartDirectory(),
         ReadableSize(bloom_filter_file_stream->count() - seg_dict->bloom_filter_start_offset));
 }
 
@@ -793,7 +814,12 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDict
     assert(dict_file_stream != nullptr);
     dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
 
-    LOG_TRACE(logger, "Start reading the dictionary (FST) of text index '{}' segment id {}", store->getName(), segment_id);
+    LOG_TRACE(
+        logger,
+        "Start reading the dictionary (FST) of text index '{}' segment id {} of part '{}'",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory());
 
     segment_dictionary->fst = std::make_unique<FST::FiniteStateTransducer>();
     switch (auto version = store->getVersion(); version)
@@ -831,9 +857,10 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDict
 
     LOG_TRACE(
         logger,
-        "Done reading the dictionary (FST) of text index '{}' segment id {}: size = {}",
+        "Done reading the dictionary (FST) of text index '{}' segment id {} of part '{}': size = {}",
         store->getName(),
         segment_id,
+        store->storage->getPartDirectory(),
         ReadableSize(dict_file_stream->count() - segment_dictionary->dict_start_offset));
 }
 
@@ -866,7 +893,12 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
         }
 
         LOG_TRACE(
-            logger, "Start reading the posting list for term '{}' from text index '{}' segment id {}", term, store->getName(), segment_id);
+            logger,
+            "Start reading the posting list for term '{}' from text index '{}' segment id {} of part '{}'",
+            term,
+            store->getName(),
+            segment_id,
+            store->storage->getPartDirectory());
 
         // Set postings file pointer for reading postings list
         postings_file_stream->seek(seg_dict.second->postings_start_offset + fst_output.offset, SEEK_SET);
@@ -877,10 +909,11 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
 
         LOG_TRACE(
             logger,
-            "Done reading the posting list for term '{}' from text index '{}' segment id {}: size = {}",
+            "Done reading the posting list for term '{}' from text index '{}' segment id {} of part '{}': size = {}",
             term,
             store->getName(),
             segment_id,
+            store->storage->getPartDirectory(),
             ReadableSize(postings_file_stream->count() - seg_dict.second->postings_start_offset));
     }
     return container;
