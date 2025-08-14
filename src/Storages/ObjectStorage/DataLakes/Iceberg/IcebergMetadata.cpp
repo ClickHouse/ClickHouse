@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/Utils.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -478,7 +479,7 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
         if (manifest_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         ManifestFileCacheKeys manifest_file_cache_keys;
