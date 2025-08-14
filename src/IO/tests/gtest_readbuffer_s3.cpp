@@ -53,7 +53,17 @@ struct ClientFake : DB::S3::Client
               DB::S3::ServerSideEncryptionKMSConfig(),
               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test_access_key", "test_secret"),
               DB::S3::ClientFactory::instance().createClientConfiguration(
-                  "test_region", DB::RemoteHostFilter(), 1, 0, true, true, true, false, {}, {}, "http"),
+                  "test_region",
+                  DB::RemoteHostFilter(),
+                  1,
+                  DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+                  true,
+                  true,
+                  true,
+                  false,
+                  {},
+                  {},
+                  "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
     {

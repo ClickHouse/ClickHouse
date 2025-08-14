@@ -198,6 +198,19 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
+    /// NOTE: Automatic cluster functions are implemented at the wrong level of abstraction.
+    /// We should replace ordinary "function" with "functionCluster" at AST level. For some reason
+    /// we don't do it and implement some parts of "functionCluster" logic inside ordinary "function".
+    /// And now we have a problem because we cannot distinguish two cases:
+    /// 1. Is it really a query which was initiated by clusterFunction?
+    /// 2. Is it just an ordinary Distributed/remote which reads from object storage function?
+    /// It's important to distinguish these cases because they use different packets in their protocols.
+    /// Distributed/remote initiator expect one protocol and "functionCluster" expect other protocol.
+    ///
+    /// HACK Fortunately distributed_depth is incremented only from Distributed/remote and that is the way
+    /// how we can distinguish these cases.
+    bool is_initiated_by_cluster_function = context->getClientInfo().distributed_depth == 0;
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
@@ -211,7 +224,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* catalog*/nullptr,
         /* if_not_exists*/false,
         /* is_datalake_query*/ false,
-        /* distributed_processing */ is_secondary_query,
+        /* distributed_processing */ is_secondary_query && is_initiated_by_cluster_function,
         /* partition_by */ partition_by,
         /* is_table_function */true);
 

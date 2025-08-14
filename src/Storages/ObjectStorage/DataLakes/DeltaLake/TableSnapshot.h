@@ -66,6 +66,8 @@ private:
     const LoggerPtr log;
 
     bool enable_expression_visitor_logging;
+    bool throw_on_engine_visitor_error;
+    bool enable_engine_predicate;
     std::optional<size_t> snapshot_version_to_read;
 
     struct KernelSnapshotState : private boost::noncopyable
