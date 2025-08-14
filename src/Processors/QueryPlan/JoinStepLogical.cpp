@@ -199,6 +199,13 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
     return result_nodes;
 }
 
+bool JoinStepLogical::canRemoveUnusedColumns() const
+{
+    return !hasDuplicatedNamesInInputOrOutputs(*expression_actions.post_join_actions)
+        && !hasDuplicatedNamesInInputOrOutputs(*expression_actions.left_pre_join_actions)
+        && !hasDuplicatedNamesInInputOrOutputs(*expression_actions.right_pre_join_actions);
+}
+
 IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     {
@@ -299,14 +306,14 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
 
 bool JoinStepLogical::canRemoveColumnsFromOutput() const
 {
-    if (output_header != nullptr)
+    if (output_header == nullptr)
         return false;
 
     const auto minimal_output_header = calculateOutputHeader({});
 
     chassert(minimal_output_header->columns() <= output_header->columns());
 
-    return !blocksHaveEqualStructure(*output_header, *minimal_output_header);
+    return canRemoveUnusedColumns() && !blocksHaveEqualStructure(*output_header, *minimal_output_header);
 }
 
 

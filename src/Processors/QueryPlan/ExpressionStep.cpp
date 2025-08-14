@@ -99,6 +99,12 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
 }
 
+bool ExpressionStep::canRemoveUnusedColumns() const
+{
+    // At the time of writing ActionsDAG doesn't handle removal of unused actions well in case of duplicated names in input or outputs
+    return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
+}
+
 IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     if (output_header == nullptr)
@@ -150,8 +156,8 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
     // if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
     //     throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    const auto update_inputs = remove_inputs
-        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
+    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
+    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
 
     if (update_inputs)
     {
@@ -175,7 +181,10 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const
 {
-    return output_header != nullptr ? output_header->columns() > 0 : false;
+    if (output_header == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
+
+    return canRemoveUnusedColumns();
 }
 
 QueryPlanStepPtr ExpressionStep::clone() const

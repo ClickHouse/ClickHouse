@@ -291,6 +291,12 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
 
+bool FilterStep::canRemoveUnusedColumns() const
+{
+    // At the time of writing ActionsDAG doesn't handle removal of unused actions well in case of duplicated names in input or outputs
+    return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
+}
+
 IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     if (output_header == nullptr)
@@ -344,8 +350,8 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMu
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    const auto update_inputs = remove_inputs
-        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
+    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
+    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
 
     if (update_inputs)
     {
@@ -371,10 +377,12 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(NameMu
 bool FilterStep::canRemoveColumnsFromOutput() const
 {
     if (output_header == nullptr)
-        return true;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
 
-    const auto minimum_column_count = remove_filter_column ? 0u : 1u;
-    return output_header->columns() > minimum_column_count;
+    if (!remove_filter_column && output_header->columns() == 1)
+        return false;
+
+    return canRemoveUnusedColumns();
 }
 
 QueryPlanStepPtr FilterStep::clone() const

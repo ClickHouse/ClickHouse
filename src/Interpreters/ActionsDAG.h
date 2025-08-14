@@ -553,4 +553,8 @@ using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFl
 /// Returns the output names in their order in the output of the actions dag.
 Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag);
 
+bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes);
+
+bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag);
+
 }

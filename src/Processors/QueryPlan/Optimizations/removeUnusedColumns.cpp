@@ -42,6 +42,7 @@ bool removeChildrenOutputs(const QueryPlan::Node & node)
         const auto updated_anything
             = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false).updated_anything;
         // TODO(antaljanosbenjamin): compare the header with name and types
+        // As removeUnusedColumns might leave additional columns in the output, we have to update the input header of the parent.
         if (updated_anything || !blocksHaveEqualStructure(*child_step->getOutputHeader(), *parent_inputs[child_id]))
             node.step->updateInputHeader(child_step->getOutputHeader(), child_id);
 

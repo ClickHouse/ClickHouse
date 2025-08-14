@@ -112,7 +112,7 @@ public:
     QueryPlanStepPtr clone() const override;
     bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
-    bool canRemoveUnusedColumns() const override { return true; }
+    bool canRemoveUnusedColumns() const override;
     UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 

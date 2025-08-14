@@ -3892,4 +3892,21 @@ Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const Actions
     return new_required_outputs;
 }
 
+bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    NameSet unique_names;
+    for (const auto * node: nodes)
+    {
+        auto [_, inserted] = unique_names.insert(node->result_name);
+        if (!inserted)
+            return true;
+    }
+    return false;
+}
+
+bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag)
+{
+    return hasDuplicatedNames(actions_dag.getInputs()) || hasDuplicatedNames(actions_dag.getOutputs());
+}
+
 }
