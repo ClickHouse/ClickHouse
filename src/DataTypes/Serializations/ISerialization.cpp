@@ -150,17 +150,17 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
 {
     settings.path.push_back(Substream::Regular);
 
-    auto cached_column = getColumnFromSubstreamsCache(cache, settings.path);
-    if (cached_column)
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
-        column = cached_column;
+        /// Data was inserted from substreams cache.
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
+        size_t prev_size = column->size();
         auto mutable_column = column->assumeMutable();
         deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
-        addColumnToSubstreamsCache(cache, settings.path, column);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
     }
 
     settings.path.pop_back();
@@ -332,25 +332,31 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 namespace
 {
 
-/// Element of substeams cache that contains single column.
-struct SubstreamsCacheColumnElement : public ISerialization::ISubstreamsCacheElement
+/// Element of substeams cache that contains single column and number of read rows from current range
+/// (it might be different from column size as single column can contain rows from multiple ranges).
+struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISubstreamsCacheElement
 {
-    explicit SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
+    explicit SubstreamsCacheColumnWithNumReadRowsElement(ColumnPtr column_, size_t num_read_rows_) : column(column_), num_read_rows(num_read_rows_) {}
 
     ColumnPtr column;
+    size_t num_read_rows;
 };
 
 }
 
-void ISerialization::addColumnToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
+void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
 {
-    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnElement>(column));
+    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
 }
 
-ColumnPtr ISerialization::getColumnFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
 {
     auto * element = getElementFromSubstreamsCache(cache, path);
-    return element ? assert_cast<SubstreamsCacheColumnElement *>(element)->column : nullptr;
+    if (!element)
+        return std::nullopt;
+
+    auto * typed_element = assert_cast<SubstreamsCacheColumnWithNumReadRowsElement *>(element);
+    return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
 void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
@@ -600,6 +606,30 @@ void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath &
     path.push_back(substream);
     callback(path);
     path.pop_back();
+}
+
+bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column)
+{
+    auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
+    if (!cached_column_with_num_read_rows)
+        return false;
+
+    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second);
+    return true;
+}
+
+void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows)
+{
+    /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
+    /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
+    /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
+    /// constructing another column). In we need to insert data into resulting column from cached column.
+    /// To determine what case we have we store number of read rows in last range in cache.
+    if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (!result_column->empty() && cached_column->size() == num_read_rows))
+        result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+    else
+        result_column = cached_column;
+
 }
 
 }

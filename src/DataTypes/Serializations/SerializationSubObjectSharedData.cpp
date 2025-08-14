@@ -196,11 +196,9 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// Read shared data map column.
         size_t num_read_rows = 0;
         /// Check if we have map column in cache.
-        if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+        if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
         {
-            const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
-            sub_object_shared_data_state->map_column = map_element->map_column;
-            num_read_rows = map_element->num_read_rows;
+            std::tie(sub_object_shared_data_state->map_column, num_read_rows) = *cached_column_with_num_read_rows;
         }
         /// If we don't have it in cache, deserialize and put deserialized map in cache.
         else
@@ -208,7 +206,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             size_t prev_size = sub_object_shared_data_state->map_column->size();
             serialization_map->deserializeBinaryBulkWithMultipleStreams(sub_object_shared_data_state->map_column, rows_offset, limit, settings, sub_object_shared_data_state->map_state, cache);
             num_read_rows = sub_object_shared_data_state->map_column->size() - prev_size;
-            addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(sub_object_shared_data_state->map_column, num_read_rows));
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, sub_object_shared_data_state->map_column, num_read_rows);
         }
 
         size_t map_column_offset = sub_object_shared_data_state->map_column->size() - num_read_rows;
@@ -255,17 +253,16 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().object_shared_data_bucket = bucket;
 
             /// Check if we have map column in cache.
-            if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
             {
-                const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
-                bucket_map_columns[bucket] = map_element->map_column;
+                bucket_map_columns[bucket] = cached_column_with_num_read_rows->first;
             }
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
             {
                 bucket_map_columns[bucket] = DataTypeObject::getTypeOfSharedData()->createColumn();
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(bucket_map_columns[bucket], rows_offset, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
-                addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(bucket_map_columns[bucket], bucket_map_columns[bucket]->size()));
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_map_columns[bucket], bucket_map_columns[bucket]->size());
             }
 
             settings.path.pop_back();

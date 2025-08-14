@@ -113,16 +113,6 @@ public:
     bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
 
 private:
-    /// We may need to deserialize shared data map column multiple times, so we do it once and add it to the cache.
-    /// We also need to remember the number of newly deserialized rows for proper subcolumns extraction.
-    struct SubstreamsCacheMapColumnWithNumReadRowsElement : public ISerialization::ISubstreamsCacheElement
-    {
-        SubstreamsCacheMapColumnWithNumReadRowsElement(ColumnPtr map_column_, size_t num_read_rows_) : map_column(map_column_), num_read_rows(num_read_rows_) {}
-
-        ColumnPtr map_column;
-        size_t num_read_rows;
-    };
-
     /// Structure that represents the state of the data in a single granule deserialized from ObjectSharedDataStructure stream.
     /// This structure contains all information that is needed to deserialize the data of a specific paths/their subcolumns from
     /// the same granule.

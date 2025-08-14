@@ -101,12 +101,10 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     DeserializeBinaryBulkStateVariantElementNullMap * variant_element_null_map_state = nullptr;
     std::optional<size_t> variant_limit;
     size_t num_read_discriminators = 0;
-    if (const auto * cached_element  = getElementFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        const auto * discriminators_element = assert_cast<const SerializationVariant::SubstreamsCacheDiscriminatorsWithNumReadRowsElement *>(cached_element);
         variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
-        variant_element_null_map_state->discriminators = discriminators_element->discriminators;
-        num_read_discriminators = discriminators_element->num_read_rows;
+        std::tie(variant_element_null_map_state->discriminators, num_read_discriminators) = *cached_column_with_num_read_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -144,7 +142,7 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
 
         num_read_discriminators = variant_element_null_map_state->discriminators->size() - prev_size;
         /// We are not going to apply rows_offsets to discriminators column here, so we can put it as is in the cache.
-        addElementToSubstreamsCache(cache,settings.path, std::make_unique<SerializationVariant::SubstreamsCacheDiscriminatorsWithNumReadRowsElement>(variant_element_null_map_state->discriminators, num_read_discriminators));
+        addColumnWithNumReadRowsToSubstreamsCache(cache,settings.path, variant_element_null_map_state->discriminators, num_read_discriminators);
     }
     else
     {

@@ -1056,29 +1056,12 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
-        /// Check if we have map column in cache.
-        if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
-        {
-            const auto * map_element = assert_cast<const SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
-            /// In cache we can have 2 different map columns:
-            ///   1. Map column that contains only rows from current deserialization
-            ///   2. Map column that contains rows from both previous deserializations and current deserialization
-            /// First scenario can happen in Compact part when we deserialized map column in SerializationObjectSharedDataPath
-            /// during subcolumn deserialization from current granule and put it in cache. In this case if we read into
-            /// non-empty map column we should use insertRangeFrom to insert data into it.
-            /// Second scenario will happen in all other cases when we put the whole column in cache that can contain
-            /// rows from previous deserializations.
-            if (map_element->map_column->size() == map_element->num_read_rows && !column->empty())
-                column->assumeMutable()->insertRangeFrom(*map_element->map_column, 0, map_element->num_read_rows);
-            else
-                column = map_element->map_column;
-        }
         /// If we don't have it in cache, deserialize and put deserialized map in cache.
-        else
+        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         {
             size_t prev_size = column->size();
             serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
-            addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCacheMapColumnWithNumReadRowsElement>(column, column->size() - prev_size));
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         }
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
@@ -1090,17 +1073,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().object_shared_data_bucket = bucket;
             /// Check if we have map column for this bucket in cache.
             /// Map column for bucket from cache must contain only rows from current deserialization.
-            if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
             {
-                const auto * map_element = assert_cast<const SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
-                shared_data_buckets[bucket] = map_element->map_column;
+                shared_data_buckets[bucket] = cached_column_with_num_read_rows->first;
             }
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
             {
                 shared_data_buckets[bucket] = column->cloneEmpty();
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
-                addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCacheMapColumnWithNumReadRowsElement>(shared_data_buckets[bucket], shared_data_buckets[bucket]->size()));
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
             }
             settings.path.pop_back();
         }
@@ -1110,11 +1092,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         /// Check if we have shared data column in cache.
-        if (const auto & cached_shared_data = getColumnFromSubstreamsCache(cache, settings.path))
-        {
-            column = cached_shared_data;
+        if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
             return;
-        }
+
+        size_t prev_size = column->size();
 
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1393,7 +1374,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        addColumnToSubstreamsCache(cache, settings.path, column);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
     }
     else
     {

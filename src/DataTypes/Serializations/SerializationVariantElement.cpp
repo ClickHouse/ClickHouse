@@ -117,12 +117,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     std::optional<size_t> variant_rows_offset;
     std::optional<size_t> variant_limit;
     size_t num_read_discriminators = 0;
-    if (const auto * cached_element  = getElementFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows  = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        const auto * discriminators_element = assert_cast<const SerializationVariant::SubstreamsCacheDiscriminatorsWithNumReadRowsElement *>(cached_element);
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
-        variant_element_state->discriminators = discriminators_element->discriminators;
-        num_read_discriminators = discriminators_element->num_read_rows;
+        std::tie(variant_element_state->discriminators, num_read_discriminators) = *cached_column_with_num_read_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -161,7 +159,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         num_read_discriminators = variant_element_state->discriminators->size() - prev_size;
         /// We are not going to apply rows_offsets to discriminators column here, so we can put it as is in the cache.
-        addElementToSubstreamsCache(cache,settings.path, std::make_unique<SerializationVariant::SubstreamsCacheDiscriminatorsWithNumReadRowsElement>(variant_element_state->discriminators, num_read_discriminators));
+        addColumnWithNumReadRowsToSubstreamsCache(cache,settings.path,variant_element_state->discriminators, num_read_discriminators);
     }
     else
     {
@@ -241,8 +239,15 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-        variant_element_state->variant, *variant_rows_offset, *variant_limit, settings, variant_element_state->variant_element_state, cache);
+    auto nested_settings = settings;
+    /// In Compact part we have new deserialization state for each granule, so variant_element_state->variant
+    /// is always empty here in this case, and it might happen that data of some substreams is already deserialized
+    /// by another subcolumn and placed in the substreams cache with rows from multiple granules, but here we need
+    /// only rows from current granule. For this case we set special flag insert_only_rows_in_current_range_from_substreams_cache
+    /// that indicates that we need only rows from current granule from substreams cache.
+    if (settings.data_part_type == MergeTreeDataPartType::Compact)
+        nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, *variant_rows_offset, *variant_limit, nested_settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.

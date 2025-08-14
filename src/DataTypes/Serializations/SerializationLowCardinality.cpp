@@ -537,12 +537,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (auto cached_column = getColumnFromSubstreamsCache(cache, settings.path))
-    {
-        column = cached_column;
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         return;
-    }
 
+    size_t prev_size = column->size();
     auto mutable_column = column->assumeMutable();
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(*mutable_column);
 
@@ -704,7 +702,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     }
 
     column = std::move(mutable_column);
-    addColumnToSubstreamsCache(cache, settings.path, column);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
 }
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

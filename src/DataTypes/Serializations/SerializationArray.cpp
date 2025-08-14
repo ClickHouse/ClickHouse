@@ -161,30 +161,20 @@ namespace
         offset_values.resize(i);
     }
 
-    ColumnPtr arraySizesToOffsets(const IColumn & column)
+    void insertArraySizesToOffsets(const IColumn & column_sizes, IColumn & column_offsets)
     {
-        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
-
-        if (column_sizes.empty())
-            return column_offsets;
-
-        const auto & sizes_data = column_sizes.getData();
-        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
-
-        offsets_data.resize(sizes_data.size());
-
-        IColumn::Offset prev_offset = 0;
+        const auto & sizes_data = assert_cast<const ColumnArray::ColumnOffsets &>(column_sizes).getData();
+        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(column_offsets).getData();
+        offsets_data.reserve(offsets_data.size() + sizes_data.size());
+        IColumn::Offset prev_offset = offsets_data.back();
         for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
         {
             prev_offset += sizes_data[i];
-            offsets_data[i] = prev_offset;
+            offsets_data.push_back(prev_offset);
         }
-
-        return column_offsets;
     }
 
-    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+    ColumnPtr arrayOffsetsToSizes(const IColumn & column, size_t start, size_t end)
     {
         const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
         MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
@@ -194,14 +184,13 @@ namespace
 
         const auto & offsets_data = column_offsets.getData();
         auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+        sizes_data.reserve(end - start);
 
-        sizes_data.resize(offsets_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+        IColumn::Offset prev_offset = offsets_data[ssize_t(start) - 1];
+        for (size_t i = start; i < end; ++i)
         {
             auto current_offset = offsets_data[i];
-            sizes_data[i] = current_offset - prev_offset;
+            sizes_data.push_back(current_offset - prev_offset);
             prev_offset = current_offset;
         }
 
@@ -239,7 +228,7 @@ void SerializationArray::enumerateStreams(
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
-        ? arrayOffsetsToSizes(*offsets)
+        ? arrayOffsetsToSizes(*offsets, 0, offsets->size())
         : offsets;
 
     settings.path.push_back(Substream::ArraySizes);
@@ -364,12 +353,15 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
-    if (auto cached_column = getColumnFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        offsets_column = arraySizesToOffsets(*cached_column);
+        /// Cache contains array sizes from current range.
+        insertArraySizesToOffsets(*cached_column_with_num_read_rows->first, offsets_column->assumeMutableRef());
     }
     else if (auto * stream = settings.getter(settings.path))
     {
+        size_t prev_size = offsets_column->size();
+
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
         else
@@ -388,9 +380,9 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             }
         }
 
-        /// The length of the offset column added to the stream cache is limit + rows_offset.
+        /// Add array sizes read from current range into the cache.
         if (cache)
-            addColumnToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column));
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column, prev_size, offsets_column->size()), offsets_column->size() - prev_size);
     }
 }
 

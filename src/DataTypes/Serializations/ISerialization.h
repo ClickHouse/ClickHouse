@@ -409,6 +409,12 @@ public:
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Usually substreams cache contains the whole column with rows from
+        /// multiple ranges. But sometimes we need to read a separate column
+        /// with rows only from current range. If this flag is true and
+        /// there is a column in cache, insert only rows from current range from it.
+        bool insert_only_rows_in_current_range_from_substreams_cache = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -556,8 +562,8 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
-    static void addColumnToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
-    static ColumnPtr getColumnFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
+    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
     static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
     static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
@@ -582,6 +588,12 @@ public:
 
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
     static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
+
+    /// If we have data in substreams cache for substream path from settings insert it
+    /// into resulting column and return true, otherwise do nothing and return false.
+    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
+    /// Perform insertion from column found in substreams cache.
+    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
 
 protected:
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
