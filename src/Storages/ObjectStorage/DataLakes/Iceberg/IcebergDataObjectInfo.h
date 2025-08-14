@@ -12,6 +12,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+};
+
 struct IcebergDataObjectInfo : public DB::ObjectInfoOneFile
 {
 #if USE_AVRO
