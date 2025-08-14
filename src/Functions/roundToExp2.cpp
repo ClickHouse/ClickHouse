@@ -84,7 +84,21 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : Positi
 
 REGISTER_FUNCTION(RoundToExp2)
 {
-    factory.registerFunction<FunctionRoundToExp2>();
+    FunctionDocumentation::Description description = R"(
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
+)";
+    FunctionDocumentation::Syntax syntax = "roundToExp2(num)";
+    FunctionDocumentation::Arguments arguments = {
+        {"num", "A number to round.", {"`UInt`/`Float`"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`, for `num` < 1. Otherwise, returns `num` rounded down to the nearest (whole non-negative) degree of two.", {"`UInt8` for `num` < 1, otherwise `UInt`/`Float` equivalent to the input type"}};
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", "SELECT *, roundToExp2(*) FROM system.numbers WHERE number IN (0, 2, 5, 10, 19, 50)", "┌─number─┬─roundToExp2(number)─┐\n│      0 │                   0 │\n│      2 │                   2 │\n│      5 │                   4 │\n│     10 │                   8 │\n│     19 │                  16 │\n│     50 │                  32 │\n└────────┴─────────────────────┘"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionRoundToExp2>(documentation);
 }
 
 }
