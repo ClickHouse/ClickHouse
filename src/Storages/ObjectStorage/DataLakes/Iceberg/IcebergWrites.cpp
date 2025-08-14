@@ -928,9 +928,11 @@ bool IcebergStorageSink::initializeMetadata()
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
         }
         catch (...)
         {
+            LOG_DEBUG(getLogger("IcebergMutations"), "Iceberg cleanup failed");
         }
     };
 

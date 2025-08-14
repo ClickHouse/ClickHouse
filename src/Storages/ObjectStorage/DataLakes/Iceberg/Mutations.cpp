@@ -19,6 +19,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
+#include "Common/logger_useful.h"
 #include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
@@ -218,9 +219,11 @@ bool writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
         }
         catch (...)
         {
+            LOG_DEBUG(getLogger("IcebergMutations"), "Iceberg cleanup failed");
         }
     };
 
