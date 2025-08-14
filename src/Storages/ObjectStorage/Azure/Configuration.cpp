@@ -56,7 +56,8 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "account_key",
     "connection_string",
     "storage_account_url",
-    "partition_strategy"
+    "partition_strategy",
+    "partition_columns_in_data_file"
 };
 
 void StorageAzureConfiguration::check(ContextPtr context) const

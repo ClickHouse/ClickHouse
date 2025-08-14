@@ -1839,7 +1839,7 @@ CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
     ret += "(";
-    if (ff.has_cluster() && ff.fname() > FileFunc_FName_icebergLocal)
+    if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
     {
         ClusterToString(ret, false, ff.cluster());
         ret += ", ";
@@ -1875,16 +1875,6 @@ CONV_FN(FileFunc, ff)
         ret += ", '";
         ret += ff.fcomp();
         ret += "'";
-    }
-    for (int i = 0; i < ff.params_size(); i++)
-    {
-        ret += ", ";
-        KeyValuePairToString(ret, ff.params(i));
-    }
-    if (ff.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, ff.setting_values());
     }
     ret += ")";
 }
@@ -2103,13 +2093,7 @@ CONV_FN(S3Func, sfunc)
         ClusterToString(ret, false, sfunc.cluster());
         ret += ", ";
     }
-    ret += "'";
-    ret += sfunc.resource();
-    ret += "', '";
-    ret += sfunc.user();
-    ret += "', '";
-    ret += sfunc.password();
-    ret += "'";
+    ret += sfunc.credential();
     for (int i = 0; i < sfunc.params_size(); i++)
     {
         ret += ", ";
@@ -2132,25 +2116,7 @@ CONV_FN(AzureBlobStorageFunc, azure)
         ClusterToString(ret, false, azure.cluster());
         ret += ", ";
     }
-    ret += "'";
-    ret += azure.connection_string();
-    ret += "', '";
-    ret += azure.container();
-    ret += "', '";
-    ret += azure.blobpath();
-    ret += "'";
-    if (azure.has_user())
-    {
-        ret += ", '";
-        ret += azure.user();
-        ret += "'";
-    }
-    if (azure.has_password())
-    {
-        ret += ", '";
-        ret += azure.password();
-        ret += "'";
-    }
+    ret += azure.credential();
     for (int i = 0; i < azure.params_size(); i++)
     {
         ret += ", ";
@@ -2160,6 +2126,29 @@ CONV_FN(AzureBlobStorageFunc, azure)
     {
         ret += ", SETTINGS ";
         SettingValuesToString(ret, azure.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(LocalFunc, local)
+{
+    ret += LocalFunc_FName_Name(local.fname());
+    ret += "(";
+    if (local.has_cluster())
+    {
+        ClusterToString(ret, false, local.cluster());
+        ret += ", ";
+    }
+    ret += local.credential();
+    for (int i = 0; i < local.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, local.params(i));
+    }
+    if (local.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, local.setting_values());
     }
     ret += ")";
 }
@@ -2329,6 +2318,15 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
     ret += tudf ? ")" : "";
 }
 
+CONV_FN(ArrowFlightFunc, afunc)
+{
+    ret += "arrowflight('";
+    ret += afunc.address();
+    ret += "', '";
+    ret += afunc.dataset();
+    ret += "')";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2389,6 +2387,9 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kAzure:
             AzureBlobStorageFuncToString(ret, tf.azure());
             break;
+        case TableFunctionType::kLocal:
+            LocalFuncToString(ret, tf.local());
+            break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
             break;
@@ -2402,9 +2403,12 @@ CONV_FN(TableFunction, tf)
             MergeTreeProjectionFuncToString(ret, tf.mtproj());
             break;
         case TableFunctionType::kNullf:
-            ret += "null(";
+            ret += "`null`(";
             ExprToString(ret, tf.nullf());
             ret += ")";
+            break;
+        case TableFunctionType::kFlight:
+            ArrowFlightFuncToString(ret, tf.flight());
             break;
         default:
             ret += "numbers(10)";
@@ -2918,15 +2922,15 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_comment())
-    {
-        ret += " COMMENT ";
-        ret += create_database.comment();
-    }
     if (create_database.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, create_database.setting_values());
+    }
+    if (create_database.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_database.comment();
     }
 }
 
@@ -3178,6 +3182,9 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kKvalue:
             KeyValuePairToString(ret, tep.kvalue());
+            break;
+        case TableEngineParamType::kRvalue:
+            ret += tep.rvalue();
             break;
         default:
             ret += "c0";
@@ -4940,6 +4947,38 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupParams, bparams)
+{
+    ret += "(";
+    for (int i = 0; i < bparams.out_params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        BackupParamToString(ret, bparams.out_params(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
@@ -4963,18 +5002,7 @@ CONV_FN(BackupRestore, backup)
     ret += BackupRestore_BackupOutput_Name(output);
     if (output != BackupRestore_BackupOutput_Null)
     {
-        ret += "(";
-        for (int i = 0; i < backup.out_params_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ret += "'";
-            ret += backup.out_params(i);
-            ret += "'";
-        }
-        ret += ")";
+        BackupParamsToString(ret, backup.params());
     }
     if (backup.has_setting_values())
     {
