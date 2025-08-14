@@ -10,7 +10,6 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
-#include "Common/DateLUT.h"
 
 namespace DB
 {

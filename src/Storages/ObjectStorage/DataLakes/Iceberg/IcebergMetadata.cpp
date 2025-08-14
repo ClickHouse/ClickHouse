@@ -157,8 +157,6 @@ void scheduleCompactionJob(
     });
 }
 
-
-
 }
 
 using namespace Iceberg;
@@ -449,15 +447,11 @@ void IcebergMetadata::scheduleBackgroundCompaction(ObjectStoragePtr object_stora
     {
         auto configuration_ptr = configuration.lock();
 
-        if (configuration_ptr->isDataLakeConfiguration() && configuration_ptr->supportsWrites())
+        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_ptr, format_settings_, sample_block]
         {
-            context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_ptr, format_settings_, sample_block]
-            {
-                scheduleCompactionJob(object_storage_, configuration_ptr, format_settings_, sample_block, context);
-            });
-        }
+            scheduleCompactionJob(object_storage_, configuration_ptr, format_settings_, sample_block, context);
+        });
     }
-
 }
 
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
