@@ -587,6 +587,7 @@ void ClientBase::onLogData(Block & block)
     /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
     {
         SortDescription desc;
+        desc.push_back(SortColumnDescription("event_time"));
         desc.push_back(SortColumnDescription("event_time_microseconds"));
         sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
     }
