@@ -20,7 +20,7 @@ CREATE TABLE test_simple_projection
 )
 ENGINE = MergeTree
 ORDER BY (event_date, id)
-SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
+SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1, allow_part_offset_column_in_projections = 1; -- disable merge
 
 INSERT INTO test_simple_projection VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe');
 INSERT INTO test_simple_projection VALUES (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west');

@@ -38,7 +38,8 @@ CREATE TEMPORARY TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE TEMPORARY test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString
+SETTINGS allow_part_offset_column_in_projections = 1;
 DROP TABLE test;
 
 CREATE TEMPORARY TABLE test
@@ -50,7 +51,8 @@ CREATE TEMPORARY TABLE test
         SELECT _part_offset, user_id ORDER BY item_id
     )
 )
-ENGINE = MergeTree ORDER BY ();
+ENGINE = MergeTree ORDER BY ()
+SETTINGS allow_part_offset_column_in_projections = 1;
 SHOW CREATE TEMPORARY test FORMAT LineAsString;
 DROP TABLE test;
 
@@ -63,7 +65,8 @@ CREATE TEMPORARY TABLE test
         SELECT _part_offset ORDER BY user_id, item_id
     )
 )
-ENGINE = MergeTree ORDER BY ();
+ENGINE = MergeTree ORDER BY ()
+SETTINGS allow_part_offset_column_in_projections = 1;
 SHOW CREATE TEMPORARY test FORMAT LineAsString;
 DROP TABLE test;
 

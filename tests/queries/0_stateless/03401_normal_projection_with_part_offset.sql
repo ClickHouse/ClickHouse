@@ -17,7 +17,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192;
+SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, allow_part_offset_column_in_projections = 1;
 
 -- Insert enough rows so that future projection materialization test will trigger level 1 merge
 INSERT INTO test SELECT number * 3, rand() FROM numbers(360000);
@@ -54,7 +54,8 @@ CREATE TABLE test
     )
 )
 ENGINE = MergeTree
-ORDER BY a;
+ORDER BY a
+SETTINGS allow_part_offset_column_in_projections = 1;
 
 -- This works because now projection will refer to the parent's physical `_part_offset`
 ALTER TABLE test ADD COLUMN _part_index int;
@@ -77,7 +78,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_part_offset_column_in_projections = 1;
 
 INSERT INTO test SELECT number, 10 - number FROM numbers(5);
 
