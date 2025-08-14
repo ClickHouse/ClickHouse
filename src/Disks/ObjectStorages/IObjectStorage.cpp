@@ -96,4 +96,11 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
 {
     return write_settings;
 }
+
+
+void RelativePathWithMetadata::downloadMetadataIfNotSet(ObjectStoragePtr object_storage)
+{
+    if (!metadata.has_value())
+        metadata = object_storage->tryGetObjectMetadata(relative_path);
+}
 }

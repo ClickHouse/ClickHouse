@@ -120,6 +120,8 @@ struct RelativePathWithMetadata
     {}
 
     const String & getPath() const { return relative_path; }
+    void downloadMetadataIfNotSet(ObjectStoragePtr object_storage);
+    
 };
 
 struct ObjectKeyWithMetadata
