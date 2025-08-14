@@ -64,7 +64,7 @@ struct Plan
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
     std::unique_ptr<IcebergMetadata> iceberg_metadata;
-
+    FileNamesGenerator generator;
 
     class ParititonEncoder
     {
@@ -100,13 +100,14 @@ struct Plan
 };
 
 Plan getPlan(
-    ObjectStoragePtr object_storage, StorageObjectStorageConfigurationPtr configuration, ContextPtr context, FileNamesGenerator & generator)
+    ObjectStoragePtr object_storage, StorageObjectStorageConfigurationPtr configuration, ContextPtr context)
 {
     auto metadata = IcebergMetadata::create(object_storage, configuration, context);
     std::unique_ptr<IcebergMetadata> iceberg_metadata(static_cast<IcebergMetadata *>(metadata.release()));
     auto snapshots_info = iceberg_metadata->getHistory(context);
 
     Plan plan;
+    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, iceberg_metadata->getCompressionMethod());
 
     std::vector<ManifestFileEntry> all_positional_delete_files;
     std::unordered_map<String, std::shared_ptr<ManifestFilePlan>> manifest_files;
@@ -146,7 +147,7 @@ Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .parsed_data_file_info = parsed_data_file_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
-                        .patched_path = generator.generateDataFileName()});
+                        .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
                 }
                 else
@@ -257,8 +258,7 @@ void writeMetadataFiles(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
-    SharedHeader sample_block_,
-    FileNamesGenerator & generator)
+    SharedHeader sample_block_)
 {
     auto log = getLogger("IcebergCompaction");
     const auto [metadata_version, metadata_file_path, compression_method]
@@ -269,7 +269,7 @@ void writeMetadataFiles(
 
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
-    auto generated_metadata_name = generator.generateMetadataName();
+    auto generated_metadata_name = plan.generator.generateMetadataName();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
@@ -286,7 +286,7 @@ void writeMetadataFiles(
             total_records_count += data_file->new_records_count;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
-            generator,
+            plan.generator,
             generated_metadata_name.path_in_metadata,
             history_record.parent_id,
             history_record.added_files,
@@ -344,7 +344,7 @@ void writeMetadataFiles(
 
         for (auto & [manifest_entry, data_filenames] : grouped_by_manifest_files_result)
         {
-            manifest_entry->patched_path = generator.generateManifestEntryName();
+            manifest_entry->patched_path = plan.generator.generateManifestEntryName();
             manifest_file_renamings[manifest_entry->path] = manifest_entry->patched_path.path_in_metadata;
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(manifest_entry->patched_path.path_in_storage),
@@ -405,7 +405,7 @@ void writeMetadataFiles(
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(renamed_manifest_list), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         generateManifestList(
-            generator,
+            plan.generator,
             metadata_object,
             object_storage,
             context,
@@ -486,8 +486,7 @@ void compactIcebergTable(
     ContextPtr context_,
     bool wait_concurrent_compaction)
 {
-    FileNamesGenerator generator(configuration_->getRawPath().path, configuration_->getRawPath().path, false);
-    auto plan = getPlan(object_storage_, configuration_, context_, generator);
+    auto plan = getPlan(object_storage_, configuration_, context_);
     if (plan.need_optimize)
     {
         bool need_merge = true;
@@ -504,7 +503,7 @@ void compactIcebergTable(
         {
             auto old_files = getOldFiles(object_storage_, configuration_);
             writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-            writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_, generator);
+            writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_);
             clearOldFiles(object_storage_, old_files);
             unlockCompaction(object_storage_, configuration_);
         }

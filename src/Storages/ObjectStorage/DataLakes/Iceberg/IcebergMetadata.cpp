@@ -118,7 +118,8 @@ IcebergMetadata::IcebergMetadata(
     Int32 metadata_version_,
     Int32 format_version_,
     const Poco::JSON::Object::Ptr & metadata_object_,
-    IcebergMetadataFilesCachePtr cache_ptr)
+    IcebergMetadataFilesCachePtr cache_ptr,
+    CompressionMethod metadata_compression_method_)
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , schema_processor(IcebergSchemaProcessor())
@@ -128,6 +129,7 @@ IcebergMetadata::IcebergMetadata(
     , format_version(format_version_)
     , relevant_snapshot_schema_id(-1)
     , table_location(metadata_object_->getValue<String>(f_location))
+    , metadata_compression_method(metadata_compression_method_)
 {
     updateState(context_, metadata_object_);
 }
@@ -550,7 +552,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
     auto format_version = object->getValue<int>(f_format_version);
-    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr);
+    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr, compression_method);
 }
 
 void IcebergMetadata::initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const

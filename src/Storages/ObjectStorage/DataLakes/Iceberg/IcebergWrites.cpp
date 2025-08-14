@@ -87,6 +87,20 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String &
 {
 }
 
+FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
+{
+    data_dir = other.data_dir;
+    metadata_dir = other.metadata_dir;
+    storage_data_dir = other.storage_data_dir;
+    storage_metadata_dir = other.storage_metadata_dir;
+    initial_version = other.initial_version;
+
+    table_dir = other.table_dir;
+    storage_dir = other.storage_dir;
+    use_uuid_in_metadata = other.use_uuid_in_metadata;
+    compression_method = other.compression_method;
+}
+
 FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
 {
     if (this == &other)

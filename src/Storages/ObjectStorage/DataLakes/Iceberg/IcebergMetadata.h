@@ -1,4 +1,5 @@
 #pragma once
+#include "IO/CompressionMethod.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -58,7 +59,8 @@ public:
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        IcebergMetadataFilesCachePtr cache_ptr,
+        CompressionMethod metadata_compression_method_);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -111,6 +113,7 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
+    CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -169,6 +172,7 @@ private:
         Iceberg::FileContentType file_content_type,
         ContextPtr local_context,
         std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
+    CompressionMethod metadata_compression_method;
 };
 
 struct IcebergDataObjectInfo : public RelativePathWithMetadata
