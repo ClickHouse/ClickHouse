@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
@@ -191,9 +192,9 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     ffi::FFI_ArrowSchema schema;
     exportTable(write_metadata, array, schema);
 
-    KernelEngineData engine_data = DeltaLake::KernelUtils::unwrapResult(
+    KernelEngineData engine_data(DeltaLake::KernelUtils::unwrapResult(
         ffi::get_engine_data(array, &schema, engine.get()),
-        "get_engine_data");
+        "get_engine_data"));
 
     ffi::add_files(transaction.get(), engine_data.release());
     auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
@@ -202,3 +203,5 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
 }
 
 }
+
+#endif

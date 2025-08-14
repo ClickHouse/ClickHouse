@@ -1,5 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
-
+#if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
@@ -206,3 +206,5 @@ void DeltaLakePartitionedSink::onFinish()
 }
 
 }
+
+#endif

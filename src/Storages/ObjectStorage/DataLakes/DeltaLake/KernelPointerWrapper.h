@@ -15,7 +15,7 @@ struct KernelPointerWrapper : boost::noncopyable
 {
     KernelPointerWrapper() : ptr(nullptr), free_func(nullptr) {}
 
-    KernelPointerWrapper(KernelType * ptr_)
+    explicit KernelPointerWrapper(KernelType * ptr_)
         : ptr(ptr_)
         , free_func(free_function)
     {

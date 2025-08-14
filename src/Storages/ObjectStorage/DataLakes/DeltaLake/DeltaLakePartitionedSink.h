@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
@@ -69,3 +72,5 @@ private:
 };
 
 }
+
+#endif

@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
+#if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -71,3 +72,5 @@ void DeltaLakeSink::onFinish()
 }
 
 }
+
+#endif

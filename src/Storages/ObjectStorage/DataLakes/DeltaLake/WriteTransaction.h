@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include "delta_kernel_ffi.hpp"
@@ -50,3 +53,5 @@ private:
 using WriteTransactionPtr = std::shared_ptr<WriteTransaction>;
 
 }
+
+#endif
