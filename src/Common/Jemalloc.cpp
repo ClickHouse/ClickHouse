@@ -33,7 +33,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void purgeJemallocArenas()
+namespace Jemalloc
+{
+
+void purgeArenas()
 {
     Stopwatch watch;
     mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
@@ -41,7 +44,7 @@ void purgeJemallocArenas()
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
 }
 
-void checkJemallocProfilingEnabled()
+void checkProfilingEnabled()
 {
     bool active = true;
     size_t active_size = sizeof(active);
@@ -54,9 +57,9 @@ void checkJemallocProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
-void setJemallocProfileActive(bool value)
+void setProfileActive(bool value)
 {
-    checkJemallocProfilingEnabled();
+    checkProfilingEnabled();
     bool active = true;
     size_t active_size = sizeof(active);
     mallctl("prof.active", &active, &active_size, nullptr, 0);
@@ -66,19 +69,18 @@ void setJemallocProfileActive(bool value)
         return;
     }
 
-    setJemallocValue("prof.active", value);
+    setValue("prof.active", value);
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string flushJemallocProfile(const std::string & file_prefix)
+std::string flushProfile(const std::string & file_prefix)
 {
-    checkJemallocProfilingEnabled();
+    checkProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
     int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile with prefix {}", prefix_buffer);
         mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
         return prefix_buffer;
     }
@@ -87,19 +89,18 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     std::string profile_dump_path = fmt::format("{}.{}.{}.heap", file_prefix, getpid(), profile_counter.fetch_add(1));
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
-    LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return profile_dump_path;
 }
 
-void setJemallocBackgroundThreads(bool enabled)
+void setBackgroundThreads(bool enabled)
 {
-    setJemallocValue("background_thread", enabled);
+    setValue("background_thread", enabled);
 }
 
-void setJemallocMaxBackgroundThreads(size_t max_threads)
+void setMaxBackgroundThreads(size_t max_threads)
 {
-    setJemallocValue("max_background_threads", max_threads);
+    setValue("max_background_threads", max_threads);
 }
 
 namespace
@@ -147,6 +148,13 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
     }
 }
 
+thread_local std::string last_flush_profile;
+
+void setLastFlushProfile(const char * filename)
+{
+    last_flush_profile = filename;
+}
+
 }
 
 void setCollectLocalProfileSamplesInTraceLog(bool value)
@@ -154,36 +162,44 @@ void setCollectLocalProfileSamplesInTraceLog(bool value)
     collect_local_profiles_in_trace_log = value;
 }
 
-void setupJemalloc(const ServerSettings & server_settings)
+void setup(const DB::ServerSettings & server_settings)
 {
-    if (server_settings[ServerSetting::jemalloc_enable_global_profiler])
+    if (server_settings[DB::ServerSetting::jemalloc_enable_global_profiler])
     {
         getThreadProfileInitMib().setValue(true);
         getThreadProfileActiveMib().setValue(true);
     }
 
-    setJemallocBackgroundThreads(server_settings[ServerSetting::jemalloc_enable_background_threads].value);
+    setBackgroundThreads(server_settings[DB::ServerSetting::jemalloc_enable_background_threads].value);
 
     if (server_settings[ServerSetting::jemalloc_max_background_threads_num])
-        setJemallocValue("max_background_threads", server_settings[ServerSetting::jemalloc_max_background_threads_num].value);
+        setValue("max_background_threads", server_settings[ServerSetting::jemalloc_max_background_threads_num].value);
 
     collect_global_profiles_in_trace_log = server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log];
-    setJemallocValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
-    setJemallocValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+    setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+    setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+    setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
 }
 
 
-const JemallocMibCache<bool> & getThreadProfileActiveMib()
+const MibCache<bool> & getThreadProfileActiveMib()
 {
-    static JemallocMibCache<bool> thread_profile_active("thread.prof.active");
+    static MibCache<bool> thread_profile_active("thread.prof.active");
     return thread_profile_active;
 
 }
 
-const JemallocMibCache<bool> & getThreadProfileInitMib()
+const MibCache<bool> & getThreadProfileInitMib()
 {
-    static JemallocMibCache<bool> thread_profile_init("prof.thread_active_init");
+    static MibCache<bool> thread_profile_init("prof.thread_active_init");
     return thread_profile_init;
+}
+
+std::string_view getLastFlushProfileForThread()
+{
+    return last_flush_profile;
+}
+
 }
 
 }

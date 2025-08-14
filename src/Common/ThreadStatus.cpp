@@ -183,11 +183,19 @@ void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
     query_id = std::move(new_query_id);
+
+#if USE_JEMALLOC
+    Jemalloc::setValue("thread.prof.name", query_id.c_str());
+#endif
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
     query_id.clear();
+
+#if USE_JEMALLOC
+    Jemalloc::setValue("thread.prof.name", "");
+#endif
 }
 
 const String & ThreadStatus::getQueryId() const
@@ -282,9 +290,11 @@ ThreadStatus::~ThreadStatus()
 #if USE_JEMALLOC
     if (query_context_ptr && query_context_ptr->getSettingsRef()[Setting::jemalloc_enable_profiler])
     {
-        getThreadProfileActiveMib().setValue(getThreadProfileInitMib().getValue());
-        setCollectLocalProfileSamplesInTraceLog(false);
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
     }
+
+    Jemalloc::setValue("thread.prof.name", "");
 #endif
 
     /// detachGroup if it was attached

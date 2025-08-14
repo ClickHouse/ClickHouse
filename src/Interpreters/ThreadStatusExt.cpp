@@ -343,8 +343,8 @@ void ThreadStatus::applyQuerySettings()
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
     {
-        getThreadProfileActiveMib().setValue(true);
-        setCollectLocalProfileSamplesInTraceLog(settings[Setting::jemalloc_collect_profile_samples_in_trace_log]);
+        Jemalloc::getThreadProfileActiveMib().setValue(true);
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(settings[Setting::jemalloc_collect_profile_samples_in_trace_log]);
     }
 #endif
 }

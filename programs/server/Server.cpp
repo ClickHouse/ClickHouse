@@ -1021,7 +1021,7 @@ try
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC
-    setupJemalloc(server_settings);
+    Jemalloc::setup(server_settings);
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);

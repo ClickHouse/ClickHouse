@@ -13,31 +13,29 @@ namespace DB
 
 struct ServerSettings;
 
-void purgeJemallocArenas();
+namespace Jemalloc
+{
 
-void checkJemallocProfilingEnabled();
+void purgeArenas();
 
-void setJemallocProfileActive(bool value);
+void checkProfilingEnabled();
 
-std::string flushJemallocProfile(const std::string & file_prefix);
+void setProfileActive(bool value);
 
-void setJemallocBackgroundThreads(bool enabled);
+std::string flushProfile(const std::string & file_prefix);
 
-void setJemallocMaxBackgroundThreads(size_t max_threads);
+void setBackgroundThreads(bool enabled);
+
+void setMaxBackgroundThreads(size_t max_threads);
 
 template <typename T>
-void setJemallocValue(const char * name, T value)
+void setValue(const char * name, T value)
 {
-    T old_value;
-    size_t old_value_size = sizeof(T);
-    mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T));
-
-    if constexpr (!std::is_pointer_v<T>)
-        LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
+    mallctl(name, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
 }
 
 template <typename T>
-T getJemallocValue(const char * name)
+T getValue(const char * name)
 {
     T value;
     size_t value_size = sizeof(T);
@@ -45,15 +43,15 @@ T getJemallocValue(const char * name)
     return value;
 }
 
-void setupJemalloc(const ServerSettings & server_settings);
+void setup(const ServerSettings & server_settings);
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
 /// and using it in mallctlbymib calls
 template <typename T>
-struct JemallocMibCache
+struct MibCache
 {
-    explicit JemallocMibCache(const char * name)
+    explicit MibCache(const char * name)
     {
         mallctlnametomib(name, mib, &mib_length);
     }
@@ -82,10 +80,14 @@ private:
     size_t mib_length = max_mib_length;
 };
 
-const JemallocMibCache<bool> & getThreadProfileActiveMib();
-const JemallocMibCache<bool> & getThreadProfileInitMib();
+const MibCache<bool> & getThreadProfileActiveMib();
+const MibCache<bool> & getThreadProfileInitMib();
 
 void setCollectLocalProfileSamplesInTraceLog(bool value);
+
+std::string_view getLastFlushProfileForThread();
+
+}
 
 }
 
