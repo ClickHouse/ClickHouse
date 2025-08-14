@@ -15,7 +15,6 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
-
 #include <memory>
 
 #include <Storages/IPartitionStrategy.h>

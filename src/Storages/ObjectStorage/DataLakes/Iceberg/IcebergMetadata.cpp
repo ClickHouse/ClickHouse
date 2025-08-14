@@ -89,76 +89,6 @@ extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_experimental_iceberg_background_compaction;
 }
 
-namespace
-{
-
-void waitUntilCompressionIsDone(
-    StorageObjectStorageConfigurationPtr configuration,
-    ObjectStoragePtr object_storage,
-    ContextPtr context)
-{
-    while (true)
-    {
-        auto key = StoredObject(configuration->getPathForRead().path + ".compaction-lock");
-        if (object_storage->exists(key))
-        {
-            auto backoff_time_ms = context->getSettingsRef()[Setting::iceberg_compaction_backoff_time];
-            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_time_ms));
-
-            continue;
-        }
-        return;
-    }
-}
-
-void scheduleCompactionJob(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    const std::optional<FormatSettings> & format_settings,
-    SharedHeader sample_block,
-    ContextPtr context)
-{
-    auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
-    std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
-    /// Compaction thread poll responses for compaction tasks.
-    context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
-        auto log = getLogger("IcebergCompaction");
-        try
-        {
-            Iceberg::compactIcebergTable(
-                object_storage,
-                configuration,
-                format_settings,
-                sample_block,
-                context
-            );
-        }
-        catch (Exception & ex)
-        {
-            LOG_DEBUG(log, "Iceberg Compaction failed {}", ex.what());
-            Iceberg::unlockCompaction(object_storage, configuration);
-        }
-        catch (...)
-        {
-            LOG_DEBUG(log, "Iceberg Compaction failed with unknown error");
-            Iceberg::unlockCompaction(object_storage, configuration);
-        }
-    });
-
-    /// Compaction Scheduler thread poll responses for task like "sleep for N seconds and schedule compaction of table".
-    context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([=] {
-        scheduleCompactionJob(
-            object_storage,
-            configuration,
-            format_settings,
-            sample_block,
-            context
-        );
-    });
-}
-
-}
-
 using namespace Iceberg;
 
 IcebergMetadata::IcebergMetadata(
@@ -304,7 +234,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
     std::lock_guard lock(mutex);
 
     const auto [metadata_version, metadata_file_path, compression_method]
@@ -441,23 +370,9 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
     }
 }
 
-void IcebergMetadata::scheduleBackgroundCompaction(ObjectStoragePtr object_storage_, ContextPtr context, const std::optional<FormatSettings> & format_settings_, SharedHeader sample_block)
-{
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
-    {
-        auto configuration_ptr = configuration.lock();
-
-        context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_ptr, format_settings_, sample_block]
-        {
-            scheduleCompactionJob(object_storage_, configuration_ptr, format_settings_, sample_block, context);
-        });
-    }
-}
-
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
 {
     auto configuration_ptr = configuration.lock();
-    waitUntilCompressionIsDone(configuration_ptr, object_storage, local_context);
 
     std::optional<String> manifest_list_file;
 

@@ -215,12 +215,6 @@ namespace CurrentMetrics
     extern const Metric IcebergCatalogThreads;
     extern const Metric IcebergCatalogThreadsActive;
     extern const Metric IcebergCatalogThreadsScheduled;
-    extern const Metric IcebergCompactionThreads;
-    extern const Metric IcebergCompactionThreadsActive;
-    extern const Metric IcebergCompactionThreadsScheduled;
-    extern const Metric IcebergSchedulerCompactionThreads;
-    extern const Metric IcebergSchedulerCompactionThreadsActive;
-    extern const Metric IcebergSchedulerCompactionThreadsScheduled;
     extern const Metric IndexMarkCacheBytes;
     extern const Metric IndexMarkCacheFiles;
     extern const Metric MarkCacheBytes;
@@ -344,10 +338,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
-    extern const ServerSettingsUInt64 iceberg_compaction_threadpool_pool_size;
-    extern const ServerSettingsUInt64 iceberg_compaction_threadpool_queue_size;
-    extern const ServerSettingsUInt64 iceberg_scheduler_compaction_threadpool_pool_size;
-    extern const ServerSettingsUInt64 iceberg_scheduler_compaction_threadpool_queue_size;
+    extern const ServerSettingsUInt64 iceberg_schedule_pool_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
 }
 
@@ -493,11 +484,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
     mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
-    mutable std::unique_ptr<ThreadPool> iceberg_compaction_threadpool;
-    mutable std::unique_ptr<ThreadPool> iceberg_scheduler_compaction_threadpool;
     mutable OnceFlag iceberg_catalog_threadpool_initialized;
-    mutable OnceFlag iceberg_compaction_threadpool_initialized;
-    mutable OnceFlag iceberg_scheduler_compaction_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
@@ -3569,40 +3556,6 @@ ThreadPool & Context::getIcebergCatalogThreadpool() const
     });
 
     return *shared->iceberg_catalog_threadpool;
-}
-
-ThreadPool & Context::getIcebergCompactionThreadPool() const
-{
-    callOnce(shared->iceberg_compaction_threadpool_initialized, [&]
-    {
-        auto pool_size = shared->server_settings[ServerSetting::iceberg_compaction_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::iceberg_compaction_threadpool_queue_size];
-
-        shared->iceberg_compaction_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IcebergCompactionThreads,
-            CurrentMetrics::IcebergCompactionThreadsActive,
-            CurrentMetrics::IcebergCompactionThreadsScheduled,
-            pool_size, pool_size, queue_size);
-    });
-
-    return *shared->iceberg_compaction_threadpool;
-}
-
-ThreadPool & Context::getIcebergSchedulerCompactionThreadPool() const
-{
-    callOnce(shared->iceberg_scheduler_compaction_threadpool_initialized, [&]
-    {
-        auto pool_size = shared->server_settings[ServerSetting::iceberg_scheduler_compaction_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::iceberg_scheduler_compaction_threadpool_queue_size];
-
-        shared->iceberg_scheduler_compaction_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IcebergSchedulerCompactionThreads,
-            CurrentMetrics::IcebergSchedulerCompactionThreadsActive,
-            CurrentMetrics::IcebergSchedulerCompactionThreadsScheduled,
-            pool_size, pool_size, queue_size);
-    });
-
-    return *shared->iceberg_scheduler_compaction_threadpool;
 }
 
 void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)

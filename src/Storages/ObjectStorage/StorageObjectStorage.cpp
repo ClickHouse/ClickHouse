@@ -37,7 +37,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 
 #include <Poco/Logger.h>
 
@@ -271,17 +270,6 @@ StorageObjectStorage::StorageObjectStorage(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
-
-    if (!updated_configuration)
-    {
-        configuration->update(
-            object_storage,
-            context,
-            /* if_not_updated_before */is_table_function,
-            /* check_consistent_with_previous_metadata */true);
-    }
-    const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
-    configuration_->scheduleBackgroundCompaction(object_storage_, context, format_settings_, sample_block);
 }
 
 String StorageObjectStorage::getName() const
