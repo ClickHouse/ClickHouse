@@ -12,6 +12,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -73,7 +74,6 @@
 #endif
 
 #include <Core/Protocol.h>
-#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
@@ -734,6 +734,9 @@ void TCPHandler::runImpl()
                         client_tcp_protocol_version,
                         getFormatSettings(query_state->query_context));
                 });
+
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
+                query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);

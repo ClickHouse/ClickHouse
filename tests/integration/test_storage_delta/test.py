@@ -94,6 +94,7 @@ def started_cluster():
             with_azurite=True,
             stay_alive=True,
             with_zookeeper=True,
+            macros={"shard": 0, "replica": 1},
         )
         cluster.add_instance(
             "node2",
@@ -106,6 +107,7 @@ def started_cluster():
             stay_alive=True,
             with_zookeeper=True,
             with_remote_database_disk=False,  # Disable `with_remote_database_disk` as in `test_replicated_database_and_unavailable_s3``, minIO rejects node2 connections
+            macros={"shard": 0, "replica": 2},
         )
         cluster.add_instance(
             "node_with_environment_credentials",
@@ -1486,17 +1488,15 @@ def test_partition_columns_2(started_cluster, cluster):
         ).strip()
     )
 
-    ac = node.query(
-        f"explain actions=1 SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
-        settings={"allow_experimental_delta_kernel_rs": 1},
-    ).strip()
-    print("KSSENII ACTIONS: ", ac)
     assert (
         "1"
         in node.query(
             f" SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1519,7 +1519,10 @@ def test_partition_columns_2(started_cluster, cluster):
         in node.query(
             f"SELECT a FROM {delta_function} WHERE c = 7 and d = 'bb'",
             query_id=query_id,
-            settings={"allow_experimental_delta_kernel_rs": 1},
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
 
@@ -1622,7 +1625,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "bob"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 12", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 12",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)
@@ -1631,7 +1639,12 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
     assert (
         "aelin"
         == node.query(
-            f"SELECT naam FROM {delta_function} WHERE age = 51", query_id=query_id
+            f"SELECT naam FROM {delta_function} WHERE age = 51",
+            query_id=query_id,
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "delta_lake_enable_engine_predicate": 0,
+            },
         ).strip()
     )
     check_pruned_files(5, query_id)
@@ -2313,7 +2326,6 @@ def test_concurrent_queries(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) > 0
     print(f"Uploaded files: {files}")
-
     instance.query(
         f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
@@ -2328,3 +2340,514 @@ def test_concurrent_queries(started_cluster):
     p.wait()
 
     select(0)
+
+
+def test_snapshot_version(started_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_snapshot_version")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+    column_mapping = "name"
+
+    df = spark.createDataFrame([("alice", 47), ("anora", 23), ("aelin", 51)]).toDF(
+        "first_name", "age"
+    )
+
+    df.write.format("delta").partitionBy("age").option(
+        "delta.minReaderVersion", "2"
+    ).option("delta.minWriterVersion", "5").option(
+        "delta.columnMapping.mode", column_mapping
+    ).save(
+        path
+    )
+
+    upload_directory(minio_client, bucket, path, "")
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    def check_schema(expected, version):
+        assert (
+            expected
+            == node.query(
+                f"DESCRIBE TABLE {delta_function} SETTINGS delta_lake_snapshot_version = {version}"
+            ).strip()
+        )
+
+    def check_data(expected, version):
+        assert (
+            expected
+            == node.query(
+                f"SELECT * FROM {delta_function} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
+            ).strip()
+        )
+
+    def append_data(df):
+        df.write.option("mergeSchema", "true").mode("append").format(
+            "delta"
+        ).partitionBy("age").save(path)
+        upload_directory(minio_client, bucket, path, "")
+
+    check_schema("first_name\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 0)
+    check_data("aelin\t51\n" "alice\t47\n" "anora\t23", 0)
+
+    spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '{path}'")
+    spark.sql(f"ALTER TABLE {table_name} RENAME COLUMN first_name TO naam")
+
+    df = spark.createDataFrame([("bob", 12), ("bill", 33), ("bober", 49)]).toDF(
+        "naam", "age"
+    )
+    append_data(df)
+
+    check_schema("first_name\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 0)
+    check_data("aelin\t51\n" "alice\t47\n" "anora\t23", 0)
+
+    check_schema("naam\tNullable(String)\t\t\t\t\t\nage\tNullable(Int64)", 2)
+    check_data("aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49", 2)
+
+    assert "Unknown expression identifier `first_name`" in node.query_and_get_error(
+        f"SELECT first_name FROM {delta_function} WHERE age = 51"
+    )
+
+    assert "Unknown expression identifier `first_name`" in node.query_and_get_error(
+        f"SELECT first_name FROM {delta_function} WHERE age = 51",
+        settings={"delta_lake_snapshot_version": 2},
+    )
+
+    assert (
+        "aelin"
+        in node.query(
+            f"SELECT first_name FROM {delta_function} WHERE age = 51",
+            settings={"delta_lake_snapshot_version": 0},
+        ).strip()
+    )
+
+    assert "Unknown expression identifier `naam`" in node.query_and_get_error(
+        f"SELECT naam FROM {delta_function} WHERE age = 51",
+        settings={"delta_lake_snapshot_version": 0},
+    )
+
+    assert (
+        "aelin"
+        in node.query(
+            f"SELECT naam FROM {delta_function} WHERE age = 51",
+            settings={"delta_lake_snapshot_version": 2},
+        ).strip()
+    )
+
+
+def test_join_with_distributed(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_join_with_distributed")
+    result_file = f"{TABLE_NAME}"
+
+    df = spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e'), (6, 'f',), (7, 'g'), (8, 'h'), (9, 'i')], ['id', 'val'])
+
+    df.write.format("delta").save(f"/{TABLE_NAME}")
+
+    clickhouse_table_name = f"test_join_with_distributed_{uuid.uuid4().hex}"
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    instance.query(f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id")
+    instance.query(f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())")
+    instance.query(f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');")
+
+    table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    # All cases which were reproted as faulty
+    assert int(instance.query(f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0").strip()) == 9
+    assert int(instance.query(f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1").strip()) == 9
+
+    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
+    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
+    assert int(instance.query(f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0").strip()) == 9
+
+
+def test_delta_kernel_internal_pruning(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_partition_columns")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = ["b", "c", "d", "e", "f", "g", "h"]
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "INT")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
+        .partitionedBy(partition_columns)
+        .execute()
+    )
+    num_rows = 9
+
+    schema = StructType(
+        [
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
+        ]
+    )
+
+    now = datetime.now()
+    for i in range(1, num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i % 3),
+                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i % 2,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
+        )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    cluster = False
+    if cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    result = instance.query(f"describe table {table_function}").strip()
+    assert (
+        result == "a\tNullable(Int32)\t\t\t\t\t\n"
+        "b\tNullable(String)\t\t\t\t\t\n"
+        "c\tNullable(Date32)\t\t\t\t\t\n"
+        "d\tNullable(Int32)\t\t\t\t\t\n"
+        "e\tNullable(DateTime64(6))\t\t\t\t\t\n"
+        "f\tNullable(Bool)\t\t\t\t\t\n"
+        "g\tNullable(Decimal(10, 2))\t\t\t\t\t\n"
+        "h\tNullable(Bool)"
+    )
+
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert result == num_rows
+
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	0	{now}	true	2.22	false
+3	test0	2000-01-03	1	2012-01-03 12:34:56.789123	false	3.33	true
+4	test1	2000-01-04	0	{now}	true	4.44	false
+5	test2	2000-01-05	1	2012-01-05 12:34:56.789123	false	5.55	true
+6	test0	2000-01-06	0	{now}	true	6.66	false
+7	test1	2000-01-07	1	2012-01-07 12:34:56.789123	false	7.77	true
+8	test2	2000-01-08	0	{now}	true	8.88	false
+9	test0	2000-01-09	1	2012-01-09 12:34:56.789123	false	9.99	true"""
+
+    assert (
+        expected_output
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY a").strip()
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_1"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_2"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d == 1
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_3"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d != 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_4"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d > 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_5"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d < 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_6"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND 1 >= d
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_7"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d <= 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_8"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE c == toDate('2000-01-08')
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_9"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE c == '2000-01-08'
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_10"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not (h == 1)
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_11"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not h
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    query_id = f"query_with_filter_{TABLE_NAME}_12"
+    assert "Injecting fault for visitLiteralValue" in instance.query_and_get_error(
+        f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+        query_id=query_id,
+        settings={"delta_lake_throw_on_engine_predicate_error": 1},
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_13"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2'
+        """,
+            query_id=query_id,
+        )
+    )
+
+    instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_fail_literal_visitor")
+
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
