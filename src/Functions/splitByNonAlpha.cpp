@@ -132,7 +132,7 @@ Splits a string separated by whitespace and punctuation characters into an array
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionSplitByNonAlpha>(documentation);
 }
 

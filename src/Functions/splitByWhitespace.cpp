@@ -119,7 +119,7 @@ Splits a string which is separated by whitespace characters into an array of sub
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionSplitByWhitespace>(documentation);
 }
 

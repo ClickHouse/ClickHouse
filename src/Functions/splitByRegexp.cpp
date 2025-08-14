@@ -252,7 +252,7 @@ Empty substrings may be selected when:
     FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<SplitByRegexpOverloadResolver>(documentation);
 }
 
