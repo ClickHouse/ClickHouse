@@ -19,6 +19,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
@@ -28,6 +29,11 @@ extern const int BAD_ARGUMENTS;
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+}
+
+namespace DB::FailPoints
+{
+extern const char iceberg_writes_cleanup[];
 }
 
 namespace Iceberg
@@ -201,102 +207,125 @@ bool writeMetadataFiles(
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
 
-    for (const auto & [partition_key, delete_filename] : delete_filenames)
+    auto cleanup = [&]()
     {
-        auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
-        manifest_entries_in_storage.push_back(storage_manifest_entry_name);
-        manifest_entries.push_back(manifest_entry_name);
+        for (const auto & [_, data_file] : delete_filenames)
+            object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
 
-        auto buffer_manifest_entry = object_storage->writeObject(
-            StoredObject(storage_manifest_entry_name),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-        generateManifestFile(
-            metadata,
-            chunk_partitioner.getColumns(),
-            partition_key,
-            delete_filename.path.path_in_metadata,
-            new_snapshot,
-            configuration->format,
-            partititon_spec,
-            partition_spec_id,
-            *buffer_manifest_entry,
-            Iceberg::FileContentType::POSITION_DELETE);
-        buffer_manifest_entry->finalize();
-        manifest_lengths += buffer_manifest_entry->count();
-    }
+        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
+        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+    };
+
+    try
     {
-        auto buffer_manifest_list = object_storage->writeObject(
-            StoredObject(storage_manifest_list_name),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        try
+        for (const auto & [partition_key, delete_filename] : delete_filenames)
         {
-            generateManifestList(
-                filename_generator,
-                metadata,
-                object_storage,
-                context,
-                manifest_entries,
-                new_snapshot,
-                manifest_lengths,
-                *buffer_manifest_list,
-                Iceberg::FileContentType::POSITION_DELETE);
-            buffer_manifest_list->finalize();
-        }
-        catch (...)
-        {
-            for (const auto & manifest_entry : manifest_entries)
-                object_storage->removeObjectIfExists(StoredObject(manifest_entry));
-            throw;
-        }
-    }
+            auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
+            manifest_entries_in_storage.push_back(storage_manifest_entry_name);
+            manifest_entries.push_back(manifest_entry_name);
 
-    {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
-
-        auto cleanup = [&]()
-        {
-            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
-
-            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-        };
-
-        if (object_storage->exists(StoredObject(storage_metadata_name)))
-        {
-            cleanup();
-            return false;
-        }
-
-        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
-        if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-        {
-            auto filename_version_hint = filename_generator.generateVersionHint();
-            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
-        }
-        if (catalog)
-        {
-            String catalog_filename = metadata_name;
-            if (!catalog_filename.starts_with(configuration->getTypeName()))
-                catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
-
-            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            auto buffer_manifest_entry = object_storage->writeObject(
+                StoredObject(storage_manifest_entry_name),
+                WriteMode::Rewrite,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                context->getWriteSettings());
+            try
+            {
+                generateManifestFile(
+                    metadata,
+                    chunk_partitioner.getColumns(),
+                    partition_key,
+                    delete_filename.path.path_in_metadata,
+                    new_snapshot,
+                    configuration->format,
+                    partititon_spec,
+                    partition_spec_id,
+                    *buffer_manifest_entry,
+                    Iceberg::FileContentType::POSITION_DELETE);
+                buffer_manifest_entry->finalize();
+                manifest_lengths += buffer_manifest_entry->count();
+            }
+            catch (...)
             {
                 cleanup();
-                object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                return false;
+                throw;
             }
         }
+
+        {
+            auto buffer_manifest_list = object_storage->writeObject(
+                StoredObject(storage_manifest_list_name),
+                WriteMode::Rewrite,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                context->getWriteSettings());
+
+            try
+            {
+                generateManifestList(
+                    filename_generator,
+                    metadata,
+                    object_storage,
+                    context,
+                    manifest_entries,
+                    new_snapshot,
+                    manifest_lengths,
+                    *buffer_manifest_list,
+                    Iceberg::FileContentType::POSITION_DELETE);
+                buffer_manifest_list->finalize();
+            }
+            catch (...)
+            {
+                cleanup();
+                throw;
+            }
+        }
+
+        {
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+            std::string json_representation = removeEscapedSlashes(oss.str());
+
+            fiu_do_on(FailPoints::iceberg_writes_cleanup,
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
+            });
+
+            if (object_storage->exists(StoredObject(storage_metadata_name)))
+            {
+                cleanup();
+                return false;
+            }
+
+            Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
+            if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+            {
+                auto filename_version_hint = filename_generator.generateVersionHint();
+                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
+            }
+            if (catalog)
+            {
+                String catalog_filename = metadata_name;
+                if (!catalog_filename.starts_with(configuration->getTypeName()))
+                    catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
+
+                const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                {
+                    cleanup();
+                    object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                    return false;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        cleanup();
+        throw;
     }
     return true;
 }

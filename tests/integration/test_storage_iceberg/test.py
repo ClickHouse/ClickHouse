@@ -2221,7 +2221,7 @@ def test_writes(started_cluster, format_version, storage_type):
     if storage_type != "local":
         return
 
-    default_download_directory(
+    initial_files = default_download_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -2233,6 +2233,20 @@ def test_writes(started_cluster, format_version, storage_type):
 
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 3
+
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_cleanup")
+    with pytest.raises(Exception):
+        instance.query(f"INSERT INTO {TABLE_NAME} VALUES (777777777777);", settings={"allow_experimental_insert_into_iceberg": 1})
+
+
+    files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(initial_files) == len(files)
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -2665,3 +2679,25 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
 
     instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '999';", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\n'
+
+    if storage_type != "local":
+        return
+    initial_files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_cleanup")
+    with pytest.raises(Exception):
+        instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '456';", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(initial_files) == len(files)
