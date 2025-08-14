@@ -5005,6 +5005,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
+Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -5268,9 +5271,9 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
-    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
-)", EXPERIMENTAL) \
+)", BETA) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -6454,6 +6457,12 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
+    DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
+Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
+)", 0) \
+    DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
+Enables delta-kernel internal data pruning.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6679,9 +6688,9 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", BETA) \
-    DECLARE(Float, vector_search_index_fetch_multiplier, 1.0, R"(
+    DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
-)", BETA) \
+)", BETA, vector_search_postfilter_multiplier) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
@@ -6767,6 +6776,11 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
+Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
+It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
+The downside is potentially higher memory usage.
+)", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
@@ -6807,6 +6821,9 @@ Possible values:
 
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
+)", 0) \
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+Use roaring bitmap for iceberg positional deletes.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -6946,6 +6963,9 @@ Allow to execute `insert` queries into iceberg.
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
 )", EXPERIMENTAL) \
+    DECLARE(String, iceberg_metadata_compression_method, "", R"(
+Method to compress `.metadata.json` file.
+)", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
@@ -7070,7 +7090,6 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
-    MAKE_OBSOLETE(M, Float, vector_search_postfilter_multiplier, 1.0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
