@@ -803,6 +803,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
             /// Release closed. Please use 25.6
+            {"allow_part_offset_column_in_projections", false, false, "New setting, it protects from creating projections with parent part offset column until it is stabilized."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
