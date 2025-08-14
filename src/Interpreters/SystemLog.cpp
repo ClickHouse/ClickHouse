@@ -286,7 +286,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
-        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
+        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 

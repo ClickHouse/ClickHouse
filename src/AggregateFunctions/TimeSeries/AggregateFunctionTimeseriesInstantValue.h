@@ -14,8 +14,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
-#include <AggregateFunctions/AggregateFunctionLast2Samples.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionLast2Samples.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
 
 namespace DB

@@ -1,10 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesInstantValue.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesExtrapolatedValue.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesToGridSparse.h>
-#include <AggregateFunctions/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesInstantValue.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -279,6 +279,7 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
+    factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
 }
 
 }
