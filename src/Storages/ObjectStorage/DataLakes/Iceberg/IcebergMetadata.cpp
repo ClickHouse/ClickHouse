@@ -81,7 +81,6 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsMilliseconds iceberg_compaction_backoff_time;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_iceberg_compaction;
@@ -359,7 +358,7 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
     {
         auto configuration_ptr = configuration.lock();
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        compactIcebergTable(object_storage, configuration_ptr, format_settings, sample_block, contextg);
+        compactIcebergTable(object_storage, configuration_ptr, format_settings, sample_block, context);
         return true;
     }
     else
