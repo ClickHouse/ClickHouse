@@ -588,7 +588,7 @@ void ClientBase::onLogData(Block & block)
     {
         SortDescription desc;
         desc.push_back(SortColumnDescription("event_time_microseconds"));
-        sortBlock(block, desc);
+        sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
     }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
