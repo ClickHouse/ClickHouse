@@ -2359,7 +2359,20 @@ def test_join_with_distributed(started_cluster):
     TABLE_NAME = randomize_table_name("test_join_with_distributed")
     result_file = f"{TABLE_NAME}"
 
-    df = spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e'), (6, 'f',), (7, 'g'), (8, 'h'), (9, 'i')], ['id', 'val'])
+    df = spark.createDataFrame(
+        [
+            (1, "a"),
+            (2, "b"),
+            (3, "c"),
+            (4, "d"),
+            (5, "e"),
+            (6, "f"),
+            (7, "g"),
+            (8, "h"),
+            (9, "i"),
+        ],
+        ["id", "val"],
+    )
 
     df.write.format("delta").save(f"/{TABLE_NAME}")
 
@@ -2371,19 +2384,60 @@ def test_join_with_distributed(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    instance.query(f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id")
-    instance.query(f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())")
-    instance.query(f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');")
+    instance.query(
+        f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id"
+    )
+    instance.query(
+        f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())"
+    )
+    instance.query(
+        f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');"
+    )
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     # All cases which were reproted as faulty
-    assert int(instance.query(f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0").strip()) == 9
-    assert int(instance.query(f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1").strip()) == 9
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0"
+            ).strip()
+        )
+        == 9
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1"
+            ).strip()
+        )
+        == 9
+    )
 
-    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
-    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
-    assert int(instance.query(f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0").strip()) == 9
+    assert (
+        len(
+            instance.query(
+                f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;"
+            ).split("\n")
+        )
+        == 10
+    )
+    assert (
+        len(
+            instance.query(
+                f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;"
+            ).split("\n")
+        )
+        == 10
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0"
+            ).strip()
+        )
+        == 9
+    )
 
 
 def test_delta_kernel_internal_pruning(started_cluster):
@@ -2915,17 +2969,28 @@ def test_partitioned_writes(started_cluster):
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     def check_count(expected):
-        assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
-        #assert expected == int(
-        #   instance_disabled_kernel.query(f"SELECT count() FROM {table_name}")
-        #)
-        assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
+        assert expected == int(
+            instance.query(
+                f"SELECT count() FROM {table_name} settings use_cache_for_count_from_files=0"
+            )
+        )
+        assert expected == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} settings use_cache_for_count_from_files=0"
+            )
+        )
+        assert expected == int(
+            instance_disabled_kernel.query(
+                f"SELECT count() FROM {table_name} settings use_cache_for_count_from_files=0"
+            )
+        )
 
     def check_data(expected):
         assert (
             expected
             == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
         )
+        # TODO: Fix read with disabled delta-kernel?
         # assert (
         #    expected
         #    == instance_disabled_kernel.query(
@@ -2938,14 +3003,14 @@ def test_partitioned_writes(started_cluster):
         )
 
     check_files(10)
-    #check_count(10)
+    check_count(10)
     check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
     )
+    check_count(20)
     check_files(20)
-    #check_count(20)
     check_data(
         "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
     )

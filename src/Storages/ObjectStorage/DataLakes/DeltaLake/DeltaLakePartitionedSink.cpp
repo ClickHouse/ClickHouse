@@ -1,4 +1,4 @@
-#include "DeltaLakePartitionedSink.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ArenaUtils.h>

@@ -489,7 +489,7 @@ void TableSnapshot::initSnapshotImpl() const
         fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
 
     if (table_schema.empty())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table schema is emtpy");
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table schema cannot be empty");
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));

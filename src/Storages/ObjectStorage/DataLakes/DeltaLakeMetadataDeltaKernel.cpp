@@ -11,7 +11,7 @@
 namespace DB
 {
 
-static void tracingCallback(struct ffi::Event event)
+[[maybe_unused]] static void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs.
     if (event.message.len > 100)
@@ -61,7 +61,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
             log))
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
+    //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 #endif
 }
 
