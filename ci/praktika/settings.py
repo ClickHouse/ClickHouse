@@ -102,6 +102,11 @@ class _Settings:
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
 
+    ######################################
+    #        chcache Settings            #
+    ######################################
+    SECRET_CHCACHE_PASSWORD: str = ""
+
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -145,6 +150,7 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
+    "SECRET_CHCACHE_PASSWORD"
 ]
 
 
