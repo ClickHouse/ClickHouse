@@ -109,12 +109,12 @@ private:
 REGISTER_FUNCTION(RandomFixedString)
 {
     FunctionDocumentation::Description description = R"(
-Generates a binary string of the specified length filled with random bytes (including zero bytes).
-Not all characters may be printable.
+Generates a random fixed-size string with the specified number of character.
+The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
     )";
     FunctionDocumentation::Syntax syntax = "randomFixedString(length)";
     FunctionDocumentation::Arguments arguments = {
-        {"length", "Length of the string in bytes.", {"UInt64"}}
+        {"length", "Length of the string in bytes.", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"FixedString"}};
     FunctionDocumentation::Examples examples = {

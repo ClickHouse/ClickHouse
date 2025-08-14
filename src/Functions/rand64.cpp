@@ -14,16 +14,16 @@ using FunctionRand64 = FunctionRandom<UInt64, NameRand64>;
 REGISTER_FUNCTION(Rand64)
 {
     FunctionDocumentation::Description description = R"(
-Returns a random `UInt64` number with uniform distribution.
+Returns a random and uniformly distributed `UInt64` number.
 
 Uses a linear congruential generator with an initial state obtained from the system, which means that while it appears random, it's not truly random and can be predictable if the initial state is known.
 For scenarios where true randomness is crucial, consider using alternative methods like system-level calls or integrating with external libraries.
     )";
     FunctionDocumentation::Syntax syntax = "rand64()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` number with uniform distribution.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a random UInt64 number with uniform distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT rand64();", "15030268859237645412 -- Note: The actual output will be a random number, not the specific number shown in the example."}
+        {"Usage example", "SELECT rand64();", "15030268859237645412"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;

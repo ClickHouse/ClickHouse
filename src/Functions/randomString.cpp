@@ -132,12 +132,13 @@ private:
 REGISTER_FUNCTION(RandomString)
 {
     FunctionDocumentation::Description description = R"(
-Generates a string of the specified length filled with random bytes (including zero bytes)
-Not all characters may be printable.
+Generates a random string with the specified number of characters.
+The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
     )";
-    FunctionDocumentation::Syntax syntax = "randomString(length)";
+    FunctionDocumentation::Syntax syntax = "randomString(length, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"length", "Length of the string in bytes.", {"(U)Int*"}}
+        {"length", "Length of the string in bytes.", {"(U)Int*"}},
+	{"[x]", "The optional argument is ignored, its only purpose is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {

@@ -132,7 +132,7 @@ It is useful for applying consistent random seeds or identifiers across all rows
     )";
     FunctionDocumentation::Syntax syntax = "randConstant([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"[x]", "Optional. An expression that influences the generated random value.", {"U)Int*", "Float*", "Decimal", "String"}}
+        {"[x]", "The optional argument is ignored, its only purpose is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a column of type `UInt32` containing the same random value in each row.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {

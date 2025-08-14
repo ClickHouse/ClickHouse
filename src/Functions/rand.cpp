@@ -23,7 +23,7 @@ For scenarios where true randomness is crucial, consider using alternative metho
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a number of type `UInt32`.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT rand();", "1569354847 -- Note: The actual output will be a random number, not the specific number shown in the example"}
+        {"Usage example", "SELECT rand();", "1569354847"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;

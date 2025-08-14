@@ -121,15 +121,16 @@ public:
 REGISTER_FUNCTION(RandomPrintableASCII)
 {
     FunctionDocumentation::Description description = R"(
-Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) characters.
-All characters are printable.
+Generates a random [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) string with the specified number of characters.
+
 If you pass `length < 0`, the behavior of the function is undefined.
     )";
-    FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length)";
+    FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length[, x])";
     FunctionDocumentation::Arguments arguments = {
-        {"length", "String length in bytes.", {"(U)Int*", "Float*"}}
+        {"length", "String length in bytes.", {"(U)Int*"}},
+	{"[x]", "The optional argument is ignored, its only purpose is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of ASCII printable characters.", {"String"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers LIMIT 3", R"(
 ┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐

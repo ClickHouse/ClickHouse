@@ -48,13 +48,13 @@ public:
 REGISTER_FUNCTION(CanonicalRand)
 {
     FunctionDocumentation::Description description = R"(
-Returns a random `Float64` number.
+Returns a random and uniformly distributed `Float64` number between `0` (inclusive) and `1` (exclusive).
     )";
     FunctionDocumentation::Syntax syntax = "randCanonical()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value between `0` (inclusive) and `1` (exclusive).", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a random Float64 number.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT randCanonical();", "0.3452178901234567 - Note: The actual output will be a random Float64 number between 0 and 1, not the specific number shown in the example."}
+        {"Usage example", "SELECT randCanonical();", "0.345217890123456"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
