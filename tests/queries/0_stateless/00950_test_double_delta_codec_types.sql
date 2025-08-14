@@ -1,34 +1,33 @@
--- https://github.com/ClickHouse/ClickHouse/pull/84383
+-- Test for issue #80220
 
-DROP TABLE IF EXISTS codecTest;
+DROP TABLE IF EXISTS tab;
 
--- Check error on FixedString with and without argument.
-CREATE TABLE codecTest (c0 FixedString(9) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE codecTest (c0 FixedString(9) CODEC(DoubleDelta(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+-- Codec DoubleDelta must not be used on FixedString columns
 
--- Similarly if the column is LowCardinality
-CREATE TABLE codecTest (c0 LowCardinality(FixedString(9)) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE codecTest (c0 LowCardinality(FixedString(9)) CODEC(DoubleDelta(2))) ENGINE = MergeTree() ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab(c0 FixedString(9) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab(c0 FixedString(9) CODEC(DoubleDelta(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
-set enable_time_time64_type=1;
+CREATE TABLE tab(c0 LowCardinality(FixedString(9)) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab(c0 LowCardinality(FixedString(9)) CODEC(DoubleDelta(2))) ENGINE = MergeTree() ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
 
--- It is intended to work in Time type.
-CREATE TABLE codecTest (c0 Time CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple();
-INSERT INTO TABLE codecTest (c0) VALUES ('100:00:00');
-DROP TABLE codecTest;
+-- Combination DoubleDelta & Time is okay
 
--- Also in Nullable time.
-CREATE TABLE codecTest (c0 Nullable(Time) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple();
-INSERT INTO TABLE codecTest (c0) VALUES ('100:00:00');
-INSERT INTO TABLE codecTest (c0) VALUES (NULL);
-DROP TABLE codecTest;
+SET enable_time_time64_type = 1;
+CREATE TABLE tab(c0 Time CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO TABLE tab (c0) VALUES ('100:00:00');
+DROP TABLE tab;
 
--- But not in LowCardinality(nullable)
-CREATE TABLE codecTest (c0 LowCardinality(Nullable(Time)) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE codecTest (c0 LowCardinality(Nullable(Time)) CODEC(DoubleDelta(2))) ENGINE = MergeTree() ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab(c0 Nullable(Time) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO TABLE tab(c0) VALUES ('100:00:00');
+INSERT INTO TABLE tab(c0) VALUES (NULL);
+DROP TABLE tab;
 
--- Check same early fail behavior on MATERIALIZED VIEW creation
-CREATE TABLE codecTest (c0 String) ENGINE = MergeTree() ORDER BY tuple();
-CREATE MATERIALIZED VIEW v0 REFRESH AFTER 1 SECOND APPEND TO codecTest (c0 String CODEC(DoubleDelta(2))) EMPTY AS (SELECT 'a' AS c0); -- { serverError BAD_ARGUMENTS } 
+-- LowCardinality(Nullable(Time)) is rejected
+CREATE TABLE tab(c0 LowCardinality(Nullable(Time)) CODEC(DoubleDelta)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab(c0 LowCardinality(Nullable(Time)) CODEC(DoubleDelta(2))) ENGINE = MergeTree() ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
 
-DROP TABLE codecTest;
+-- This statement from issue #80220 is expected to fail:
+CREATE TABLE tab(c0 String) ENGINE = MergeTree() ORDER BY tuple();
+CREATE MATERIALIZED VIEW v0 REFRESH AFTER 1 SECOND APPEND TO tab (c0 String CODEC(DoubleDelta(2))) EMPTY AS (SELECT 'a' AS c0); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE tab;
