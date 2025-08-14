@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Poco/JSON/Object.h>
+#include "Disks/ObjectStorages/StoredObject.h"
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
 
@@ -235,17 +236,26 @@ bool writeMetadataFiles(
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
-        generateManifestList(
-            filename_generator,
-            metadata,
-            object_storage,
-            context,
-            manifest_entries,
-            new_snapshot,
-            manifest_lengths,
-            *buffer_manifest_list,
-            Iceberg::FileContentType::POSITION_DELETE);
-        buffer_manifest_list->finalize();
+        try
+        {
+            generateManifestList(
+                filename_generator,
+                metadata,
+                object_storage,
+                context,
+                manifest_entries,
+                new_snapshot,
+                manifest_lengths,
+                *buffer_manifest_list,
+                Iceberg::FileContentType::POSITION_DELETE);
+            buffer_manifest_list->finalize();
+        }
+        catch (...)
+        {
+            for (const auto & manifest_entry : manifest_entries)
+                object_storage->removeObjectIfExists(StoredObject(manifest_entry));
+            throw;
+        }
     }
 
     {
@@ -267,12 +277,11 @@ bool writeMetadataFiles(
             return false;
         }
 
-        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context);
-
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
         if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = filename_generator.generateVersionHint();
-            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
+            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
         }
         if (catalog)
         {
@@ -300,8 +309,7 @@ void mutate(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    StorageID table_id)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
 
@@ -341,7 +349,7 @@ void mutate(
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, table_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
     {
     }
 }

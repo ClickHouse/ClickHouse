@@ -130,7 +130,7 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
-    bool supportsDelete() const override { return true; }
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 protected:

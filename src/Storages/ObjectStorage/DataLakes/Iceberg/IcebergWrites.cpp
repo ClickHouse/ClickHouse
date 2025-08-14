@@ -918,18 +918,36 @@ bool IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry, Iceberg::FileContentType::DATA);
-        buffer_manifest_entry->finalize();
-        manifest_lengths += buffer_manifest_entry->count();
+        try
+        {
+            generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry, Iceberg::FileContentType::DATA);
+            buffer_manifest_entry->finalize();
+            manifest_lengths += buffer_manifest_entry->count();
+        }
+        catch (...)
+        {
+            for (const auto & manifest_entry : manifest_entries)
+                object_storage->removeObjectIfExists(StoredObject(manifest_entry));
+            throw;
+        }
     }
 
     {
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-        generateManifestList(
-            filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
-        buffer_manifest_list->finalize();
+        try
+        {
+            generateManifestList(
+                filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
+            buffer_manifest_list->finalize();
+        }
+        catch (...)
+        {
+            for (const auto & manifest_entry : manifest_entries)
+                object_storage->removeObjectIfExists(StoredObject(manifest_entry));
+            throw;
+        }
     }
 
     {
@@ -951,11 +969,11 @@ bool IcebergStorageSink::initializeMetadata()
             return false;
         }
 
-        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, metadata_compression_method);
+        Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup, metadata_compression_method);
         if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
             auto filename_version_hint = filename_generator.generateVersionHint();
-            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context);
+            Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
         }
         if (catalog)
         {

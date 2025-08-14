@@ -1,3 +1,5 @@
+#include "Disks/ObjectStorages/IObjectStorage.h"
+#include "Interpreters/StorageID.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -40,6 +42,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -444,6 +447,34 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
+void IcebergMetadata::mutate(
+    const MutationCommands & commands,
+    ContextPtr context,
+    const StorageID & storage_id,
+    StorageMetadataPtr metadata_snapshot,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const std::optional<FormatSettings> & format_settings)
+{
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::mutate(
+        commands,
+        context,
+        metadata_snapshot,
+        storage_id,
+        object_storage,
+        configuration_ptr,
+        format_settings,
+        catalog);
+}
+
+void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -485,12 +516,17 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, compression_method);
+    auto cleanup = [&] ()
+    {
+        object_storage->removeObjectIfExists(StoredObject(filename));
+    };
+
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, cleanup, compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context);
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, cleanup);
     }
     if (catalog)
     {

@@ -648,31 +648,14 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-#if USE_AVRO
-    if (configuration->supportsWrites())
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        auto storage = getStorageID();
-
-        Iceberg::mutate(
-            commands,
-            context_,
-            metadata_snapshot,
-            storage,
-            object_storage,
-            configuration,
-            format_settings,
-            catalog,
-            storage_id);
-    }
-#endif
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    for (const auto & command : commands)
-        if (command.type != MutationCommand::DELETE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+    configuration->checkMutationIsPossible(commands);
 }
 
 

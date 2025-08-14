@@ -27,8 +27,7 @@ void mutate(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    StorageID table_id);
+    std::shared_ptr<DataLake::ICatalog> catalog);
 
 }
 
