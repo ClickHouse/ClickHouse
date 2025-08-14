@@ -161,6 +161,8 @@ public:
 
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
+
+    bool isOptimizedIndexFunction() const;
 };
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.

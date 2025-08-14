@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -8,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -179,6 +181,9 @@ public:
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
+    void registerColumnsChanges(
+        const std::vector<std::string> &removed_columns,
+        const std::vector<std::string> &new_columns);
 
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
@@ -189,6 +194,7 @@ public:
     {
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
+            , skip_indexes(std::make_shared<UsefulSkipIndexes>())
             , use_skip_indexes(false)
         {}
 
@@ -197,7 +203,11 @@ public:
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
-        UsefulSkipIndexes skip_indexes;
+        /// A reference to this data could be added to the context in some conditions
+        /// That's why this is a shared_ptr instead of an optional.
+        /// The context reference could be accessed from the payload which executed AFTER
+        /// ReadFromMergeTree was already destroyed.
+        std::shared_ptr<UsefulSkipIndexes> skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };

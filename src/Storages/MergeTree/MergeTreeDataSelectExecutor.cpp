@@ -1,4 +1,6 @@
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -58,6 +60,8 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+
+#include <Interpreters/IndexContextInfo.h>
 
 #include <IO/WriteBufferFromOStream.h>
 
@@ -678,7 +682,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
-    const UsefulSkipIndexes & skip_indexes,
+    const std::shared_ptr<UsefulSkipIndexes> skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -706,7 +710,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
 
         std::unordered_set<std::string> useful_indices_names;
-        for (const auto & useful_index : skip_indexes.useful_indices)
+        for (const auto & useful_index : skip_indexes->useful_indices)
             useful_indices_names.insert(useful_index.index->index.name);
 
         for (const auto & index_name : forced_indices)
@@ -732,13 +736,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     };
 
     IndexStat pk_stat;
-    std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
-    std::vector<IndexStat> merged_indices_stat(skip_indexes.merged_indices.size());
+    std::vector<IndexStat> useful_indices_stat(skip_indexes->useful_indices.size());
+    std::vector<IndexStat> merged_indices_stat(skip_indexes->merged_indices.size());
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
 
+    /// Some of information will be filled in parallel in  process_part
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
+
+    std::vector<std::optional<IndexContextInfo::PartInfo>> part_index_info_vector(parts_with_ranges.size());
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
@@ -827,14 +834,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 return {};
             };
 
-            for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+            IndexContextInfo::IndexPostingsCacheForStoreMap postings_cache_for_store_part;
+
+            for (size_t idx = 0; idx < skip_indexes->useful_indices.size(); ++idx)
             {
                 if (ranges.ranges.empty())
                     break;
 
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                const auto & index_and_condition = skip_indexes.useful_indices[idx];
+                const auto & index_and_condition = skip_indexes->useful_indices[idx];
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
@@ -845,6 +854,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     LOG_TRACE(log, "{}", result.error().text);
                     continue;
                 }
+
+                std::shared_ptr<PostingsCacheForStore> cache_in_store;
 
                 std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                     index_and_condition.index,
@@ -857,7 +868,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     vector_similarity_index_cache.get(),
-                    log);
+                    log,
+                    cache_in_store);
+
+                /// Remember this function takes a lock, don't abuse of it.
+                if (index_and_condition.index->index.type == "text")
+                {
+                    chassert(cache_in_store != nullptr);
+                    const String &index_name = index_and_condition.index->index.name;
+                    postings_cache_for_store_part.emplace(index_name, cache_in_store);
+                }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
@@ -866,12 +886,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 skip_index_used_in_part[part_index] = 1; /// thread-safe
             }
 
-            for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+            for (size_t idx = 0; idx < skip_indexes->merged_indices.size(); ++idx)
             {
                 if (ranges.ranges.empty())
                     break;
 
-                const auto & indices_and_condition = skip_indexes.merged_indices[idx];
+                const auto & indices_and_condition = skip_indexes->merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
@@ -894,7 +914,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
-        };
+
+            if (!postings_cache_for_store_part.empty())
+            {
+                part_index_info_vector[part_index].emplace(
+                    IndexContextInfo::PartInfo {
+                        .data_part = parts_with_ranges[part_index].data_part,
+                        .ranges = ranges.ranges,
+                        .postings_cache_for_store_part = postings_cache_for_store_part
+                    }
+                );
+            }
+        }; // process_part
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
@@ -973,9 +1004,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         });
     }
 
-    for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+    for (size_t idx = 0; idx < skip_indexes->useful_indices.size(); ++idx)
     {
-        const auto & index_and_condition = skip_indexes.useful_indices[idx];
+        const auto & index_and_condition = skip_indexes->useful_indices[idx];
         const auto & stat = useful_indices_stat[idx];
         const auto & index_name = index_and_condition.index->index.name;
         LOG_DEBUG(
@@ -998,9 +1029,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
 
-    for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+    for (size_t idx = 0; idx < skip_indexes->merged_indices.size(); ++idx)
     {
-        const auto & index_and_condition = skip_indexes.merged_indices[idx];
+        const auto & index_and_condition = skip_indexes->merged_indices[idx];
         const auto & stat = merged_indices_stat[idx];
         const auto & index_name = "Merged";
         LOG_DEBUG(
@@ -1021,6 +1052,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_parts_after = stat.total_parts - stat.parts_dropped,
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
+
+    context->setIndexInfo(std::make_shared<IndexContextInfo>(
+            IndexContextInfo{
+                .skip_indexes = skip_indexes,
+                .part_info_vector = std::move(part_index_info_vector)
+            })
+    );
 
     return parts_with_ranges;
 }
@@ -1685,7 +1723,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-    LoggerPtr log)
+    LoggerPtr log,
+    std::shared_ptr<PostingsCacheForStore> &cache_in_store)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
@@ -1716,6 +1755,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         return {ranges, in_read_hints};
     }
 
+    // TODO: JAM check this code.
+    // At the moment the code will only work for granularity = 1 because I am not playing with the paddings
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
@@ -1796,9 +1837,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        PostingsCacheForStore cache_in_store;
         if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+            cache_in_store = std::make_shared<PostingsCacheForStore>(index_helper->getFileName(), part->getDataPartStoragePtr());
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -1846,8 +1886,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 else
                 {
                     bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+                    if (const auto gin_filter_condition = std::dynamic_pointer_cast<const MergeTreeIndexConditionGin>(condition))
+                        result = cache_in_store
+                            ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, *cache_in_store)
+                            : true;
                     else
                         result = condition->mayBeTrueOnGranule(granule);
 

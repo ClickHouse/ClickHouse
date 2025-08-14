@@ -6,7 +6,8 @@
 namespace DB
 {
 
-static constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
+struct MarkRanges;
+
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr auto DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.001; /// 0.1%
 
@@ -73,6 +74,10 @@ public:
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
     bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+
+    /// Get a vector of indices given a filter.
+    /// The function uses the input ranges to limit the desired indices.
+    std::vector<UInt32> getIndices(const GinFilter * filter, const PostingsCacheForStore * cache_store, const MarkRanges & ranges) const;
 
     /// Set the query string of the filter
     void setQueryString(std::string_view query_string_)

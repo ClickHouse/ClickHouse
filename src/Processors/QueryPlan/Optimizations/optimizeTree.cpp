@@ -8,6 +8,11 @@
 
 #include <stack>
 
+#include <cstdio>
+
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+
 namespace DB
 {
 
