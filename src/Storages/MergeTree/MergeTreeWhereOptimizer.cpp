@@ -321,6 +321,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         Condition cond(node);
         bool has_invalid_column = false;
+        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.`
         bool may_use_primary_index = true;
         collectColumns(node, nullptr, table_columns, cond.table_columns, has_invalid_column, may_use_primary_index);
 
@@ -352,12 +353,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
         }
 
-        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere && may_use_primary_index)
+        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
         {
             /// Consider all conditions good with this setting enabled.
             cond.good = cond.viable;
-            /// Find min position in PK of any column that is used in this condition.
+
             cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
+            if (!may_use_primary_index && cond.min_position_in_primary_key != std::numeric_limits<Int64>::max() - 1)
+            {
+                /// Only set min_position_in_primary_key if it is possible to use primary index for current condition.
+                cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+            }
+            /// Find min position in PK of any column that is used in this condition.
             pk_positions.emplace(cond.min_position_in_primary_key);
         }
 
