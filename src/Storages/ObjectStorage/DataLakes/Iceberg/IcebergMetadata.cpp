@@ -42,6 +42,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -83,6 +84,9 @@ extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsMilliseconds iceberg_compaction_backoff_time;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsMilliseconds iceberg_period_compaction;
+extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool allow_experimental_iceberg_background_compaction;
 }
 
 namespace
@@ -106,6 +110,54 @@ void waitUntilCompressionIsDone(
         return;
     }
 }
+
+void scheduleCompactionJob(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings,
+    SharedHeader sample_block,
+    ContextPtr context)
+{
+    auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
+    std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
+    /// Compaction thread poll responses for compaction tasks.
+    context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
+        auto log = getLogger("IcebergCompaction");
+        try
+        {
+            Iceberg::compactIcebergTable(
+                object_storage,
+                configuration,
+                format_settings,
+                sample_block,
+                context
+            );
+        }
+        catch (Exception & ex)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed {}", ex.what());
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Iceberg Compaction failed with unknown error");
+            Iceberg::unlockCompaction(object_storage, configuration);
+        }
+    });
+
+    /// Compaction Scheduler thread poll responses for task like "sleep for N seconds and schedule compaction of table".
+    context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([=] {
+        scheduleCompactionJob(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            context
+        );
+    });
+}
+
+
 
 }
 
@@ -374,6 +426,38 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
             relevant_snapshot_id,
             configuration_ptr->getPathForRead().path);
+}
+
+bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        auto configuration_ptr = configuration.lock();
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        compactIcebergTable(object_storage, configuration_ptr, format_settings, sample_block, context, true);
+        return true;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+    }
+}
+
+void IcebergMetadata::scheduleBackgroundCompaction(ObjectStoragePtr object_storage_, ContextPtr context, const std::optional<FormatSettings> & format_settings_, SharedHeader sample_block)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
+    {
+        auto configuration_ptr = configuration.lock();
+
+        if (configuration_ptr->isDataLakeConfiguration() && configuration_ptr->supportsWrites())
+        {
+            context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_ptr, format_settings_, sample_block]
+            {
+                scheduleCompactionJob(object_storage_, configuration_ptr, format_settings_, sample_block, context);
+            });
+        }
+    }
+
 }
 
 void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)

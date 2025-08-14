@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include "Common/DateLUT.h"
 
 namespace DB
 {
@@ -194,6 +195,13 @@ public:
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
+    virtual void scheduleBackgroundCompaction(ObjectStoragePtr /*object_storage_*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings_*/, SharedHeader /*sample_block*/) {}
 
     String format = "auto";
     String compression_method = "auto";

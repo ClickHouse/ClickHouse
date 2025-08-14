@@ -115,6 +115,11 @@ public:
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
     CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
+
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+
+    void scheduleBackgroundCompaction(ObjectStoragePtr object_storage_, ContextPtr context, const std::optional<FormatSettings> & format_settings, SharedHeader sample_block) override;
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

@@ -48,9 +48,6 @@ namespace Setting
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool allow_experimental_insert_into_iceberg;
-    extern const SettingsMilliseconds iceberg_period_compaction;
-    extern const SettingsBool allow_experimental_iceberg_compaction;
-    extern const SettingsBool allow_experimental_iceberg_background_compaction;
 }
 
 namespace ErrorCodes
@@ -61,61 +58,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace
-{
-
-#if USE_AVRO
-
-void scheduleCompactionJob(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    const std::optional<FormatSettings> & format_settings,
-    SharedHeader sample_block,
-    ContextPtr context)
-{
-    auto compaction_period = context->getSettingsRef()[Setting::iceberg_period_compaction];
-    std::this_thread::sleep_for(std::chrono::milliseconds(compaction_period));
-    /// Compaction thread poll responses for compaction tasks.
-    context->getIcebergCompactionThreadPool().scheduleOrThrow([=] {
-        auto log = getLogger("IcebergCompaction");
-        try
-        {
-            Iceberg::compactIcebergTable(
-                object_storage,
-                configuration,
-                format_settings,
-                sample_block,
-                context
-            );
-        }
-        catch (Exception & ex)
-        {
-            LOG_DEBUG(log, "Iceberg Compaction failed {}", ex.what());
-            Iceberg::unlockCompaction(object_storage, configuration);
-        }
-        catch (...)
-        {
-            LOG_DEBUG(log, "Iceberg Compaction failed with unknown error");
-            Iceberg::unlockCompaction(object_storage, configuration);
-        }
-    });
-
-    /// Compaction Scheduler thread poll responses for task like "sleep for N seconds and schedule compaction of table".
-    context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([=] {
-        scheduleCompactionJob(
-            object_storage,
-            configuration,
-            format_settings,
-            sample_block,
-            context
-        );
-    });
-}
-
-#endif
-
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -331,27 +273,16 @@ StorageObjectStorage::StorageObjectStorage(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 
-#if USE_AVRO
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_background_compaction].value)
+    if (!updated_configuration)
     {
-        if (!updated_configuration)
-        {
-            configuration->update(
-                object_storage,
-                context,
-                /* if_not_updated_before */is_table_function,
-                /* check_consistent_with_previous_metadata */true);
-        }
-        if (configuration_->isDataLakeConfiguration() && configuration_->supportsWrites())
-        {
-            const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
-            context->getIcebergSchedulerCompactionThreadPool().scheduleOrThrow([object_storage_, context, configuration_, format_settings_, sample_block]
-            {
-                scheduleCompactionJob(object_storage_, configuration_, format_settings_, sample_block, context);
-            });
-        }
+        configuration->update(
+            object_storage,
+            context,
+            /* if_not_updated_before */is_table_function,
+            /* check_consistent_with_previous_metadata */true);
     }
-#endif
+    const auto sample_block = std::make_shared<const Block>(metadata.getSampleBlock());
+    configuration_->scheduleBackgroundCompaction(object_storage_, context, format_settings_, sample_block);
 }
 
 String StorageObjectStorage::getName() const
@@ -596,22 +527,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-#if USE_AVRO
-    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-    {
-        if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
-        {
-            const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-            Iceberg::compactIcebergTable(object_storage, configuration, format_settings, sample_block, context, true);
-            return true;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
-        }
-    }
-#endif
-    return false;
+    return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(

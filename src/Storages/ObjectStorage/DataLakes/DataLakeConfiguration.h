@@ -267,6 +267,18 @@ public:
         return nullptr;
     }
 
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        return current_metadata->optimize(metadata_snapshot, context, format_settings);
+    }
+
+    void scheduleBackgroundCompaction(ObjectStoragePtr object_storage_, ContextPtr context, const std::optional<FormatSettings> & format_settings_, SharedHeader sample_block) override
+    {
+        assertInitialized();
+        current_metadata->scheduleBackgroundCompaction(object_storage_, context, format_settings_, sample_block);
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
