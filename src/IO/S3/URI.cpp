@@ -99,7 +99,10 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
     /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
+    ///
+    /// For non-s3 schemes or if no version_id parameter is present but question marks exist in the path,
+    /// we must ensure question marks are properly encoded
+    if (!has_version_id && uri_.contains('?') && !uri_str.starts_with("s3://"))
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
