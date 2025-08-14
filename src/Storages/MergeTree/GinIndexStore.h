@@ -65,7 +65,7 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    static std::shared_ptr<FastPForLib::IntegerCODEC> codec();
+    static std::unique_ptr<FastPForLib::IntegerCODEC> & codec();
     static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
@@ -356,8 +356,6 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
 
-    /// Current segment, used in building index
-    GinIndexSegment current_segment;
 };
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
