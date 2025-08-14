@@ -1438,7 +1438,7 @@ void StatementGenerator::addTableColumnInternal(
     SQLColumn & col,
     ColumnDef * cd)
 {
-    SQLType * tp;
+    SQLType * tp = nullptr;
 
     col.cname = cname;
     cd->mutable_col()->mutable_col()->set_column("c" + std::to_string(cname));
