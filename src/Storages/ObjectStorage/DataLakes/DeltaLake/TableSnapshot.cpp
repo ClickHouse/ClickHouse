@@ -1,4 +1,3 @@
-#include <Interpreters/Context_fwd.h>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS

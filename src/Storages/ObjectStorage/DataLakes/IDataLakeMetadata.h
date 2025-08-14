@@ -10,7 +10,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 
-
 namespace DB
 {
 

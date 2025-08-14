@@ -238,12 +238,12 @@ public:
     }
 
     SinkToStoragePtr write(
-        SharedHeader sample_block,
-        const StorageID & table_id,
-        ObjectStoragePtr object_storage,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override
+        [[maybe_unused]] SharedHeader sample_block,
+        [[maybe_unused]] const StorageID & table_id,
+        [[maybe_unused]] ObjectStoragePtr object_storage,
+        [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
+        [[maybe_unused]] ContextPtr context,
+        [[maybe_unused]] std::shared_ptr<DataLake::ICatalog> catalog) override
     {
 #if USE_AVRO
         if (dynamic_cast<const IcebergMetadata *>(current_metadata.get()))
@@ -266,8 +266,8 @@ public:
                     "Insert into iceberg is experimental. "
                     "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
             }
-#endif
         }
+#endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
         if (auto * metadata = dynamic_cast<DeltaLakeMetadataDeltaKernel *>(current_metadata.get()))
