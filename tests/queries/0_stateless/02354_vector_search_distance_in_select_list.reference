@@ -14,11 +14,6 @@ Column is Array(Float32), Search Vector is Array(BFloat16)
 6	0.0087890625
 7	0.041259766
 8	0.088134766
-Veriying that optimization is active
--- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
-_distance Float32
-_distance Float32
-_distance Float32
 Repeat the tests with the Array(BFloat16) column table
 Column is Array(BFloat16), Search Vector is Array(Float64)
 5	0
@@ -35,8 +30,3 @@ Column is Array(BFloat16), Search Vector is Array(Float32)
 6	0.0087890625
 7	0.03515625
 8	0.088134766
-Veriying that optimization is active with the Array(BFloat16) table
--- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
-_distance Float32
-_distance Float32
-_distance Float32

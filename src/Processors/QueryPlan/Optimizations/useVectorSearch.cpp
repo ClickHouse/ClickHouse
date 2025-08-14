@@ -328,9 +328,6 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     /// to the exact Row ID. The filter is then applied on the columns in the read list.
 
     ActionsDAG & expression = expression_step->getExpression();
-    const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
-    if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
-        return false;
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
     if (optimize_plan)
@@ -375,17 +372,21 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
 
+            const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
+
+            /// This node will be removed first from the DAG, hence remember if CAST is needed.
             const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
+            const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            /// The virtual column is Float32 type, but the cosineDistance/L2Distance could have return type
-            /// of Float64 or Float32, hence add a cast. The MergeTreeRangeReader can only return Float32 column.
+            /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
+            /// input types but the "_distance" column is always of type Float32. Add a cast if needed.
             if (need_cast)
-                distance_node = &expression.addCast(*distance_node, sort_column_node->result_type, "_CAST_distance");
+                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance");
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
