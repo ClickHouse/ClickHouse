@@ -525,8 +525,6 @@ class ClickHouseCluster:
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
-        self.env_variables["MALLOC_CONF"] = "prof_active:true,prof_prefix:/var/lib/clickhouse/clickhouse.jemalloc"
-
         if enable_thread_fuzzer:
             for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():
                 thread_fuzzer_settings.setdefault(key, value)
@@ -3642,8 +3640,6 @@ class ClickHouseCluster:
                         continue
                     logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
-                instance.collect_jemalloc_profiles()
-
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
             except Exception as e:
@@ -3824,7 +3820,9 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        entrypoint: {entrypoint_cmd}
+        command: {entrypoint_cmd}
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -4581,34 +4579,6 @@ class ClickHouseInstance:
             ["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"],
             user="root",
         )
-
-    def collect_jemalloc_profiles(self):
-        profiles = glob(f"{self.path}/database/clickhouse.jemalloc.*")
-        logging.info("Got %s profiles in %s", len(profiles), self.path)
-
-        # We will generate flamegraphs for last jemalloc profile of each PID
-        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
-        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
-        # can be started
-
-        # group profiles by pid
-        grouped_profiles = defaultdict(list)
-        for profile in profiles:
-            parts = profile.split('.')
-            pid = int(parts[2])
-            count = int(parts[3])
-            grouped_profiles[pid].append((count, profile))
-
-        # for each group, get the file with the highest count number
-        latest_profiles = {}
-        for pid, files_in_group in grouped_profiles.items():
-            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
-            latest_profiles[pid] = file_with_max_third_number
-
-        for pid, profile in latest_profiles.items():
-            logging.info("Processing last profile {}", profile)
-            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --text > {self.path}/jemalloc.{pid}.txt"])
-            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --collapsed | flamegraph.pl --color mem --width 2560 > {self.path}/jemalloc.{pid}.svg"])
 
     def contains_in_log(
         self,
