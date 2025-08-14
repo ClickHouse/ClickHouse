@@ -42,6 +42,7 @@ CREATE TEMPORARY TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
+SETTINGS allow_part_offset_column_in_projections = 1
 CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
@@ -56,6 +57,7 @@ CREATE TEMPORARY TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
+SETTINGS allow_part_offset_column_in_projections = 1
 CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
@@ -70,6 +72,7 @@ CREATE TEMPORARY TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
+SETTINGS allow_part_offset_column_in_projections = 1
 CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,

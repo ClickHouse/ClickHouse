@@ -37,9 +37,9 @@ CREATE TEMPORARY TABLE test
         SELECT _part_offset ORDER BY item_id
     )
 )
-ENGINE = MergeTree ORDER BY ();
-SHOW CREATE TEMPORARY test FORMAT LineAsString
+ENGINE = MergeTree ORDER BY ()
 SETTINGS allow_part_offset_column_in_projections = 1;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
 DROP TABLE test;
 
 CREATE TEMPORARY TABLE test
