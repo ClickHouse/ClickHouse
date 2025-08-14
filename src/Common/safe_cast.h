@@ -2,6 +2,11 @@
 
 #include <Common/Exception.h>
 
+#include <concepts>
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 namespace DB
 {
 
@@ -10,26 +15,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Cast integer checking for overflow
-template <typename To, typename From>
-requires std::integral<To> && std::integral<From>
-inline To safe_cast(From value)
+/// Safe integral cast with overflow check
+template <std::integral To, std::integral From>
+[[nodiscard]] constexpr To safe_cast(From value)
 {
-    if constexpr (std::is_signed_v<From> && std::is_unsigned_v<To>)
+    if constexpr (std::is_signed_v<From> == std::is_signed_v<To> &&
+        std::numeric_limits<To>::digits >= std::numeric_limits<From>::digits)
     {
-        if (value < 0 || static_cast<std::make_unsigned_t<From>>(value) > std::numeric_limits<To>::max())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric cast overflow: signed to unsigned conversion error");
+        return static_cast<To>(value);
     }
-    else if constexpr (std::is_unsigned_v<From> && std::is_signed_v<To>)
+    if constexpr (!std::is_signed_v<From> && std::is_signed_v<To> &&
+        std::numeric_limits<To>::digits > std::numeric_limits<From>::digits)
     {
-        if (value > static_cast<From>(std::numeric_limits<To>::max()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric cast overflow: unsigned to signed conversion error");
+        return static_cast<To>(value);
     }
-    else
-    {
-        if (value < std::numeric_limits<To>::min() || value > std::numeric_limits<To>::max())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric cast overflow: value out of target type range");
-    }
+
+    if (!std::in_range<To>(value))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric cast overflow: value {} is out of range of target type {}", value, typeid(To).name());
+
     return static_cast<To>(value);
 }
 

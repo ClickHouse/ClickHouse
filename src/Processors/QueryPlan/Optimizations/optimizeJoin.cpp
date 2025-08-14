@@ -717,7 +717,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     /// Input in global dag -> it's position
     std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
 
-    /// input_position -> (relation no,  input)
+    /// input_position -> (relation no, input)
     std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
