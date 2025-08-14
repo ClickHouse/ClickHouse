@@ -109,7 +109,31 @@ using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
 
 REGISTER_FUNCTION(SplitByNonAlpha)
 {
-    factory.registerFunction<FunctionSplitByNonAlpha>();
+    FunctionDocumentation::Description description = R"(
+Splits a string separated by whitespace and punctuation characters into an array of substrings.
+)";
+    FunctionDocumentation::Syntax syntax = "splitByNonAlpha(s[, max_substrings])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to split.", {"String"}},
+        {"[max_substrings]", "Optional. When `max_substrings > 0`, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible. Default value: `0`.", {"Int64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings of `s`.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT splitByNonAlpha('  1!  a,  b.  ');",
+        R"(
+┌─splitByNonAl⋯ a,  b.  ')─┐
+│ ['1','a','b']            │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionSplitByNonAlpha>(documentation);
 }
 
 }

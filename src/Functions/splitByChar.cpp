@@ -118,7 +118,62 @@ using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 
 REGISTER_FUNCTION(SplitByChar)
 {
-    factory.registerFunction<FunctionSplitByChar>();
+    FunctionDocumentation::Description description = R"(
+Splits a string separated by a specified constant string `separator` of exactly one character into an array of substrings.
+Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
+
+:::note Behavior change from ClickHouse v22.11
+The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11.
+In odler versions, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
+For example, in v22.10:
+
+```sql
+SELECT splitByChar('=', 'a=b=c=d', 2);
+```
+
+Returned:
+
+```response
+['a','b','c=d']
+```
+
+In v22.11:
+
+```sql
+SELECT splitByChar('=', 'a=b=c=d', 2);
+```
+
+Returns:
+
+```sql
+['a','b']
+```
+
+A behavior similar to ClickHouse pre-v22.11 can be achieved by setting `splitby_max_substrings_includes_remaining_string`.
+)";
+    FunctionDocumentation::Syntax syntax = "splitByChar(separator, s[, max_substrings])";
+    FunctionDocumentation::Arguments arguments = {
+        {"separator", "The separator must be a single-byte character.", {"String"}},
+        {"s", "The string to split.", {"String"}},
+        {"[, max_substrings]", "Optional. If `max_substrings > 0`, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible. The default value is `0`. ", {"Int64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings. Empty substrings may be selected when: a separator occurs at the beginning or end of the string, there are multiple consecutive separators, or the original string `s` is empty.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT splitByChar(',', '1,2,3,abcde');",
+        R"(
+┌─splitByChar(⋯2,3,abcde')─┐
+│ ['1','2','3','abcde']    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionSplitByChar>(documentation);
 }
 
 }

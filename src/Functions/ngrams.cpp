@@ -118,9 +118,29 @@ private:
 
 REGISTER_FUNCTION(Ngrams)
 {
-    factory.registerFunction<FunctionNgrams>(FunctionDocumentation{
-        .description = "Splits a UTF-8 string into n-grams symbols.",
-        .category = FunctionDocumentation::Category::StringSplitting});
+    FunctionDocumentation::Description description = R"(
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, ngramsize)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String", "FixedString"}},
+        {"ngramsize", "The size of an n-gram.", {"const UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT ngrams('ClickHouse', 3);",
+        R"(
+['Cli','lic','ick','ckH','kHo','Hou','ous','use']
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionNgrams>(documentation);
 }
 
 }
