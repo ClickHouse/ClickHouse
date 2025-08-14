@@ -129,7 +129,10 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
-            if (is_in_operator)
+            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
+            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
+            /// and extract constant value from it.
+            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
             {
                 const auto & rhs = func.getArgumentAt(1);
                 if (!rhs.isConstant())
