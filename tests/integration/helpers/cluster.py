@@ -4607,8 +4607,8 @@ class ClickHouseInstance:
 
         for pid, profile in latest_profiles.items():
             logging.info("Processing last profile {}", profile)
-            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --text > {self.path}/jemalloc.{pid}.txt 2>/dev/null"])
-            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {self.path}/jemalloc.{pid}.svg"])
+            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --text > {self.path}/jemalloc.{pid}.txt"])
+            subprocess_check_call(["bash", "-c", f"jeprof {self.server_bin_path} {profile} --collapsed | flamegraph.pl --color mem --width 2560 > {self.path}/jemalloc.{pid}.svg"])
 
     def contains_in_log(
         self,
