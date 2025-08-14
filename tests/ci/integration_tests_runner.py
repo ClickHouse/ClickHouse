@@ -230,7 +230,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 2h ./runner {self._get_runner_opts()} {image_cmd} "
+            f"timeout --verbose --signal=KILL 3h ./runner {self._get_runner_opts()} {image_cmd} "
             "--pre-pull --command ' echo Pre Pull finished ' "
         )
 
@@ -364,7 +364,7 @@ class ClickhouseIntegrationTestsRunner:
         report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --verbose --signal=KILL 2h ./runner {runner_opts} {image_cmd} -- "
+            f"timeout --verbose --signal=KILL 3h ./runner {runner_opts} {image_cmd} -- "
             f"--setup-plan --report-log={report_file}"
         )
 
