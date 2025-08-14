@@ -10,28 +10,15 @@ namespace DB
 
 class RPNBuilderTreeNode;
 
-struct ColumnProfile
-{
-    /// TODO: Support min max
-    /// Field min_value, max_value;
-    Float64 num_distinct_values = 0;
-};
-
-struct RelationProfile
-{
-    Float64 rows = 0;
-    std::unordered_map<String, ColumnProfile> column_profile = {};
-};
-
-/// Estimates the selectivity of a condition and cardinality of columns.
+/// Estimates the selectivity of a condition.
 class ConditionSelectivityEstimator
 {
-    struct ColumnEstimator;
-    using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+    struct ColumnSelectivityEstimator;
+    using ColumnEstimators = std::unordered_map<String, ColumnSelectivityEstimator>;
 public:
-    RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
+    Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;
 
-    void addStatistics(ColumnStatisticsPtr column_stat);
+    void addStatistics(String part_name, ColumnStatisticsPartPtr column_stat);
     void incrementRowCount(UInt64 rows);
 
     struct RPNElement
@@ -66,31 +53,28 @@ public:
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
 private:
-    friend class ColumnStatistics;
+    friend class ColumnPartStatistics;
 
-    struct ColumnEstimator
+    struct ColumnSelectivityEstimator
     {
-        ColumnStatisticsPtr stats;
+        /// We store the part_name and part_statistics.
+        /// then simply get selectivity for every part_statistics and combine them.
+        std::map<String, ColumnStatisticsPartPtr> part_statistics;
 
-        void addStatistics(ColumnStatisticsPtr other_stats);
+        void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
         Float64 estimateRanges(const PlainRanges & ranges) const;
-        Float64 estimateCardinality() const;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const;
-    UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
-    static constexpr Float64 default_cond_range_factor = 0.5;
-    static constexpr Float64 default_cond_equal_factor = 0.01;
-    static constexpr Float64 default_unknown_cond_factor = 1;
-    static constexpr Float64 default_cardinality_ratio = 0.1;
+    static constexpr auto default_cond_range_factor = 0.5;
+    static constexpr auto default_cond_equal_factor = 0.01;
+    static constexpr auto default_unknown_cond_factor = 1;
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
 };
-
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
 }

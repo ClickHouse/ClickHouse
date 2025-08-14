@@ -142,7 +142,7 @@ public:
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -151,10 +151,10 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    JoinResultPtr joinBlock(Block block) override;
+    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
+    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -410,11 +410,6 @@ public:
         }
     };
 
-    /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
-    /// we can switch from ALL to RightAny strictness for better performance.
-    bool all_values_unique = true;
-    bool all_join_was_promoted_to_right_any = false;
-
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
     /// We keep correspondence between used_flags and hash table internal buffer.
@@ -443,7 +438,6 @@ public:
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
-    void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
@@ -456,20 +450,17 @@ public:
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
-    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
-    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
-
 private:
     friend class NotJoinedHash;
+
     friend class JoinSource;
-    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
 
     std::shared_ptr<TableJoin> table_join;
-    JoinKind kind;
-    JoinStrictness strictness;
+    const JoinKind kind;
+    const JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -512,7 +503,6 @@ private:
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
-    size_t max_joined_block_bytes = 0;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
@@ -532,9 +522,7 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    JoinResultPtr joinBlockImplCross(Block block) const;
-
-    bool preferUseMapsAll() const;
+    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     bool empty() const;
 

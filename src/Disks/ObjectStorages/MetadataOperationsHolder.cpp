@@ -47,7 +47,7 @@ void MetadataOperationsHolder::addOperation(MetadataOperationPtr && operation)
     operations.emplace_back(std::move(operation));
 }
 
-void MetadataOperationsHolder::commitImpl(const TransactionCommitOptionsVariant & options, SharedMutex & metadata_mutex)
+void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
 {
     if (state != MetadataStorageTransactionState::PREPARING)
         throw Exception(
@@ -69,8 +69,7 @@ void MetadataOperationsHolder::commitImpl(const TransactionCommitOptionsVariant 
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 ex.addMessage(fmt::format("While committing metadata operation #{}", i));
                 state = MetadataStorageTransactionState::FAILED;
-                if (needRollbackBlobs(options))
-                    rollback(lock, i);
+                rollback(lock, i);
                 throw;
             }
         }

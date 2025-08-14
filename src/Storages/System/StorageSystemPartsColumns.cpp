@@ -267,27 +267,14 @@ void StorageSystemPartsColumns::processNextStorage(
             Array substreams;
             Array filenames;
 
-            if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
+            serialization->enumerateStreams([&](const auto & subpath)
             {
-                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
-                for (const auto & substream : column_substreams)
-                {
-                    substreams.push_back(substream);
-                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, part->checksums);
-                    filenames.push_back(filename.value_or(""));
-                }
-            }
-            else
-            {
-                serialization->enumerateStreams([&](const auto & subpath)
-                {
-                    auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
+                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
 
-                    substreams.push_back(std::move(substream));
-                    filenames.push_back(filename.value_or(""));
-                });
-            }
+                substreams.push_back(std::move(substream));
+                filenames.push_back(filename.value_or(""));
+            });
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(substreams);

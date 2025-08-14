@@ -264,7 +264,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
 }
 
@@ -695,7 +694,6 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part");
     desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
-    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
 
     if (metadata.hasPartitionKey())
     {
@@ -795,7 +793,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             /// TODO: We only have one stats file for every part.
             estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(stat);
+                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -812,7 +810,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
                 auto stats = part.data_part->loadStatistics();
                 estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(stat);
+                    estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
@@ -2094,14 +2092,6 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
-bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
-{
-    SearchOrphanedPartsDisks mode = (*getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-    bool is_disk_eligible = !disk->isBroken() && !disk->isCustomDisk() && (mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote()));
-
-    LOG_TRACE(log, "is disk {} eligible for search: {} (mode {})", disk->getName(), is_disk_eligible, mode);
-    return is_disk_eligible;
-}
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
@@ -2115,7 +2105,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
-        /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2149,13 +2139,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (!isDiskEligibleForOrphanedPartsSearch(disk))
+            if (disk->isBroken() || disk->isCustomDisk())
             {
                 skip_check_disks.insert(disk_name);
                 continue;
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
+
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 /// There still a chance that underlying disk is defined in storage policy
@@ -2421,7 +2412,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
 {
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -2512,10 +2502,6 @@ try
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
     refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh parts");
 }
 
 
@@ -3589,7 +3575,7 @@ size_t MergeTreeData::clearEmptyParts()
 
     for (auto & name : parts_names_to_drop)
     {
-        LOG_TRACE(log, "Will drop empty part {}", name);
+        LOG_INFO(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
     }
 
@@ -5551,6 +5537,10 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
+
+            /// Move parts are non replicated operations, so we take lock here.
+            /// All other locks are taken in StorageReplicatedMergeTree
+            lockSharedData(*part_copy, /* replace_existing_lock */ true);
 
             return;
         }

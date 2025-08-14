@@ -197,6 +197,7 @@ Result
 └─────┘
 ```
 
+
 # numericIndexedVectorGetValue
 
 Retrieves the value corresponding to a specified index.
