@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
 #include <Common/BitHelpers.h>
-#include <Common/GWPAsan.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/memcpySmall.h>
 
