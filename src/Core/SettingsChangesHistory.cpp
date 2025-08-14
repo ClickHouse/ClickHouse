@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
             {"delta_lake_enable_engine_predicate", true, true, "New setting"},
             {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
@@ -73,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

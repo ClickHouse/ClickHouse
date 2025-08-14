@@ -2478,11 +2478,7 @@ message SettingValues {
 message FileFunc {
     enum FName {
         file = 1;
-        deltaLakeLocal = 2;
-        icebergLocal = 3;
-        fileCluster = 4;
-        deltaLakeLocalCluster = 5;
-        icebergLocalCluster = 6;
+        fileCluster = 2;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2494,8 +2490,6 @@ message FileFunc {
     }
     optional Expr structure = 7;
     optional string fcomp = 8;
-    repeated KeyValuePair params = 9;
-    optional SettingValues setting_values = 10;
 }
 
 message FormatFunc {
@@ -2591,11 +2585,9 @@ message S3Func {
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
-    required string resource = 3;
-    required string user = 4;
-    required string password = 5;
-    repeated KeyValuePair params = 6;
-    optional SettingValues setting_values = 7;
+    required string credential = 3;
+    repeated KeyValuePair params = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message AzureBlobStorageFunc {
@@ -2609,13 +2601,21 @@ message AzureBlobStorageFunc {
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
-    required string connection_string = 3;
-    required string container = 4;
-    required string blobpath = 5;
-    optional string user = 6;
-    optional string password = 7;
-    repeated KeyValuePair params = 8;
-    optional SettingValues setting_values = 9;
+    required string credential = 3;
+    repeated KeyValuePair params = 4;
+    optional SettingValues setting_values = 5;
+}
+
+message LocalFunc {
+    enum FName {
+        deltaLakeLocal = 1;
+        icebergLocal = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string credential = 3;
+    repeated KeyValuePair params = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message URLFunc {
@@ -2674,6 +2674,11 @@ message ValuesStatement {
     repeated ExprList extra_expr_lists = 2;
 }
 
+message ArrowFlightFunc {
+    required string address = 1;
+    required string dataset = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2693,11 +2698,13 @@ message TableFunction {
         ValuesStatement values = 15;
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
-        URLFunc url = 18;
-        RedisFunc redis = 19;
-        MongoDBFunc mongodb = 20;
-        MergeTreeProjectionFunc mtproj = 21;
-        Expr nullf = 22;
+        LocalFunc local = 18;
+        URLFunc url = 19;
+        RedisFunc redis = 20;
+        MongoDBFunc mongodb = 21;
+        MergeTreeProjectionFunc mtproj = 22;
+        Expr nullf = 23;
+        ArrowFlightFunc flight = 24;
     }
 }
 
@@ -2895,8 +2902,8 @@ message CreateDatabase {
     required Database database = 2;
     optional Cluster cluster = 3;
     required DatabaseEngine dengine = 4;
-    optional string comment = 5;
-    optional SettingValues setting_values = 6;
+    optional SettingValues setting_values = 5;
+    optional string comment = 6;
 }
 
 message CreateFunction {
@@ -3224,6 +3231,7 @@ enum TableEngineValues {
     KeeperMap = 39;
     ExternalDistributed = 40;
     MaterializedPostgreSQL = 41;
+    ArrowFlight = 42;
 }
 
 enum TableEngineOption {
@@ -3248,6 +3256,7 @@ message TableEngineParam {
         ExprSchemaTable est = 13;
         Expr expr = 14;
         KeyValuePair kvalue = 15;
+        string rvalue = 16;
     }
 }
 
@@ -3991,6 +4000,17 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupParams {
+    repeated BackupParam out_params = 1;
+}
+
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -4009,7 +4029,7 @@ message BackupRestore {
         AzureBlobStorage = 6;
     }
     required BackupOutput out = 5;
-    repeated string out_params = 6;
+    required BackupParams params = 6;
     optional SettingValues setting_values = 7;
     enum SyncOrAsync {
         SYNC = 1;

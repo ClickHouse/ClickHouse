@@ -397,54 +397,45 @@ private:
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
-        ffi::EngineExpressionVisitor visitor;
-        visitor.data = &data;
-        visitor.make_field_list = &makeFieldList;
-
-        visitor.visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>;
-        visitor.visit_literal_byte = &visitSimpleLiteral<int8_t, DB::DataTypeInt8>;
-        visitor.visit_literal_short = &visitSimpleLiteral<int16_t, DB::DataTypeInt16>;
-        visitor.visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>;
-        visitor.visit_literal_long = &visitSimpleLiteral<int64_t, DB::DataTypeInt64>;
-        visitor.visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>;
-        visitor.visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>;
-
-        visitor.visit_literal_string = &visitStringLiteral;
-        visitor.visit_literal_decimal = &visitDecimalLiteral;
-
-        visitor.visit_literal_timestamp = &visitTimestampLiteral;
-        visitor.visit_literal_timestamp_ntz = &visitTimestampNtzLiteral;
-        visitor.visit_literal_date = &visitDateLiteral;
-        visitor.visit_literal_binary = &visitBinaryLiteral;
-        visitor.visit_literal_null = &visitNullLiteral;
-        visitor.visit_literal_array = &visitArrayLiteral;
-        visitor.visit_literal_struct = &visitStructLiteral;
-        visitor.visit_literal_map = &visitMapLiteral;
-
-        visitor.visit_column = &visitColumnExpression;
-        visitor.visit_struct_expr = &visitStructExpression;
-
-        visitor.visit_opaque_expr = &throwNotImplementedOpaqueExpression;
-        visitor.visit_opaque_pred = &throwNotImplementedOpaquePredicate;
-        visitor.visit_unknown = &throwNotImplementedUnknown;
-
-        visitor.visit_or = &visitFunction<DB::FunctionOr>;
-        visitor.visit_and = &visitFunction<DB::FunctionAnd>;
-        visitor.visit_not = &visitFunction<DB::FunctionNot>;
-
-        visitor.visit_is_null = &visitFunction<DB::FunctionIsNull>;
-
-        visitor.visit_lt = &throwNotImplemented<LT>;
-        visitor.visit_gt = &throwNotImplemented<GT>;
-        visitor.visit_eq = &throwNotImplemented<EQ>;
-        visitor.visit_distinct = &throwNotImplemented<DISTINCT>;
-        visitor.visit_in = &throwNotImplemented<IN>;
-        visitor.visit_add = &throwNotImplemented<ADD>;
-        visitor.visit_minus = &throwNotImplemented<MINUS>;
-        visitor.visit_multiply = &throwNotImplemented<MULTIPLY>;
-        visitor.visit_divide = &throwNotImplemented<DIVIDE>;
-
-        return visitor;
+        return ffi::EngineExpressionVisitor{
+            .data = &data,
+            .make_field_list = &makeFieldList,
+            .visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>,
+            .visit_literal_long = &visitSimpleLiteral<int64_t, DB::DataTypeInt64>,
+            .visit_literal_short = &visitSimpleLiteral<int16_t, DB::DataTypeInt16>,
+            .visit_literal_byte = &visitSimpleLiteral<int8_t, DB::DataTypeInt8>,
+            .visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>,
+            .visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>,
+            .visit_literal_string = &visitStringLiteral,
+            .visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>,
+            .visit_literal_timestamp = &visitTimestampLiteral,
+            .visit_literal_timestamp_ntz = &visitTimestampNtzLiteral,
+            .visit_literal_date = &visitDateLiteral,
+            .visit_literal_binary = &visitBinaryLiteral,
+            .visit_literal_decimal = &visitDecimalLiteral,
+            .visit_literal_struct = &visitStructLiteral,
+            .visit_literal_array = &visitArrayLiteral,
+            .visit_literal_map = &visitMapLiteral,
+            .visit_literal_null = &visitNullLiteral,
+            .visit_and = &visitFunction<DB::FunctionAnd>,
+            .visit_or = &visitFunction<DB::FunctionOr>,
+            .visit_not = &visitFunction<DB::FunctionNot>,
+            .visit_is_null = &visitFunction<DB::FunctionIsNull>,
+            .visit_lt = &throwNotImplemented<LT>,
+            .visit_gt = &throwNotImplemented<GT>,
+            .visit_eq = &throwNotImplemented<EQ>,
+            .visit_distinct = &throwNotImplemented<DISTINCT>,
+            .visit_in = &throwNotImplemented<IN>,
+            .visit_add = &throwNotImplemented<ADD>,
+            .visit_minus = &throwNotImplemented<MINUS>,
+            .visit_multiply = &throwNotImplemented<MULTIPLY>,
+            .visit_divide = &throwNotImplemented<DIVIDE>,
+            .visit_column = &visitColumnExpression,
+            .visit_struct_expr = &visitStructExpression,
+            .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
+            .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
+            .visit_unknown = &throwNotImplementedUnknown
+        };
     }
 
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
