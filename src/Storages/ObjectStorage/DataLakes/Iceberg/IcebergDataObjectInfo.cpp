@@ -1,7 +1,5 @@
 #include "config.h"
 
-#if USE_AVRO
-
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Array.h>
@@ -105,6 +103,3 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
 {
 }
 }
-
-
-#endif
