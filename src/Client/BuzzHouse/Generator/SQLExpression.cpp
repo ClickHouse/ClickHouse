@@ -407,13 +407,13 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * eq)
 {
+    this->current_level++;
     if (rg.nextMediumNumber() < 6)
     {
         prepareNextExplain(rg, eq);
     }
     else
     {
-        this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
 
         if (rg.nextBool())
@@ -439,8 +439,8 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             std::numeric_limits<uint32_t>::max(),
             std::nullopt,
             eq->mutable_inner_query()->mutable_select()->mutable_sel());
-        this->current_level--;
     }
+    this->current_level--;
 }
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
