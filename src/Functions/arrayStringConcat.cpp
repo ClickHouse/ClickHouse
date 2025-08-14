@@ -200,12 +200,11 @@ public:
 REGISTER_FUNCTION(ArrayStringConcat)
 {
     FunctionDocumentation::Description description = R"(
-Concatenates string representations of values listed in the array with the provided separator,
-an optional parameter set to an empty string by default.
+Concatenates string representations of values listed in the array with the provided separator, which is an optional parameter set to an empty string by default.
 )";
     FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, separator])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to concatenate.", {"Array"}},
+        {"arr", "The array to concatenate.", {"Array(T)"}},
         {"[separator]", "Optional. Separator string. By default an empty string.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the concatenated string.", {"String"}};

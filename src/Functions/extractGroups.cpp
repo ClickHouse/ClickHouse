@@ -119,7 +119,7 @@ Extracts all groups from non-overlapping substrings matched by a regular express
         {"s", "Input string to extract from.", {"String", "FixedString"}},
         {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"If the function finds at least one matching group, it returns Array(Array(String)) column, clustered by group_id (1 to N, where N is number of capturing groups in regexp). If there is no matching group, it returns an empty array.", {"Array(Array(String))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"If the function finds at least one matching group, it returns Array(Array(String)) column, clustered by group_id (`1` to `N`, where `N` is number of capturing groups in regexp). If there is no matching group, it returns an empty array.", {"Array(Array(String))"}};
     FunctionDocumentation::Examples examples = {
         {
             "Usage example",

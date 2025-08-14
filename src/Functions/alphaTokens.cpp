@@ -105,7 +105,7 @@ Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and retu
     FunctionDocumentation::Syntax syntax = "alphaTokens(s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The string to split.", {"String"}},
-        {"[max_substrings]", "Optional. When `max_substrings > 0`, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.", {"Int64"}}
+        {"[max_substrings]", "Optional. When `max_substrings > 0`, the number of returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.", {"Int64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings of `s`.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
