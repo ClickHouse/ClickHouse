@@ -12,7 +12,7 @@
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Interpreters/LightweightZooKeeperLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -110,7 +110,7 @@ public:
         const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::shared_ptr<LightweightZooKeeperLog> lightweight_zk_log_);
+        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
 
     ~ZooKeeper() override;
 
@@ -216,7 +216,7 @@ public:
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
-    std::shared_ptr<LightweightZooKeeperLog> getLightweightZooKeeperLog();
+    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
 
     void setServerCompletelyStarted();
 
@@ -357,7 +357,7 @@ private:
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
-    std::shared_ptr<LightweightZooKeeperLog> lightweight_zookeeper_log;
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

@@ -1,4 +1,4 @@
-#include <Interpreters/LightweightZooKeeperLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -80,7 +80,7 @@ DataTypePtr getErrorEnumType()
         });
 }
 
-ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
+ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
 {
     ColumnsDescription result;
     ParserCodec codec_parser;
@@ -132,7 +132,7 @@ ColumnsDescription LightweightZooKeeperLogElement::getColumnsDescription()
     return result;
 }
 
-void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
+void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
@@ -146,12 +146,12 @@ void LightweightZooKeeperLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
 }
 
-void LightweightZooKeeperLog::stepFunction(TimePoint current_time)
+void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
 {
     std::lock_guard lock(stats_mutex);
     for (auto & [entry_key, entry_stats] : stats)
     {
-        LightweightZooKeeperLogElement element{
+        AggregatedZooKeeperLogElement element{
             .event_time = std::chrono::system_clock::to_time_t(current_time),
             .session_id = entry_key.session_id,
             .parent_path = entry_key.parent_path,
@@ -165,18 +165,18 @@ void LightweightZooKeeperLog::stepFunction(TimePoint current_time)
     stats.clear();
 }
 
-void LightweightZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
+void AggregatedZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
 {
     std::lock_guard lock(stats_mutex);
     stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
 }
 
-bool LightweightZooKeeperLog::EntryKey::operator==(const EntryKey & other) const
+bool AggregatedZooKeeperLog::EntryKey::operator==(const EntryKey & other) const
 {
     return session_id == other.session_id && operation == other.operation && parent_path == other.parent_path;
 }
 
-size_t LightweightZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_key) const
+size_t AggregatedZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_key) const
 {
     SipHash hash;
     hash.update(entry_key.session_id);
@@ -185,7 +185,7 @@ size_t LightweightZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_
     return hash.get64();
 }
 
-void LightweightZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Coordination::Error error)
+void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Coordination::Error error)
 {
     ++count;
     total_latency_microseconds += latency_microseconds;

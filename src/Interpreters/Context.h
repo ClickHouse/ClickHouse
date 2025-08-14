@@ -19,7 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/LightweightZooKeeperLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -1353,7 +1353,7 @@ public:
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
     std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
-    std::shared_ptr<LightweightZooKeeperLog> getLightweightZooKeeperLog() const;
+    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
 
     SystemLogs getSystemLogs() const;
 

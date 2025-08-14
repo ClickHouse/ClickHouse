@@ -140,7 +140,7 @@ namespace
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_LIGHTWEIGHT_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -405,11 +405,11 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         CrashLog::initialize(crash_log);
     }
 
-    if (lightweight_zookeeper_log)
+    if (aggregated_zookeeper_log)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("lightweight_zookeeper_log.collect_interval_milliseconds",
-                                                                DEFAULT_LIGHTWEIGHT_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        lightweight_zookeeper_log->startCollect("LightweightZooKeeperLog", collect_interval_milliseconds);
+        size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
+                                                                DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        aggregated_zookeeper_log->startCollect("AggregatedZooKeeperLog", collect_interval_milliseconds);
     }
 }
 

@@ -4240,7 +4240,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     if (!shared->zookeeper)
     {
-        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog(), getLightweightZooKeeperLog());
+        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog(), getAggregatedZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4468,7 +4468,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog(), getLightweightZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4507,7 +4507,7 @@ static void reloadZooKeeperIfChangedImpl(
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
     std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
-    std::shared_ptr<LightweightZooKeeperLog> lightweight_zk_log,
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
     bool server_started)
 {
     static constexpr auto reason = "Config changed";
@@ -4518,7 +4518,7 @@ static void reloadZooKeeperIfChangedImpl(
 
         auto old_zk = zk;
 
-        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log), std::move(lightweight_zk_log));
+        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log), std::move(aggregated_zookeeper_log));
 
         if (zk_concection_log)
         {
@@ -4538,7 +4538,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getLightweightZooKeeperLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getAggregatedZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -4565,7 +4565,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         else
         {
             LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getLightweightZooKeeperLog(), server_started);
+            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getAggregatedZooKeeperLog(), server_started);
             ++it;
         }
     }
@@ -5215,13 +5215,13 @@ std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
     return shared->system_logs->dead_letter_queue;
 }
 
-std::shared_ptr<LightweightZooKeeperLog> Context::getLightweightZooKeeperLog() const
+std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->lightweight_zookeeper_log;
+    return shared->system_logs->aggregated_zookeeper_log;
 }
 
 SystemLogs Context::getSystemLogs() const

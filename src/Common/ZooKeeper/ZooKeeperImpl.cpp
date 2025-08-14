@@ -31,7 +31,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Coordination/KeeperConstants.h>
-#include <Interpreters/LightweightZooKeeperLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include "config.h"
 
 #if USE_SSL
@@ -396,12 +396,12 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_,
-    std::shared_ptr<LightweightZooKeeperLog> lightweight_zk_log_)
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_)
     : path_acls(args_.path_acls), args(args_)
 {
     log = getLogger("ZooKeeperClient");
     zk_log = std::move(zk_log_);
-    lightweight_zookeeper_log = std::move(lightweight_zk_log_);
+    aggregated_zookeeper_log = std::move(aggregated_zookeeper_log_);
 
     if (!args.chroot.empty())
     {
@@ -1813,19 +1813,19 @@ std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 }
 
 
-std::shared_ptr<LightweightZooKeeperLog> ZooKeeper::getLightweightZooKeeperLog()
+std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
-    if (auto maybe_lightweight_zookeeper_log = std::atomic_load_explicit(&lightweight_zookeeper_log, std::memory_order_relaxed))
+    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
     {
-        return maybe_lightweight_zookeeper_log;
+        return maybe_aggregated_zookeeper_log;
     }
 
     if (const auto maybe_global_context = Context::getGlobalContextInstance())
     {
-        if (auto maybe_lightweight_zookeeper_log = maybe_global_context->getLightweightZooKeeperLog())
+        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
         {
-            std::atomic_store_explicit(&lightweight_zookeeper_log, maybe_lightweight_zookeeper_log, std::memory_order_relaxed);
-            return maybe_lightweight_zookeeper_log;
+            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
+            return maybe_aggregated_zookeeper_log;
         }
     }
 
@@ -1889,10 +1889,10 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
 {
     chassert(response);
-    if (auto maybe_lightweight_zookeeper_log = getLightweightZooKeeperLog(); maybe_lightweight_zookeeper_log && request)
+    if (auto maybe_aggregated_zookeeper_log = getAggregatedZooKeeperLog(); maybe_aggregated_zookeeper_log && request)
     {
         chassert(elapsed_microseconds > 0);
-        maybe_lightweight_zookeeper_log->observe(session_id, request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
+        maybe_aggregated_zookeeper_log->observe(session_id, request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
     }
 }
 

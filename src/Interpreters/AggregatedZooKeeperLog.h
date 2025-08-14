@@ -12,7 +12,7 @@
 namespace DB
 {
 
-struct LightweightZooKeeperLogElement
+struct AggregatedZooKeeperLogElement
 {
     /// Identifying a group.
     time_t event_time;
@@ -25,15 +25,15 @@ struct LightweightZooKeeperLogElement
     std::unique_ptr<Coordination::ErrorCounter> errors;
     UInt64 total_latency_microseconds;
 
-    static std::string name() { return "LightweightZooKeeperLog"; }
+    static std::string name() { return "AggregatedZooKeeperLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class LightweightZooKeeperLog : public PeriodicLog<LightweightZooKeeperLogElement>
+class AggregatedZooKeeperLog : public PeriodicLog<AggregatedZooKeeperLogElement>
 {
-    using PeriodicLog<LightweightZooKeeperLogElement>::PeriodicLog;
+    using PeriodicLog<AggregatedZooKeeperLogElement>::PeriodicLog;
 
 protected:
     void stepFunction(TimePoint current_time) override;

@@ -35,7 +35,7 @@
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
     M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
-    M(LightweightZooKeeperLog, lightweight_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
+    M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
