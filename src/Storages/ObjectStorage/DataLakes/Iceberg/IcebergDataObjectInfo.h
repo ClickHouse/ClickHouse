@@ -5,13 +5,15 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
 #include <base/defines.h>
 
 
 namespace DB
 {
-struct IcebergDataObjectInfo : public RelativePathWithMetadata
+struct IcebergDataObjectInfo : public DB::ObjectInfoDataLake
 {
 #if USE_AVRO
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, const std::vector<Iceberg::ManifestFileEntry> & position_deletes_, const String& format);

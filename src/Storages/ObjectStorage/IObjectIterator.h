@@ -1,6 +1,8 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/ISimpleTransform.h>
+#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
 
 namespace DB
 {
@@ -10,8 +12,6 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 };
 
-using ObjectInfo = RelativePathWithMetadata;
-using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
 
 struct IObjectIterator

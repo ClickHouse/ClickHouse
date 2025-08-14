@@ -76,11 +76,11 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            if (!object_info->metadata)
-                object_info->metadata = object_storage->tryGetObjectMetadata(path);
+            if (!object_info->getUnderlyingObject().metadata)
+                object_info->getUnderlyingObject().metadata = object_storage->tryGetObjectMetadata(path);
 
-            return object_info->metadata
-                ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
+            return object_info->getUnderlyingObject().metadata
+                ? std::optional<time_t>(object_info->getUnderlyingObject().metadata->last_modified.epochTime())
                 : std::nullopt;
         };
 
@@ -249,8 +249,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             prev_read_keys_size = read_keys.size();
         }
 
-        if (query_settings.skip_empty_files
-            && current_object_info->metadata && current_object_info->metadata->size_bytes == 0)
+        if (query_settings.skip_empty_files && current_object_info->getUnderlyingObject().metadata
+            && current_object_info->getUnderlyingObject().metadata->size_bytes == 0)
             continue;
 
         /// In union mode, check cached columns only for current key.
@@ -265,17 +265,13 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         std::unique_ptr<ReadBuffer> read_buf;
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = chooseCompressionMethod(filename, configuration->compression_method);
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            const auto & archive_reader = object_info_in_archive->archive_reader;
-            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
 

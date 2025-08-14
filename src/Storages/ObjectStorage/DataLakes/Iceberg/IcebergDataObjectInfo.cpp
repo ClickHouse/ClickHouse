@@ -83,7 +83,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_manifest_file_entry_,
     const std::vector<Iceberg::ManifestFileEntry> & position_deletes_,
     const String & format)
-    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    : ObjectInfoDataLake(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects_range(definePositionDeletesSpan(data_manifest_file_entry_, position_deletes_, format))
@@ -95,7 +95,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     String data_object_file_path_key_,
     Int32 read_schema_id_,
     std::pair<size_t, size_t> position_deletes_objects_)
-    : RelativePathWithMetadata(std::move(data_object_file_path_))
+    : ObjectInfoDataLake(std::move(data_object_file_path_))
     , data_object_file_path_key(std::move(data_object_file_path_key_))
     , read_schema_id(read_schema_id_)
     , position_deletes_objects_range(position_deletes_objects_)

@@ -18,9 +18,8 @@ class SchemaCache;
 class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
-public:
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
+public:
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -285,39 +284,6 @@ public:
     ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
-
-    struct ObjectInfoInArchive : public ObjectInfo
-    {
-        ObjectInfoInArchive(
-            ObjectInfoPtr archive_object_,
-            const std::string & path_in_archive_,
-            std::shared_ptr<IArchiveReader> archive_reader_,
-            IArchiveReader::FileInfo && file_info_);
-
-        std::string getFileName() const override
-        {
-            return path_in_archive;
-        }
-
-        std::string getPath() const override
-        {
-            return archive_object->getPath() + "::" + path_in_archive;
-        }
-
-        std::string getPathToArchive() const override
-        {
-            return archive_object->getPath();
-        }
-
-        bool isArchive() const override { return true; }
-
-        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
-
-        const ObjectInfoPtr archive_object;
-        const std::string path_in_archive;
-        const std::shared_ptr<IArchiveReader> archive_reader;
-        const IArchiveReader::FileInfo file_info;
-    };
 
 private:
     std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;

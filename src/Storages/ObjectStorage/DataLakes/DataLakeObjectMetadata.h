@@ -1,6 +1,6 @@
 #pragma once
-#include <Interpreters/ActionsDAG.h>
 #include <Core/Field.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -9,5 +9,4 @@ struct DataLakeObjectMetadata
 {
     std::shared_ptr<ActionsDAG> transform;
 };
-
 }

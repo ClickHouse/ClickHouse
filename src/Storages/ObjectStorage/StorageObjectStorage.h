@@ -35,10 +35,6 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
-    using ObjectInfo = RelativePathWithMetadata;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
-
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
