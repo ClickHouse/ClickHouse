@@ -3,7 +3,7 @@
 drop table if exists test;
 
 -- disable merge
-create table test (i int, j int, projection p (select *, _part_offset order by j)) engine MergeTree order by i settings index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+create table test (i int, j int, projection p (select *, _part_offset order by j)) engine MergeTree order by i settings index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1, allow_part_offset_column_in_projections = 1;
 
 -- make 5 parts
 insert into test select number, 10 - number from numbers(5);
