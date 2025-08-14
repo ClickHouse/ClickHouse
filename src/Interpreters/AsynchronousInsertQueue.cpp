@@ -386,17 +386,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
-    {
-        /// we clone query to avoid modifying the original one
-        /// but we move tail buffer to the new query
-        auto copy_ptr = query;
-        query = query->clone();
-        if (auto * insert_query = copy_ptr->as<ASTInsertQuery>())
-        {
-            if (insert_query->tail)
-                insert_query->tail.reset();
-        }
-    }
+    query = query->clone();
     preprocessInsertQuery(query, query_context);
 
     String bytes;
@@ -1005,12 +995,12 @@ try
     try
     {
         Chunk chunk;
-        auto header = pipeline.getSharedHeader();
+        auto header = pipeline.getHeader();
 
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
-            chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, *header, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(data, header, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1085,7 +1075,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)

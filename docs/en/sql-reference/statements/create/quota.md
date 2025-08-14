@@ -45,3 +45,5 @@ Further examples, using the xml configuration (not supported in ClickHouse Cloud
 ## Related Content {#related-content}
 
 - Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
+
+

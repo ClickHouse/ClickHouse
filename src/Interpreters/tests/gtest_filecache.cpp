@@ -9,7 +9,6 @@
 #include <thread>
 
 #include <Core/ServerUUID.h>
-#include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -305,23 +304,13 @@ void increasePriority(const HolderPtr & holder, size_t pos)
 class FileCacheTest : public ::testing::Test
 {
 public:
-    FileCacheTest()
-    {
-        /// Reset current_thread to avoid conflicts of ThreadStatus with MainThreadStatus
-        current_thread = nullptr;
-
+    FileCacheTest() {
         /// Context has to be created before calling cache.initialize();
         /// Otherwise the tests which run before FileCacheTest.get are failed
         /// It is logical to call destroyContext() at destructor.
         /// But that wouldn't work because for proper initialization and destruction global/static objects
         /// testing::Environment has to be used.
         getContext();
-    }
-
-    ~FileCacheTest() override
-    {
-        /// Reset current_thread back
-        current_thread = MainThreadStatus::get();
     }
 
     static void setupLogs(const std::string & level)
@@ -970,7 +959,7 @@ static size_t readAllTemporaryData(NativeReader & stream)
     {
         block = stream.read();
         read_rows += block.rows();
-    } while (!block.empty());
+    } while (block);
     return read_rows;
 }
 
@@ -1015,13 +1004,13 @@ try
 
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
         ASSERT_TRUE(stream);
         /// Do nothing with stream, just create it and destroy.
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
@@ -1058,7 +1047,7 @@ try
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
@@ -1193,19 +1182,19 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
 
         stream->write(block);
         auto stat = stream.finishWriting();
 
         /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stat.compressed_size, 64);
+        ASSERT_EQ(stat.compressed_size, 62);
 
         auto reader = stream.getReadStream();
         auto * read_buf = reader.getHolder();
         const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
-        ASSERT_EQ(internal_buffer.size(), 64);
+        ASSERT_EQ(internal_buffer.size(), 62);
     }
 
     /// Temporary data stored on disk
@@ -1219,11 +1208,11 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
         stream->write(block);
         auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stat.compressed_size, 64);
+        ASSERT_EQ(stat.compressed_size, 62);
     }
 }
 
