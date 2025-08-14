@@ -9,6 +9,7 @@
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
+#include <aws/glue/model/DeleteTableRequest.h>
 #include <aws/glue/model/CreateDatabaseRequest.h>
 #include <aws/glue/model/UpdateTableRequest.h>
 #include <aws/glue/model/TableInput.h>
@@ -564,6 +565,21 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
 
     return true;
+}
+
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+{
+    Aws::Glue::Model::DeleteTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetName(table_name);
+
+    auto response = glue_client->DeleteTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Can not delete table from glue catalog: {}",
+            response.GetError().GetMessage());
 }
 
 }
