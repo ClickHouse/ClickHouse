@@ -821,6 +821,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
+            {"max_uncompressed_bytes_in_patches", 30ULL * 1024 * 1024 * 1024, 30ULL * 1024 * 1024 * 1024, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
