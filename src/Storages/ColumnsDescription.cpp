@@ -3,6 +3,7 @@
 #include <memory>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
@@ -48,6 +49,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -184,14 +190,6 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         DB::writeText(")", buf);
     }
 
-    /// TODO
-    // if (uuid != UUIDHelpers::Nil)
-    // {
-    //     writeChar('\t', buf);
-    //     DB::writeText("UUID ", buf);
-    //     writeEscapedString(UUIDHelpers::uuidToStr(uuid), buf);
-    // }
-
     writeChar('\n', buf);
 }
 
@@ -323,8 +321,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
                         "Cannot add column {}: column with this name already exists", column.name);
 
 
-    /// Roman
-    if (column.uuid == UUIDHelpers::Nil)
+    if (column.uuid == UUIDHelpers::Nil && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
         column.uuid = UUIDHelpers::generateV4();
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.

@@ -94,7 +94,7 @@ namespace UUIDHelpers
 
     const UUID Nil{};
 
-    /// Roman
+    /// TODO probably move the function to better place
     String uuidToStr(const UUID & uuid);
 
 }
