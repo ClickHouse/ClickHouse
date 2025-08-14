@@ -158,31 +158,45 @@ INSTANTIATE_TEST_SUITE_P(PreEpoch,
     DateTime64StringParseBestEffortTest,
     ::testing::ValuesIn(std::initializer_list<DateTime64StringsTestParam>{
         {
-            "Pre-epoch date with fractional seconds",
+            "Pre-epoch date with fractional seconds (original issue case)",
             "1969-01-01 00:00:00.468",
             -31535999532,
             3,
             DateLUT::instance("UTC")
         },
         {
-            "Pre-epoch date with small fractional seconds",
+            "Pre-epoch date near epoch boundary with small fractional seconds",
             "1969-12-31 23:59:59.001",
             -999,
             3,
             DateLUT::instance("UTC")
         },
         {
-            "Pre-epoch date with large fractional seconds",
+            "Pre-epoch date near epoch boundary with large fractional seconds",
             "1969-12-31 23:59:59.999",
             -1,
             3,
             DateLUT::instance("UTC")
         },
         {
-            "Pre-epoch date at exact epoch boundary",
-            "1969-12-31 23:59:59.500",
-            -500,
+            "Pre-epoch date with zero fractional seconds",
+            "1969-12-31 23:59:59.000",
+            -1000,
             3,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date with different scale (scale=2)",
+            "1969-12-31 23:59:58.12",
+            -188,
+            2,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date with high precision (scale=9)",
+            "1969-12-31 23:59:58.123456789",
+            -1876543211,
+            9,
             DateLUT::instance("UTC")
         },
         {
@@ -191,17 +205,9 @@ INSTANTIATE_TEST_SUITE_P(PreEpoch,
             -2208943503211,
             3,
             DateLUT::instance("UTC")
-        },
-        {
-            "Pre-epoch date with high precision fractional seconds",
-            "1969-06-15 10:30:45.123456",
-            -17242154876544,
-            6,
-            DateLUT::instance("UTC")
         }
     })
 );
-
 
 // TODO: add negative test cases for invalid strings, verifying that error is reported properly
 
