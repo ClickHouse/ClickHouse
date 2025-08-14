@@ -50,7 +50,7 @@ struct SQLColumn
 {
 public:
     uint32_t cname = 0;
-    SQLType * tp;
+    SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable;
     std::optional<DModifier> dmod;
@@ -416,7 +416,7 @@ struct ColumnPathChainEntry
 {
 public:
     const String cname;
-    SQLType * tp;
+    SQLType * tp = nullptr;
 
     ColumnPathChainEntry(const String cn, SQLType * t)
         : cname(cn)
