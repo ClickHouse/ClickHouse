@@ -2582,7 +2582,7 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of
 this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-Cloud default value: `0`
+Cloud default value: half the memory amount per replica.
 
 Enables or disables execution of `GROUP BY` clauses in external memory.
 (See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
