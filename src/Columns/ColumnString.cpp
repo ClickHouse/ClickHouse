@@ -739,7 +739,7 @@ ALWAYS_INLINE void ColumnString::updateHashWithValue(size_t n, SipHash & hash) c
 void ColumnString::batchUpdateHashWithValue(const UInt8 * nullmap, std::vector<SipHash> & hashes) const
 {
     size_t rows = size();
-    chassert(rows = hashes.size());
+    chassert(rows == hashes.size());
     if (!nullmap)
     {
         for (size_t i = 0; i < rows; ++i)
