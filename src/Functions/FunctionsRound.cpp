@@ -181,7 +181,7 @@ For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:
             {"x", "A number to round.", {"Float*", "Decimal*", "(U)Int*"}},
             {"[, N]", "Optional. The number of decimal places to round to. Defaults to `0`.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value rounded by the banker's rounding method.", {"Same as input type"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value rounded by the banker's rounding method.", {"(U)Int*", "Decimal*", "Float*"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT number / 2 AS x, roundBankers(x, 0) AS b FROM system.numbers LIMIT 10", "┌───x─┬─b─┐\n│   0 │ 0 │\n│ 0.5 │ 0 │\n│   1 │ 1 │\n│ 1.5 │ 2 │\n│   2 │ 2 │\n│ 2.5 │ 2 │\n│   3 │ 3 │\n│ 3.5 │ 4 │\n│   4 │ 4 │\n│ 4.5 │ 4 │\n└─────┴───┘"}
         };
