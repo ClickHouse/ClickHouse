@@ -91,7 +91,32 @@ public:
 
 REGISTER_FUNCTION(H3ExactEdgeLengthRads)
 {
-    factory.registerFunction<FunctionH3ExactEdgeLengthRads>();
+    FunctionDocumentation::Description description = R"(
+Returns the exact edge length of the unidirectional edge represented by the input [H3](#h3-index) in radians.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ExactEdgeLengthRads(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the exact length of the H3 edge in radians.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get exact edge length in radians",
+            "SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads",
+            R"(
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ExactEdgeLengthRads>(documentation);
 }
 
 }
