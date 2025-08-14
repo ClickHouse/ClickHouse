@@ -849,6 +849,9 @@ bool QueryResultCache::isStale(const Key & key)
     if (auto entry = memory_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
         return false;
 
+    if (auto entry = disk_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+        return false;
+
     return true;
 }
 
@@ -859,7 +862,7 @@ void QueryResultCache::writeMemory(const Key & key, const QueryResultCache::Cach
 
 void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache::MappedPtr & entry)
 {
-    if (!disk)
+    if (!disk || disk->isBroken())
         return;
 
     auto entry_path = fs::path(path) / key.getKeyPath();
@@ -879,17 +882,24 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
         }
     );
 
-    disk->createDirectories(entry_path);
-
+    try
     {
-        auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
-        key.serialize(*entry_file);
-        entry_file->finalize();
-    }
+        disk->createDirectories(entry_path);
 
-    serializeEntry(key, entry, disk_entry);
-    disk_cache.set(key, disk_entry);
-    LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
+        {
+            auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
+            key.serialize(*entry_file);
+            entry_file->finalize();
+        }
+
+        serializeEntry(key, entry, disk_entry);
+        disk_cache.set(key, disk_entry);
+        LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, "Save query results to disk failed");
+    }
 }
 
 std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemory(const Key & key)
@@ -950,6 +960,9 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemo
 
 std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk(const Key & key)
 {
+    if (!disk)
+        return std::nullopt;
+
     auto disk_entry = disk_cache.getWithKey(key);
     if (!disk_entry.has_value())
         return std::nullopt;
@@ -959,15 +972,22 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
     if (!checkAccess(disk_entry_key, key))
         return std::nullopt;
 
-    auto [header, entry_, disk_entry_]  = deserializeEntry(key);
-    if (!entry_)
-        return std::nullopt;
+    try
+    {
+        auto [header, entry_, disk_entry_]  = deserializeEntry(key);
+        if (!entry_)
+            return std::nullopt;
 
-    if (key.is_compressed)
-        compressEntry(entry_);
+        if (key.is_compressed)
+            compressEntry(entry_);
 
-    memory_cache.set(key, entry_);
-    return {{disk_entry->key, entry_}};
+        memory_cache.set(key, entry_);
+        return {{disk_entry->key, entry_}};
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+    return std::nullopt;
 }
 
 void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const
@@ -1020,58 +1040,51 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
 
 std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCache::MappedPtr> QueryResultCache::deserializeEntry(const Key & key)
 {
-    try
+    auto entry = std::make_shared<Entry>();
+    auto disk_entry = std::make_shared<DiskEntry>();
+    std::optional<Block> header;
+    auto key_path = path / key.getKeyPath();
     {
-        auto entry = std::make_shared<Entry>();
-        auto disk_entry = std::make_shared<DiskEntry>();
-        std::optional<Block> header;
-        auto key_path = path / key.getKeyPath();
+        auto result_path = key_path / "results.bin";
+        auto in = disk->readFile(result_path, {});
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, 0);
+
+        while (!compress_in->eof())
         {
-            auto result_path = key_path / "results.bin";
-            auto in = disk->readFile(result_path, {});
-            auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-            NativeReader reader(*compress_in, 0);
-
-            while (!compress_in->eof())
-            {
-                Block res = reader.read();
-                entry->chunks.emplace_back(res.getColumns(), res.rows());
-
-                if (!header)
-                    header = res.cloneEmpty();
-            }
-
-            disk_entry->bytes_on_disk += disk->getFileSize(result_path);
-        }
-
-        auto totals_path = key_path / "totals.bin";
-        if (auto in = disk->readFileIfExists(totals_path))
-        {
-            auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-            NativeReader reader(*compress_in, 0);
             Block res = reader.read();
+            entry->chunks.emplace_back(res.getColumns(), res.rows());
 
-            entry->totals.emplace(res.getColumns(), res.rows());
-            disk_entry->bytes_on_disk += disk->getFileSize(totals_path);
+            if (!header)
+                header = res.cloneEmpty();
         }
 
-        auto extremes_path = key_path / "extremes.bin";
-        if (auto in = disk->readFileIfExists(extremes_path))
-        {
-            auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-            NativeReader reader(*compress_in, 0);
-            Block res = reader.read();
-
-            entry->extremes.emplace(res.getColumns(), res.rows());
-            disk_entry->bytes_on_disk += disk->getFileSize(extremes_path);
-        }
-
-        return std::make_tuple(*header, entry, disk_entry);
+        disk_entry->bytes_on_disk += disk->getFileSize(result_path);
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+
+    auto totals_path = key_path / "totals.bin";
+    if (auto in = disk->readFileIfExists(totals_path))
     {
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, 0);
+        Block res = reader.read();
+
+        entry->totals.emplace(res.getColumns(), res.rows());
+        disk_entry->bytes_on_disk += disk->getFileSize(totals_path);
     }
-    return {};
+
+    auto extremes_path = key_path / "extremes.bin";
+    if (auto in = disk->readFileIfExists(extremes_path))
+    {
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, 0);
+        Block res = reader.read();
+
+        entry->extremes.emplace(res.getColumns(), res.rows());
+        disk_entry->bytes_on_disk += disk->getFileSize(extremes_path);
+    }
+
+    return std::make_tuple(*header, entry, disk_entry);
 }
 
 void QueryResultCache::compressEntry(const QueryResultCache::Cache::MappedPtr & entry)
@@ -1106,58 +1119,51 @@ void QueryResultCache::loadEntrysFromDisk()
         for (auto entry_it = disk->iterateDirectory(it->path()); entry_it->isValid(); entry_it->next())
         {
             auto entry_path = fs::path(entry_it->path());
-            try
-            {
-                String ast_hash_str = entry_path.parent_path().filename();
-                size_t separator_pos = ast_hash_str.find('_');
-                chassert(separator_pos != String::npos);
-                String low64_str = ast_hash_str.substr(0, separator_pos);
-                String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
-                IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
+            String ast_hash_str = entry_path.parent_path().filename();
+            size_t separator_pos = ast_hash_str.find('_');
+            chassert(separator_pos != String::npos);
+            String low64_str = ast_hash_str.substr(0, separator_pos);
+            String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
+            IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
-                Key key(ast_hash);
+            Key key(ast_hash);
+            {
+                auto entry_file = disk->readFile(entry_path / "key_metadata.txt", {});
+                key.deserialize(*entry_file);
+
+                if (key.expires_at < std::chrono::system_clock::now())
                 {
-                    auto entry_file = disk->readFile(entry_path / "key_metadata.txt", {});
-                    key.deserialize(*entry_file);
-
-                    if (key.expires_at < std::chrono::system_clock::now())
-                    {
-                        expired_entrys.push_back(entry_path);
-                        continue;
-                    }
+                    expired_entrys.push_back(entry_path);
+                    continue;
                 }
+            }
 
-                /// When the EntryOnDisk is released, the disk file is also deleted.
-                auto disk_entry= std::shared_ptr<DiskEntry>(
-                    new DiskEntry,
-                    [this, entry_path](DiskEntry * e)
+            /// When the EntryOnDisk is released, the disk file is also deleted.
+            auto disk_entry= std::shared_ptr<DiskEntry>(
+                new DiskEntry,
+                [this, entry_path](DiskEntry * e)
+                {
+                    try
                     {
-                        try
-                        {
-                            if (!shutdown)
-                                disk->removeRecursive(entry_path);
-                        }
-                        catch (...) // NOLINT(bugprone-empty-catch)
-                        {
-                        }
-                        delete e;
-                    });
+                        if (!shutdown)
+                            disk->removeRecursive(entry_path);
+                    }
+                    catch (...) // NOLINT(bugprone-empty-catch)
+                    {
+                    }
+                    delete e;
+                });
 
-                auto [header, entry, disk_entry_] = deserializeEntry(key);
-                key.header = std::make_shared<const Block>(header);
+            auto [header, entry, disk_entry_] = deserializeEntry(key);
+            key.header = std::make_shared<const Block>(header);
 
-                if (key.is_compressed)
-                    compressEntry(entry);
+            if (key.is_compressed)
+                compressEntry(entry);
 
-                memory_cache.set(key, entry);
+            memory_cache.set(key, entry);
 
-                disk_entry->bytes_on_disk = disk_entry_->bytes_on_disk;
-                disk_cache.set(key, disk_entry);
-            }
-            catch (...)
-            {
-                expired_entrys.push_back(entry_path);
-            }
+            disk_entry->bytes_on_disk = disk_entry_->bytes_on_disk;
+            disk_cache.set(key, disk_entry);
         }
     }
 
