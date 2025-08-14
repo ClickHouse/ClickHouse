@@ -3146,7 +3146,7 @@ source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
-Cloud default value: `0`
+Cloud default value: depends on the amount of RAM on the replica.
 
 The maximum amount of RAM to use for running a query on a single server.
 A value of `0` means unlimited.
