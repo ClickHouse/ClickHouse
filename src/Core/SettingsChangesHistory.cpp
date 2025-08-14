@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
             {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
             {"delta_lake_enable_engine_predicate", true, true, "New setting"},
             {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
@@ -70,8 +71,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -816,7 +819,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
-            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
+            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
+            {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
@@ -846,6 +850,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
             /// Release closed. Please use 25.6
+            {"allow_part_offset_column_in_projections", false, false, "New setting, it protects from creating projections with parent part offset column until it is stabilized."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {

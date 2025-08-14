@@ -7,12 +7,12 @@ title: 'Full-text Search using Text Indexes'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 # Full-text search using text indexes
 
 <ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 Text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types) which provide fast text search capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) columns.
 The main idea of a text index is to store a mapping from "terms" to the rows which contain these terms.

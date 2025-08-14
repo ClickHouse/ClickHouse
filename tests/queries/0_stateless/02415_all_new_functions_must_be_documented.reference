@@ -27,17 +27,13 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
 MACNumToString
 MACStringToNum
 MACStringToOUI
-URLHash
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -75,7 +71,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-cityHash64
 concat
 concatAssumeInjective
 connectionId
@@ -134,8 +129,6 @@ extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
-farmFingerprint64
-farmHash64
 file
 filesystemAvailable
 filesystemCapacity
@@ -177,7 +170,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hiveHash
 hop
 hopEnd
 hopStart
@@ -200,10 +192,7 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
-javaHash
-javaHashUTF16LE
 joinGet
 joinGetOrNull
 left
@@ -228,7 +217,6 @@ mapSubtract
 mapUpdate
 match
 materialize
-metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -403,10 +391,6 @@ showCertificate
 sigmoid
 sign
 sinh
-sipHash128
-sipHash128Keyed
-sipHash64
-sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime
@@ -598,8 +582,5 @@ version
 visibleWidth
 windowID
 wkt
-wyHash64
 xor
-xxHash32
-xxHash64
 zookeeperSessionUptime
