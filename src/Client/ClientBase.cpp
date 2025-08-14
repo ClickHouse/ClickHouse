@@ -2854,13 +2854,13 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI SQL generator is not initialized. "
                          << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
                          << "or configure AI settings in your configuration file. "
-                         << "See documentation for detailed setup instructions." << std::endl;
+                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
             return true;
         }
 
         if (free_text.empty())
         {
-            error_stream << "Please provide a natural language query after ??" << std::endl;
+            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
             return true;
         }
 
@@ -2882,6 +2882,7 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI query generation failed: " << e.what() << std::endl;
         }
 
+        error_stream << std::endl;
         return true;
     }
 #endif

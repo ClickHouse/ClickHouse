@@ -94,7 +94,6 @@ public:
         bool enable_engine_predicate_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
-        , filter(filter_)
         , data_prefix(data_prefix_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
@@ -106,8 +105,9 @@ public:
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
     {
-        if (filter)
+        if (filter_)
         {
+            filter = filter_->clone();
             pruner.emplace(
                 *filter,
                 table_schema_,
@@ -160,9 +160,9 @@ public:
 
     void initScanState()
     {
-        if (filter && enable_engine_predicate)
+        if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(*filter, engine_predicate_exception);
+            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception);
             scan = KernelUtils::unwrapResult(
                 ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
                 "scan");
@@ -381,7 +381,7 @@ private:
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
-    const DB::ActionsDAG * filter;
+    std::optional<DB::ActionsDAG> filter;
 
     const std::string data_prefix;
     DB::NamesAndTypesList expression_schema;

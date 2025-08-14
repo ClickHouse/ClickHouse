@@ -129,7 +129,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     }
 
     setting_changes = settings->changes();
-
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
         if (settings_to_skip.contains(it->name))
