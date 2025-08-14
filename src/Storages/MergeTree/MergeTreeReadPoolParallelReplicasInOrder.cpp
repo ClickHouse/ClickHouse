@@ -183,9 +183,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     /// Fill the buffer
     for (size_t i = 0; i < request.size(); ++i)
     {
-        auto & new_ranges = response->description[i].ranges;
-        auto & old_ranges = buffered_tasks[i].ranges;
-        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(old_ranges));
+        auto & received_ranges = response->description[i].ranges;
+        auto & ranges = buffered_tasks[i].ranges;
+        if (mode == CoordinationMode::WithOrder)
+            ranges.insert(ranges.end(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
+        else
+            ranges.insert(ranges.begin(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
     }
 
     if (auto result = get_from_buffer())
