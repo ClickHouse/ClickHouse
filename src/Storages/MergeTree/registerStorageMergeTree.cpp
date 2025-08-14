@@ -725,7 +725,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (!args.query.attach && (
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
                     ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))

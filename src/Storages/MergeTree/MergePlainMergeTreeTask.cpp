@@ -186,6 +186,9 @@ void MergePlainMergeTreeTask::cancel() noexcept
 {
     if (merge_task)
         merge_task->cancel();
+
+    if (new_part)
+        new_part->removeIfNeeded();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
