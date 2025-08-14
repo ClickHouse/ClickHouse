@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/safe_cast.h>
 #include <ranges>
 #include <stack>
 #include <unordered_map>
@@ -131,7 +132,7 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
 
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return 0.0;
+        return 1.0;
 
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
@@ -321,7 +322,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             if (best_i == best_j)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
             if (!getJoinKind(components[best_i]->relations, components[best_j]->relations))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join restriction violated");
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
@@ -331,7 +332,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         }
 
         if (best_i == best_j)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find components to join");
 
         /// replace the two components with the best plan
         components.erase(components.begin() + std::max(best_i, best_j));

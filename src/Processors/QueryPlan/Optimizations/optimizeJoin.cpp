@@ -713,7 +713,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     /// After applying OUTER joins some columns may change their types (in case of join_use_nulls or JOIN USING)
     /// We need to track this change, this map tracks input columns and how they are transformed
     /// Each next step uses mapped columns as inputs
+
+    /// Input in global dag -> it's position
     std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
+
+    /// input_position -> (relation no,  input)
     std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
@@ -784,6 +788,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (const auto & action : join_operator.residual_filter)
                 required_output_nodes.push_back(action.getNode());
 
+            /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
             auto joined_mask = entry->relations;
             for (const auto & [source_id, new_inputs] : query_graph_builder.type_changes)
@@ -814,6 +819,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 const auto * out_node = input_node;
                 if (auto it2 = current_step_type_changes.find(input_pos); it2 != current_step_type_changes.end())
                     out_node = it2->second;
+                /// add input (possibly which changed type) to required output
                 required_output_nodes.push_back(out_node);
             }
 
