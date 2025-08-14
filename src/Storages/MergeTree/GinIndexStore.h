@@ -354,7 +354,6 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
-
 };
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
