@@ -76,14 +76,14 @@ Iceberg::ManifestFilePtr getManifestFile(
 {
     auto create_fn = [&]()
     {
-        ObjectInfoPtr manifest_object_info = std::make_shared<ObjectInfoPlain>(filename);
+        RelativePathWithMetadata manifest_object_info(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto buffer = createReadBuffer(*manifest_object_info, object_storage, local_context, log, read_settings);
+        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
         return std::make_shared<Iceberg::ManifestFileContent>(
@@ -124,14 +124,14 @@ ManifestFileCacheKeys getManifestList(
 
     auto create_fn = [&]()
     {
-        StorageObjectStorage::ObjectInfo object_info(filename);
+        RelativePathWithMetadata manifest_list_object(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto manifest_list_buf = createReadBuffer(manifest_list_object, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         ManifestFileCacheKeys manifest_file_cache_keys;

@@ -68,9 +68,8 @@ namespace ErrorCodes
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
-        const ObjectInfo & object_info,
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(object_info.relative_path, object_info.metadata)
+    const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
+    : ObjectInfoPlain(object_info.getUnderlyingObject().relative_path, object_info.getUnderlyingObject().metadata)
     , file_metadata(file_metadata_)
 {
 }
@@ -169,7 +168,7 @@ ObjectStorageQueueSource::FileIterator::next()
     {
         file_metadatas.clear();
         Stopwatch get_object_watch;
-        Source::ObjectInfos new_batch;
+        ObjectInfos new_batch;
 
         while (new_batch.empty())
         {
@@ -182,7 +181,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
             LOG_TEST(log, "Received batch of size: {}", result->size());
 
-            new_batch = std::move(result.value());
+            new_batch = convertRelativePathsToPlainObjectInfos(std::move(result.value()));
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
@@ -229,8 +228,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
-                        new_batch[i]->relative_path,
-                        /* bucket_info */{}); /// No buckets for Unordered mode.
+                        new_batch[i]->getUnderlyingObject().relative_path,
+                        /* bucket_info */ {}); /// No buckets for Unordered mode.
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
                     if (set_processing_result.has_value())
@@ -341,7 +340,7 @@ ObjectStorageQueueSource::FileIterator::next()
     return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
@@ -359,7 +358,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::Obje
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
-    Source::ObjectInfos result;
+    ObjectInfos result;
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {
@@ -415,13 +414,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->getUnderlyingObject().relative_path, bucket_info);
             if (!file_metadata->trySetProcessing())
                 continue;
         }
 
-        if (file_deletion_on_processed_enabled
-            && !object_storage->exists(StoredObject(object_info->relative_path)))
+        if (file_deletion_on_processed_enabled && !object_storage->exists(StoredObject(object_info->getUnderlyingObject().relative_path)))
         {
             /// Imagine the following case:
             /// Replica A processed fileA and deletes it afterwards.
@@ -460,7 +458,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
     {
-        const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        const auto bucket = metadata->getBucketForPath(object_info->getUnderlyingObject().relative_path);
         std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info, file_metadata);
     }
@@ -665,7 +663,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         chassert(!file_metadata);
         if (object_info)
         {
-            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+            const auto bucket = metadata->getBucketForPath(object_info->getUnderlyingObject().relative_path);
             auto & bucket_cache = listed_keys_cache[bucket];
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
@@ -994,7 +992,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
+            const auto & object_metadata = reader.getObjectInfo()->getUnderlyingObject().metadata;
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,

@@ -27,7 +27,7 @@ public:
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
-    struct ObjectStorageQueueObjectInfo : public ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public ObjectInfoPlain
     {
         ObjectStorageQueueObjectInfo(
             const ObjectInfo & object_info,

@@ -28,7 +28,6 @@ struct ObjectInfo
 
 };
 
-
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 
@@ -81,14 +80,18 @@ struct ObjectInfoPlain : public ObjectInfoOneFile
 struct ObjectInfoInArchive : public ObjectInfo
 {
     ObjectInfoInArchive(
-        RelativePathWithMetadata archive_object_,
+        RelativePathWithMetadata underlying_blob_object_,
         const std::string & path_in_archive_,
         std::shared_ptr<IArchiveReader> archive_reader_,
-        IArchiveReader::FileInfo && file_info_);
-
-    RelativePathWithMetadata& getUnderlyingObject() override {
-        return underlying_blob_object;
+        IArchiveReader::FileInfo && file_info_)
+        : underlying_blob_object(underlying_blob_object_)
+        , path_in_archive(path_in_archive_)
+        , archive_reader(archive_reader_)
+        , file_info(file_info_)
+    {
     }
+
+    RelativePathWithMetadata & getUnderlyingObject() override { return underlying_blob_object; }
     const RelativePathWithMetadata& getUnderlyingObject() const override {
         return underlying_blob_object;
     }
@@ -142,4 +145,6 @@ private:
     const IArchiveReader::FileInfo file_info;
 };
 
+
+ObjectInfos convertRelativePathsToPlainObjectInfos(RelativePathsWithMetadata && relative_paths);
 }

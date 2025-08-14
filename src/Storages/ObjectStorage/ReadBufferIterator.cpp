@@ -152,7 +152,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl = createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
+    auto impl = createReadBuffer(current_object_info->getUnderlyingObject(), object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
@@ -275,7 +275,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             read_buf = createReadBuffer(
-                *current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
+                current_object_info->getUnderlyingObject(), object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

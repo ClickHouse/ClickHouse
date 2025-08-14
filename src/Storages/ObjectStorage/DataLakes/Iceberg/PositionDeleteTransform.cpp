@@ -51,12 +51,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
-        ObjectInfoPtr object_info = std::make_shared<ObjectInfoPlain>(object_path, object_metadata);
 
+        auto delete_source_object = RelativePathWithMetadata(object_path, object_metadata);
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(delete_source_object, object_storage, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(delete_object_format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -69,7 +69,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, delete_object_compression_method);
 
-        delete_read_buffers.push_back(createReadBuffer(*object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(delete_source_object, object_storage, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
