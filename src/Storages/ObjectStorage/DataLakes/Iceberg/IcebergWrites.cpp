@@ -905,7 +905,7 @@ bool IcebergStorageSink::initializeMetadata()
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), 0, 0);
+        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()), /* added_delete_files */0, /* num_deleted_rows */0);
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;

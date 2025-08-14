@@ -44,7 +44,9 @@ struct DeleteFileWriteResult
     Int32 total_bytes;
 };
 
-std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher> writeDataFiles(
+using DeleteFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
+
+DeleteFileWriteResultByPartitionKey writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -61,7 +63,7 @@ std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkP
     chassert(commands.size() == 1);
 
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
-    std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher> result;
+    DeleteFileWriteResultByPartitionKey result;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
 
@@ -166,7 +168,7 @@ std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkP
 }
 
 bool writeMetadataFiles(
-    const std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher> & delete_filenames,
+    DeleteFileWriteResultByPartitionKey & delete_filenames,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
@@ -192,7 +194,7 @@ bool writeMetadataFiles(
     }
 
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name]
-        = MetadataGenerator(metadata).generateNextMetadata(filename_generator, metadata_name, parent_snapshot, 0, 0, total_bytes, 1, 1, total_rows);
+        = MetadataGenerator(metadata).generateNextMetadata(filename_generator, metadata_name, parent_snapshot, /* added_files */0, /* added_records */0, total_bytes, /* num_partitions */1, /* added_delete_files */1, total_rows);
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
