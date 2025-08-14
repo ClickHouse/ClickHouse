@@ -1445,8 +1445,6 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
                     columnPathRef(this->entries.back(), def->mutable_col());
                     this->entries.clear();
-
-                    ncol.tp = nullptr;
                     t.staged_cols.erase(ncname);
                 }
             }
