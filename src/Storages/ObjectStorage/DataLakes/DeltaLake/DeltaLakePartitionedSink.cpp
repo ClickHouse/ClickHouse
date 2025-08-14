@@ -1,15 +1,15 @@
 #include "DeltaLakePartitionedSink.h"
 
 #include <Common/logger_useful.h>
-#include <Core/UUID.h>
-#include <fmt/ranges.h>
 #include <Common/ArenaUtils.h>
-
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
+#include <Core/UUID.h>
+
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -18,6 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/HivePartitioningUtils.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -30,6 +32,9 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Given partition columns list,
+    /// create Hive style partition strategy with partition by expression
+    /// created as Tuple function containing those columns: (a, b, ..).
     std::unique_ptr<IPartitionStrategy> createPartitionStrategy(
         const Names & partition_columns,
         const Block & header,
@@ -171,28 +176,34 @@ void DeltaLakePartitionedSink::onFinish()
     if (isCancelled())
         return;
 
-    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
-    files.reserve(partition_id_to_sink.size());
     for (auto & [_, data] : partition_id_to_sink)
-    {
-        auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->file_name);
-
-        Map partition_values;
-        partition_values.reserve(keys_and_values.size());
-        for (const auto & [key, value] : keys_and_values)
-            partition_values.emplace_back(DB::Tuple({key, value}));
-
-        LOG_TEST(
-            log, "Adding file: {}, size: {}, partition_values: {}",
-            data->file_name, data->size, partition_values.size());
-
-        files.emplace_back(data->file_name, data->size, partition_values);
-    }
-    delta_transaction->commit(files);
-
-    for (auto & [_, data] : partition_id_to_sink)
-    {
         data->sink->onFinish();
+
+    try
+    {
+        std::vector<DeltaLake::WriteTransaction::CommitFile> files;
+        files.reserve(partition_id_to_sink.size());
+        for (auto & [_, data] : partition_id_to_sink)
+        {
+            auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->file_name);
+
+            Map partition_values;
+            partition_values.reserve(keys_and_values.size());
+            for (const auto & [key, value] : keys_and_values)
+                partition_values.emplace_back(DB::Tuple({key, value}));
+
+            files.emplace_back(data->file_name, data->size, partition_values);
+        }
+        delta_transaction->commit(files);
+    }
+    catch (...)
+    {
+        for (auto & [_, data] : partition_id_to_sink)
+        {
+            auto full_path = std::filesystem::path(delta_transaction->getDataPath()) / data->file_name;
+            object_storage->removeObjectIfExists(StoredObject(full_path));
+        }
+        throw;
     }
 }
 

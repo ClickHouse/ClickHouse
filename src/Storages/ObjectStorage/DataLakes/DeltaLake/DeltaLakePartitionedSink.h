@@ -21,6 +21,10 @@ class DeltaLakeMetadataDeltaKernel;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 
+/**
+ * Sink to write partitioned data to DeltaLake.
+ * Writes a N data file, a file per partition, and commits them to DeltaLake metadata.
+ */
 class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
 {
 public:

@@ -36,9 +36,9 @@ DeltaLakeSink::DeltaLakeSink(
         format_settings_,
         sample_block_,
         context_)
-    , log(getLogger("DeltaLakeSink"))
-    , file_name()
+    , data_prefix(metadata.getKernelHelper()->getDataPath())
     , delta_transaction(std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper()))
+    , object_storage(object_storage_)
 {
     delta_transaction->create();
     delta_transaction->validateSchema(getHeader());
@@ -58,11 +58,22 @@ void DeltaLakeSink::onFinish()
     if (isCancelled())
         return;
 
-    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
-    files.emplace_back(file_name, written_bytes, Map{});
-    delta_transaction->commit(files);
-
     StorageObjectStorageSink::onFinish();
+
+    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
+    chassert(startsWith(getPath(), data_prefix));
+    files.emplace_back(getPath().substr(data_prefix.size()), written_bytes, Map{});
+    try
+    {
+        delta_transaction->commit(files);
+    }
+    catch (...)
+    {
+        /// FIXME: this should be just removeObject,
+        /// but IObjectStorage does not have such method.
+        object_storage->removeObjectIfExists(StoredObject(getPath()));
+        throw;
+    }
 }
 
 }

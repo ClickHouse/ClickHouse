@@ -13,6 +13,10 @@ namespace DB
 {
 class DeltaLakeMetadataDeltaKernel;
 
+/**
+ * Sink to write non-partitioned data to DeltaLake.
+ * Writes a single data file and commits it to DeltaLake metadata.
+ */
 class DeltaLakeSink : public StorageObjectStorageSink
 {
 public:
@@ -33,9 +37,9 @@ public:
     void onFinish() override;
 
 private:
-    const LoggerPtr log;
-    const std::string file_name;
-    DeltaLake::WriteTransactionPtr delta_transaction;
+    const std::string data_prefix;
+    const DeltaLake::WriteTransactionPtr delta_transaction;
+    const ObjectStoragePtr object_storage;
     size_t written_bytes = 0;
 };
 

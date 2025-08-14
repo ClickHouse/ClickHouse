@@ -2762,3 +2762,271 @@ def test_delta_kernel_internal_pruning(started_cluster):
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
         )
     )
+
+
+def test_writes(started_cluster):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_writes")
+    result_file = f"{table_name}_data"
+
+    spark = started_cluster.spark_session
+    # We cannot just do
+    # spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '/{result_file}'")
+    # because a table must have non-empty schema.
+    #
+    # This also does not create _delta_log directory:
+    # schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    # empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    # write_deltalake(
+    #     f"s3://root/{table_name}",
+    #     pa.Table.from_arrays(empty_arrays, schema=schema),
+    #     storage_options=get_storage_options(started_cluster),
+    #     mode="overwrite",
+    # )
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    empty_df = spark.createDataFrame([], schema)
+    empty_df.write.format("delta").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance_disabled_kernel.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
+    )
+
+    s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+    file_name = None
+    for obj in s3_objects:
+        print(f"File: {obj.object_name}")
+        if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+            "snappy.parquet"
+        ):
+            file_name = obj.object_name
+
+    assert (
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9"
+        == instance.query(
+            f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_name}', 'minio', '{minio_secret_key}')"
+        ).strip()
+    )
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    def check_count(expected):
+        assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
+        assert expected == int(
+            instance_disabled_kernel.query(f"SELECT count() FROM {table_name}")
+        )
+        assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    def check_data(expected):
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+        )
+        assert (
+            expected
+            == instance_disabled_kernel.query(
+                f"SELECT * FROM {table_name} ORDER BY all"
+            ).strip()
+        )
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        )
+
+    check_count(10)
+    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
+    )
+    check_count(20)
+    check_data(
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
+    )
+
+
+def test_partitioned_writes(started_cluster):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_partitioned_writes")
+    result_file = f"{table_name}_data"
+    spark = started_cluster.spark_session
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    empty_df = spark.createDataFrame([], schema)
+    empty_df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance_disabled_kernel.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
+    )
+
+    def check_files(expected):
+        s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+        file_names = []
+        for obj in s3_objects:
+            print(f"File: {obj.object_name}")
+            if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+                "snappy.parquet"
+            ):
+                file_names.append(obj.object_name)
+
+        assert len(file_names) == expected
+        file_names.sort()
+        expected_ids = [str(i) for i in range(expected)]
+        expected_ids.sort()
+        for i in range(expected):
+            expected_id = expected_ids[i]
+            assert file_names[i].startswith(f"{result_file}/id={expected_id}/")
+            assert (
+                f"{expected_id}\t{expected_id}"
+                == instance.query(
+                    f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}')"
+                ).strip()
+            )
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    def check_count(expected):
+        assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
+        #assert expected == int(
+        #   instance_disabled_kernel.query(f"SELECT count() FROM {table_name}")
+        #)
+        assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    def check_data(expected):
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+        )
+        # assert (
+        #    expected
+        #    == instance_disabled_kernel.query(
+        #        f"SELECT * FROM {table_name} ORDER BY all"
+        #    ).strip()
+        # )
+        assert (
+            expected
+            == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        )
+
+    check_files(10)
+    #check_count(10)
+    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
+    )
+    check_files(20)
+    #check_count(20)
+    check_data(
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_concurrent_queries(started_cluster, partitioned):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_concurrent_queries")
+    result_file = f"{TABLE_NAME}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    empty_df = spark.createDataFrame([], schema)
+    if partitioned:
+        empty_df.write.format("delta").partitionBy("name").save(f"/{result_file}")
+    else:
+        empty_df.write.format("delta").save(f"/{result_file}")
+
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance.query(
+        f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+
+    def select(_):
+        instance.query(
+            f"SELECT * FROM {TABLE_NAME} SETTINGS max_read_buffer_size_remote_fs=100",
+        )
+
+    num_threads = 50
+    errors = ["" for _ in range(num_threads)]
+    success = [0 for _ in range(num_threads)]
+
+    def insert(i):
+        try:
+            instance.query(
+                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(1000)",
+            )
+            success[i] += 1
+        except Exception as e:
+            errors[i] = str(e)
+
+    for _ in range(10):
+        insert(_)
+
+    select_pool = Pool(num_threads)
+    insert_pool = Pool(num_threads)
+    sp = select_pool.map_async(select, range(num_threads))
+    ip = insert_pool.map_async(insert, range(num_threads))
+    sp.wait()
+    ip.wait()
+
+    select(0)
+
+    assert sum(success) * 1000 == int(
+        instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+        )
+    )
+    non_empty_errors = [e for e in errors if e != ""]
+    assert len(non_empty_errors) > 0
+    for e in non_empty_errors:
+        assert "commit conflict at version" in e
+
+    s3_objects = list(minio_client.list_objects(bucket, recursive=True))
+    file_names = []
+    for obj in s3_objects:
+        print(f"File: {obj.object_name}")
+        if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+            "snappy.parquet"
+        ):
+            file_names.append(obj.object_name)
+    if partitioned:
+        assert len(file_names) == sum(success) * 1000
+    else:
+        assert len(file_names) == sum(success)

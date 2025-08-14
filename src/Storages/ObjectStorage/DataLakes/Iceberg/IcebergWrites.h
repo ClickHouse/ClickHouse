@@ -8,7 +8,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
-#include "config.h"
 
 #if USE_AVRO
 

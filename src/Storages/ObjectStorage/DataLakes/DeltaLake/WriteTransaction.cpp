@@ -65,7 +65,9 @@ void exportTable(
     }
 }
 
-std::shared_ptr<arrow::Table> getWriteMetadata(const std::vector<WriteTransaction::CommitFile> & files)
+std::shared_ptr<arrow::Table> getWriteMetadata(
+    const std::vector<WriteTransaction::CommitFile> & files,
+    LoggerPtr log)
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
@@ -84,6 +86,13 @@ std::shared_ptr<arrow::Table> getWriteMetadata(const std::vector<WriteTransactio
 
     for (const auto & [path, size, partition_values] : files)
     {
+        if (path.empty())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Commit file path cannot be empty");
+
+        LOG_TEST(
+            log, "Committing file: {}, size: {}, partition values: {}",
+            path, size, partition_values.size());
+
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
         columns[2]->insert(size);
@@ -122,6 +131,12 @@ WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_)
 {
 }
 
+void WriteTransaction::assertTransactionCreated() const
+{
+    if (!transaction.get())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
+}
+
 void WriteTransaction::create()
 {
     auto * engine_builder = kernel_helper->createBuilder();
@@ -155,9 +170,7 @@ void WriteTransaction::create()
 
 void WriteTransaction::validateSchema(const DB::Block & header) const
 {
-    if (!transaction.get())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
-
+    assertTransactionCreated();
     if (write_schema.getNames() != header.getNames())
     {
         throw DB::Exception(
@@ -169,11 +182,10 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
 
 void WriteTransaction::commit(const std::vector<CommitFile> & files)
 {
-    if (!transaction.get())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
+    assertTransactionCreated();
 
     LOG_TEST(log, "Will commit {} files", files.size());
-    auto write_metadata = getWriteMetadata(files);
+    auto write_metadata = getWriteMetadata(files, log);
 
     ffi::FFI_ArrowArray array;
     ffi::FFI_ArrowSchema schema;

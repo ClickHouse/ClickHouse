@@ -16,17 +16,17 @@ public:
     /// Create a transcation.
     void create();
 
-    /// Commit the transaction.
     struct CommitFile
     {
         std::string file_name;
         size_t size;
         DB::Map paritition_values;
     };
+
+    /// Commit written files to DeltaLake.
     void commit(const std::vector<CommitFile> & files);
 
-    const DB::NamesAndTypesList & getWriteSchema() const { return write_schema; }
-
+    /// Validate if schema is consistent with the write schema of the transaction.
     void validateSchema(const DB::Block & header) const;
 
 private:
@@ -43,6 +43,8 @@ private:
     KernelTransaction transaction;
     KernelWriteContext write_context;
     DB::NamesAndTypesList write_schema;
+
+    void assertTransactionCreated() const;
 };
 
 using WriteTransactionPtr = std::shared_ptr<WriteTransaction>;
