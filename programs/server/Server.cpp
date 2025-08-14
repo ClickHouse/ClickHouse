@@ -335,6 +335,9 @@ namespace ServerSetting
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
+    extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
+    extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
 }
 
 namespace ErrorCodes
@@ -1202,6 +1205,9 @@ try
 
         if (server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size])
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
+
+        total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
+        total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
     }
 
     Poco::ThreadPool server_pool(
@@ -1911,6 +1917,8 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(*config);
 
+            DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
             const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
@@ -2335,8 +2343,23 @@ try
             async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
+    }
 
+#if USE_SSL
+    /// We may notice that try to reload certificates twice within this function.
+    /// First time here before starting the `servers_to_start_before_tables`, and then
+    /// one more time before starting the `servers`. The problem we're trying to avoid is:
+    /// 1. We create a socket for keeper secure protocol (w/o starting a server yet). That creates a SSL context (in particular, it might be the default context).
+    /// 2. We then start this server a few lines below. While handling the first request, it will access (read) certs.
+    /// 3. A little further down, we reload certificates before starting the rest of the servers.
+    /// 4. `CertificateReloader` will set its custom `cert_cb` to the default context if it is not initialized yet (see `CertificateReloader::init()`).
+    /// 5. Items (2) and (4) are not synchronized, so there might be a data race for example (see https://github.com/ClickHouse/ClickHouse/issues/85412).
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
+    {
+        std::lock_guard lock(servers_lock);
         for (auto & server : servers_to_start_before_tables)
         {
             server.start();
@@ -2541,7 +2564,7 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
@@ -2778,6 +2801,8 @@ try
             /// (because killAllQueries() will cancel all running backups/restores).
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
+            else
+                global_context->cancelAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])

@@ -20,6 +20,7 @@
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
@@ -285,7 +286,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
-        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
+        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
