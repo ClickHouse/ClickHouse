@@ -53,7 +53,7 @@ struct MergeTreeDataPartChecksums
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.contains(file_name); }
+    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 

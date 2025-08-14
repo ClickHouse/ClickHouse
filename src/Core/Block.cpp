@@ -123,10 +123,6 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 template <typename ReturnType>
 static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std::string_view context_description, bool allow_materialize)
 {
-    /// It's common to have common SharedHeaders in the pipeline
-    if (&lhs == &rhs)
-        return ReturnType(true);
-
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
         return onError<ReturnType>(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch in {} stream: different number of columns:\n{}\n{}",
@@ -448,8 +444,7 @@ size_t Block::bytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        if (elem.column)
-            res += elem.column->byteSize();
+        res += elem.column->byteSize();
 
     return res;
 }
@@ -458,8 +453,7 @@ size_t Block::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        if (elem.column)
-            res += elem.column->allocatedBytes();
+        res += elem.column->allocatedBytes();
 
     return res;
 }
@@ -924,7 +918,7 @@ void convertToFullIfSparse(Block & block)
 
 Block materializeBlock(const Block & block)
 {
-    if (block.empty())
+    if (!block)
         return block;
 
     Block res = block;
@@ -948,9 +942,6 @@ Block concatenateBlocks(const std::vector<Block> & blocks)
 {
     if (blocks.empty())
         return {};
-
-    if (blocks.size() == 1)
-        return blocks[0];
 
     size_t num_rows = 0;
     for (const auto & block : blocks)

@@ -291,6 +291,10 @@ protected:
     /// Subclass must convert its internal state and its children to AST
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
+    /// This function can be used to update hash for the DataType.
+    /// It uses binary type encoding, so works faster than hash(getName()).
+    static void updateHashForType(HashState & hash_state, const DataTypePtr & type);
+
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;
 

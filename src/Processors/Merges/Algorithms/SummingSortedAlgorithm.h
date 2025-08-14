@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 
@@ -17,18 +16,14 @@ class SummingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
 public:
     SummingSortedAlgorithm(
-        SharedHeader header, size_t num_inputs,
+        const Block & header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
         /// List of partition key columns. They have to be excluded.
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes,
-        const String & sum_function_name,
-        const String & sum_function_map_name,
-        bool remove_default_values,
-        bool aggregate_all_columns);
+        size_t max_block_size_bytes);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

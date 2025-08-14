@@ -253,7 +253,6 @@ private:
     {
         SchedulerNodePtr queue; /// FifoQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
-        WorkloadSettings settings;
 
         SchedulerNodePtr getRoot()
         {
@@ -264,9 +263,8 @@ private:
         }
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
+        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_)
         {
-            settings = settings_;
             createQueue(event_queue_);
             return queue;
         }
@@ -298,9 +296,7 @@ private:
     private:
         void createQueue(EventQueue * event_queue_)
         {
-            SchedulerNodeInfo node_info{};
-            node_info.queue_size = settings.getQueueSize();
-            queue = std::make_shared<FifoQueue>(event_queue_, node_info);
+            queue = std::make_shared<FifoQueue>(event_queue_, SchedulerNodeInfo{});
             queue->basename = "fifo";
         }
 
@@ -327,7 +323,7 @@ private:
         [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
             settings = settings_;
-            SchedulerNodePtr node = branch.initialize(event_queue_, settings);
+            SchedulerNodePtr node = branch.initialize(event_queue_);
             if (settings.hasSemaphore())
             {
                 semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getSemaphoreMaxRequests(), settings.getSemaphoreMaxCost());

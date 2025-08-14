@@ -3,9 +3,11 @@
 
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPResponseHeaderWriter.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -19,6 +21,7 @@
 #include <unordered_map>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <filesystem>
 
@@ -87,7 +90,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    auto response_output = responseWriteBuffer(request, response);
+    auto responseOutput = responseWriteBuffer(request, response);
 
     try
     {
@@ -99,14 +102,14 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         setResponseDefaultHeaders(response);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
-        writeResponse(*response_output.get());
-        response_output.get()->finalize();
+        writeResponse(*responseOutput.get());
+        responseOutput.get()->finalize();
     }
     catch (...)
     {
         tryLogCurrentException("StaticRequestHandler");
-        response_output.response_holder->cancelWithException(
-            request, getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), response_output.compression_holder.get());
+        responseOutput.response_holder->cancelWithException(
+            request, getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), responseOutput.compression_holder.get());
     }
 }
 
@@ -152,14 +155,13 @@ StaticRequestHandler::StaticRequestHandler(
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    const std::string & config_prefix)
 {
     int status = config.getInt(config_prefix + ".handler.status", 200);
     std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
 
     std::unordered_map<String, String> http_response_headers_override
-        = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/plain; charset=UTF-8", common_headers);
+        = parseHTTPResponseHeaders(config, config_prefix, "text/plain; charset=UTF-8");
 
     auto creator = [&server, http_response_headers_override, response_content, status]() -> std::unique_ptr<StaticRequestHandler>
     { return std::make_unique<StaticRequestHandler>(server, response_content, http_response_headers_override, status); };
