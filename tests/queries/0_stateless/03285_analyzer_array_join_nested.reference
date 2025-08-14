@@ -66,6 +66,13 @@ FROM default.hourly AS __table2
 ARRAY JOIN nested(_CAST([\'names\', \'values\'], \'Array(String)\'), __table2.`metric.names`, __table2.`metric.values`) AS __array_join_exp_1
 -- { echoOn }
 
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 0;
+select x from tab;
+[('a1'),('a2')]
+select y, y.b.first, y.b.second from tab array join x as y; -- { serverError UNKNOWN_IDENTIFIER }
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 1;
+select x from tab;
+[('a1',[1,2,3],['b1','b2','b3']),('a2',[4,5,6],['b4','b5','b6'])]
 select y, y.b.first, y.b.second from tab array join x as y;
 ('a1',[1,2,3],['b1','b2','b3'])	[1,2,3]	['b1','b2','b3']
 ('a2',[4,5,6],['b4','b5','b6'])	[4,5,6]	['b4','b5','b6']
