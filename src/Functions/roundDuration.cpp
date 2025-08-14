@@ -52,7 +52,7 @@ If the number is less than one, it returns `0`.
 )";
     FunctionDocumentation::Syntax syntax = "roundDuration(num)";
     FunctionDocumentation::Arguments argument = {{"num", "A number to round to one of the numbers in the set of common durations.", {"(U)Int*", "Float*"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`, for `num` < 1. Otherwise, one of: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.", {"`UInt16`"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`, for `num` < 1. Otherwise, one of: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
