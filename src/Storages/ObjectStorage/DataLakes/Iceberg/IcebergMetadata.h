@@ -23,8 +23,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <IO/CompressionMethod.h>
-
 namespace DB
 {
 
@@ -38,8 +36,7 @@ struct ParsedDataFileInfo
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
     String data_object_file_path_key;
     String data_object_file_path; // Full path to the data object file
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
-    Int64 sequence_number;
+    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
 
     bool operator<(const ParsedDataFileInfo & other) const
     {
@@ -60,8 +57,7 @@ public:
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
-        IcebergMetadataFilesCachePtr cache_ptr,
-        CompressionMethod metadata_compression_method_);
+        IcebergMetadataFilesCachePtr cache_ptr);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -114,9 +110,6 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
-    CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
-
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
     void mutate(const MutationCommands & commands,
         ContextPtr context,
@@ -168,6 +161,7 @@ private:
         const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
     std::vector<Iceberg::ManifestFileEntry> getPositionDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
@@ -175,17 +169,14 @@ private:
     getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const
         TSA_REQUIRES_SHARED(mutex);
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-public:
-    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
-    Iceberg::ManifestFilePtr tryGetManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number, Int64 inherited_snapshot_id) const;
-private:
+    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
+
     template <typename T>
     std::vector<T> getFilesImpl(
         const ActionsDAG * filter_dag,
         Iceberg::FileContentType file_content_type,
         ContextPtr local_context,
         std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
-    CompressionMethod metadata_compression_method;
 };
 
 struct IcebergDataObjectInfo : public RelativePathWithMetadata

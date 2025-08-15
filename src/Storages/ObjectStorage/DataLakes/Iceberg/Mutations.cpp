@@ -246,7 +246,7 @@ bool writeMetadataFiles(
                     metadata,
                     chunk_partitioner.getColumns(),
                     partition_key,
-                    {delete_filename.path.path_in_metadata},
+                    delete_filename.path.path_in_metadata,
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
