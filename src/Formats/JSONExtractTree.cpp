@@ -820,12 +820,12 @@ public:
                 // This avoids floating-point precision loss during decimal conversion
                 String str_value = jsonElementToString<JSONParser>(element, format_settings);
                 auto rb = ReadBufferFromMemory{str_value};
-                
+
                 if (SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
                 {
                     break;
                 }
-                
+
                 // Fallback to original conversion if string parsing fails
                 // This ensures backward compatibility and robustness
                 value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
