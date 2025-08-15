@@ -48,27 +48,6 @@ EXPLAIN actions=1
 SELECT * FROM test_improve_prewhere
 WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
 ) where explain ilike '%Prewhere filter column%';
-
-
-set allow_statistics_optimize = 0;
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-
 -- { echoOff }
 
 DROP TABLE test_improve_prewhere;

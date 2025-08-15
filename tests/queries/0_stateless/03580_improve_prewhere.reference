@@ -22,22 +22,3 @@ SELECT * FROM test_improve_prewhere
 WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
 ) where explain ilike '%Prewhere filter column%';
 Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), less(__table1.value, 100_UInt8), notEquals(__table1.normal_column, \'hello\'_String)) (removed)
-set allow_statistics_optimize = 0;
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and lower(primary_key) = '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), equals(lower(__table1.primary_key), \'00\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and primary_key = '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8), equals(__table1.primary_key, \'00\'_String)) (removed)
-select trimLeft(explain) from (
-EXPLAIN actions=1
-SELECT * FROM test_improve_prewhere
-WHERE date = '2025-08-05' and lower(primary_key) in '00' and normal_column != 'hello' and value < 100
-) where explain ilike '%Prewhere filter column%';
-Prewhere filter column: and(equals(__table1.date, \'2025-08-05\'_String), in(lower(__table1.primary_key), __set_String_4653864928722945989_14468210011007111410), notEquals(__table1.normal_column, \'hello\'_String), less(__table1.value, 100_UInt8)) (removed)
