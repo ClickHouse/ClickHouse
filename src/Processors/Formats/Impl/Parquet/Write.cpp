@@ -179,8 +179,11 @@ struct StatisticsFixedStringCopy
     inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
     {
         if constexpr (SIGNED)
+        {
             /// Comparing the first byte as signed is sufficient.
-            if (*lhs != *rhs) return int(int8_t(*lhs)) - int(int8_t(*rhs));
+            if (*lhs != *rhs)
+                return int(int8_t(*lhs)) - int(int8_t(*rhs));
+        }
         return memcmp(lhs, rhs, S);
     }
 
