@@ -794,8 +794,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                wrap_with_nullable_or_tuple(block);
-                scalar_block = std::move(block);
+                if (execute_for_exists)
+                {
+                    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                    auto scalar_column = type->createColumn();
+                    scalar_column->insert(1);
+                    scalar_block.insert({std::move(scalar_column), type, "exists"});
+                }
+                else
+                {
+                    wrap_with_nullable_or_tuple(block);
+                    scalar_block = std::move(block);
+                }
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
