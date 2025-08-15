@@ -3820,7 +3820,7 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        command: {entrypoint_cmd}
+        {entrypoint_or_command}: {entrypoint_cmd}
         # increase it to allow jeprof to dump the profile report
         stop_grace_period: 2m
         tmpfs: {tmpfs}
@@ -5398,6 +5398,10 @@ class ClickHouseInstance:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
                     image=self.image,
+                    # FIXME: we cannot use "command" for old images, and
+                    # besides, they don't have entrypoint.sh that we use only
+                    # for integration tests that collects jemalloc profiles
+                    entrypoint_or_command="command" if self.image == "clickhouse/integration-test" else "entrypoint",
                     tag=self.tag,
                     name=self.name,
                     hostname=self.hostname,
