@@ -1,7 +1,8 @@
+#include "Client/ClientBase.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToLLM.h>
 #include <Interpreters/LLM/PromptRender.h>
-#include <Interpreters/LLM/ModelEntity.h>
+#include <Interpreters/LLM/IModelEntity.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPSession.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -42,7 +43,20 @@ public:
         {
             auto left = input_rows_count - start_index;
             auto size = left > batch_size ? batch_size : left;
-            model->processCompletion(context, model_json, user_prompt, data, offsets, start_index, size, res_data, res_offsets);
+            GenerateContext generate_context
+            {
+                .context = context,
+                .model_name = model->getModelName(),
+                .model = model_json,
+                .user_prompt = user_prompt,
+                .input_data = data,
+                .input_data_offsets = offsets,
+                .offset = start_index,
+                .rows =  size,
+                .output_data = res_data,
+                .output_data_offsets = res_offsets,
+            };
+            model->complete(generate_context);
             start_index += size;
         } while (start_index < input_rows_count);
     }
