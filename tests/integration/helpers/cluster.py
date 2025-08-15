@@ -3605,7 +3605,8 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
