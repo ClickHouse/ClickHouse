@@ -167,9 +167,9 @@ namespace
         auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(column_offsets).getData();
         offsets_data.reserve(offsets_data.size() + sizes_data.size());
         IColumn::Offset prev_offset = offsets_data.back();
-        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
+        for (auto size : sizes_data)
         {
-            prev_offset += sizes_data[i];
+            prev_offset += size;
             offsets_data.push_back(prev_offset);
         }
     }
