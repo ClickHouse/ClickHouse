@@ -133,6 +133,7 @@ public:
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
+    CatalogTable catalog = CatalogTable::None;
     IntegrationCall integration = IntegrationCall::None;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
@@ -162,6 +163,8 @@ public:
     void setName(Database * db) const { SQLDatabase::setName(db, dname); }
 
     String getName() const { return "d" + std::to_string(dname); }
+
+    void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
     void finishDatabaseSpecification(DatabaseEngine * de) const;
 };

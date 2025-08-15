@@ -2535,6 +2535,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
         cd->mutable_cluster()->set_cluster(next.cluster.value());
     }
     next.dname = dname;
+    next.setDatabasePath(rg, fc);
     next.finishDatabaseSpecification(deng);
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
@@ -2558,7 +2559,6 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     else if (next.isDataLakeCatalogDatabase())
     {
         svs = svs ? svs : cd->mutable_setting_values();
-        next.integration = IntegrationCall::Dolor;
         connections.createExternalDatabase(rg, next, deng, svs);
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));

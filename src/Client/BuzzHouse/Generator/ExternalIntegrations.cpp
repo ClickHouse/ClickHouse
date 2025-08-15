@@ -18,7 +18,7 @@
 namespace BuzzHouse
 {
 
-bool ClickHouseIntegratedDatabase::performIntegration(
+bool ClickHouseIntegratedDatabase::performTableIntegration(
     RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
     const String str_tname = getTableName(t.db, t.tname);
@@ -253,7 +253,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     }
     else if (res)
     {
-        res &= performIntegration(rg, t, false, entries);
+        res &= performTableIntegration(rg, t, false, entries);
     }
     return res;
 }
@@ -844,7 +844,7 @@ void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
 }
 
-bool RedisIntegration::performIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
+bool RedisIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
@@ -1331,7 +1331,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
 }
 
-bool MongoDBIntegration::performIntegration(
+bool MongoDBIntegration::performTableIntegration(
     RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
     try
@@ -1532,7 +1532,7 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+bool MinIOIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
     chassert(t.catalog == CatalogTable::None);
     return sendRequest(fmt::format("{}/{}", sc.database, t.getTablePath(rg, fc, true)));
@@ -1549,7 +1549,7 @@ void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
     chassert(t.catalog == CatalogTable::None);
     return true;
@@ -1560,29 +1560,26 @@ void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable
     te->add_params()->set_svalue(t.getTablePath(rg, fc, true));
 }
 
-bool HTTPIntegration::performIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
+bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
 
-void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
+bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase &)
+{
+    return true;
+}
+
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
     SetValue * sv2 = svs->add_other_values();
     SetValue * sv3 = svs->add_other_values();
 
-    const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
-    const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
-    const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
-
-    const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
-
     sv1->set_property("catalog_type");
     sv2->set_property("warehouse");
-    if (glue_cat && (nopt < glue_cat + 1))
+    if (d.catalog == CatalogTable::Glue)
     {
         cat = &sc.glue_catalog.value();
 
@@ -1590,7 +1587,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv1->set_value("'glue'");
         sv2->set_value("'gtest'");
     }
-    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+    else if (d.catalog == CatalogTable::Hive)
     {
         cat = &sc.hive_catalog.value();
 
@@ -1598,7 +1595,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv1->set_value("'hive'");
         sv2->set_value("'htest'");
     }
-    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+    else if (d.catalog == CatalogTable::REST)
     {
         cat = &sc.rest_catalog.value();
 
@@ -1628,6 +1625,11 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv5->set_property("vended_credentials");
         sv5->set_value(rg.nextBool() ? "1" : "0");
     }
+}
+
+bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
+{
+    return true;
 }
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
@@ -1694,11 +1696,6 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     }
 }
 
-bool DolorIntegration::performIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
-{
-    return true;
-}
-
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
 {
@@ -1744,17 +1741,22 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
+    ClickHouseIntegration * next = nullptr;
+
     switch (d.integration)
     {
         case IntegrationCall::Dolor:
-            dolor->setDatabaseDetails(rg, d, de, svs);
+            next = dolor.get();
             break;
         default:
             chassert(0);
             break;
     }
+    requires_external_call_check++;
+    next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
+    next->setDatabaseDetails(rg, d, de, svs);
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
@@ -1796,7 +1798,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
             break;
     }
     requires_external_call_check++;
-    next_calls_succeeded.emplace_back(next->performIntegration(rg, t, true, entries));
+    next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
     next->setTableEngineDetails(rg, t, te);
 }
 

@@ -3,6 +3,33 @@
 
 namespace BuzzHouse
 {
+
+static CatalogTable setNextCatalog(RandomGenerator & rg, const FuzzConfig & fc, const bool canUseCatalog, const bool mustUseCatalog)
+{
+    /// Set catalog first if possible
+    const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().glue_catalog.has_value());
+    const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().hive_catalog.has_value());
+    const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().rest_catalog.has_value());
+    const uint32_t no_cat = 15 * static_cast<uint32_t>(!mustUseCatalog);
+    const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (glue_cat && (nopt < glue_cat + 1))
+    {
+        return CatalogTable::Glue;
+    }
+    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+    {
+        return CatalogTable::Hive;
+    }
+    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+    {
+        return CatalogTable::REST;
+    }
+    return CatalogTable::None;
+}
+
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
 {
     if (isReplicatedDatabase())
@@ -11,6 +38,15 @@ void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
+    }
+}
+
+void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
+{
+    if (isDataLakeCatalogDatabase())
+    {
+        catalog = setNextCatalog(rg, fc, true, true);
+        integration = IntegrationCall::Dolor;
     }
 }
 
@@ -68,29 +104,9 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
-        const bool canUseCatalog = fc.dolor_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine());
-        const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().glue_catalog.has_value());
-        const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().hive_catalog.has_value());
-        const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().rest_catalog.has_value());
-        const uint32_t no_cat = 15;
-        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
         String next_bucket_path;
 
-        if (glue_cat && (nopt < glue_cat + 1))
-        {
-            catalog = CatalogTable::Glue;
-        }
-        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-        {
-            catalog = CatalogTable::Hive;
-        }
-        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-        {
-            catalog = CatalogTable::REST;
-        }
-
+        catalog = setNextCatalog(rg, fc, fc.dolor_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine()), false);
         if (isS3QueueEngine() || isAzureQueueEngine())
         {
             next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);

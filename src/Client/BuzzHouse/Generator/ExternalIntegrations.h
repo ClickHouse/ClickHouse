@@ -49,9 +49,13 @@ public:
     {
     }
 
+    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) { }
+
+    virtual bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) { return false; }
+
     virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
+    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -72,7 +76,7 @@ public:
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
@@ -232,7 +236,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -266,7 +270,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MongoDBIntegration() override = default;
 #else
@@ -297,7 +301,7 @@ public:
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
@@ -314,7 +318,7 @@ public:
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~AzuriteIntegration() override = default;
 };
@@ -329,7 +333,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
 };
@@ -342,11 +346,13 @@ public:
     {
     }
 
-    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) override;
+
+    bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) override;
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~DolorIntegration() override = default;
 };
@@ -423,7 +429,7 @@ public:
 
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
-    void createExternalDatabase(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
