@@ -1246,26 +1246,24 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
-    with nats_cluster.pause_container("nats1"):
-        nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
-        instance.query_and_get_error(
-            f"""
-            CREATE TABLE test.cs (key UInt64, value UInt64)
-                ENGINE = NATS
-                SETTINGS nats_url = 'nats1:4444',
-                        nats_stream = 'test_stream',
-                        nats_consumer_name = 'test_consumer',
-                        nats_subjects = 'test_subject',
-                        nats_format = 'JSONEachRow',
-                        nats_num_consumers = '5',
-                        nats_row_delimiter = '\\n';
+    instance.query_and_get_error(
+        f"""
+        CREATE TABLE test.cs (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'invalid_nats_url:4444',
+                    nats_stream = 'test_stream',
+                    nats_consumer_name = 'test_consumer',
+                    nats_subjects = 'test_subject',
+                    nats_format = 'JSONEachRow',
+                    nats_num_consumers = '5',
+                    nats_row_delimiter = '\\n';
         """
-        )
-        instance.query_and_get_error(
-            """
-            SHOW TABLE test.cs;
+    )
+    instance.query_and_get_error(
         """
-        )
+        SHOW TABLE test.cs;
+        """
+    )
 
 
 def test_nats_no_connection_at_startup_2(nats_cluster):
