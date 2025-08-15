@@ -31,8 +31,12 @@ struct Optimization
 {
     struct ExtraSettings
     {
+        /// Vector-search-related settings
         size_t max_limit_for_vector_search_queries;
+        bool vector_search_with_rescoring;
         VectorSearchFilterStrategy vector_search_filter_strategy;
+
+        /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };
@@ -140,6 +144,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.

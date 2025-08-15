@@ -41,7 +41,41 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
+            {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
+            {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
+            {"azure_max_redirects", 10, 10, "New setting"},
+            {"azure_max_get_rps", 0, 0, "New setting"},
+            {"azure_max_get_burst", 0, 0, "New setting"},
+            {"azure_max_put_rps", 0, 0, "New setting"},
+            {"azure_max_put_burst", 0, 0, "New setting"},
+            {"azure_use_adaptive_timeouts", true, true, "New setting"},
+            {"azure_request_timeout_ms", 30000, 30000, "New setting"},
+            {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
+            {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
+            {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
+            {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
+            {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
+            {"vector_search_with_rescoring", true, false, "New setting."},
+            {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
+            {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
+            {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
+            {"delta_lake_enable_engine_predicate", true, true, "New setting"},
+            {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
+            {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
+            {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
+            {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"delta_lake_snapshot_version", -1, -1, "New setting"},
+            {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
+            {"iceberg_metadata_compression_method", "", "", "New setting"},
+            {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -49,7 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
-            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
+            {"cluster_function_process_archive_on_multiple_nodes", false, true, "New setting"},
             {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"output_format_json_map_as_array_of_tuples", false, false, "New setting"},
@@ -90,6 +124,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -122,12 +157,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"update_parallel_mode", "auto", "auto", "A new setting"},
             {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
-            {"apply_patch_parts", false, true, "A new setting"},
+            {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
-            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
+            {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
-            {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
+            {"vector_search_postfilter_multiplier", 1.0, 1.0, "New setting"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
@@ -783,7 +818,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-
+            {"search_orphaned_parts_disks", "any", "any", "New setting"},
+            {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
+            {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
@@ -813,6 +851,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
             /// Release closed. Please use 25.6
+            {"allow_part_offset_column_in_projections", false, false, "New setting, it protects from creating projections with parent part offset column until it is stabilized."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {

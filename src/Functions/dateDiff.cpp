@@ -319,11 +319,11 @@ private:
   * age('unit', t1, t2, [timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
-  * If timezone is specified, it applied to both arguments.
+  * If timezone is specified, it is applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
-  * If that timezones are not the same, the result is unspecified.
+  * If those timezones are not the same, the result is unspecified.
   *
-  * Timezone matters because days can have different length.
+  * The timezone matters because days can have different lengths.
   */
 template <bool is_relative>
 class FunctionDateDiff : public IFunction
@@ -476,13 +476,13 @@ REGISTER_FUNCTION(TimeDiff)
     FunctionDocumentation::Description description = R"(
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
-(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthnum)) and 1 year for unit year
+(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
 (see [`toRelativeYearNum`](#toRelativeYearNum)).
 
-If the unit `week` was specified, then `date_diff` assumes that weeks start on Monday.
+If the unit `week` was specified, then `timeDiff` assumes that weeks start on Monday.
 Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
-For an alternative to [`date_diff`](#date_diff), see function [`age`](#age).
+For an alternative to [`timeDiff`](#timeDiff), see function [`age`](#age).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 date_diff(unit, startdate, enddate, [timezone])
@@ -513,7 +513,7 @@ date_diff(unit, startdate, enddate, [timezone])
     FunctionDocumentation::Examples examples =
     {
         {"Calculate date difference in hours", R"(
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
+SELECT timeDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
         )",
         R"(
 ┌─res─┐
@@ -524,9 +524,9 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 SELECT
     toDate('2022-01-01') AS e,
     toDate('2021-12-29') AS s,
-    dateDiff('day', s, e) AS day_diff,
-    dateDiff('month', s, e) AS month_diff,
-    dateDiff('year', s, e) AS year_diff
+    timeDiff('day', s, e) AS day_diff,
+    timeDiff('month', s, e) AS month_diff,
+    timeDiff('year', s, e) AS year_diff
         )",
         R"(
 ┌──────────e─┬──────────s─┬─day_diff─┬─month_diff─┬─year_diff─┐
@@ -550,7 +550,7 @@ The difference is calculated using a precision of 1 nanosecond.
 For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
 0 months for the month unit, and 0 years for the year unit.
 
-For an alternative to age, see function [`date_diff`](#date_diff).
+For an alternative to age, see function [`timeDiff`](#timeDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 age('unit', startdate, enddate, [timezone])

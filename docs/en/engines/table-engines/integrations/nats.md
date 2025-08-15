@@ -177,7 +177,6 @@ Additional virtual columns when `nats_handle_error_mode='stream'`:
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
-
 ## Data formats support {#data-formats-support}
 
 NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.

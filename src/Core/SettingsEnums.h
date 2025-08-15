@@ -388,6 +388,7 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
+    NONE,
     ICEBERG_REST,
     UNITY,
     GLUE,
@@ -421,4 +422,12 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class SearchOrphanedPartsDisks : uint8_t
+{
+    NONE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 }

@@ -71,6 +71,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
+    double query_condition_cache_selectivity_threshold;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -98,8 +99,10 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    VectorSearchFilterStrategy vector_search_filter_strategy;
+    /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
+    bool vector_search_with_rescoring;
+    VectorSearchFilterStrategy vector_search_filter_strategy;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

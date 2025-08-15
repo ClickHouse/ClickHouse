@@ -131,7 +131,7 @@ FROM tab
 WHERE date = '2025-01-03' AND id <= 9
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 2
-SETTINGS log_comment = '02354_vector_search_post_filter_strategy_query1';
+SETTINGS log_comment = '02354_vector_search_post_filter_strategy_query1', vector_search_with_rescoring = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -154,7 +154,7 @@ FROM tab
 WHERE date = '2025-01-03' AND attr2 >= 1008
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS vector_search_postfilter_multiplier = 2.0;
+SETTINGS vector_search_index_fetch_multiplier = 2.0;
 
 SELECT '-- Negative parameter values throw an exception';
 SELECT id
@@ -162,7 +162,7 @@ FROM tab
 WHERE date = '2025-01-03' AND attr2 >= 1008
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS vector_search_postfilter_multiplier = -1.0; -- { serverError INVALID_SETTING_VALUE }
+SETTINGS vector_search_index_fetch_multiplier = -1.0; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- Zero parameter values throw an exception';
 SELECT id
@@ -170,7 +170,7 @@ FROM tab
 WHERE date = '2025-01-03' AND attr2 >= 1008
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS vector_search_postfilter_multiplier = 0.0; -- { serverError INVALID_SETTING_VALUE }
+SETTINGS vector_search_index_fetch_multiplier = 0.0; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- Too large parameter values throw an exception';
 SELECT id
@@ -178,6 +178,6 @@ FROM tab
 WHERE date = '2025-01-03' AND attr2 >= 1008
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS vector_search_postfilter_multiplier = 1001.0; -- { serverError INVALID_SETTING_VALUE }
+SETTINGS vector_search_index_fetch_multiplier = 1001.0; -- { serverError INVALID_SETTING_VALUE }
 
 DROP TABLE tab;
