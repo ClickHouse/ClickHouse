@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <base/map.h>
 #include <base/range.h>
 
 
@@ -122,7 +123,7 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
@@ -185,7 +186,7 @@ REGISTER_FUNCTION(ConcatWithSeparator)
 Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
         )",
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .category = FunctionDocumentation::Category::String});
+        .category{"Strings"}});
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
         .description = R"(
@@ -194,7 +195,7 @@ Same as concatWithSeparator, the difference is that you need to ensure that conc
 The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
         )",
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
-        .category = FunctionDocumentation::Category::String});
+        .category{"String"}});
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

@@ -46,10 +46,6 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
-    inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
-    inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
-    inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
-
     enum class DateTimeInputFormat : uint8_t
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -88,7 +84,10 @@ struct FormatSettings
         Numeric
     };
 
-    IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
+    struct
+    {
+        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
+    } interval{};
 
     enum class DateTimeOverflowBehavior : uint8_t
     {
@@ -112,8 +111,6 @@ struct FormatSettings
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     size_t max_threads = 1;
-
-    size_t max_block_size_bytes = 0;
 
     enum class ArrowCompression : uint8_t
     {
@@ -159,8 +156,6 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
-    bool allow_special_bool_values = true;
-    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {
@@ -249,8 +244,6 @@ struct FormatSettings
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
-        bool write_map_as_array_of_tuples = false;
-        bool read_map_as_array_of_tuples = false;
     } json{};
 
     struct
@@ -286,11 +279,9 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
-        bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
-        bool output_enum_as_byte_array = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
@@ -301,7 +292,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
-        ParquetVersion output_version = ParquetVersion::V2_LATEST;
+        ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -309,8 +300,6 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
-        bool allow_geoparquet_parser = true;
-        bool write_geometadata = true;
     } parquet{};
 
     struct Pretty
@@ -334,8 +323,6 @@ struct FormatSettings
 
         UInt64 squash_consecutive_ms = 50;
         UInt64 squash_max_wait_ms = 1000;
-        /// Set to 2 for auto
-        UInt64 glue_chunks = 2;
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
@@ -392,9 +379,7 @@ struct FormatSettings
 
     struct
     {
-        std::string format_schema_source = FORMAT_SCHEMA_SOURCE_FILE;
         std::string format_schema;
-        std::string format_schema_message_name;
         std::string format_schema_path;
         bool is_server = false;
         std::string output_format_schema;
@@ -457,7 +442,6 @@ struct FormatSettings
         bool dictionary_as_low_cardinality = true;
         String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
-        UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -516,7 +500,6 @@ struct FormatSettings
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
         bool write_json_as_string = false;
-        bool use_flattened_dynamic_and_json_serialization = false;
     } native{};
 
     struct

@@ -10,10 +10,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include <Common/PODArray.h>
+#include "Common/PODArray.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <base/types.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -82,15 +82,9 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
-
-    size_t skipped_bytes;
-
-    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
-    istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
     size_t max_bytes;
