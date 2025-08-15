@@ -176,6 +176,13 @@ void NotificationQueue::clear()
 	_nfQueue.clear();	
 }
 
+NotificationQueue::NfQueue NotificationQueue::getCurrentQueueAndClear()
+{
+    FastMutex::ScopedLock lock(_mutex);
+    NfQueue nf;
+    std::swap(_nfQueue, nf);
+    return nf;
+}
 
 bool NotificationQueue::hasIdleThreads() const
 {

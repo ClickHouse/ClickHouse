@@ -47,7 +47,30 @@ public:
 
 REGISTER_FUNCTION(ToNullable)
 {
-    factory.registerFunction<FunctionToNullable>();
+    FunctionDocumentation::Description description = R"(
+Converts the provided argument type to `Nullable`.
+    )";
+    FunctionDocumentation::Syntax syntax = "toNullable(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of any non-compound type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value but of `Nullable` type.", {"Nullable(Any)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example",
+         R"(
+SELECT toTypeName(10), toTypeName(toNullable(10));
+        )",
+         R"(
+┌─toTypeName(10)─┬─toTypeName(toNullable(10))─┐
+│ UInt8          │ Nullable(UInt8)            │
+└────────────────┴────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in{1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToNullable>(documentation);
 }
 
 }

@@ -8,7 +8,7 @@
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/memcpySmall.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 
@@ -133,7 +133,7 @@ public:
 
     void insert(const Field & x) override
     {
-        const String & s = x.safeGet<const String &>();
+        const String & s = x.safeGet<String>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -211,7 +211,9 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
+
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -287,7 +289,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;

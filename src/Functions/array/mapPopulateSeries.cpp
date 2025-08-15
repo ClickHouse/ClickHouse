@@ -1,6 +1,7 @@
 #include <base/sort.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>

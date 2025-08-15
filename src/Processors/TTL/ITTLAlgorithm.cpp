@@ -1,6 +1,10 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/DateLUTImpl.h>
+#include <Interpreters/ExpressionActions.h>
+
+#include <Columns/ColumnsDateTime.h>
 
 namespace DB
 {
@@ -46,18 +50,26 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column;
 }
 
-UInt32 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
+Int64 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
 {
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
-        return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_date->getData()[index])));
+        return date_lut.fromDayNum(DayNum(column_date->getData()[index]));
     if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
         return column_date_time->getData()[index];
+    if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(column))
+        return date_lut.fromDayNum(ExtendedDayNum(column_date_32->getData()[index]));
+    if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(column))
+        return column_date_time_64->getData()[index] / intExp10OfSize<Int64>(column_date_time_64->getScale());
     if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-            return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
+            return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
         if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
             return column_const->getValue<UInt32>();
+        if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
+            return date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>()));
+        if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
+            return column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale());
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");

@@ -9,12 +9,27 @@
         <console>true</console>
     </logger>
 
-    <text_log remove="remove"/>
-    <crash_log remove="remove"/>
+    <!-- Excessive use of memory and CPU. Left the ones used in get_profiles -->
+<!--    <query_log remove="remove"/>-->
+<!--    <trace_log remove="remove"/>-->
+    <query_thread_log remove="remove"/>
     <query_views_log remove="remove"/>
     <part_log remove="remove"/>
+    <text_log remove="remove"/>
+<!--    <metric_log remove="remove"/>-->
+    <error_log remove="remove"/>
+    <query_metric_log remove="remove"/>
+<!--    <asynchronous_metric_log remove="remove"/>-->
     <opentelemetry_span_log remove="remove"/>
+    <crash_log remove="remove"/>
     <session_log remove="remove"/>
+    <processors_profile_log remove="remove"/>
+    <asynchronous_insert_log remove="remove"/>
+    <backup_log remove="remove"/>
+    <s3queue_log remove="remove"/>
+    <blob_storage_log remove="remove"/>
+    <transactions_info_log remove="remove"/>
+    <filesystem_cache_log remove="remove"/>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 

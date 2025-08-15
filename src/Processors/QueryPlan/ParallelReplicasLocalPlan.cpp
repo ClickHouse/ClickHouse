@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -24,7 +25,7 @@
 namespace DB
 {
 
-std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
+std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
@@ -67,8 +68,10 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
         if (!node->children.empty())
         {
             // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
-            if (join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
+            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+             || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
                 node = node->children.at(1);
             else
                 node = node->children.at(0);
@@ -96,7 +99,7 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     { return coordinator->handleRequest(std::move(req)); };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);

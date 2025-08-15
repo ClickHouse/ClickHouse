@@ -87,6 +87,16 @@ namespace Net
         bool operator>=(const Socket & socket) const;
         /// Compares the SocketImpl pointers.
 
+        void shutdownReceive();
+        /// Shuts down the receiving part of the socket connection.
+
+        void shutdownSend();
+        /// Shuts down the sending part of the socket connection.
+
+        void shutdown();
+        /// Shuts down both the receiving and the sending part
+        /// of the socket connection.
+
         void close();
         /// Closes the socket.
 
@@ -176,6 +186,18 @@ namespace Net
         /// The returned timeout may be different than the
         /// timeout previously set with getReceiveTimeout(),
         /// as the system is free to adjust the value.
+
+        void setSendThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data sent through the socket.
+
+        Poco::Net::ThrottlerPtr getSendThrottler() const;
+        /// Returns the throttler that is used to limit the speed of data sent through the socket.
+
+        void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data received through the socket.
+
+        Poco::Net::ThrottlerPtr getReceiveThrottler() const;
+        /// Returns the throttler that is used to limit the speed of data received through the socket.
 
         void setOption(int level, int option, int value);
         /// Sets the socket option specified by level and option
@@ -363,6 +385,21 @@ namespace Net
     }
 
 
+    inline void Socket::shutdownReceive()
+    {
+        _pImpl->shutdownReceive();
+    }
+
+    inline void Socket::shutdownSend()
+    {
+        _pImpl->shutdownSend();
+    }
+
+    inline void Socket::shutdown()
+    {
+        _pImpl->shutdown();
+    }
+
     inline void Socket::close()
     {
         _pImpl->close();
@@ -428,6 +465,29 @@ namespace Net
         return _pImpl->getReceiveTimeout();
     }
 
+
+    inline void Socket::setSendThrottler(const Poco::Net::ThrottlerPtr & throttler)
+    {
+        _pImpl->setSendThrottler(throttler);
+    }
+
+
+    inline Poco::Net::ThrottlerPtr Socket::getSendThrottler() const
+    {
+        return _pImpl->getSendThrottler();
+    }
+
+
+    inline void Socket::setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler)
+    {
+        _pImpl->setReceiveThrottler(throttler);
+    }
+
+
+    inline Poco::Net::ThrottlerPtr Socket::getReceiveThrottler() const
+    {
+        return _pImpl->getReceiveThrottler();
+    }
 
     inline void Socket::setOption(int level, int option, int value)
     {

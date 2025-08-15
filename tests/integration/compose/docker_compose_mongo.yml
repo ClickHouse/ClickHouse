@@ -4,7 +4,7 @@ services:
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
-            MONGO_INITDB_ROOT_PASSWORD: clickhouse
+            MONGO_INITDB_ROOT_PASSWORD: ClickHouse_MongoDB_P@ssw0rd
         ports:
             - ${MONGO_EXTERNAL_PORT:-27017}:${MONGO_INTERNAL_PORT:-27017}
         command: --profile=2 --verbose
@@ -20,7 +20,7 @@ services:
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
-            MONGO_INITDB_ROOT_PASSWORD: clickhouse
+            MONGO_INITDB_ROOT_PASSWORD: ClickHouse_MongoDB_P@ssw0rd
         volumes:
             - ${MONGO_SECURE_CONFIG_DIR:-}:/mongo/
         ports:

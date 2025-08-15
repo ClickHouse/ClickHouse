@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/MySQL/PacketEndpoint.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -19,7 +18,7 @@ struct FormatSettings;
 class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 

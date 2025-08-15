@@ -96,9 +96,7 @@ void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer 
     {
         std::string field_name;
         readStringUntilEOF(field_name, istr);
-        Type t;
-        if (ref_enum_values.tryGetValue(t, StringRef(field_name)))
-            assert_cast<ColumnType &>(column).getData().push_back(t);
+        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
     }
 }
 

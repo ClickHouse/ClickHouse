@@ -10,8 +10,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/map.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -145,7 +145,7 @@ private:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
@@ -227,7 +227,7 @@ public:
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 

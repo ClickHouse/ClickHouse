@@ -1,21 +1,14 @@
-#include "Client.h"
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <optional>
-#include <string>
-#include <fcntl.h>
+#include <Client.h>
+#include <Client/ConnectionString.h>
+#include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
-#include "Client/ConnectionString.h"
-#include "Core/Protocol.h"
-#include "Parsers/formatAST.h"
 
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -26,18 +19,27 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Poco/Util/Application.h>
 
+#include <filesystem>
+
 #include "config.h"
+
+#if USE_BUZZHOUSE
+#   include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#   include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -62,8 +64,15 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
 }
 
+Client::Client()
+{
+    fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
+}
 
-void Client::processError(const String & query) const
+
+Client::~Client() = default;
+
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
@@ -71,7 +80,7 @@ void Client::processError(const String & query) const
             stderr,
             "Received exception from server (version {}):\n{}\n",
             server_version,
-            getExceptionMessage(*server_exception, print_stack_trace, true));
+            getExceptionMessageForLogging(*server_exception, print_stack_trace, true));
 
         if (server_exception->code() == ErrorCodes::USER_EXPIRED)
         {
@@ -115,10 +124,10 @@ void Client::showWarnings()
         std::vector<String> messages = loadWarningMessages();
         if (!messages.empty())
         {
-            std::cout << "Warnings:" << std::endl;
+            output_stream << "Warnings:" << std::endl;
             for (const auto & message : messages)
-                std::cout << " * " << message << std::endl;
-            std::cout << std::endl;
+                output_stream << " * " << message << std::endl;
+            output_stream << std::endl;
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -168,7 +177,13 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         if (config.has(prefix + ".port"))
             config.setInt("port", config.getInt(prefix + ".port"));
         if (config.has(prefix + ".secure"))
-            config.setBool("secure", config.getBool(prefix + ".secure"));
+        {
+            bool secure = config.getBool(prefix + ".secure");
+            if (secure)
+                config.setBool("secure", true);
+            else
+                config.setBool("no-secure", true);
+        }
         if (config.has(prefix + ".user"))
             config.setString("user", config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
@@ -219,7 +234,7 @@ std::vector<String> Client::loadWarningMessages()
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                if (packet.block)
+                if (!packet.block.empty())
                 {
                     const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
 
@@ -309,52 +324,46 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
+    const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+    if (env_host && !config().has("host"))
+        config().setString("host", env_host);
+
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
+    for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
         if (config().has(name))
-            global_context->setSetting(name, config().getString(name));
+            client_context->setSetting(name, config().getString(name));
     }
 
     /// Set path for format schema files
     if (config().has("format_schema_path"))
-        global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+        client_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
-        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+        client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    UseSSL use_ssl;
-    auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
+    output_stream << std::fixed << std::setprecision(3);
+    error_stream << std::fixed << std::setprecision(3);
 
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
 
     processConfig();
-    adjustSettings();
+    adjustSettings(client_context);
+
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
-
-    {
-        // All that just to set DB::CurrentThread::get().getGlobalContext()
-        // which is required for client timezone (pushed from server) to work.
-        auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr &>(thread_group->global_context) = global_context;
-        thread_status.attachToGroup(thread_group, false);
-    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -419,10 +428,10 @@ try
 
     return 0;
 }
-catch (const Exception & e)
+catch (Exception & e)
 {
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
@@ -451,11 +460,14 @@ void Client::connect()
     {
         try
         {
+            const auto host = ConnectionParameters::Host{hosts_and_ports[attempted_address_index].host};
+            const auto database = ConnectionParameters::Database{default_database};
+
             connection_parameters = ConnectionParameters(
-                config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+                config(), host, database, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
-                std::cout << "Connecting to "
+                output_stream << "Connecting to "
                           << (!connection_parameters.default_database.empty()
                                   ? "database " + connection_parameters.default_database + " at "
                                   : "")
@@ -480,19 +492,11 @@ void Client::connect()
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
 
-            /// Apply setting changes received from server, but with lower priority than settings
-            /// changed from command line.
-            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
-            const Settings & settings = global_context->getSettingsRef();
-            std::erase_if(settings_from_server, [&](const SettingChange & change)
-            {
-                return settings.isChanged(change.name);
-            });
-            global_context->applySettingsChanges(settings_from_server);
+            settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
@@ -505,7 +509,7 @@ void Client::connect()
             {
                 std::cerr << "Connection attempt to database at " << connection_parameters.host << ":" << connection_parameters.port
                           << " resulted in failure" << std::endl
-                          << getExceptionMessage(e, false) << std::endl
+                          << getExceptionMessageForLogging(e, false) << std::endl
                           << "Attempting connection to the next provided address" << std::endl;
             }
         }
@@ -515,6 +519,10 @@ void Client::connect()
     load_suggestions
         = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
+    if (load_suggestions)
+    {
+        suggestion_limit = config().getInt("suggestion_limit");
+    }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
     if (server_display_name.empty())
@@ -522,7 +530,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
+        output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
@@ -530,13 +538,13 @@ void Client::connect()
 
         if (client_version_tuple < server_version_tuple)
         {
-            std::cout << "ClickHouse client version is older than ClickHouse server. "
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
                       << "It may lack support for new features." << std::endl
                       << std::endl;
         }
         else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
-            std::cout << "ClickHouse server version is older than ClickHouse client. "
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
                       << "It may indicate that the server is out of date and can be upgraded." << std::endl
                       << std::endl;
         }
@@ -640,23 +648,26 @@ void Client::printChangedSettings() const
     };
 
     print_changes(client_context->getSettingsRef().changes(), "settings");
-    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
+    print_changes(cmd_merge_tree_settings->changes(), "MergeTree settings");
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
-    std::cout << options_description.main_description.value() << "\n";
-    std::cout << options_description.external_description.value() << "\n";
-    std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-    std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    if (options_description.external_description.has_value())
+        output_stream << options_description.external_description.value() << "\n";
+    if (options_description.hosts_and_ports_description.has_value())
+        output_stream << options_description.hosts_and_ports_description.value() << "\n";
+
+    output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
+    output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
 
-void Client::addOptions(OptionsDescription & options_description)
+void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
@@ -746,9 +757,9 @@ void Client::processOptions(
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            std::cerr << getExceptionMessage(e, false) << std::endl;
+            std::cerr << getExceptionMessageForLogging(e, false) << std::endl;
             std::cerr << "Table №" << i << std::endl << std::endl;
             /// Avoid the case when error exit code can possibly overflow to normal (zero).
             auto exit_code = e.code() % 256;
@@ -775,11 +786,9 @@ void Client::processOptions(
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
-
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-
-    global_context->setSettings(cmd_settings);
+    global_context->setSettings(*cmd_settings);
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
@@ -835,12 +844,28 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = !buzz_house_options_path.empty();
-    if (query_fuzzer_runs || buzz_house)
+    buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
+    if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
+#if USE_BUZZHOUSE
+        if (!buzz_house_options_path.empty())
+        {
+            fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
+            external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
+
+            if (query_fuzzer_runs && fuzz_config->seed)
+            {
+                fuzzer.setSeed(fuzz_config->seed);
+            }
+        }
+#endif
+        if (query_fuzzer_runs)
+        {
+            fmt::print(stdout, "Using seed {} for AST fuzzer\n", fuzzer.getSeed());
+        }
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
@@ -863,10 +888,10 @@ void Client::processOptions(
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
-    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
-    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
-    client_context = global_context;
-    initClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
+    query_scope.emplace(client_context);
+
 
     /// Allow to pass-through unknown settings to the server.
     client_context->getAccessControl().allowAllSettings();
@@ -896,13 +921,38 @@ void Client::processConfig()
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
-        auto query_id = config().getString("query_id", "");
+        query_id = config().getString("query_id", "");
         if (!query_id.empty())
-            global_context->setCurrentQueryId(query_id);
+            client_context->setCurrentQueryId(query_id);
     }
-    print_stack_trace = config().getBool("stacktrace", false);
+
+    if (is_interactive || delayed_interactive)
+    {
+        if (home_path.empty())
+        {
+            const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+            if (home_path_cstr)
+                home_path = home_path_cstr;
+        }
+
+        /// Load command history if present.
+        if (config().has("history_file"))
+            history_file = config().getString("history_file");
+        else
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
+    }
 
     pager = config().getString("pager", "");
+    enable_highlight = config().getBool("highlight", true);
+    multiline = config().has("multiline");
+    print_stack_trace = config().getBool("stacktrace", false);
+    default_database = config().getString("database", "");
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }
@@ -970,8 +1020,8 @@ void Client::readArguments(
             if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
-            /// Parameter arg after underline.
-            if (arg.starts_with("--param_"))
+            /// Parameter arg after underline or dash.
+            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
             {
                 auto param_continuation = arg.substr(strlen("--param_"));
                 auto equal_pos = param_continuation.find_first_of('=');
@@ -1083,6 +1133,8 @@ void Client::readArguments(
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::Client client;
@@ -1090,9 +1142,9 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

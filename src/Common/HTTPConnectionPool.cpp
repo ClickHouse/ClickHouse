@@ -322,21 +322,21 @@ private:
             isExpired = true;
         }
 
-        void reconnect() override
+        void reconnect(UInt64 * connect_time) override
         {
             Session::close();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts);
+                auto new_connection = lock->getConnection(timeouts, connect_time);
                 Session::assign(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
-                Session::reconnect();
+                Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
         }
@@ -388,7 +388,7 @@ private:
             Session::flushRequest();
         }
 
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
             auto idle = idleTime();
 
@@ -397,8 +397,12 @@ private:
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
+            if (auto throttler = CurrentThread::getReadThrottler())
+                Session::setReceiveThrottler(throttler);
+            if (auto throttler = CurrentThread::getWriteThrottler())
+                Session::setSendThrottler(throttler);
 
-            std::ostream & result = Session::sendRequest(request);
+            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
             result.exceptions(std::ios::badbit);
 
             request_stream = &result;
@@ -456,6 +460,8 @@ private:
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
+            Session::setSendThrottler();
+            Session::setReceiveThrottler();
 
             group->atConnectionDestroy();
 
@@ -497,9 +503,9 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
-        void doConnect()
+        void doConnect(UInt64 * connect_time)
         {
-            Session::reconnect();
+            Session::reconnect(connect_time);
         }
 
         bool isCompleted() const
@@ -558,7 +564,7 @@ public:
         return host;
     }
 
-    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) override
+    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
     {
         std::vector<ConnectionPtr> expired_connections;
 
@@ -587,7 +593,7 @@ public:
             }
         }
 
-        return prepareNewConnection(timeouts);
+        return prepareNewConnection(timeouts, connect_time);
     }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
@@ -656,7 +662,7 @@ private:
     }
 
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
@@ -674,7 +680,7 @@ private:
         try
         {
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            connection->doConnect();
+            connection->doConnect(connect_time);
         }
         catch (...)
         {
@@ -790,7 +796,7 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
             group, std::move(host), port, secure, std::move(proxy_configuration));
 #else
         throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
     else

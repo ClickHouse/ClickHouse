@@ -11,15 +11,17 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/Identifier.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
@@ -78,7 +80,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
 
     if (value.getType() == Field::Types::String)
     {
-        const auto & name = value.safeGet<const String &>();
+        const auto & name = value.safeGet<String>();
         auto pos = data_type_tuple.tryGetPositionByName(name);
 
         if (!pos)
@@ -105,7 +107,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (value.getType() != Field::Types::String)
         return {};
 
-    const auto & name = value.safeGet<const String &>();
+    const auto & name = value.safeGet<String>();
     auto discr = data_type_variant.tryGetVariantDiscriminator(name);
 
     if (!discr)
@@ -183,10 +185,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContains"},
+        {TypeIndex::Map, "mapContainsKey"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
@@ -386,7 +388,10 @@ private:
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-        if (processed_tables.emplace(table_name).second)
+
+        /// If table occurs in query several times (e.g., in subquery), process only once
+        /// because we collect only static properties of the table, which are the same for each occurrence.
+        if (!processed_tables.emplace(table_name).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)

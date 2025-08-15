@@ -1,4 +1,4 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
         {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
             "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
-        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging."},
+        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
         {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},
         {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
@@ -100,7 +99,7 @@ void StorageSystemPartsColumns::processNextStorage(
         if (column.default_desc.expression)
         {
             column_info.default_kind = toString(column.default_desc.kind);
-            column_info.default_expression = queryToString(column.default_desc.expression);
+            column_info.default_expression = column.default_desc.expression->formatForLogging();
         }
 
         columns_info[column.name] = column_info;
@@ -135,12 +134,7 @@ void StorageSystemPartsColumns::processNextStorage(
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-            {
-                WriteBufferFromOwnString out;
-                part->partition.serializeText(*info.data, out, format_settings);
-                columns[res_index++]->insert(out.str());
-            }
-
+                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -180,7 +174,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.partition_id);
+                columns[res_index++]->insert(part->info.getPartitionId());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->info.min_block);
             if (columns_mask[src_index++])
@@ -205,11 +199,8 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
-                if (part->isStoredOnDisk()
-                    && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
-                {
+                if (part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
                     columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-                }
                 else
                     columns[res_index++]->insertDefault();
             }
@@ -276,14 +267,27 @@ void StorageSystemPartsColumns::processNextStorage(
             Array substreams;
             Array filenames;
 
-            serialization->enumerateStreams([&](const auto & subpath)
+            if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
             {
-                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
+                for (const auto & substream : column_substreams)
+                {
+                    substreams.push_back(substream);
+                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, part->checksums);
+                    filenames.push_back(filename.value_or(""));
+                }
+            }
+            else
+            {
+                serialization->enumerateStreams([&](const auto & subpath)
+                {
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath);
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
 
-                substreams.push_back(std::move(substream));
-                filenames.push_back(filename.value_or(""));
-            });
+                    substreams.push_back(std::move(substream));
+                    filenames.push_back(filename.value_or(""));
+                });
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(substreams);

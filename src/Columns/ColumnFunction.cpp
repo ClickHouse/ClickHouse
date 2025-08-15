@@ -85,7 +85,7 @@ void ColumnFunction::get(size_t n, Field & res) const
     const size_t tuple_size = captured_columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple &>();
+    Tuple & res_tuple = res.safeGet<Tuple>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)

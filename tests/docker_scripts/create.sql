@@ -1,4 +1,4 @@
-ATTACH TABLE datasets.hits_v1 UUID '78ebf6a1-d987-4579-b3ec-00c1a087b1f3'
+CREATE TABLE datasets.hits_v1
 (
     WatchID UInt64,
     JavaEnable UInt8,
@@ -138,10 +138,12 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS disk = disk(type = cache, path = '/var/lib/clickhouse/filesystem_caches/stateful/', max_size = '4G',
-         disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
+SETTINGS
+    table_disk = 1,
+    disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
+    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/78e/78ebf6a1-d987-4579-b3ec-00c1a087b1f3/'));
 
-ATTACH TABLE datasets.visits_v1 UUID '5131f834-711f-4168-98a5-968b691a104b'
+CREATE TABLE datasets.visits_v1
 (
     CounterID UInt32,
     StartDate Date,
@@ -329,5 +331,7 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS disk = disk(type = cache, path = '/var/lib/clickhouse/filesystem_caches/stateful/', max_size = '4G',
-         disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
+SETTINGS
+    table_disk = 1,
+    disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
+    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/513/5131f834-711f-4168-98a5-968b691a104b/'));

@@ -27,7 +27,7 @@ def start_cluster():
 def test_different_versions(start_cluster):
     assert (
         node1.query(
-            "SELECT uniqExact(x) FROM (SELECT version() as x from remote('node{1,2}', system.one))"
+            "SELECT uniqExact(x) FROM (SELECT version() as x from remote('node{1,2}', system.one)) settings serialize_query_plan = 0"
         )
         == "2\n"
     )

@@ -1,6 +1,6 @@
-#include "GatherUtils.h"
-#include "Sinks.h"
-#include "Sources.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Sinks.h>
+#include <Functions/GatherUtils/Sources.h>
 #include <base/TypeLists.h>
 
 namespace DB::GatherUtils

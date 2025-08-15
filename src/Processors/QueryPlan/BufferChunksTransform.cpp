@@ -1,11 +1,13 @@
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
 BufferChunksTransform::BufferChunksTransform(
-    const Block & header_,
+    SharedHeader header_,
     size_t max_rows_to_buffer_,
     size_t max_bytes_to_buffer_,
     size_t limit_)

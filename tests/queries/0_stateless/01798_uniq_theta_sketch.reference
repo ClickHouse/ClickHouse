@@ -45,25 +45,25 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqTheta(x)
+SELECT uniqTheta(-x)
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(x)
+SELECT uniqTheta(bitNot(x))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(x)
+SELECT uniqTheta(bitNot(-x))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(x)
+SELECT uniqTheta(-bitNot(-x))
 FROM
 (
     SELECT number % 2 AS x
