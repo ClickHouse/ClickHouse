@@ -1036,6 +1036,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     /// {"wait_for_async_insert", trueOrFalseSettingNoOracle},
+    {"enable_uuids_for_columns", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",

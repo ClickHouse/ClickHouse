@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -39,6 +40,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace
@@ -557,6 +563,9 @@ protected:
                         if (ast_create->targets)
                             ast_create->targets->resetInnerUUIDs();
                     }
+
+                    if (ast_create && context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+                        ast_create->resetColumnUUIDs();
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");

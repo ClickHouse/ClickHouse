@@ -3,6 +3,7 @@
 #include <memory>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
@@ -50,6 +51,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
+}
+
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
     : name(std::move(name_)), type(std::move(type_))
 {
@@ -72,6 +78,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
 
     name = other.name;
     type = other.type;
+    uuid = other.uuid;
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
@@ -89,6 +96,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
     name = std::move(other.name);
     type = std::move(other.type);
+    uuid = std::move(other.uuid);
     default_desc = std::move(other.default_desc);
     comment = std::move(other.comment);
 
@@ -111,6 +119,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
     return name == other.name
         && type->equals(*other.type)
+        && uuid == other.uuid
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
@@ -310,6 +319,10 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     if (has(column.name))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot add column {}: column with this name already exists", column.name);
+
+
+    if (column.uuid == UUIDHelpers::Nil && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+        column.uuid = UUIDHelpers::generateV4();
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)
