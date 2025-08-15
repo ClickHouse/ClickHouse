@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -162,14 +163,17 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         partition_columns = table_snapshot->getPartitionColumns();
     }
 
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
+    delta_transaction->create();
+
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
-            *this, configuration, object_storage, context, sample_block, format_settings);
+            delta_transaction, configuration, object_storage, context, sample_block, format_settings);
     }
 
     return std::make_shared<DeltaLakePartitionedSink>(
-        *this, configuration, partition_columns, object_storage, context, sample_block, format_settings);
+        delta_transaction, configuration, partition_columns, object_storage, context, sample_block, format_settings);
 }
 
 }

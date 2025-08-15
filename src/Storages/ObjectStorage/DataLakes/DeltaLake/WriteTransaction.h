@@ -14,7 +14,7 @@ class WriteTransaction
 public:
     explicit WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_);
 
-    const std::string & getDataPath() const { return kernel_helper->getDataPath(); }
+    const std::string & getDataPath() const;
 
     /// Create a transcation.
     void create();
@@ -41,6 +41,7 @@ private:
     const DeltaLake::KernelHelperPtr kernel_helper;
     const LoggerPtr log;
     std::string write_path;
+    std::string path_prefix;
 
     KernelExternEngine engine;
     KernelTransaction transaction;

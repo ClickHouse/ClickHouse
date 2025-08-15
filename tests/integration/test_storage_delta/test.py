@@ -54,6 +54,8 @@ from helpers.s3_tools import (
     list_s3_objects,
     prepare_s3_bucket,
     upload_directory,
+    LocalDownloader,
+    LocalUploader,
 )
 from helpers.test_tools import TSV
 
@@ -3198,33 +3200,75 @@ def test_concurrent_queries(started_cluster, partitioned):
         assert len(file_names) == sum(success)
 
 
-def test_empty_format_header(started_cluster):
+def test_writes_spark_compatibility(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_empty_format_header")
-    result_file = f"{TABLE_NAME}"
+    table_name = randomize_table_name("test_writes")
+    result_file = f"{table_name}_data"
 
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), True),
-            StructField("name", StringType(), True),
-        ]
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
     )
-    df = spark.createDataFrame([(1, "keko"), (2, "puka"), (3, "mora")]).toDF(
-        "id", "name"
+
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
     )
-    df.write.format("delta").partitionBy("id").save(f"/{result_file}")
-    upload_directory(minio_client, bucket, f"/{result_file}", "")
+    assert len(files) == 1
+    assert "_delta_log" == files[0]
+    assert "" in instance.exec_in_container(
+        ["bash", "-c", f"ls /{result_file}/_delta_log"]
+    )
 
     instance.query(
-        f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
     )
 
-    assert (
-        "1\n2\n3"
-        == instance.query(
-            f"SELECT id FROM {TABLE_NAME} ORDER BY all",
-        ).strip()
+    LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
     )
+    assert len(files) == 2
+    pfile = files[0] if files[0].endswith(".parquet") else files[1]
+
+    table = pq.read_table(f"/{result_file}/{pfile}")
+    df = table.to_pandas()
+    assert (
+        "0   0    0\n1   1    1\n2   2    2\n3   3    3\n4   4    4\n5   5    5\n6   6    6\n7   7    7\n8   8    8\n9   9    9"
+        in str(df)
+    )
+
+    spark = started_cluster.spark_session
+    df = spark.read.format("delta").load(f"/{result_file}").collect()
+    assert (
+        "[Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
+        == str(df)
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
+    )
+    LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
+    )
+    assert len(files) == 3
+
+    df = spark.read.format("delta").load(f"/{result_file}").collect()
+    assert "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]" == str(df)

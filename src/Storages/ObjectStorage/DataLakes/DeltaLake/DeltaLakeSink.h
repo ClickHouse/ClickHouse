@@ -24,7 +24,7 @@ class DeltaLakeSink : public StorageObjectStorageSink
 {
 public:
     DeltaLakeSink(
-        const DeltaLakeMetadataDeltaKernel & metadata,
+        DeltaLake::WriteTransactionPtr delta_transaction_,
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
@@ -40,7 +40,6 @@ public:
     void onFinish() override;
 
 private:
-    const std::string data_prefix;
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const ObjectStoragePtr object_storage;
     size_t written_bytes = 0;

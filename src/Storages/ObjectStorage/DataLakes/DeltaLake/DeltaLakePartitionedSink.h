@@ -32,7 +32,7 @@ class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakePartitionedSink(
-        const DeltaLakeMetadataDeltaKernel & metadata,
+        DeltaLake::WriteTransactionPtr delta_transaction_,
         StorageObjectStorageConfigurationPtr configuration_,
         const Names & partition_columns_,
         ObjectStoragePtr object_storage_,

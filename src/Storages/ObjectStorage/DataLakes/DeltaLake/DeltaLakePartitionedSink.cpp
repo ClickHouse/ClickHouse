@@ -17,6 +17,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/HivePartitioningUtils.h>
 
@@ -59,7 +60,7 @@ namespace
 }
 
 DeltaLakePartitionedSink::DeltaLakePartitionedSink(
-    const DeltaLakeMetadataDeltaKernel & metadata,
+    DeltaLake::WriteTransactionPtr delta_transaction_,
     StorageObjectStorageConfigurationPtr configuration_,
     const Names & partition_columns_,
     ObjectStoragePtr object_storage_,
@@ -74,9 +75,8 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , format_settings(format_settings_)
     , configuration(configuration_)
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
-    , delta_transaction(std::make_shared<DeltaLake::WriteTransaction>(metadata.getKernelHelper()))
+    , delta_transaction(delta_transaction_)
 {
-    delta_transaction->create();
     delta_transaction->validateSchema(getHeader());
 }
 
@@ -154,7 +154,7 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_ke
     if (it == partition_id_to_sink.end())
     {
         auto data = std::make_shared<PartitionData>();
-        data->file_name = std::filesystem::path(partition_key.toString()) / (toString(UUIDHelpers::generateV4()) + ".parquet");
+        data->file_name = DeltaLake::generateWritePath(partition_key.toString(), configuration->format);
 
         auto full_path = std::filesystem::path(delta_transaction->getDataPath()) / data->file_name;
         data->sink = std::make_shared<StorageObjectStorageSink>(

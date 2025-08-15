@@ -35,7 +35,6 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -513,7 +512,7 @@ void TableSnapshot::initSnapshotImpl() const
         fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
 
     if (table_schema.empty())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table schema cannot be empty");
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));

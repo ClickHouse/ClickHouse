@@ -139,6 +139,12 @@ void WriteTransaction::assertTransactionCreated() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Transaction was not created");
 }
 
+const std::string & WriteTransaction::getDataPath() const
+{
+    assertTransactionCreated();
+    return path_prefix;
+}
+
 void WriteTransaction::create()
 {
     auto * engine_builder = kernel_helper->createBuilder();
@@ -166,6 +172,28 @@ void WriteTransaction::create()
 
     write_path = *write_path_raw;
     delete write_path_raw;
+
+    auto pos = write_path.find("://");
+    if (pos == std::string::npos)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unexpected path format: {}", write_path);
+    }
+    auto storage_type_str = write_path.substr(0, pos);
+    if (storage_type_str == "s3" || storage_type_str == "gcs")
+    {
+        auto pos_to_bucket = pos + std::strlen("://");
+        auto pos_to_path = write_path.substr(pos_to_bucket).find('/');
+        path_prefix = write_path.substr(pos_to_bucket + pos_to_path + 1);
+    }
+    else if (storage_type_str == "file")
+    {
+        auto pos_to_file = pos + std::strlen("://");
+        path_prefix = write_path.substr(pos_to_file);
+    }
+    else
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Not implemented storage type: {}", storage_type_str);
 
     LOG_TEST(log, "Write path: {}, schema: {}", write_path, write_schema.toString());
 }
