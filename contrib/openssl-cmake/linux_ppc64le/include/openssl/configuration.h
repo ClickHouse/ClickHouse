@@ -27,7 +27,7 @@ extern "C" {
  * OpenSSL was configured with the following options:
  */
 
-# define OPENSSL_CONFIGURED_API 30200
+# define OPENSSL_CONFIGURED_API 30300
 # ifndef OPENSSL_RAND_SEED_OS
 #  define OPENSSL_RAND_SEED_OS
 # endif
