@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>

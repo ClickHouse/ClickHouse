@@ -157,9 +157,6 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of data type Object.
-    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Returns true if the storage supports storing of dynamic subcolumns.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 

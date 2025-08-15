@@ -6,7 +6,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>

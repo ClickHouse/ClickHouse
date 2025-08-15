@@ -1,8 +1,9 @@
 #include <Processors/Formats/IRowInputFormat.h>
-#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
 #include <IO/WithFileName.h>
+#include <IO/WithFileSize.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -174,8 +175,7 @@ Chunk IRowInputFormat::read()
                     {
                         /// Column of a deprecated Object type will throw inside byteSizeAt because it's not finalized.
                         /// It's ok to ignore deprecated type here.
-                        if (!header.getByPosition(i).type->hasDynamicSubcolumnsDeprecated())
-                            total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
+                        total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
                     }
                 }
             }
