@@ -752,20 +752,26 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (block.rows() == 0)
             {
-                const auto & sample_block = interpreter->getSampleBlock();
-                auto types = sample_block->getDataTypes();
-                if (types.size() != 1)
-                    types = {std::make_shared<DataTypeTuple>(types)};
-
-                auto & type = types[0];
-                if (!type->isNullable())
+                DataTypePtr type;
+                if (execute_for_exists)
+                    type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                else
                 {
-                    if (!type->canBeInsideNullable())
-                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                            type->getName());
+                    const auto & sample_block = interpreter->getSampleBlock();
+                    auto types = sample_block->getDataTypes();
+                    if (types.size() != 1)
+                        types = {std::make_shared<DataTypeTuple>(types)};
 
-                    type = makeNullable(type);
+                    type = types[0];
+                    if (!type->isNullable())
+                    {
+                        if (!type->canBeInsideNullable())
+                            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                                "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                                type->getName());
+
+                        type = makeNullable(type);
+                    }
                 }
 
                 auto scalar_column = type->createColumn();
@@ -773,7 +779,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     scalar_column->insert(1);
                 else
                     scalar_column->insert(Null());
-                scalar_block.insert({std::move(scalar_column), type, sample_block->getByPosition(0).name});
+                scalar_block.insert({std::move(scalar_column), type, (execute_for_exists ? "exists" : "null")});
             }
             else
             {
