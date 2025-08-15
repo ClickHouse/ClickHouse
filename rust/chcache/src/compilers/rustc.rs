@@ -152,8 +152,8 @@ impl Compiler for RustC {
 
             assert!(linker.is_file());
             assert!(
-                linker_binary_name.ends_with("clang") ||
-                linker_binary_name.ends_with("clang++")
+                linker_binary_name.starts_with("clang") ||
+                linker_binary_name.starts_with("clang++")
             );
 
             clang_linker_version = Some(ClangLike::compiler_version(linker.as_path()));
