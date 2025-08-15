@@ -47,7 +47,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : Posi
 REGISTER_FUNCTION(RoundDuration)
 {
     FunctionDocumentation::Description description = R"(
-Rounds a number down to one of the numbers from a set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
+Rounds a number down to the closest from a set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
 If the number is less than one, it returns `0`.
 )";
     FunctionDocumentation::Syntax syntax = "roundDuration(num)";

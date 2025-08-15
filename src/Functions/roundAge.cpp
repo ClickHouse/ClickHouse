@@ -40,13 +40,13 @@ REGISTER_FUNCTION(RoundAge)
     FunctionDocumentation::Description description = R"(
 Takes a number representing a human age, compares it to standard age ranges, and returns either the highest or lowest value of the range the number falls within.
 
-- Returns `0`, for $age \lt 1$.
-- Returns `17`, for $1 \leq age \leq 17$.
-- Returns `18`, for $18 \leq age \leq 24$.
-- Returns `25`, for $25 \leq age \leq 34$.
-- Returns `35`, for $35 \leq age \leq 44$.
-- Returns `45`, for $45 \leq age \leq 54$.
-- Returns `55`, for $age \geq 55$.
+- Returns `0`, for `age < 1`.
+- Returns `17`, for `1 ≤ age ≤ 17`.
+- Returns `18`, for `18 ≤ age ≤ 24`.
+- Returns `25`, for `25 ≤ age ≤ 34`.
+- Returns `35`, for `35 ≤ age ≤ 44`.
+- Returns `45`, for `45 ≤ age ≤ 54`.
+- Returns `55`, for `age ≥ 55`.
 )";
     FunctionDocumentation::Syntax syntax = "roundAge(num)";
     FunctionDocumentation::Arguments arguments = {

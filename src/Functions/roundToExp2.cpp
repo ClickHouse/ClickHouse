@@ -85,14 +85,14 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : Positi
 REGISTER_FUNCTION(RoundToExp2)
 {
     FunctionDocumentation::Description description = R"(
-Rounds a number down to the nearest (whole non-negative) degree of two.
+Rounds a number down to the nearest (whole non-negative) power of two.
 If the number is less than one, it returns `0`.
 )";
     FunctionDocumentation::Syntax syntax = "roundToExp2(num)";
     FunctionDocumentation::Arguments arguments = {
         {"num", "A number to round.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `num` rounded down to the nearest (whole non-negative) degree of two, otherwise `0` for `num < 1`.", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `num` rounded down to the nearest (whole non-negative) power of two, otherwise `0` for `num < 1`.", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
