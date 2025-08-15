@@ -399,15 +399,7 @@ void IcebergMetadata::mutate(
 {
     auto configuration_ptr = configuration.lock();
 
-    Iceberg::mutate(
-        commands,
-        context,
-        metadata_snapshot,
-        storage_id,
-        object_storage,
-        configuration_ptr,
-        format_settings,
-        catalog);
+    DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
 }
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
