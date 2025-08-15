@@ -36,7 +36,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        columns,
+        getActualTableStructure(context, true),
         ConstraintsDescription{},
         configuration);
 }
