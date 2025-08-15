@@ -70,7 +70,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
 concat
 concatAssumeInjective
 connectionId
@@ -137,7 +136,6 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
-floor
 format
 formatReadableQuantity
 formatReadableSize
@@ -380,11 +378,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
 roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
@@ -561,7 +554,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd
