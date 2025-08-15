@@ -1013,7 +1013,6 @@ bool IcebergStorageSink::initializeMetadata()
                 return false;
             }
 
-            std::cerr << "json_representation " << json_representation << '\n';
             Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup, metadata_compression_method);
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
