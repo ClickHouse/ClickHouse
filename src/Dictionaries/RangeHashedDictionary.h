@@ -12,6 +12,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -67,6 +68,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -278,6 +280,9 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const RangeHashedDictionaryConfiguration configuration;
+
+    ContextPtr context;
+    
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
@@ -329,6 +334,7 @@ namespace impl
 
 template <DictionaryKeyType dictionary_key_type>
 RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -340,6 +346,7 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
+    , context(std::move(context_))
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
@@ -546,7 +553,8 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        auto [query_scope, query_context] = createLoadQueryScope(context);
+        BlockIO io = source_ptr->loadAll(query_context);
         try
         {
             loadDataImpl(io.pipeline);

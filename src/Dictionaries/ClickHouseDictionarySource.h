@@ -49,13 +49,13 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    BlockIO loadAll(ContextMutablePtr query_context) override;
 
-    QueryPipeline loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll(ContextMutablePtr query_context) override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -75,7 +75,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockIO createStreamForQuery(const String & query);
+    BlockIO createStreamForQuery(ContextMutablePtr query_context, const String & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

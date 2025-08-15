@@ -41,17 +41,17 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    BlockIO loadAll(ContextMutablePtr) override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    QueryPipeline loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll(ContextMutablePtr) override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

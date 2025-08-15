@@ -79,6 +79,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedDictionary(
+        ContextPtr context,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -263,6 +264,8 @@ private:
 
     LoggerPtr log;
 
+    ContextPtr context;
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
@@ -297,6 +300,7 @@ extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -304,6 +308,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedDictionary"))
+    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -1158,7 +1163,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         if constexpr (sharded)
             parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        BlockIO io = source_ptr->loadAll();
+        auto [query_scope, query_context] = createLoadQueryScope(context);
+        BlockIO io = source_ptr->loadAll(query_context);
         try
         {
             loadDataImpl(io.pipeline, parallel_loader.get());

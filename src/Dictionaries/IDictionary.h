@@ -13,6 +13,8 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
+#include "Common/CurrentThread.h"
+#include "Interpreters/Context.h"
 
 namespace DB
 {
@@ -462,6 +464,39 @@ public:
     {
         std::lock_guard lock{mutex};
         dictionary_comment = new_dictionary_comment;
+    }
+
+protected:
+
+    /// Creates a query context and, optionally, a query scope for internal query in dictionary:
+    /// - If the current thread group is null, it indicates that the dictionary load was initiated by the dictionary itself.
+    ///   Copies dictionary's context. Creates query scope.
+    /// - If the current thread group is non-null, it indicates that the dictionary load was initiated by some other query.
+    ///   Copies the other query's context from the query group (unless it's null).
+    static std::pair<std::unique_ptr<CurrentThread::QueryScope>, ContextMutablePtr> createLoadQueryScope(ContextPtr dictionary_context)
+    {
+        auto thread_group = CurrentThread::getGroup();
+
+        if (!thread_group)
+        {
+            ContextMutablePtr result_context = Context::createCopy(dictionary_context);
+            result_context->makeQueryContext();
+            result_context->setCurrentQueryId("");
+            return {std::make_unique<CurrentThread::QueryScope>(result_context), std::move(result_context)};
+        }
+
+        if (auto thread_group_thread_context = thread_group->query_context.lock())
+        {
+            ContextMutablePtr result_context = Context::createCopy(thread_group_thread_context);
+            result_context->makeQueryContext();
+            result_context->setCurrentQueryId("");
+            return {nullptr, std::move(result_context)};
+        }
+
+        ContextMutablePtr result = Context::createCopy(dictionary_context);
+        result->makeQueryContext();
+        result->setCurrentQueryId("");
+        return {nullptr, std::move(result)};
     }
 
 private:

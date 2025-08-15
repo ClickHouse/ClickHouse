@@ -208,7 +208,7 @@ bool ExternalDictionaryLibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll(ContextMutablePtr)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_ALL_METHOD);

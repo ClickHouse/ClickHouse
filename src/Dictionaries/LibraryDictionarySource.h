@@ -47,16 +47,16 @@ public:
 
     ~LibraryDictionarySource() override;
 
-    BlockIO loadAll() override;
+    BlockIO loadAll(ContextMutablePtr) override;
 
-    QueryPipeline loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll(ContextMutablePtr) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    QueryPipeline loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 

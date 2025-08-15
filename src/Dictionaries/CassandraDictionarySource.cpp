@@ -141,7 +141,7 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-BlockIO CassandraDictionarySource::loadAll()
+BlockIO CassandraDictionarySource::loadAll(ContextMutablePtr)
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
@@ -191,7 +191,7 @@ QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, c
     return QueryPipeline(Pipe::unitePipes(std::move(pipes)));
 }
 
-QueryPipeline CassandraDictionarySource::loadUpdatedAll()
+QueryPipeline CassandraDictionarySource::loadUpdatedAll(ContextMutablePtr)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

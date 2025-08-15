@@ -122,27 +122,27 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
 /// because a weak ptr to context is saved to pipeline.process_list_entry.it (via : WithContext)
 /// and it's expected that it's always pointing at non-null
 
-BlockIO ClickHouseDictionarySource::loadAll()
+BlockIO ClickHouseDictionarySource::loadAll(ContextMutablePtr query_context)
 {
-    return createStreamForQuery(load_all_query);
+    return createStreamForQuery(std::move(query_context), load_all_query);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
+QueryPipeline ClickHouseDictionarySource::loadUpdatedAll(ContextMutablePtr query_context)
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(load_update_query).pipeline;
+    return createStreamForQuery(std::move(query_context), load_update_query).pipeline;
 }
 
-QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ClickHouseDictionarySource::loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids)).pipeline;
+    return createStreamForQuery(std::move(query_context), query_builder->composeLoadIdsQuery(ids)).pipeline;
 }
 
 
-QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ClickHouseDictionarySource::loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(query).pipeline;
+    return createStreamForQuery(std::move(query_context), query).pipeline;
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -169,16 +169,12 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
+BlockIO ClickHouseDictionarySource::createStreamForQuery(ContextMutablePtr query_context, const String & query)
 {
     BlockIO io;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-
-    /// Copy context because results of scalar subqueries potentially could be cached
-    auto context_copy = Context::createCopy(context);
-    context_copy->makeQueryContext();
 
     const char * query_begin = query.data();
     const char * query_end = query.data() + query.size();
@@ -190,23 +186,13 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
-        /// If the load is triggered by the dictionary itself, the thread is not attached to any thread group.
-        /// And the thread has to be attached to a thread group
-        /// for data like profile counters or memory usage to be collected in QueryStatus.
-        if (!CurrentThread::getGroup())
-        {
-            io.query_scope_holder = std::make_unique<CurrentThread::QueryScope>(context_copy);
-        }
-
-        context_copy->setCurrentQueryId("");
-
-        io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
+        io = executeQuery(query, std::move(query_context), QueryFlags{ .internal = true }).second;
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
         io.pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, std::move(query_context)), false, false, false));
     }
 
     return io;

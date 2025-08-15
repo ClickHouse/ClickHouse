@@ -140,14 +140,14 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-BlockIO MongoDBDictionarySource::loadAll()
+BlockIO MongoDBDictionarySource::loadAll(ContextMutablePtr)
 {
     BlockIO io;
     io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
     return io;
 }
 
-QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MongoDBDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -160,7 +160,7 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");

@@ -15,6 +15,7 @@
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/Exception.h>
+#include "Interpreters/Context_fwd.h"
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -42,6 +43,7 @@ public:
     const std::string name = "RegExpTree";
 
     RegExpTreeDictionary(
+        ContextPtr context_,
         const StorageID & id_,
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
@@ -161,6 +163,8 @@ private:
     const DictionaryStructure structure;
     DictionarySourcePtr source_ptr;
     const Configuration configuration;
+
+    ContextPtr context;
 
     size_t bytes_allocated = 0;
 

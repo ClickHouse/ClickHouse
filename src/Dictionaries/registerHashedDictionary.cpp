@@ -93,32 +93,32 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             if (sparse)
             {
                 if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, true>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
                 return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(
-                    dict_id, dict_struct, std::move(source_ptr), configuration);
+                    context, dict_id, dict_struct, std::move(source_ptr), configuration);
             }
 
             if (shards > 1)
                 return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(
-                    dict_id, dict_struct, std::move(source_ptr), configuration);
+                    context, dict_id, dict_struct, std::move(source_ptr), configuration);
             return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
+                context, dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (sparse)
         {
             if (shards > 1)
                 return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(
-                    dict_id, dict_struct, std::move(source_ptr), configuration);
+                    context, dict_id, dict_struct, std::move(source_ptr), configuration);
             return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
+                context, dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (shards > 1)
             return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
+                context, dict_id, dict_struct, std::move(source_ptr), configuration);
         return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(
-            dict_id, dict_struct, std::move(source_ptr), configuration);
+            context, dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed",

@@ -32,6 +32,7 @@ public:
     };
 
     FlatDictionary(
+        ContextPtr global_context,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -60,7 +61,7 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(global_context, getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -175,6 +176,8 @@ private:
     void resize(Attribute & attribute, UInt64 key);
 
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
+
+    ContextPtr context;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

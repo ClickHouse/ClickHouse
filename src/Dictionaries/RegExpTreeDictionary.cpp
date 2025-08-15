@@ -315,7 +315,8 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        auto [query_scope, query_context] = createLoadQueryScope(context);
+        BlockIO io = source_ptr->loadAll(query_context);
         try
         {
             loadDataImpl(io.pipeline);
@@ -407,6 +408,7 @@ void RegExpTreeDictionary::loadDataImpl(QueryPipeline & pipeline)
 }
 
 RegExpTreeDictionary::RegExpTreeDictionary(
+    ContextPtr context_,
     const StorageID & id_,
     const DictionaryStructure & structure_,
     DictionarySourcePtr source_ptr_,
@@ -418,6 +420,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
       structure(structure_),
       source_ptr(source_ptr_),
       configuration(configuration_),
+      context(std::move(context_)),
       use_vectorscan(use_vectorscan_),
       flag_case_insensitive(flag_case_insensitive_),
       flag_dotall(flag_dotall_),
@@ -1016,6 +1019,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         };
 
         return std::make_unique<RegExpTreeDictionary>(
+            context,
             dict_id,
             dict_struct,
             std::move(source_ptr),

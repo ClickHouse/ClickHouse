@@ -17,6 +17,7 @@ class PolygonDictionarySimple : public IPolygonDictionary
 {
 public:
     PolygonDictionarySimple(
+            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -39,6 +40,7 @@ class PolygonDictionaryIndexEach : public IPolygonDictionary
 {
 public:
     PolygonDictionaryIndexEach(
+            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -67,6 +69,7 @@ class PolygonDictionaryIndexCell : public IPolygonDictionary
 {
 public:
     PolygonDictionaryIndexCell(
+            ContextPtr context_,
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,

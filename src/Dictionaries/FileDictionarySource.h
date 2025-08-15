@@ -22,19 +22,19 @@ public:
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    BlockIO loadAll() override;
+    BlockIO loadAll(ContextMutablePtr) override;
 
-    QueryPipeline loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll(ContextMutablePtr) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & /*ids*/) override
+    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    QueryPipeline loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    QueryPipeline loadKeys(ContextMutablePtr, const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }

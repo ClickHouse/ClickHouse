@@ -306,7 +306,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-BlockIO YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll(ContextMutablePtr)
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();

@@ -30,18 +30,18 @@ public:
 
     ~MongoDBDictionarySource() override;
 
-    BlockIO loadAll() override;
+    BlockIO loadAll(ContextMutablePtr) override;
 
-    QueryPipeline loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll(ContextMutablePtr) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for MongoDBDictionarySource");
     }
 
     bool supportsSelectiveLoad() const override { return true; }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }
