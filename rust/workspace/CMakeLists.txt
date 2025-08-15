@@ -19,7 +19,7 @@ option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM)
-    message(STATUS "Rust build is disabled because both prql and skim are disabled")
+    message(STATUS "prql and skim are disabled")
     return()
 endif()
 
