@@ -14,6 +14,8 @@
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
 #include <Common/ShellCommand.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 
 namespace BuzzHouse
 {
@@ -1629,7 +1631,13 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
 bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
-    return true;
+    Poco::Net::HTTPResponse response;
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparktable");
+
+    httpsession.sendRequest(request);
+    const auto & u = httpsession.receiveResponse(response);
+    UNUSED(u);
+    return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
 }
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)

@@ -8,17 +8,16 @@ import threading
 from functools import partial
 import logging
 
+
 class DolorRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, custom_data=None, callback=None, config=None, **kwargs):
+    def __init__(self, *args, callback=None, config=None, **kwargs):
         """
         Custom initializer for the request handler
 
         Args:
-            custom_data: Any custom data to be accessible in the handler
             callback: A callback function to process received data
             config: Configuration dictionary for the handler
         """
-        self.custom_data = custom_data
         self.callback = callback
         self.config = config if config is not None else {}
         self.logger = logging.getLogger(__name__)
@@ -26,18 +25,15 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         # Call the parent class initializer
         super().__init__(*args, **kwargs)
 
-
     def do_PUT(self):
         # Get the content length
-        content_length = int(self.headers.get('Content-Length', 0))
+        content_length = int(self.headers.get("Content-Length", 0))
         # Read the request body
         request_body = self.rfile.read(content_length)
-        # Parse the path
-        path = self.path
 
         # Log the request
-        if self.config.get('verbose', True):
-            self.logger.info(f"PUT request received at: {path}")
+        if self.config.get("verbose", True):
+            self.logger.info(f"PUT request received at: {self.path}")
             self.logger.info(f"Headers: {self.headers}")
             self.logger.info(f"Body: {request_body.decode('utf-8')}")
 
@@ -45,48 +41,43 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         try:
             # Parse JSON if applicable
             data = None
-            if self.headers.get('Content-Type') == 'application/json':
-                data = json.loads(request_body.decode('utf-8'))
-                if self.config.get('verbose', True):
+            if self.headers.get("Content-Type") == "application/json":
+                data = json.loads(request_body.decode("utf-8"))
+                if self.config.get("verbose", True):
                     self.logger.info(f"Parsed JSON: {data}")
             else:
-                data = request_body.decode('utf-8')
+                data = request_body.decode("utf-8")
 
             # Call the callback if provided
             response_ok = True
             if self.callback:
-                response_ok = self.callback(path, data, self.headers, self.custom_data)
+                response_ok = self.callback(self.path, data, self.headers)
 
             # Default response
             self.send_response(200 if response_ok else 400)
-            self.wfile.write("".encode('utf-8'))
+            self.wfile.write("".encode("utf-8"))
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
             self.send_response(400)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            error_response = {
-                'status': 'error',
-                'message': f'Invalid JSON: {str(e)}'
-            }
-            self.wfile.write(json.dumps(error_response).encode('utf-8'))
+            error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
+            self.wfile.write(json.dumps(error_response).encode("utf-8"))
         except Exception as e:
             # Handle other errors
             self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            error_response = {
-                'status': 'error',
-                'message': f'Server error: {str(e)}'
-            }
-            self.wfile.write(json.dumps(error_response).encode('utf-8'))
+            error_response = {"status": "error", "message": f"Server error: {str(e)}"}
+            self.wfile.write(json.dumps(error_response).encode("utf-8"))
 
     def log_message(self, format, *args):
         """Custom log format"""
         self.logger.info(f"{self.address_string()} - {format % args}")
 
+
 class DolorHTTPServer:
-    def __init__(self, host='localhost', port=8080, handler_kwargs=None):
+    def __init__(self, host="localhost", port=8080, handler_kwargs=None):
         """
         Initialize the threaded HTTP server
 
@@ -94,7 +85,7 @@ class DolorHTTPServer:
             host: Host to bind to
             port: Port to bind to
             handler_kwargs: Dictionary of keyword arguments to pass to the handler
-                          (custom_data, callback, config)
+                          (callback, config)
         """
         self.host = host
         self.port = port
@@ -111,16 +102,15 @@ class DolorHTTPServer:
             return
 
         # Create a handler factory with custom arguments
-        handler_factory = partial(
-            DolorRequestHandler,
-            **self.handler_kwargs
-        )
+        handler_factory = partial(DolorRequestHandler, **self.handler_kwargs)
 
         self.server = HTTPServer((self.host, self.port), handler_factory)
         self.thread = threading.Thread(target=self._run_server, daemon=True)
         self.thread.start()
         self.is_running = True
-        self.logger.info(f"HTTP server started on http://{self.host}:{self.port} in background thread")
+        self.logger.info(
+            f"HTTP server started on http://{self.host}:{self.port} in background thread"
+        )
 
     def _run_server(self):
         """Internal method to run the server"""

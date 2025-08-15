@@ -444,18 +444,20 @@ if args.with_postgresql:
     postgres_conn.close()
 
 
-# Start HTTP server
-def my_processor(path, data, headers, custom_data):
-    # Process the data
-    if path == "/api/users":
-        # Custom logic here
-        return {"status": "user created", "id": 123}
-    return {"status": "processed"}
+# Handler for HTTP server
+def datalakehandler(path, data, headers):
+    if path == "/sparktable":
+        return True
+    if path == "/catalogdatabase":
+        return True
+    if path == "/catalogtable":
+        return True
+    return False
 
 
 catalog_server = DolorHTTPServer(
     port=get_unique_free_ports(1)[0],
-    handler_kwargs={"callback": my_processor, "custom_data": {"cluster": cluster}},
+    handler_kwargs={"callback": datalakehandler},
 )
 catalog_server.start()
 

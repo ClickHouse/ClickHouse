@@ -32,7 +32,7 @@
 #if USE_SQLITE
 #    include <sqlite3.h>
 #endif
-
+#include <Poco/Net/HTTPClientSession.h>
 
 namespace BuzzHouse
 {
@@ -340,9 +340,11 @@ public:
 
 class DolorIntegration : public ClickHouseIntegration
 {
+private:
+    Poco::Net::HTTPClientSession httpsession;
 public:
     explicit DolorIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-        : ClickHouseIntegration(fcc, ssc)
+        : ClickHouseIntegration(fcc, ssc), httpsession(ssc.server_hostname, ssc.port)
     {
     }
 
