@@ -93,18 +93,17 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || catalog != CatalogTable::None)
         {
             const Catalog * cat = nullptr;
-            const ServerCredentials & sc = fc.minio_server.value();
 
             switch (catalog)
             {
                 case CatalogTable::Glue:
-                    cat = &sc.glue_catalog.value();
+                    cat = &fc.minio_server.value().glue_catalog.value();
                     break;
                 case CatalogTable::Hive:
-                    cat = &sc.hive_catalog.value();
+                    cat = &fc.minio_server.value().hive_catalog.value();
                     break;
                 case CatalogTable::REST:
-                    cat = &sc.rest_catalog.value();
+                    cat = &fc.minio_server.value().rest_catalog.value();
                     break;
                 default:
                     break;

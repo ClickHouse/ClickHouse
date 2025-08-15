@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 namespace DB
 {
@@ -185,6 +186,15 @@ public:
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
+
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/) {}
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
