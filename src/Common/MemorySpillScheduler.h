@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <base/types.h>
@@ -22,8 +21,6 @@ struct ProcessorMemoryStats
 class MemorySpillScheduler
 {
 public:
-    using Ptr = std::shared_ptr<MemorySpillScheduler>;
-
     explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 

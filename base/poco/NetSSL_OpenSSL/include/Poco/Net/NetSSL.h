@@ -20,6 +20,7 @@
 #define NetSSL_NetSSL_INCLUDED
 
 
+#include "Poco/Crypto/Crypto.h"
 #include "Poco/Net/Net.h"
 
 
@@ -53,7 +54,7 @@ namespace Net
 {
 
 
-    inline void NetSSL_API initializeSSL() {};
+    void NetSSL_API initializeSSL();
     /// Initialize the NetSSL library, as well as the underlying OpenSSL
     /// libraries, by calling Poco::Crypto::OpenSSLInitializer::initialize().
     ///

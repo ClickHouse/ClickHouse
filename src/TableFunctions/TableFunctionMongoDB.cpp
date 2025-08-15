@@ -42,7 +42,7 @@ private:
             const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "MongoDB"; }
+    const char * getStorageTypeName() const override { return "MongoDB"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -132,7 +132,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
                         {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
                         {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
                     },
-                    .category = FunctionDocumentation::Category::TableFunction
+                    .category = {""},
             },
     });
 }

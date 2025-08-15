@@ -2,6 +2,8 @@
 
 #include <Parsers/IParserBase.h>
 
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
