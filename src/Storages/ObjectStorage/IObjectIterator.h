@@ -2,7 +2,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 
 namespace DB
 {

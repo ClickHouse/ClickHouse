@@ -1,5 +1,5 @@
 #pragma once
-#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 namespace DB

@@ -6,7 +6,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <base/defines.h>
 
 

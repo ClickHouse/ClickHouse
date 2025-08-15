@@ -15,7 +15,7 @@
 #include <Common/SharedMutex.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
-#include <Storages/ObjectStorage/Iterators/ObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <Common/Exception.h>
 
 namespace DB::ErrorCodes
