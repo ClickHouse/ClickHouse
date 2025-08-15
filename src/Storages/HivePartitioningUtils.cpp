@@ -178,7 +178,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
     }
 }
 
-std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForObjectStorage(
+HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
     const StorageObjectStorageConfigurationPtr & configuration,
     const std::string & sample_path,
@@ -238,7 +238,7 @@ std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForObjectSt
      return {hive_partition_columns_to_read_from_file_path, file_columns};
 }
 
-std::pair<NamesAndTypesList, NamesAndTypesList> setupHivePartitioningForFileURLLikeStorage(
+HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStorage(
     ColumnsDescription & columns,
     const std::string & sample_path,
     bool inferred_schema,
