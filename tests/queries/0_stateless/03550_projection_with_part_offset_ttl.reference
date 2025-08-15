@@ -13,7 +13,8 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY order
-TTL if(order = 1, '1970-01-02T00:00:00'::DateTime, '2030-01-01T00:00:00'::DateTime);
+TTL if(order = 1, '1970-01-02T00:00:00'::DateTime, '2030-01-01T00:00:00'::DateTime)
+SETTINGS allow_part_offset_column_in_projections = 1;
 INSERT INTO test SELECT 1, 10;
 OPTIMIZE TABLE test final;
 DROP TABLE test;
