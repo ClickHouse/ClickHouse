@@ -659,6 +659,7 @@ There are several functions that can help to inspect the content of the JSON col
 - [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
 - [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
 - [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
+- [`deepMergeJSON`](../aggregate-functions/reference/deepmergejson.md)
 
 **Examples**
 
