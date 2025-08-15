@@ -30,7 +30,7 @@ namespace
 using namespace DB::Iceberg;
 
 
-std::pair<size_t, size_t> definePositionDeletesSpan(
+std::vector<ManifestFileEntry> definePositionDeletesSpan(
     ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & position_deletes_objects_, const String & format)
 {
     ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
@@ -66,7 +66,7 @@ std::pair<size_t, size_t> definePositionDeletesSpan(
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             format);
     }
-    return {beg_it - position_deletes_objects_.begin(), end_it - position_deletes_objects_.begin()};
+    return {beg_it, end_it};
 }
 
 }
@@ -86,19 +86,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
-    , position_deletes_objects_range(definePositionDeletesSpan(data_manifest_file_entry_, position_deletes_, format))
+    , position_deletes_objects(definePositionDeletesSpan(data_manifest_file_entry_, position_deletes_, format))
 {}
 #endif
-
-IcebergDataObjectInfo::IcebergDataObjectInfo(
-    String data_object_file_path_,
-    String data_object_file_path_key_,
-    Int32 read_schema_id_,
-    std::pair<size_t, size_t> position_deletes_objects_)
-    : RelativePathWithMetadata(std::move(data_object_file_path_))
-    , data_object_file_path_key(std::move(data_object_file_path_key_))
-    , underlying_format_read_schema_id(read_schema_id_)
-    , position_deletes_objects_range(position_deletes_objects_)
-{
-}
 }

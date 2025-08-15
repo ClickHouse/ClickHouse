@@ -25,8 +25,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         String delete_object_format_,
-        String delete_object_compression_method_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+        String delete_object_compression_method_)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
@@ -35,9 +34,7 @@ public:
         , context(context_)
         , delete_object_format(delete_object_format_)
         , delete_object_compression_method(delete_object_compression_method_)
-        , relevant_position_deletes_objects(
-              position_deletes_objects_.begin() + iceberg_object_info_->position_deletes_objects_range.first,
-              position_deletes_objects_.begin() + iceberg_object_info_->position_deletes_objects_range.second)
+        , relevant_position_deletes_objects(iceberg_object_info_->position_deletes_objects)
     {
         initializeDeleteSources();
     }
@@ -75,8 +72,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         String delete_object_format_,
-        String delete_object_compression_method_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+        String delete_object_compression_method_)
         : IcebergPositionDeleteTransform(
               header_,
               iceberg_object_info_,
@@ -84,8 +80,7 @@ public:
               format_settings_,
               context_,
               delete_object_format_,
-              delete_object_compression_method_,
-              position_deletes_objects_)
+              delete_object_compression_method_)
     {
         initialize();
     }
@@ -110,8 +105,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         String delete_object_format_,
-        String delete_object_compression_method_,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+        String delete_object_compression_method_)
         : IcebergPositionDeleteTransform(
               header_,
               iceberg_object_info_,
@@ -119,8 +113,7 @@ public:
               format_settings_,
               context_,
               delete_object_format_,
-              delete_object_compression_method_,
-              position_deletes_objects_)
+              delete_object_compression_method_)
     {
         initialize();
     }

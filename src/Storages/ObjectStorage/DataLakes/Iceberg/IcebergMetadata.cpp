@@ -1,20 +1,18 @@
-<<<<<<< HEAD
-#include <Storages/ObjectStorage/Utils.h>
-=======
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+
 #include "config.h"
 #if USE_AVRO
 
+#include <cstddef>
 #include <memory>
 #include <optional>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Formats/FormatFilterInfo.h>
-#include <cstddef>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 
 #include <Databases/DataLake/Common.h>
@@ -403,7 +401,8 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
 {
     SharedLockGuard lock(mutex);
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
-    chassert(iceberg_object_info != nullptr);
+    if (!iceberg_object_info)
+        return nullptr;
     return (iceberg_object_info->underlying_format_read_schema_id != relevant_snapshot_schema_id)
         ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
         : nullptr;
@@ -413,7 +412,8 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     SharedLockGuard lock(mutex);
-    chassert(iceberg_object_info != nullptr);
+    if (!iceberg_object_info)
+        return nullptr;
     return (iceberg_object_info->underlying_format_read_schema_id != relevant_snapshot_schema_id)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(iceberg_object_info->underlying_format_read_schema_id, relevant_snapshot_schema_id)
         : nullptr;
