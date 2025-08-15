@@ -2348,7 +2348,20 @@ def test_join_with_distributed(started_cluster):
     TABLE_NAME = randomize_table_name("test_join_with_distributed")
     result_file = f"{TABLE_NAME}"
 
-    df = spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e'), (6, 'f',), (7, 'g'), (8, 'h'), (9, 'i')], ['id', 'val'])
+    df = spark.createDataFrame(
+        [
+            (1, "a"),
+            (2, "b"),
+            (3, "c"),
+            (4, "d"),
+            (5, "e"),
+            (6, "f"),
+            (7, "g"),
+            (8, "h"),
+            (9, "i"),
+        ],
+        ["id", "val"],
+    )
 
     df.write.format("delta").save(f"/{TABLE_NAME}")
 
@@ -2360,19 +2373,60 @@ def test_join_with_distributed(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    instance.query(f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id")
-    instance.query(f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())")
-    instance.query(f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');")
+    instance.query(
+        f"create table {clickhouse_table_name} on cluster cluster (id UInt8, val char) engine = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{clickhouse_table_name}', '{{replica}}') order by id"
+    )
+    instance.query(
+        f"create table {clickhouse_table_name}_dist on cluster cluster AS {clickhouse_table_name} engine = Distributed(cluster, default, {clickhouse_table_name}, rand())"
+    )
+    instance.query(
+        f"insert into {clickhouse_table_name}_dist values (1, 'A'),(2, 'B'),(3, 'C'),(4, 'D'),(5, 'E'),(6, 'F'),(7, 'G'),(8, 'H'),(9, 'I');"
+    )
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     # All cases which were reproted as faulty
-    assert int(instance.query(f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0").strip()) == 9
-    assert int(instance.query(f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1").strip()) == 9
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0"
+            ).strip()
+        )
+        == 9
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1"
+            ).strip()
+        )
+        == 9
+    )
 
-    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
-    assert len(instance.query(f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;").split('\n')) == 10
-    assert int(instance.query(f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0").strip()) == 9
+    assert (
+        len(
+            instance.query(
+                f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from {clickhouse_table_name}_dist join b on {clickhouse_table_name}_dist.id = b.id;"
+            ).split("\n")
+        )
+        == 10
+    )
+    assert (
+        len(
+            instance.query(
+                f"with b as (select * from {table_function}) select {clickhouse_table_name}_dist.val, b.val from b join {clickhouse_table_name}_dist on {clickhouse_table_name}_dist.id = b.id;"
+            ).split("\n")
+        )
+        == 10
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM remote('localhost', {table_function}) SETTINGS prefer_localhost_replica = 0"
+            ).strip()
+        )
+        == 9
+    )
 
 
 def test_delta_kernel_internal_pruning(started_cluster):
@@ -2750,4 +2804,51 @@ def test_delta_kernel_internal_pruning(started_cluster):
         instance.query(
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
         )
+    )
+
+
+def test_count_from_cache(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_empty_format_header")
+    result_file = f"{TABLE_NAME}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    df = spark.createDataFrame([(1, "keko"), (2, "puka"), (3, "mora")]).toDF(
+        "id", "name"
+    )
+    df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    time.sleep(1)
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    query_id = f"{TABLE_NAME}_query"
+    assert 3 == int(
+        instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+    assert (
+        "3\t3"
+        == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
+    )
+    assert (
+        "3\t6\t3"
+        == instance.query(
+            f"SELECT count(), sum(id), uniqExact(_path) FROM {table_function}"
+        ).strip()
     )
