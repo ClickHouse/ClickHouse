@@ -26,7 +26,7 @@ using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorag
 
 /**
  * Sink to write partitioned data to DeltaLake.
- * Writes a N data file, a file per partition, and commits them to DeltaLake metadata.
+ * Writes a N data files, a file per partition key, and commits them to DeltaLake metadata.
  */
 class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
 {
