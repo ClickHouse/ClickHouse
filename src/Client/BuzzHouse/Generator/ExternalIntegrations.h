@@ -340,11 +340,9 @@ public:
 
 class DolorIntegration : public ClickHouseIntegration
 {
-private:
-    Poco::Net::HTTPClientSession httpsession;
 public:
     explicit DolorIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-        : ClickHouseIntegration(fcc, ssc), httpsession(ssc.server_hostname, ssc.port)
+        : ClickHouseIntegration(fcc, ssc)
     {
     }
 

@@ -10,6 +10,7 @@ from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.config_cluster import minio_secret_key
 
+
 def generate_xml_safe_string(length: int = 10) -> str:
     """
     Generate a random string that is safe to use as XML value content.
@@ -618,7 +619,9 @@ def add_single_disk(
             account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+            endpoint_xml.text = (
+                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+            )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
@@ -1004,7 +1007,9 @@ def modify_server_settings(
             container_xml = ET.SubElement(azure_xml, "container")
             container_xml.text = "cont"
             storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
-            storage_account_url_xml.text = f"http://azurite1:{cluster.azurite_port}/devstoreaccount1"
+            storage_account_url_xml.text = (
+                f"http://azurite1:{cluster.azurite_port}/devstoreaccount1"
+            )
         ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:

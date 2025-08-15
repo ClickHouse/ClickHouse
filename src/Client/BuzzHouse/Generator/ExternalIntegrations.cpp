@@ -13,7 +13,6 @@
 
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
-#include <Common/ShellCommand.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
@@ -1629,11 +1628,23 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
 }
 
-bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
+bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
-    Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparktable");
+    String buf;
 
+    buf += fmt::format(
+        "{\"table_name\":\"{}\",\"table_path\",\"{}\",\"lake_type\":\"{}\",\"storage_type\":\"{}\"}",
+        t.getTableName(),
+        t.getTablePath(rg, fc, true),
+        t.isAnyDeltaLakeEngine() ? "delta" : "iceberg",
+        (t.isOnS3()          ? "s3"
+             : t.isOnAzure() ? "azure"
+                             : "local"));
+    Poco::Net::HTTPResponse response;
+    Poco::Net::HTTPClientSession httpsession(ssc.server_hostname, ssc.port);
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparktable", buf);
+
+    request.set("Content-Type", "application/json");
     httpsession.sendRequest(request);
     const auto & u = httpsession.receiveResponse(response);
     UNUSED(u);

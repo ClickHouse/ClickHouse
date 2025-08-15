@@ -107,6 +107,19 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         String next_bucket_path;
 
         catalog = setNextCatalog(rg, fc, fc.dolor_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine()), false);
+        /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
+        if (catalog != CatalogTable::None || (isAnyIcebergEngine() || isAnyDeltaLakeEngine() && rg.nextBool()))
+        {
+            integration = IntegrationCall::Dolor;
+        }
+        else if (isOnS3())
+        {
+            integration = IntegrationCall::MinIO;
+        }
+        else if (isOnAzure())
+        {
+            integration = IntegrationCall::Azurite;
+        }
         if (isS3QueueEngine() || isAzureQueueEngine())
         {
             next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
@@ -129,7 +142,15 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
                 default:
                     break;
             }
-            next_bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
+            if (isAnyIcebergEngine() && catalog == CatalogTable::None && integration == IntegrationCall::Dolor)
+            {
+                /// On Spark, this is weird
+                next_bucket_path = fmt::format("/iceberg_data/default/t{}/", tname);
+            }
+            else
+            {
+                next_bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
+            }
         }
         else
         {
@@ -163,20 +184,6 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
             }
         }
         bucket_path = next_bucket_path;
-
-        /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (catalog != CatalogTable::None || rg.nextBool())
-        {
-            integration = IntegrationCall::Dolor;
-        }
-        else if (isOnS3())
-        {
-            integration = IntegrationCall::MinIO;
-        }
-        else if (isOnAzure())
-        {
-            integration = IntegrationCall::Azurite;
-        }
     }
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
     {

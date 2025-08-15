@@ -31,7 +31,6 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 
 from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from integration.helpers.iceberg_utils import get_spark
 from integration.helpers.postgres_utility import get_postgres_conn
 from integration.helpers.s3_tools import (
     AzureUploader,
@@ -48,7 +47,12 @@ from properties import (
     modify_keeper_settings,
 )
 from httpserver import DolorHTTPServer
-from datalakes import LosCatalogos
+from catalogs.datalakes import (
+    LosCatalogos,
+    get_spark,
+    execute_spark_query,
+    generate_random_create_query,
+)
 
 
 def ordered_pair(value):
@@ -417,7 +421,10 @@ servers[len(servers) - 1].wait_start(8)
 
 # Uploaders for object storage
 if args.with_spark:
-    cluster.spark_session = get_spark()
+    cluster.spark_session = {
+        "iceberg": get_spark("iceberg"),
+        "delta": get_spark("delta"),
+    }
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
@@ -447,6 +454,17 @@ if args.with_postgresql:
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
     if path == "/sparktable":
+        execute_spark_query(
+            cluster,
+            data["lake_type"],
+            data["storage_type"],
+            data["table_path"],
+            generate_random_create_query(
+                data["table_name"],
+                data["lake_type"],
+                data["columns"],
+            ),
+        )
         return True
     if path == "/catalogdatabase":
         return True
