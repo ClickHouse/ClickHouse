@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             /// Release closed. Please use 25.4
+            {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"enable_json_type", false, true, "JSON data type is production-ready"},
             {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
             {"enable_variant_type", false, true, "Variant data type is production-ready"},

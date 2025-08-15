@@ -42,7 +42,8 @@ public:
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded) const override;
+        bool skip_not_loaded,
+        bool skip_data_lake_catalog) const override;
 
 
     void shutdown() override {}
