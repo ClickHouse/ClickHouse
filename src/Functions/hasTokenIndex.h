@@ -277,7 +277,7 @@ public:
             context->getIndexMarkCache().get(),
             context->getIndexUncompressedCache().get(),
             context->getVectorSimilarityIndexCache().get(),
-            MergeTreeReaderSettings::Create(context, SelectQueryInfo()));
+            MergeTreeReaderSettings::create(context, SelectQueryInfo()));
 
         for (const auto &[index_mark, subranges] : ranges_map)
         {

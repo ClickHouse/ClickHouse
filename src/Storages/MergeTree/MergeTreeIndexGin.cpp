@@ -108,8 +108,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 
 void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
-    for (const auto & token : token_extractor->getTokens(data, length))
-        gin_filter.add(token, rowID, store);
+    for (const auto & token : token_extractor->getTokensView(data, length))
+        gin_filter.add(String(token), rowID, store);
 }
 
 void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
@@ -455,8 +455,21 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "searchAny" || function_name == "searchAll")
     {
+        GinFilters gin_filters;
+        std::vector<String> search_tokens;
+        for (const auto & element : const_value.safeGet<Array>())
         {
-            /// TODO(ahmadov): move this block to another place, e.g. optimizations.
+            if (element.getType() != Field::Types::String)
+                return false;
+            const auto & value = element.safeGet<String>();
+            gin_filters.emplace_back(GinFilter(value, {value}));
+            search_tokens.push_back(value);
+        }
+        out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
+        out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
+
+        {
+            /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
             const auto * function_dag_node = function_node.getDAGNode();
             chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
@@ -465,28 +478,17 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->setGinFilterParameters(gin_filter_params);
+                search_function->trySetGinFilterParameters(gin_filter_params);
+                search_function->trySetSearchTokens(search_tokens);
             }
             else
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->setGinFilterParameters(gin_filter_params);
+                search_function->trySetGinFilterParameters(gin_filter_params);
+                search_function->trySetSearchTokens(search_tokens);
             }
         }
-
-        GinFilters gin_filters;
-        for (const auto & element : const_value.safeGet<Array>())
-        {
-            if (element.getType() != Field::Types::String)
-                return false;
-            const auto & value = element.safeGet<String>();
-            gin_filters.emplace_back(GinFilter());
-            gin_filters.back().addTerm(value);
-            gin_filters.back().setQueryString(value);
-        }
-        out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
-        out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")

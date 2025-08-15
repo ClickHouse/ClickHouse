@@ -31,6 +31,12 @@ GinFilterParameters::GinFilterParameters(
 {
 }
 
+GinFilter::GinFilter(std::string_view query_string_, const std::vector<String> & search_terms_)
+    : query_string(query_string_)
+    , terms(search_terms_)
+{
+}
+
 void GinFilter::add(const String & term, UInt32 rowID, GinIndexStorePtr & store) const
 {
     if (term.length() > FST::MAX_TERM_LENGTH)
