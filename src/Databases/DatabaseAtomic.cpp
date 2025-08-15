@@ -120,7 +120,7 @@ void DatabaseAtomic::drop(ContextPtr)
     auto db_disk = getDisk();
     try
     {
-        if (db_disk->isSymlinkSupported() && !db_disk->isReadOnly())
+        if (db_disk->isSymlinkSupported())
         {
             db_disk->removeFileIfExists(path_to_metadata_symlink);
             db_disk->removeRecursive(path_to_table_symlinks);
@@ -130,8 +130,7 @@ void DatabaseAtomic::drop(ContextPtr)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    if (!db_disk->isReadOnly())
-        db_disk->removeRecursive(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -709,7 +708,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
+        {
+            checkTableNameLengthUnlocked(new_name, table.first, getContext());
+
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
+        }
     }
 
 

@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 
 DROP TABLE IF EXISTS t;
 

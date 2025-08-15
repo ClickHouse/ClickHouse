@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Comparison Functions'
 sidebar_label: 'Comparison'
+sidebar_position: 35
 slug: /sql-reference/functions/comparison-functions
 title: 'Comparison Functions'
 ---
 
-# Comparison functions
+# Comparison Functions
 
 ## Comparison rules {#comparison-rules}
 
