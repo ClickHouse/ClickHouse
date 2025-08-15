@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
+            {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
