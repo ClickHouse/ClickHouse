@@ -1,5 +1,4 @@
 #include <Processors/IInflatingTransform.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -8,7 +7,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IInflatingTransform::IInflatingTransform(SharedHeader input_header, SharedHeader output_header)
+IInflatingTransform::IInflatingTransform(Block input_header, Block output_header)
     : IProcessor({std::move(input_header)}, {std::move(output_header)})
     , input(inputs.front()), output(outputs.front())
 {

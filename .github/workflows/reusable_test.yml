@@ -1,0 +1,117 @@
+### For the pure soul wishes to move it to another place
+# https://github.com/orgs/community/discussions/9050
+
+name: Testing workflow
+'on':
+  workflow_call:
+    inputs:
+      test_name:
+        description: the value of test type from tests/ci/ci_config.py, ends up as $CHECK_NAME ENV
+        required: true
+        type: string
+      runner_type:
+        description: the label of runner to use
+        required: true
+        type: string
+      run_command:
+        description: the command to launch the check
+        default: ""
+        required: false
+        type: string
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: if the submodules should be checked out
+        required: false
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+      data:
+        description: ci data
+        type: string
+        required: true
+      working-directory:
+        description: sets custom working directory
+        type: string
+        default: "$GITHUB_WORKSPACE/tests/ci"
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  CHECK_NAME: ${{inputs.test_name}}
+
+jobs:
+  Test:
+    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    if: ${{ !failure() && !cancelled() && contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.test_name) }}
+    name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    strategy:
+      fail-fast: false  # we always wait for the entire matrix
+      matrix:
+        batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          ref: ${{ fromJson(inputs.data).git_ref }}
+          submodules: ${{inputs.submodules}}
+          fetch-depth: ${{inputs.checkout_depth}}
+          filter: tree:0
+      - name: Set build envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          CHECK_NAME=${{ inputs.test_name }}
+          ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
+          DOCKER_TAG<<DOCKER_JSON
+          ${{ toJson(fromJson(inputs.data).docker_data.images) }}
+          DOCKER_JSON
+          EOF
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          job_type: test
+      - name: Setup batch
+        if: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 }}
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          RUN_BY_HASH_NUM=${{matrix.batch}}
+          RUN_BY_HASH_TOTAL=${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches }}
+          EOF
+      - name: Pre run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.test_name}}'
+      - name: Run
+        run: |
+          cd "${{ inputs.working-directory }}"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name '${{inputs.test_name}}' \
+            --run \
+            --run-command '''${{inputs.run_command}}'''
+          # shellcheck disable=SC2319
+          echo "JOB_EXIT_CODE=$?" >> "$GITHUB_ENV"
+      - name: Post run
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.test_name}}'
+      - name: Mark as done
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
+      - name: Clean
+        if: always()
+        uses: ./.github/actions/clean

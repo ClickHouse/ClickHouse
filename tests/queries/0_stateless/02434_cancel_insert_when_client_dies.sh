@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest, no-async-insert
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest
 # no-fasttest: The test runs for 40 seconds
 # shellcheck disable=SC2009
 
@@ -49,9 +49,7 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     i=0
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         bash -c insert_data 2>&1| grep -Fav "Killed"
         i=$((i + 1))
@@ -60,9 +58,7 @@ function thread_insert
 
 function thread_select
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT -q "with (select count() from dedup_test) as c select throwIf(c != 5000000, 'Expected 5000000 rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
@@ -70,9 +66,7 @@ function thread_select
 
 function thread_cancel
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         SIGNAL="INT"
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
@@ -85,20 +79,24 @@ function thread_cancel
     done
 }
 
+export -f thread_insert;
+export -f thread_select;
+export -f thread_cancel;
+
 TIMEOUT=40
 
-thread_insert &
-thread_select &
-thread_cancel 2> /dev/null &
+timeout $TIMEOUT bash -c thread_insert &
+timeout $TIMEOUT bash -c thread_select &
+timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
 
 wait
 
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
-$CLICKHOUSE_CLIENT -q 'system flush logs text_log'
+$CLICKHOUSE_CLIENT -q 'system flush logs'
 
 # Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
   'Query was cancelled or a client has unexpectedly dropped the connection') or
-  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%') SETTINGS max_rows_to_read = 0"
+  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"

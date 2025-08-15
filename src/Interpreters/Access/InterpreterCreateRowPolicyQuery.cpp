@@ -11,6 +11,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -41,7 +42,7 @@ namespace
             policy.setRestrictive(*query.is_restrictive);
 
         for (const auto & [filter_type, filter] : query.filters)
-            policy.filters[static_cast<size_t>(filter_type)] = filter ? filter->formatWithSecretsOneLine() : String{};
+            policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;
@@ -87,7 +88,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     Strings names = query.names->toStrings();
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
             updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);

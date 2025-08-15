@@ -1,8 +1,5 @@
 set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
 
-set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
-set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
-
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_aux_runtime.cpp"
@@ -43,6 +40,10 @@ target_link_libraries(cxxabi PUBLIC unwind)
 # Enable capturing stack traces for all exceptions.
 target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 
-if (USE_MUSL)
-    target_compile_definitions(cxxabi PUBLIC -D_LIBCPP_HAS_MUSL_LIBC)
-endif()
+install(
+    TARGETS cxxabi
+    EXPORT global
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
+)

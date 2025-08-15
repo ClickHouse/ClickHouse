@@ -95,7 +95,7 @@ def check_settings(
     sleep_after_receiving_query_ms,
 ):
     attempts = 0
-    while attempts < 100:
+    while attempts < 1000:
         setting1 = NODES[node_name].http_query(
             "SELECT value FROM system.settings WHERE name='sleep_in_send_tables_status_ms'"
         )
@@ -112,7 +112,7 @@ def check_settings(
             and int(setting3) == sleep_after_receiving_query_ms
         ):
             return
-        time.sleep(1)
+        time.sleep(0.1)
         attempts += 1
 
     assert attempts < 1000
@@ -203,39 +203,36 @@ def update_configs(
 
 
 def test_stuck_replica(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs()
 
-    with cluster.pause_container("node_1"):
-        check_query(expected_replica="node_2")
-        check_changing_replica_events(1)
+    cluster.pause_container("node_1")
 
-        result = NODES["node"].query(
-            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-        )
+    check_query(expected_replica="node_2")
+    check_changing_replica_events(1)
 
-        assert TSV(result) == TSV("1")
+    result = NODES["node"].query(
+        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+    )
 
-        result = NODES["node"].query(
-            "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
-        )
+    assert TSV(result) == TSV("1")
 
-        assert TSV(result) == TSV("node_2\t0")
+    result = NODES["node"].query(
+        "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
+    )
 
-        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
-        result = NODES["node"].query(
-            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-        )
+    assert TSV(result) == TSV("node_2\t0")
 
-        assert TSV(result) == TSV("1")
+    # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
+    result = NODES["node"].query(
+        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+    )
+
+    assert TSV(result) == TSV("1")
+
+    cluster.unpause_container("node_1")
 
 
 def test_long_query(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs()
 
     # Restart to reset pool states.
@@ -252,18 +249,12 @@ def test_long_query(started_cluster):
 
 
 def test_send_table_status_sleep(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(node_1_sleep_in_send_tables_status=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_table_status_sleep2(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -273,18 +264,12 @@ def test_send_table_status_sleep2(started_cluster):
 
 
 def test_send_data(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(node_1_sleep_in_send_data=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_data2(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_data=sleep_time, node_2_sleep_in_send_data=sleep_time
     )
@@ -293,9 +278,6 @@ def test_send_data2(started_cluster):
 
 
 def test_combination1(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_data=sleep_time,
@@ -305,9 +287,6 @@ def test_combination1(started_cluster):
 
 
 def test_combination2(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -317,9 +296,6 @@ def test_combination2(started_cluster):
 
 
 def test_combination3(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
@@ -330,24 +306,17 @@ def test_combination3(started_cluster):
 
 
 def test_combination4(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_in_send_tables_status=1000,
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
         node_3_sleep_in_send_tables_status=1000,
-        node_3_sleep_in_send_data=sleep_time,
     )
     check_query(expected_replica="node_2")
     check_changing_replica_events(4)
 
 
 def test_receive_timeout1(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     # Check the situation when first two replicas get receive timeout
     # in establishing connection, but the third replica is ok.
     update_configs(
@@ -360,14 +329,11 @@ def test_receive_timeout1(started_cluster):
 
 
 def test_receive_timeout2(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     # Check the situation when first replica get receive timeout
     # in packet receiving but there are replicas in process of
     # connection establishing.
     update_configs(
-        node_1_sleep_in_send_data=5000,
+        node_1_sleep_in_send_data=4000,
         node_2_sleep_in_send_tables_status=2000,
         node_3_sleep_in_send_tables_status=2000,
     )
@@ -376,9 +342,6 @@ def test_receive_timeout2(started_cluster):
 
 
 def test_initial_receive_timeout(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     # Check the situation when replicas don't respond after
     # receiving query (so, no packets were send to initiator)
     update_configs(
@@ -397,9 +360,6 @@ def test_initial_receive_timeout(started_cluster):
 
 
 def test_async_connect(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs()
 
     NODES["node"].restart_clickhouse()
@@ -438,9 +398,6 @@ def test_async_connect(started_cluster):
 
 
 def test_async_query_sending(started_cluster):
-    if NODES["node"].is_built_with_thread_sanitizer():
-        pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
     update_configs(
         node_1_sleep_after_receiving_query=5000,
         node_2_sleep_after_receiving_query=5000,

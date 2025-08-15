@@ -1,5 +1,3 @@
-#include <cstddef>
-#include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -11,8 +9,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Databases/enableAllExperimentalSettings.h>
 
 
 namespace DB
@@ -62,18 +58,19 @@ IMergeTreeReader::IMergeTreeReader(
 
     for (const auto & column : requested_columns)
     {
-        const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
+        columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
 
         if (column.isSubcolumn())
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto name_in_storage = column.getNameInStorage();
+            auto type_in_storage = column.getTypeInStorage();
+            serializations_of_full_columns.emplace(name_in_storage, getSerializationInPart({name_in_storage, type_in_storage}));
         }
     }
 }
 
-const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
+const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;
 }
@@ -125,9 +122,9 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
-
         DB::fillMissingColumns(
-            res_columns, num_rows, Nested::convertToSubcolumns(requested_columns),
+            res_columns, num_rows,
+            Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
             partially_read_columns, storage_snapshot->metadata);
 
@@ -183,21 +180,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
         }
 
-        auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
-        /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
-        /// We should not perform any checks during reading from an existing table.
-        enableAllExperimentalSettings(context_copy);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
-            context_copy);
+            data_part_info_for_read->getContext());
 
         if (dag)
         {
-            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+            dag->addMaterializingOutputActions();
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
-                ExpressionActionsSettings(context_copy->getSettingsRef()));
+                ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 
@@ -249,12 +242,6 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    return Nested::concatenateName(name_pair.first, name_pair.second);
-}
-
-std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const
-{
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
 
@@ -266,41 +253,25 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
-    return {name_in_storage, subcolumn_name};
+    return Nested::concatenateName(name_in_storage, subcolumn_name);
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
+    auto name_in_part = getColumnNameInPart(required_column);
     auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    if (column_in_part)
+        return *column_in_part;
 
-    if (!column_in_part)
-    {
-        /// If column is missing in part, return column with required type but with name that should be
-        /// in part according to renames to avoid ambiguity in case of transitive renames.
-        ///
-        /// Consider that we have column A in part and the following chain (not materialized in current part) of alters:
-        /// ADD COLUMN B, RENAME COLUMN A TO C, RENAME COLUMN B TO A.
-        /// If requested columns are A and C, we will read column A from part (as column C) and will
-        /// add missing column B (as column A) to fill with default values, because the first name of this column was B.
-        return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-    }
-
-    return *column_in_part;
+    return required_column;
 }
 
 SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
+    auto name_in_part = getColumnNameInPart(required_column);
     auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
-
     if (!column_in_part)
-    {
-        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
-    }
+        return IDataType::getSerialization(required_column);
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
@@ -417,88 +388,17 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
     return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {}, offset = {})",
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
         data_part_storage->getFullPath(),
         data_part_info_for_read->getTableName(),
         data_part_storage->getDiskName(),
         data_part_storage->getDiskType(),
         from_mark,
-        max_rows_to_read,
-        offset);
-}
-
-MergeTreeReaderPtr createMergeTreeReaderCompact(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
-    const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MarkRanges & mark_ranges,
-    const VirtualFields & virtual_fields,
-    UncompressedCache * uncompressed_cache,
-    MarkCache * mark_cache,
-    DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const MergeTreeReaderSettings & reader_settings,
-    const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
-
-MergeTreeReaderPtr createMergeTreeReaderWide(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
-    const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MarkRanges & mark_ranges,
-    const VirtualFields & virtual_fields,
-    UncompressedCache * uncompressed_cache,
-    MarkCache * mark_cache,
-    DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const MergeTreeReaderSettings & reader_settings,
-    const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
-
-MergeTreeReaderPtr createMergeTreeReader(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
-    const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MarkRanges & mark_ranges,
-    const VirtualFields & virtual_fields,
-    UncompressedCache * uncompressed_cache,
-    MarkCache * mark_cache,
-    DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const MergeTreeReaderSettings & reader_settings,
-    const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
-{
-    if (read_info->isCompactPart())
-        return createMergeTreeReaderCompact(
-            read_info,
-            columns_to_read,
-            storage_snapshot,
-            mark_ranges,
-            virtual_fields,
-            uncompressed_cache,
-            mark_cache,
-            deserialization_prefixes_cache,
-            reader_settings,
-            avg_value_size_hints,
-            profile_callback);
-
-    if (read_info->isWidePart())
-        return createMergeTreeReaderWide(
-            read_info,
-            columns_to_read,
-            storage_snapshot,
-            mark_ranges,
-            virtual_fields,
-            uncompressed_cache,
-            mark_cache,
-            deserialization_prefixes_cache,
-            reader_settings,
-            avg_value_size_hints,
-            profile_callback);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
+        max_rows_to_read);
 }
 
 }

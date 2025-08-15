@@ -1,15 +1,14 @@
-#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
+
 
 namespace DB
 {
 
-TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, SharedHeader header, const FormatSettings & format_settings_)
-    : TabSeparatedRowOutputFormat(out_, header, false, false, false, format_settings_), fields(header->getNamesAndTypes())
+TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
+    : TabSeparatedRowOutputFormat(out_, header, false, false, false, format_settings_), fields(header.getNamesAndTypes())
 {
     for (auto & field : fields)
     {
@@ -43,10 +42,9 @@ void registerOutputFormatTSKV(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<TSKVRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("TSKV");
-    factory.setContentType("TSKV", "text/tab-separated-values; charset=UTF-8");
 }
 
 }

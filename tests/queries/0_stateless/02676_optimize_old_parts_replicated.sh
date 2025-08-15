@@ -21,7 +21,7 @@ wait_for_number_of_parts() {
     echo "$res"
 }
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE IF EXISTS test_without_merge;
 DROP TABLE IF EXISTS test_replicated;
 DROP TABLE IF EXISTS test_replicated_limit;
@@ -35,7 +35,7 @@ INSERT INTO test_without_merge SELECT 3;"
 
 wait_for_number_of_parts 'test_without_merge' 1 10
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_without_merge;
 
 SELECT 'With merge replicated any part range';
@@ -48,7 +48,7 @@ INSERT INTO test_replicated SELECT 3;"
 
 wait_for_number_of_parts 'test_replicated' 1 100
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_replicated;
 
 SELECT 'With merge replicated partition only';
@@ -63,7 +63,7 @@ INSERT INTO test_replicated SELECT 2 SETTINGS insert_deduplicate = 0;"
 
 wait_for_number_of_parts 'test_replicated' 2 100
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 SELECT sleepEachRow(1) FROM numbers(9) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
 SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 

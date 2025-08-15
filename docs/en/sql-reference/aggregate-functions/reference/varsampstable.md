@@ -1,13 +1,10 @@
 ---
-description: 'Calculate the sample variance of a data set. Unlike `varSamp` , this
-  function uses a numerically stable algorithm. It works slower but provides a lower
-  computational error.'
+title: "varSampStable"
+slug: /en/sql-reference/aggregate-functions/reference/varsampstable
 sidebar_position: 213
-slug: /sql-reference/aggregate-functions/reference/varsampstable
-title: 'varSampStable'
 ---
 
-## varSampStable {#varsampstable}
+## varSampStable
 
 Calculate the sample variance of a data set. Unlike [`varSamp`](../reference/varsamp.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 

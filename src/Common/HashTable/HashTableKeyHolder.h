@@ -50,7 +50,7 @@
   * After the call to keyHolderPersistKey(), must return the persistent key.
   */
 template <typename Key>
-inline Key & ALWAYS_INLINE keyHolderGetKey(Key && key) { return key; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
+inline Key & ALWAYS_INLINE keyHolderGetKey(Key && key) { return key; }
 
 /**
   * Make the key persistent. keyHolderGetKey() must return the persistent key

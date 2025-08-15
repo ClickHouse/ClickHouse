@@ -1,7 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
-
-#include <Functions/DateTimeTransforms.h>
 
 #include <Interpreters/Context.h>
 
@@ -18,11 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-    extern const SettingsBool use_legacy_to_time;
-}
 
 namespace ErrorCodes
 {
@@ -85,7 +77,8 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
         auto hints = this->getHints(name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
     }
 
     return res;
@@ -140,17 +133,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
-
-        /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
-        /// check this setting here and decide if we need to change the function to get
-        if (query_context && Poco::toLower(name) == "totime" && query_context->getSettingsRef()[Setting::use_legacy_to_time])
-        {
-            it = functions.find(ToTimeWithFixedDateImpl::name);
-            if (functions.end() != it)
-                res = it->second.first(context);
-        }
     }
 
     return res;

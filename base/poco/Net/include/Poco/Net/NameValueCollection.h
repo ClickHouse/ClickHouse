@@ -19,7 +19,6 @@
 
 
 #include <cstddef>
-#include <vector>
 #include "Poco/ListMap.h"
 #include "Poco/Net/Net.h"
 #include "Poco/String.h"
@@ -91,10 +90,6 @@ namespace Net
 
         ConstIterator find(const std::string & name) const;
         /// Returns an iterator pointing to the first name-value pair
-        /// with the given name.
-
-        ConstIterator findLast(const std::string & name) const;
-        /// Returns an iterator pointing to the last name-value pair
         /// with the given name.
 
         ConstIterator begin() const;

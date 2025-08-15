@@ -10,7 +10,7 @@ INSERT INTO rdb VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e');
 CREATE TABLE t2 ( `k` UInt16 ) ENGINE = TinyLog;
 INSERT INTO t2 VALUES (4), (5), (6);
 
-SELECT value == 'direct,parallel_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
+SELECT value == 'default' FROM system.settings WHERE name = 'join_algorithm';
 
 SELECT countIf(explain like '%Algorithm: DirectKeyValueJoin%'), countIf(explain like '%Algorithm: HashJoin%') FROM (
     EXPLAIN PLAN actions = 1

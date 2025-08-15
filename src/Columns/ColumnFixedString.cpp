@@ -9,7 +9,7 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.safeGet<String>();
+    const String & s = x.safeGet<const String &>();
     insertData(s.data(), s.size());
 }
 
@@ -67,7 +67,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
 {
     if (x.getType() != Field::Types::Which::String)
         return false;
-    const String & s = x.safeGet<String>();
+    const String & s = x.safeGet<const String &>();
     if (s.size() > n)
         return false;
     insertData(s.data(), s.size());
@@ -419,7 +419,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnFixedString::compress(bool force_compression) const
+ColumnPtr ColumnFixedString::compress() const
 {
     size_t source_size = chars.size();
 
@@ -427,7 +427,7 @@ ColumnPtr ColumnFixedString::compress(bool force_compression) const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, force_compression);
+    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
@@ -444,15 +444,6 @@ ColumnPtr ColumnFixedString::compress(bool force_compression) const
                 my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
-}
-
-void ColumnFixedString::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
-{
-    const auto & src_fixed = assert_cast<const ColumnFixedString &>(src);
-    if (n != src_fixed.getN())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of FixedString doesn't match");
-
-    memcpy(chars.data() + dst_pos * n, src_fixed.chars.data() + src_pos * n, n);
 }
 
 }

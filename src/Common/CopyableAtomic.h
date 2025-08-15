@@ -20,8 +20,6 @@ struct CopyableAtomic
 
     CopyableAtomic & operator=(const CopyableAtomic & other)
     {
-        if (&other == this)
-            return *this;
         value = other.value.load();
         return *this;
     }

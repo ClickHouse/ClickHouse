@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include <Functions/s2_fwd.h>
+#include "s2_fwd.h"
 
 namespace DB
 {
@@ -58,11 +58,6 @@ public:
                     arg->getName(), i, getName());
         }
 
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 

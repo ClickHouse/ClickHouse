@@ -1,11 +1,9 @@
-import os
-
 import pytest
+import os
+from . import http_headers_echo_server
+from . import redirect_server
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import wait_condition
-
-from . import http_headers_echo_server, redirect_server
 
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")
@@ -34,19 +32,19 @@ def run_server(container_id, file_name, hostname, port, *args):
         user="root",
     )
 
-    def check_server():
-        return cluster.exec_in_container(
+    for _ in range(0, 10):
+        ping_response = cluster.exec_in_container(
             container_id,
             ["curl", "-s", f"http://{hostname}:{port}/"],
             nothrow=True,
         )
 
-    wait_condition(
-        check_server,
-        lambda response: '{"status":"ok"}' in response,
-        max_attempts=20,
-        delay=0.5,
-    )
+        if '{"status":"ok"}' in ping_response:
+            return
+
+        print(ping_response)
+
+    raise Exception("Echo server is not responding")
 
 
 def run_echo_server():
@@ -115,30 +113,3 @@ def test_storage_url_redirected_headers(started_cluster):
 
     assert "Host: 127.0.0.1" not in result
     assert "Host: localhost" in result
-
-
-def test_with_override_content_type_url_http_headers(started_cluster):
-    query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSONEachRow, 'x UInt8') SELECT 1"
-
-    server.query(query)
-
-    result = server.exec_in_container(
-        ["cat", http_headers_echo_server.RESULT_PATH], user="root"
-    )
-
-    print(result)
-
-    assert "Content-Type: application/x-ndjson; charset=UTF-8" in result
-
-    query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSONEachRow, 'x UInt8', headers('Content-Type' = 'upyachka')) SELECT 1"
-
-    server.query(query)
-
-    result = server.exec_in_container(
-        ["cat", http_headers_echo_server.RESULT_PATH], user="root"
-    )
-
-    print(result)
-
-    assert "Content-Type: application/x-ndjson; charset=UTF-8" not in result
-    assert "Content-Type: upyachka" in result

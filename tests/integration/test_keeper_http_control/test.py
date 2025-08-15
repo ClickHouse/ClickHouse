@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 
 import os
-
 import pytest
 import requests
 
-import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+import helpers.keeper_utils as keeper_utils
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
 
 

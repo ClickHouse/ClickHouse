@@ -3,12 +3,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
@@ -25,14 +19,7 @@ struct TanhName { static constexpr auto name = "tanh"; };
         template <typename T>
         static void execute(const T * src, size_t size, T * dst)
         {
-            if constexpr (std::is_same_v<T, BFloat16>)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function `{}` is not implemented for BFloat16", name);
-            }
-            else
-            {
-                NFastOps::Tanh<>(src, size, dst);
-            }
+            NFastOps::Tanh<>(src, size, dst);
         }
     };
 

@@ -53,9 +53,10 @@ void argsToConfig(const Poco::Util::Application::ArgVec & argv,
                 key = arg.substr(key_start);
             continue;
         }
-
-        key = "";
-
+        else
+        {
+            key = "";
+        }
 
         if (key_start == std::string::npos)
             continue;

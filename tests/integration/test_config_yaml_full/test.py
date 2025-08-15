@@ -20,7 +20,6 @@ def test_yaml_full_conf():
         "configs/config.d/part_log.yaml",
         "configs/config.d/path.yaml",
         "configs/config.d/query_masking_rules.yaml",
-        "configs/config.d/query_metric_log.yaml",
         "configs/config.d/tcp_with_proxy.yaml",
         "configs/config.d/test_cluster_with_incorrect_pw.yaml",
         "configs/config.d/text_log.yaml",

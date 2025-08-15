@@ -14,7 +14,7 @@ namespace DB::QueryPlanOptimizations
 ///          - Aggregating/MergingAggregated
 ///
 /// and enable memory bound merging for remote steps if it was enabled for local aggregation.
-void enableMemoryBoundMerging(QueryPlan::Node & node)
+void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &)
 {
     auto * root_mergine_aggeregated = typeid_cast<MergingAggregatedStep *>(node.step.get());
     if (!root_mergine_aggeregated)
@@ -59,15 +59,15 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
     {
         if (aggregating_step->memoryBoundMergingWillBeUsed())
         {
-            sort_description = aggregating_step->getSortDescription();
+            sort_description = aggregating_step->getOutputStream().sort_description;
             enforce_aggregation_in_order = true;
         }
     }
-    else if (auto * merging_aggeregated = typeid_cast<MergingAggregatedStep *>(local_plan))
+    else if (auto * mergine_aggeregated = typeid_cast<MergingAggregatedStep *>(local_plan))
     {
-        if (merging_aggeregated->memoryBoundMergingWillBeUsed())
+        if (mergine_aggeregated->memoryBoundMergingWillBeUsed())
         {
-            sort_description = merging_aggeregated->getGroupBySortDescription();
+            sort_description = mergine_aggeregated->getOutputStream().sort_description;
         }
     }
 
@@ -76,19 +76,19 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
 
     for (auto & reading : reading_steps)
     {
-        reading->enableMemoryBoundMerging();
-        if (enforce_aggregation_in_order || reading->hasSerializedPlan())
-            reading->enforceAggregationInOrder(sort_description);
+        reading->enforceSorting(sort_description);
+        if (enforce_aggregation_in_order)
+            reading->enforceAggregationInOrder();
     }
 
     for (auto & reading : async_reading_steps)
     {
-        reading->enableMemoryBoundMerging();
+        reading->enforceSorting(sort_description);
         if (enforce_aggregation_in_order)
-            reading->enforceAggregationInOrder(sort_description);
+            reading->enforceAggregationInOrder();
     }
 
-    root_mergine_aggeregated->applyOrder(sort_description);
+    root_mergine_aggeregated->applyOrder(sort_description, DataStream::SortScope::Stream);
 }
 
 }

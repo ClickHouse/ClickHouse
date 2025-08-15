@@ -1,4 +1,4 @@
-#include<Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include "ReadFromMemoryStorageStep.h"
 
 #include <atomic>
 #include <functional>
@@ -29,7 +29,7 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
               GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
@@ -88,8 +88,10 @@ private:
         {
             return (*parallel_execution_index)++;
         }
-
-        return execution_index++;
+        else
+        {
+            return execution_index++;
+        }
     }
 
     const NamesAndTypesList requested_column_names_and_types;
@@ -110,7 +112,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     const size_t num_streams_,
     const bool delay_read_for_global_sub_queries_)
     : SourceStepWithFilter(
-        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)),
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)},
         columns_to_read_,
         query_info_,
         storage_snapshot_,
@@ -128,15 +130,11 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        pipe = Pipe(std::make_shared<NullSource>(output_header));
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     pipeline.init(std::move(pipe));
-}
-
-QueryPlanStepPtr ReadFromMemoryStorageStep::clone() const
-{
-    return std::make_unique<ReadFromMemoryStorageStep>(*this);
 }
 
 Pipe ReadFromMemoryStorageStep::makePipe()
@@ -175,10 +173,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        auto source = std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index);
-        if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows_approx);
-        pipes.emplace_back(std::move(source));
+        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

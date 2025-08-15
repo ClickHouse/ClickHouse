@@ -5,10 +5,10 @@ import random
 import string
 import time
 
-import minio
 import pytest
-
 from helpers.cluster import ClickHouseCluster
+import minio
+
 
 cluster = ClickHouseCluster(__file__)
 
@@ -65,24 +65,12 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
     objects_after = get_objects_in_data_path()
 
     assert objects_before == objects_after
-    node1.query("DROP TABLE test_local SYNC")
-    node1.query("DROP TABLE test_s3 SYNC")
 
 
 def test_drop_complex_columns(started_cluster):
-    node1 = cluster.instances["node1"]
-    node1.query(
-        """
-CREATE TABLE warming_up(
-id	Int8
-) ENGINE = MergeTree
-order by (id) SETTINGS storage_policy = 's3';"""
-    )
-
-    # Now we are sure that s3 storage is up and running
     start_objects = get_objects_in_data_path()
     print("Objects before", start_objects)
-
+    node1 = cluster.instances["node1"]
     node1.query(
         """
 CREATE TABLE test_s3_complex_types(
@@ -116,4 +104,3 @@ vertical_merge_algorithm_min_columns_to_activate=1;"""
     end_objects = get_objects_in_data_path()
     print("Objects after drop", end_objects)
     assert start_objects == end_objects
-    node1.query("DROP TABLE warming_up SYNC")

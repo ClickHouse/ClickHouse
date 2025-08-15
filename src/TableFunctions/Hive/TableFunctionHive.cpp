@@ -7,7 +7,6 @@
 #include <memory>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
-#include <Core/Settings.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
@@ -21,12 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-}
 
 namespace ErrorCodes
 {
@@ -41,7 +34,7 @@ class TableFunctionHive : public ITableFunction
 {
 public:
     static constexpr auto name = "hive";
-    static constexpr auto storage_engine_name = "Hive";
+    static constexpr auto storage_type_name = "Hive";
     std::string getName() const override { return name; }
 
     bool hasStaticStructure() const override { return true; }
@@ -49,7 +42,7 @@ public:
     StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return storage_engine_name; }
+    const char * getStorageTypeName() const override { return storage_type_name; }
     ColumnsDescription getActualTableStructure(ContextPtr, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function_, ContextPtr context_) override;
 
@@ -106,9 +99,9 @@ StoragePtr TableFunctionHive::executeImpl(
         partition_by_parser,
         "(" + partition_by_def + ")",
         "partition by declaration list",
-        settings[Setting::max_query_size],
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+        settings.max_query_size,
+        settings.max_parser_depth,
+        settings.max_parser_backtracks);
     StoragePtr storage;
     storage = std::make_shared<StorageHive>(
         hive_metastore_url,

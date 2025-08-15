@@ -1,3 +1,4 @@
+version: '2.3'
 services:
     zoo1:
         image: ${image:-clickhouse/integration-test}
@@ -30,7 +31,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
@@ -67,7 +67,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
@@ -104,7 +103,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1

@@ -3,7 +3,6 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
-#include <Coordination/KeeperStorage.h>
 #include <Coordination/ZooKeeperDataReader.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/TerminalSize.h>

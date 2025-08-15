@@ -1,13 +1,13 @@
 #pragma once
 
-#include <vector>
 #include <Interpreters/AggregateDescription.h>
+#include <Core/Block.h>
 #include <Processors/Chunk.h>
+#include <vector>
 
 namespace DB
 {
 
-class Block;
 using ColumnsMask = std::vector<bool>;
 
 ColumnsMask getAggregatesMask(const Block & header, const AggregateDescriptions & aggregates);

@@ -1,8 +1,7 @@
-import logging
 import os
+import logging
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 logging.getLogger().setLevel(logging.INFO)

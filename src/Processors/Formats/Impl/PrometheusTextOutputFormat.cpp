@@ -12,10 +12,8 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include "DataTypes/IDataType.h"
 
-#include <Core/Field.h>
-
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -28,8 +26,6 @@
 #include <IO/readFloatText.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
-#include <Processors/Port.h>
 
 
 namespace DB
@@ -91,7 +87,7 @@ Float64 tryParseFloat(const String & s)
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_,
+    const Block & header_,
     const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
@@ -132,11 +128,11 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
@@ -350,11 +346,8 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
     });
-
-    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
-    factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
 }
 
 }

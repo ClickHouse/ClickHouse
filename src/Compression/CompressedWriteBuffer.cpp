@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include <base/types.h>
+#include <base/unaligned.h>
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
@@ -12,11 +13,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -59,49 +55,18 @@ void CompressedWriteBuffer::nextImpl()
 
         out.write(compressed_buffer.data(), compressed_size);
     }
-
-    /// Increase buffer size for next data if adaptive buffer size is used and nextImpl was called because of end of buffer.
-    if (!available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
-    {
-        memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
-        BufferBase::set(memory.data(), memory.size(), 0);
-    }
 }
 
-void CompressedWriteBuffer::finalizeImpl()
+CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
-    /// Don't try to resize buffer in nextImpl.
-    use_adaptive_buffer_size = false;
-    next();
-    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
-CompressedWriteBuffer::CompressedWriteBuffer(
-    WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buf_size)
-    , out(out_)
-    , codec(std::move(codec_))
-    , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-    , adaptive_buffer_max_size(buf_size)
+CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    if (!codec)
-        codec = CompressionCodecFactory::instance().getDefaultCodec();
+    if (!canceled)
+        finalize();
 }
 
-void CompressedWriteBuffer::cancelImpl() noexcept
-{
-    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
-    out.cancel();
-}
 
-void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
-{
-    // Flush all the pending data that was supposed to be compressed with the old codec.
-    next();
-    if (offset() != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
-
-    chassert(codec_);
-    codec = std::move(codec_);
-}
 }

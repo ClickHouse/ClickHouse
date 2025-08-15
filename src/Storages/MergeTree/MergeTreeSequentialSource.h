@@ -8,9 +8,6 @@
 namespace DB
 {
 
-class MergedPartOffsets;
-using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
-
 enum MergeTreeSequentialSourceType
 {
     Mutation,
@@ -23,9 +20,7 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    RangesInDataPart data_part,
-    AlterConversionsPtr alter_conversions,
-    MergedPartOffsetsPtr merged_part_offsets,
+    MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
@@ -40,15 +35,10 @@ void createReadFromPartStep(
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    RangesInDataPart data_part,
-    AlterConversionsPtr alter_conversions,
-    MergedPartOffsetsPtr merged_part_offsets,
+    MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
-    bool read_with_direct_io,
-    bool prefetch,
     ContextPtr context,
     LoggerPtr log);
 

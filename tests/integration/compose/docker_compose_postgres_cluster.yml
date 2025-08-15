@@ -1,3 +1,4 @@
+version: '2.3'
 services:
     postgres2:
         image: postgres
@@ -5,7 +6,7 @@ services:
         restart: always
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
-            POSTGRES_PASSWORD: ClickHouse_PostgreSQL_P@ssw0rd
+            POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
             - ${POSTGRES_PORT:-5432}
@@ -19,7 +20,7 @@ services:
         restart: always
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
-            POSTGRES_PASSWORD: ClickHouse_PostgreSQL_P@ssw0rd
+            POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
             - ${POSTGRES_PORT:-5432}
@@ -33,7 +34,7 @@ services:
         restart: always
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
-            POSTGRES_PASSWORD: ClickHouse_PostgreSQL_P@ssw0rd
+            POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
             - ${POSTGRES_PORT:-5432}

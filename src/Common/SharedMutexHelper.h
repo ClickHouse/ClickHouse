@@ -42,11 +42,6 @@ namespace DB
 template <typename Derived, typename MutexType = SharedMutex>
 class TSA_CAPABILITY("SharedMutexHelper") SharedMutexHelper
 {
-    friend Derived;
-private:
-    SharedMutexHelper() = default;
-    SharedMutexHelper(const SharedMutexHelper&) = default;
-
 public:
     // Exclusive ownership
     void lock() TSA_ACQUIRE() /// NOLINT

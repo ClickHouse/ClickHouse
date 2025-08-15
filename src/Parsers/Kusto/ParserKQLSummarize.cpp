@@ -3,15 +3,25 @@
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
-
-#include <fmt/format.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ParserWithElement.h>
+#include <format>
 
 namespace DB
 {
@@ -85,12 +95,12 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
                 if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
                 {
-                    alias = fmt::format("Columns{}", new_column_index);
+                    alias = std::format("Columns{}", new_column_index);
                     ++new_column_index;
                 }
                 else
                 {
-                    alias = fmt::format("{}_", aggregate_fun);
+                    alias = std::format("{}_", aggregate_fun);
                     auto agg_colum_pos = begin_pos;
                     ++agg_colum_pos;
                     ++agg_colum_pos;
@@ -102,7 +112,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                             alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
                     }
                 }
-                expr = fmt::format("{} = {}", alias, expr);
+                expr = std::format("{} = {}", alias, expr);
             }
             expr_aggregations.push_back(expr);
         }
@@ -131,11 +141,11 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     }
                     if (alias.empty())
                     {
-                        alias = fmt::format("Columns{}", new_column_index);
+                        alias = std::format("Columns{}", new_column_index);
                         ++new_column_index;
                     }
 
-                    expr = fmt::format("{} = {}", alias, expr);
+                    expr = std::format("{} = {}", alias, expr);
                 }
             }
             expr_groupbys.push_back(expr);

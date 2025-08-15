@@ -106,7 +106,6 @@ SELECT
     dictGet('test_dict_db.table1_dict', 'col8', (col1, col2, col3, col4, col5)),
     dictGet('test_dict_db.table1_dict', 'col9', (col1, col2, col3, col4, col5))
 FROM test_dict_db.table1
-WHERE dictHas('test_dict_db.table1_dict', (col1, col2, col3, col4, col5))
-ORDER BY col1, col2, col3, col4, col5, col14, col17;
+WHERE dictHas('test_dict_db.table1_dict', (col1, col2, col3, col4, col5));
 
 DROP DATABASE IF EXISTS test_dict_db;

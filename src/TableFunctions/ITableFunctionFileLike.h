@@ -1,9 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Core/Names.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST_fwd.h>
+#include "Core/Names.h"
+#include "Parsers/IAST_fwd.h"
 
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -100,7 +99,7 @@ private:
 
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method, bool is_insert_query) const = 0;
+        const std::string & table_name, const String & compression_method) const = 0;
 
     bool hasStaticStructure() const override { return structure != "auto"; }
 };

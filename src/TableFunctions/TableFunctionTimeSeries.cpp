@@ -97,7 +97,7 @@ ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStr
 }
 
 template <ViewTarget::Kind target_kind>
-const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() const
+const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageTypeName() const
 {
     return target_table_type_name.c_str();
 }
@@ -109,19 +109,19 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
-            .category = FunctionDocumentation::Category::TableFunction}
+            .categories{"Time Series"}}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
-            .category = FunctionDocumentation::Category::TableFunction}
+            .categories{"Time Series"}}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
-            .category = FunctionDocumentation::Category::TableFunction}
+            .categories{"Time Series"}}
         });
 }
 

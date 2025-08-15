@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_USER="user_$CLICKHOUSE_DATABASE"
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --multiquery "
 
 DROP USER IF EXISTS ${CLICKHOUSE_USER};
 CREATE USER ${CLICKHOUSE_USER};
@@ -28,7 +28,7 @@ DROP POLICY ${CLICKHOUSE_DATABASE}_tb_policy ON ${CLICKHOUSE_DATABASE}.table;
 
 $CLICKHOUSE_CLIENT --query "CREATE ROW POLICY any_02703 ON *.some_table USING 1 AS PERMISSIVE TO ALL;" 2>&1 | grep -q "SYNTAX_ERROR"
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --multiquery "
 CREATE TABLE 02703_rqtable_default (x UInt8) ENGINE = MergeTree ORDER BY x;
 
 CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_filter_11_db_policy ON * USING x=1 AS permissive TO ALL;
@@ -42,7 +42,7 @@ SELECT * FROM 02703_rqtable_default;
 DROP TABLE 02703_rqtable_default;
 
 SELECT 'Check system.query_log';
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT query, used_row_policies FROM system.query_log WHERE current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;
 
 DROP ROW POLICY ${CLICKHOUSE_DATABASE}_filter_11_db_policy ON *;

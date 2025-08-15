@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Common/LocalDateTime.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Interpreters/Context_fwd.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
+#include <Interpreters/Context.h>
 #include <IO/CompressionMethod.h>
 
 namespace Poco

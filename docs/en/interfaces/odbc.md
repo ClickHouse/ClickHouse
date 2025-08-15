@@ -1,11 +1,9 @@
 ---
-description: 'Documentation for the ClickHouse ODBC driver'
-sidebar_label: 'ODBC Driver'
-sidebar_position: 35
-slug: /interfaces/odbc
-title: 'ODBC Driver'
+slug: /en/interfaces/odbc
+sidebar_position: 23
+sidebar_label: ODBC Driver
 ---
 
-# ODBC driver
+# ODBC Driver
 
 Use the [official ODBC driver](https://github.com/ClickHouse/clickhouse-odbc) for accessing ClickHouse as a data source.

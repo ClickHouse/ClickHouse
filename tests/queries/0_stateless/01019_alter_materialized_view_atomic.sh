@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-debug, no-flaky-check
-# no-flaky-check: some queries are too long with Thread Fuzzer
+# Tags: no-fasttest, no-debug
 
 set -e
 
@@ -8,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT <<EOF
+$CLICKHOUSE_CLIENT --multiquery <<EOF
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 
@@ -36,15 +35,14 @@ function alter_thread()
     ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
     ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
 
-    local TIMELIMIT=$((SECONDS+10))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
         sleep "$(echo 0.$RANDOM)";
     done
 }
 
-alter_thread &
+export -f alter_thread;
+timeout 10 bash -c alter_thread &
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.

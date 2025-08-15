@@ -1,7 +1,6 @@
 #include <vector>
 #include <string>
 #include <iomanip>
-#include <iostream>
 
 #include <Common/SipHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

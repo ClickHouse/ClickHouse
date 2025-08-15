@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 
@@ -17,7 +18,7 @@ namespace ErrorCodes
 String BackupInfo::toString() const
 {
     ASTPtr ast = toAST();
-    return ast->formatWithSecretsOneLine();
+    return serializeAST(*ast);
 }
 
 
@@ -47,9 +48,6 @@ ASTPtr BackupInfo::toAST() const
     for (const auto & arg : args)
         list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
-    if (function_arg)
-        list->children.push_back(function_arg);
-
     return func;
 }
 
@@ -58,7 +56,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 {
     const auto * func = ast.as<const ASTFunction>();
     if (!func)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got {}", ast.formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got {}", serializeAST(ast));
 
     BackupInfo res;
     res.backup_engine_name = func->name;
@@ -67,7 +65,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     {
         const auto * list = func->arguments->as<const ASTExpressionList>();
         if (!list)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", func->arguments->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", serializeAST(*func->arguments));
 
         size_t index = 0;
         if (!list->children.empty())
@@ -88,12 +86,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
             const auto * lit = elem->as<const ASTLiteral>();
             if (!lit)
             {
-                if (index == args_size - 1 && elem->as<const ASTFunction>())
-                {
-                    res.function_arg = elem;
-                    break;
-                }
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", elem->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", serializeAST(*elem));
             }
             res.args.push_back(lit->value);
         }

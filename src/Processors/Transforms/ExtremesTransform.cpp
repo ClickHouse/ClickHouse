@@ -1,12 +1,12 @@
 #include <Processors/Transforms/ExtremesTransform.h>
-#include <Columns/IColumn.h>
+
 #include <Core/Field.h>
 #include <Common/NaNUtils.h>
 
 namespace DB
 {
 
-ExtremesTransform::ExtremesTransform(SharedHeader header)
+ExtremesTransform::ExtremesTransform(const Block & header)
     : ISimpleTransform(header, header, true)
 {
     /// Port for Extremes.

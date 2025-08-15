@@ -30,7 +30,7 @@ bool canBeNativeType(const IDataType & type);
 bool canBeNativeType(const DataTypePtr & type);
 
 template <typename Type>
-static constexpr bool canBeNativeType()
+static inline bool canBeNativeType()
 {
     if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
         return true;
@@ -74,12 +74,14 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
 template <typename ToType>
 static inline DataTypePtr toNativeDataType()
 {
-    static_assert(std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8> ||
+    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8> ||
         std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16> ||
         std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> ||
         std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> ||
-        std::is_same_v<ToType, Float32> || std::is_same_v<ToType, Float64>);
-    return std::make_shared<DataTypeNumber<ToType>>();
+        std::is_same_v<ToType, Float32> || std::is_same_v<ToType, Float64>)
+        return std::make_shared<DataTypeNumber<ToType>>();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native data type");
 }
 
 /// Cast LLVM value with type to bool

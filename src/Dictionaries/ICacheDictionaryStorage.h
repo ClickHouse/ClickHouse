@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
-#include <Dictionaries/DictionaryHelpers.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
+#include <Common/HashTable/HashMap.h>
+#include <Columns/IColumn.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 namespace DB
 {

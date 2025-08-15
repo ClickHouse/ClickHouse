@@ -33,19 +33,25 @@ public:
     }
 };
 
+/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
+static bool startsWith(const std::string & s, const char * prefix)
+{
+    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+}
+
 Lemmatizers::Lemmatizers(const Poco::Util::AbstractConfiguration & config)
 {
-    const String prefix = "lemmatizers";
+    String prefix = "lemmatizers";
+    Poco::Util::AbstractConfiguration::Keys keys;
 
     if (!config.has(prefix))
-        return;
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "No lemmatizers specified in server config on prefix '{}'", prefix);
 
-    Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
 
     for (const auto & key : keys)
     {
-        if (key.starts_with("lemmatizer"))
+        if (startsWith(key, "lemmatizer"))
         {
             const auto & lemm_name = config.getString(prefix + "." + key + ".lang", "");
             const auto & lemm_path = config.getString(prefix + "." + key + ".path", "");
@@ -75,13 +81,13 @@ Lemmatizers::LemmPtr Lemmatizers::getLemmatizer(const String & name)
     if (paths.find(name) != paths.end())
     {
         if (!std::filesystem::exists(paths[name]))
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Path to lemmatizer does not exist: {}", paths[name]);
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect path to lemmatizer: {}", paths[name]);
 
         lemmatizers[name] = std::make_shared<Lemmatizer>(paths[name]);
         return lemmatizers[name];
     }
 
-    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Lemmatizer with the name '{}' was not found in the configuration", name);
+    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Lemmatizer named: '{}' is not found", name);
 }
 
 }

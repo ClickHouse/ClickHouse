@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
@@ -16,7 +17,7 @@ class ReadBuffer;
 class JSONAsRowInputFormat : public JSONEachRowRowInputFormat
 {
 public:
-    JSONAsRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
+    JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
@@ -30,14 +31,14 @@ protected:
 class JSONAsStringRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
-    JSONAsStringRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "JSONAsStringRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
 
 private:
-    JSONAsStringRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_);
+    JSONAsStringRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_);
 
     void readJSONObject(IColumn & column) override;
 
@@ -50,7 +51,7 @@ private:
 class JSONAsObjectRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
-    JSONAsObjectRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    JSONAsObjectRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "JSONAsObjectRowInputFormat"; }
 
 private:

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Functions/GatherUtils/Algorithms.h>
-#include <Functions/GatherUtils/ArraySourceVisitor.h>
-#include <Functions/GatherUtils/ArraySinkVisitor.h>
-#include <Functions/GatherUtils/ValueSourceVisitor.h>
+#include "Algorithms.h"
+#include "ArraySourceVisitor.h"
+#include "ArraySinkVisitor.h"
+#include "ValueSourceVisitor.h"
 
 
 namespace DB
@@ -115,11 +115,8 @@ struct ArraySourcePairSelector
     static void selectSource(bool is_second_const, bool is_second_nullable, SecondSource && second,
                              bool is_first_const, bool is_first_nullable, FirstSource && first, Args && ... args)
     {
-        if constexpr (std::is_same_v<FirstSource, SecondSource>)
-        {
-            Base::selectSourcePair(is_first_const, is_first_nullable, first,
-                                   is_second_const, is_second_nullable, second, args ...);
-        }
+        Base::selectSourcePair(is_first_const, is_first_nullable, first,
+                               is_second_const, is_second_nullable, second, args ...);
     }
 };
 

@@ -78,21 +78,9 @@
             <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
         </https_tls1_3>
-        <http_proxy>
-            <type>proxy1</type>
-            <impl>http</impl>
-            <host>0.0.0.0</host>
-            <port>8223</port>
-            <description>http with PROXYv1</description>
-        </http_proxy>
     </protocols>
 
     <!--tcp_port>9010</tcp_port--> 
 
     <validate_tcp_client_information>true</validate_tcp_client_information>
-
-    <query_log>
-        <database>system</database>
-        <table>query_log</table>
-    </query_log>
 </clickhouse>

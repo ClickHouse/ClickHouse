@@ -13,7 +13,7 @@ insert into t_multi_prewhere select number, number, number from numbers(10000);
 system drop mark cache;
 select sum(b) from t_multi_prewhere prewhere a < 5000;
 
-system flush logs query_log;
+system flush logs;
 
 select ProfileEvents['FileOpen'] from system.query_log
 where

@@ -1,4 +1,3 @@
--- Tags: memory-engine
 DROP TABLE IF EXISTS t_memory_compressed;
 
 CREATE TABLE t_memory_compressed (id UInt64, s String, arr Array(LowCardinality(String)), m Map(String, String))

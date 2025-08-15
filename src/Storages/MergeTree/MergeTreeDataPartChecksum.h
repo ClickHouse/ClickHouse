@@ -1,10 +1,11 @@
 #pragma once
-
-#include <base/types.h>
-
 #include <map>
 #include <optional>
 #include <city.h>
+#include <base/types.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
 
 class SipHash;
 
@@ -12,8 +13,6 @@ namespace DB
 {
 
 class IDataPartStorage;
-class ReadBuffer;
-class WriteBuffer;
 
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
@@ -53,7 +52,7 @@ struct MergeTreeDataPartChecksums
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.contains(file_name); }
+    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 

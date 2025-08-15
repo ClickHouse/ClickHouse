@@ -1,5 +1,3 @@
-SET allow_materialized_view_with_bad_select = 1;
-
 DROP TABLE IF EXISTS mv_extra_columns_dst;
 DROP TABLE IF EXISTS mv_extra_columns_src;
 DROP TABLE IF EXISTS mv_extra_columns_view;

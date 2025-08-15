@@ -27,9 +27,11 @@ bool isPointerValid(const void * ptr)
         checking_pointer = false;
         return true;
     }
-
-    checking_pointer = false;
-    return false;
+    else
+    {
+        checking_pointer = false;
+        return false;
+    }
 }
 
 int main(int, char **)

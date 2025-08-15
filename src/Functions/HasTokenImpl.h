@@ -56,11 +56,12 @@ struct HasTokenImpl
                 std::ranges::fill(res_null->getData(), true);
                 return;
             }
-            if (has_separator)
+            else if (has_separator)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
-            if (pattern.empty())
+            else if (pattern.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
         }
 
         size_t pattern_size = pattern.size();

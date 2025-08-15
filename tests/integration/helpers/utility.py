@@ -1,6 +1,5 @@
-import datetime
-import random
 import string
+import random
 import threading
 
 
@@ -44,8 +43,3 @@ def replace_config(config_path, old, new):
     config = open(config_path, "w")
     config.writelines(config_lines)
     config.close()
-
-
-# Prints the current time in UTC with microseconds.
-def format_current_time():
-    return datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')

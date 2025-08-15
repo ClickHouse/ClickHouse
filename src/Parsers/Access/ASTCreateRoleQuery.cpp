@@ -8,33 +8,28 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, WriteBuffer & ostr)
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
-        ostr << " ";
+        settings.ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                ostr << ", ";
-            ostr << backQuoteIfNeed(name);
+                settings.ostr << ", ";
+            settings.ostr << backQuoteIfNeed(name);
         }
     }
 
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
-        ostr << " RENAME TO " << quoteString(new_name);
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
+                      << quoteString(new_name);
     }
 
-    void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
     {
-        ostr << " SETTINGS ";
-        settings.format(ostr, format);
-    }
-
-    void formatAlterSettings(const ASTAlterSettingsProfileElements & alter_settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
-    {
-        ostr << " ";
-        alter_settings.format(ostr, format);
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        settings.format(format);
     }
 }
 
@@ -52,48 +47,43 @@ ASTPtr ASTCreateRoleQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    if (alter_settings)
-        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
-
     return res;
 }
 
 
-void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        ostr << "ATTACH ROLE";
+        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        ostr << (alter ? "ALTER ROLE" : "CREATE ROLE")
-                     ;
+        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
+                      << (format.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        ostr << " IF EXISTS";
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
     else if (if_not_exists)
-        ostr << " IF NOT EXISTS";
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
     else if (or_replace)
-        ostr << " OR REPLACE";
+        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    formatNames(names, ostr);
+    formatNames(names, format);
 
     if (!storage_name.empty())
-        ostr
-                    << " IN "
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
+                    << " IN " << (format.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(ostr, format);
+    formatOnCluster(format);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, ostr, format);
+        formatRenameTo(new_name, format);
 
-    if (alter_settings)
-        formatAlterSettings(*alter_settings, ostr, format);
-    else if (settings)
-        formatSettings(*settings, ostr, format);
+    if (settings && (!settings->empty() || alter))
+        formatSettings(*settings, format);
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -21,18 +22,12 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
-    extern const int LOGICAL_ERROR;
 }
 
 
 bool MutationCommand::isBarrierCommand() const
 {
     return type == RENAME_COLUMN;
-}
-
-bool MutationCommand::affectsAllColumns() const
-{
-    return type == DELETE || type == APPLY_DELETED_MASK;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
@@ -47,7 +42,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.partition = command->partition->clone();
         return res;
     }
-    if (command->type == ASTAlterCommand::UPDATE)
+    else if (command->type == ASTAlterCommand::UPDATE)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -60,32 +55,24 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
             if (!insertion.second)
-                throw Exception(
-                    ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN,
-                    "Multiple assignments in the single statement to column {}",
-                    backQuote(assignment.column_name));
+                throw Exception(ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN,
+                                "Multiple assignments in the single statement to column {}",
+                                backQuote(assignment.column_name));
         }
         return res;
     }
-    if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
+    else if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = APPLY_DELETED_MASK;
+        if (command->predicate)
+            res.predicate = command->predicate->clone();
         if (command->partition)
             res.partition = command->partition->clone();
         return res;
     }
-    else if (command->type == ASTAlterCommand::APPLY_PATCHES)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = APPLY_PATCHES;
-        if (command->partition)
-            res.partition = command->partition->clone();
-        return res;
-    }
-    if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -96,7 +83,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_STATISTICS)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -107,7 +94,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -118,7 +105,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.projection_name = command->projection->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_COLUMN)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -128,22 +115,17 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.column_name = getIdentifierName(command->column);
         return res;
     }
-    /// MODIFY COLUMN x REMOVE MATERIALIZED/RESET SETTING/MODIFY SETTING is a valid alter command, but doesn't have any specified column type,
-    /// thus no mutation is needed
-    if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN && command->remove_property.empty()
-        && nullptr == command->settings_changes && nullptr == command->settings_resets)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
-        if (nullptr == ast_col_decl.type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command->formatForErrorMessage());
         res.column_name = ast_col_decl.name;
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_COLUMN)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -156,7 +138,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
 
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -168,7 +150,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.clear = true;
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTICS)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTICS)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -180,7 +162,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -192,7 +174,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.clear = true;
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -201,7 +183,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.rename_to = command->rename_to->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -210,11 +192,13 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.partition = command->partition->clone();
         return res;
     }
-
-    MutationCommand res;
-    res.ast = command->ptr();
-    res.type = ALTER_WITHOUT_MUTATION;
-    return res;
+    else
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = ALTER_WITHOUT_MUTATION;
+        return res;
+    }
 }
 
 
@@ -232,7 +216,9 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
 
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
+    WriteBufferFromOwnString commands_buf;
+    formatAST(*ast(with_pure_metadata_commands), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    writeEscapedString(commands_buf.str(), out);
 }
 
 void MutationCommands::readText(ReadBuffer & in)
@@ -256,7 +242,9 @@ void MutationCommands::readText(ReadBuffer & in)
 
 std::string MutationCommands::toString() const
 {
-    return ast()->formatWithSecretsOneLine();
+    WriteBufferFromOwnString commands_buf;
+    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    return commands_buf.str();
 }
 
 
@@ -270,16 +258,6 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
     return false;
 }
 
-bool MutationCommands::hasAnyUpdateCommand() const
-{
-    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
-}
-
-bool MutationCommands::hasOnlyUpdateCommands() const
-{
-    return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
-}
-
 bool MutationCommands::containBarrierCommand() const
 {
     for (const auto & command : *this)
@@ -288,15 +266,6 @@ bool MutationCommands::containBarrierCommand() const
             return true;
     }
     return false;
-}
-
-NameSet MutationCommands::getAllUpdatedColumns() const
-{
-    NameSet res;
-    for (const auto & command : *this)
-        for (const auto & [column_name, _] : command.column_to_update_expression)
-            res.insert(column_name);
-    return res;
 }
 
 }

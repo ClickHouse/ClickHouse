@@ -1,7 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 
@@ -12,7 +11,7 @@ namespace DB
 
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_,
+    const Block & header_,
     const FormatSettings & settings_,
     bool pretty_json_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(
@@ -27,7 +26,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 
 void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number], pretty_json ? 1 : 0, pretty_json ? " " : "", pretty_json);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number], pretty_json ? 1 : 0, "", pretty_json);
     ++field_number;
 }
 
@@ -109,13 +108,9 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;
-            return std::make_shared<JSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, pretty_json);
+            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, settings, pretty_json);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
-        factory.setContentType(format, [](const std::optional<FormatSettings> & settings)
-        {
-            return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";
-        });
     };
 
     register_function("JSONEachRow", false, false);
