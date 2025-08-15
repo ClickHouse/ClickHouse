@@ -212,7 +212,7 @@ public:
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
         http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server, http_server, azurite_server;
+        minio_server, http_server, azurite_server, dolor_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     std::unordered_set<uint32_t> disallowed_error_codes, oracle_ignore_error_codes;
     String host = "localhost", keeper_map_path_prefix;

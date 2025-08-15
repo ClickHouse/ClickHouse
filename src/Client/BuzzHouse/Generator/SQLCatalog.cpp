@@ -63,10 +63,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
-        const bool canUseCatalog = fc.minio_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine());
-        const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().glue_catalog.has_value());
-        const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().hive_catalog.has_value());
-        const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.minio_server.value().rest_catalog.has_value());
+        const bool canUseCatalog = fc.dolor_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine());
+        const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().glue_catalog.has_value());
+        const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().hive_catalog.has_value());
+        const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().rest_catalog.has_value());
         const uint32_t no_cat = 15;
         const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -97,13 +97,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
             switch (catalog)
             {
                 case CatalogTable::Glue:
-                    cat = &fc.minio_server.value().glue_catalog.value();
+                    cat = &fc.dolor_server.value().glue_catalog.value();
                     break;
                 case CatalogTable::Hive:
-                    cat = &fc.minio_server.value().hive_catalog.value();
+                    cat = &fc.dolor_server.value().hive_catalog.value();
                     break;
                 case CatalogTable::REST:
-                    cat = &fc.minio_server.value().rest_catalog.value();
+                    cat = &fc.dolor_server.value().rest_catalog.value();
                     break;
                 default:
                     break;
@@ -142,6 +142,20 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
             }
         }
         bucket_path = next_bucket_path;
+
+        /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
+        if (catalog != CatalogTable::None || rg.nextBool())
+        {
+            integration = IntegrationCall::Dolor;
+        }
+        else if (isOnS3())
+        {
+            integration = IntegrationCall::MinIO;
+        }
+        else if (isOnAzure())
+        {
+            integration = IntegrationCall::Azurite;
+        }
     }
     else
     {

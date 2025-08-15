@@ -1386,23 +1386,6 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
-MinIOIntegration::MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-    : ClickHouseIntegration(fcc, ssc)
-{
-    if (ssc.glue_catalog.has_value() && !sendRequest(ssc.glue_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create Glue catalog endpoint");
-    }
-    if (ssc.hive_catalog.has_value() && !sendRequest(ssc.hive_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create Hive catalog endpoint");
-    }
-    if (ssc.rest_catalog.has_value() && !sendRequest(ssc.rest_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create REST catalog endpoint");
-    }
-}
-
 bool MinIOIntegration::sendRequest(const String & resource)
 {
     struct tm ttm;
@@ -1538,7 +1521,51 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
-void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
+void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine * te)
+{
+    te->add_params()->set_rvalue(sc.named_collection);
+}
+
+void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
+}
+
+bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
+{
+    chassert(b.catalog == CatalogTable::None);
+    return sendRequest(fmt::format("{}/{}", sc.database, b.getTablePath(rg, fc, true)));
+}
+
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine * te)
+{
+    te->add_params()->set_rvalue(sc.named_collection);
+}
+
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
+}
+
+bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
+{
+    chassert(b.catalog == CatalogTable::None);
+    return true;
+}
+
+void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String &, TableEngine * te)
+{
+    te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+}
+
+bool HTTPIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
+{
+    return true;
+}
+
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1603,11 +1630,13 @@ void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
 }
 
-void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
+void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
 {
     const Catalog * cat = nullptr;
 
-    te->add_params()->set_rvalue(sc.named_collection);
+    te->add_params()->set_rvalue(
+        (b.catalog != CatalogTable::None || b.isOnS3()) ? fc.minio_server.value().named_collection
+                                                        : (b.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
     switch (b.catalog)
     {
         case CatalogTable::Glue:
@@ -1665,39 +1694,7 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & 
     }
 }
 
-void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
-{
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
-}
-
-bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
-{
-    return b.catalog != CatalogTable::None || sendRequest(fmt::format("{}/{}", sc.database, b.getTablePath(rg, fc, true)));
-}
-
-void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine * te)
-{
-    te->add_params()->set_rvalue(sc.named_collection);
-}
-
-void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
-{
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
-}
-
-bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
-{
-    return true;
-}
-
-void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String &, TableEngine * te)
-{
-    te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
-}
-
-bool HTTPIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
+bool DolorIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
@@ -1737,19 +1734,22 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     {
         http = std::make_unique<HTTPIntegration>(fc, fc.http_server.value());
     }
+    if (fc.dolor_server.has_value())
+    {
+        dolor = std::make_unique<DolorIntegration>(fc, fc.dolor_server.value());
+    }
     if (fc.clickhouse_server.has_value())
     {
         clickhouse = MySQLIntegration::testAndAddMySQLConnection(fc, fc.clickhouse_server.value(), fc.read_log, "ClickHouse");
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(
-    RandomGenerator & rg, const IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
-    switch (dc)
+    switch (d.integration)
     {
-        case IntegrationCall::MinIO:
-            minio->setDatabaseDetails(rg, d, de, svs);
+        case IntegrationCall::Dolor:
+            dolor->setDatabaseDetails(rg, d, de, svs);
             break;
         default:
             chassert(0);
@@ -1758,11 +1758,11 @@ void ExternalIntegrations::createExternalDatabase(
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
-    RandomGenerator & rg, const IntegrationCall dc, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
+    RandomGenerator & rg, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
 {
     ClickHouseIntegration * next = nullptr;
 
-    switch (dc)
+    switch (b.integration)
     {
         case IntegrationCall::MySQL:
             next = mysql.get();
@@ -1787,6 +1787,12 @@ void ExternalIntegrations::createExternalDatabaseTable(
             break;
         case IntegrationCall::HTTP:
             next = http.get();
+            break;
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
             break;
     }
     requires_external_call_check++;

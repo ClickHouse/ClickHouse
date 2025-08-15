@@ -44,7 +44,7 @@ class Generator:
 
 
 class BuzzHouseGenerator(Generator):
-    def __init__(self, args, cluster):
+    def __init__(self, args, cluster, catalog_server):
         super().__init__(args.client_binary, args.client_config, ".json")
 
         # Load configuration
@@ -81,25 +81,6 @@ class BuzzHouseGenerator(Generator):
                 "password": minio_secret_key,
                 "named_collection": "s3",
             }
-            if args.with_glue:
-                buzz_config["minio"]["glue"] = {
-                    "server_hostname": "glue",
-                    "endpoint": "warehouse-glue",
-                    "region": "us-east-1",
-                    "port": 3000,
-                }
-            if args.with_hms:
-                buzz_config["minio"]["hive"] = {
-                    "server_hostname": "hive",
-                    "endpoint": "warehouse-hms",
-                    "port": 9083,
-                }
-            if args.with_rest:
-                buzz_config["minio"]["rest"] = {
-                    "server_hostname": "rest",
-                    "endpoint": "warehouse-rest",
-                    "port": 8181,
-                }
         if args.with_postgresql:
             buzz_config["postgresql"] = {
                 "query_log_file": "/tmp/postgresql.sql",
@@ -156,6 +137,30 @@ class BuzzHouseGenerator(Generator):
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
+        if args.with_spark or args.with_glue or args.with_hms or args.with_rest:
+            buzz_config["dolor"] = {
+                "server_hostname": "host.docker.internal",
+                "port": catalog_server.port,
+            }
+            if args.with_glue:
+                buzz_config["dolor"]["glue"] = {
+                    "server_hostname": "glue",
+                    "endpoint": "warehouse-glue",
+                    "region": "us-east-1",
+                    "port": 3000,
+                }
+            if args.with_hms:
+                buzz_config["dolor"]["hive"] = {
+                    "server_hostname": "hive",
+                    "endpoint": "warehouse-hms",
+                    "port": 9083,
+                }
+            if args.with_rest:
+                buzz_config["dolor"]["rest"] = {
+                    "server_hostname": "rest",
+                    "endpoint": "warehouse-rest",
+                    "port": 8181,
+                }
 
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))

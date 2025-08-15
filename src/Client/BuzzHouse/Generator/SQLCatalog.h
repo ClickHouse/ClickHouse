@@ -22,6 +22,20 @@ enum class DetachStatus
     PERM_DETACHED = 2
 };
 
+enum class IntegrationCall
+{
+    None = 0,
+    MySQL = 1,
+    PostgreSQL = 2,
+    SQLite = 3,
+    Redis = 4,
+    MongoDB = 5,
+    MinIO = 6,
+    Azurite = 7,
+    HTTP = 8,
+    Dolor = 9
+};
+
 enum class PeerTableDatabase
 {
     None = 0,
@@ -119,6 +133,7 @@ public:
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
+    IntegrationCall integration = IntegrationCall::None;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -163,6 +178,7 @@ public:
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
+    IntegrationCall integration = IntegrationCall::None;
     CatalogTable catalog = CatalogTable::None;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }

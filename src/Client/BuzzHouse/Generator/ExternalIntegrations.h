@@ -37,18 +37,6 @@
 namespace BuzzHouse
 {
 
-enum class IntegrationCall
-{
-    MySQL = 1,
-    PostgreSQL = 2,
-    SQLite = 3,
-    Redis = 4,
-    MongoDB = 5,
-    MinIO = 6,
-    Azurite = 7,
-    HTTP = 8
-};
-
 class ClickHouseIntegration
 {
 public:
@@ -300,9 +288,10 @@ private:
     bool sendRequest(const String & resource);
 
 public:
-    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc);
-
-    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
+    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
 
     void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
 
@@ -345,6 +334,23 @@ public:
     ~HTTPIntegration() override = default;
 };
 
+class DolorIntegration : public ClickHouseIntegration
+{
+public:
+    explicit DolorIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
+
+    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+
+    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+
+    ~DolorIntegration() override = default;
+};
+
 class ExternalIntegrations
 {
 private:
@@ -357,6 +363,7 @@ private:
     std::unique_ptr<MinIOIntegration> minio;
     std::unique_ptr<AzuriteIntegration> azurite;
     std::unique_ptr<HTTPIntegration> http;
+    std::unique_ptr<DolorIntegration> dolor;
     std::unique_ptr<MySQLIntegration> clickhouse;
 
     std::filesystem::path default_sqlite_path;
@@ -388,11 +395,13 @@ public:
 
     bool hasMinIOConnection() const { return minio != nullptr; }
 
-    bool hasGlueCatalog() const { return hasMinIOConnection() && minio->sc.glue_catalog.has_value(); }
+    bool hasDolorConnection() const { return dolor != nullptr; }
 
-    bool hasHiveCatalog() const { return hasMinIOConnection() && minio->sc.hive_catalog.has_value(); }
+    bool hasGlueCatalog() const { return hasDolorConnection() && dolor->sc.glue_catalog.has_value(); }
 
-    bool hasRestCatalog() const { return hasMinIOConnection() && minio->sc.rest_catalog.has_value(); }
+    bool hasHiveCatalog() const { return hasDolorConnection() && dolor->sc.hive_catalog.has_value(); }
+
+    bool hasRestCatalog() const { return hasDolorConnection() && dolor->sc.rest_catalog.has_value(); }
 
     bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog(); }
 
@@ -412,10 +421,9 @@ public:
 
     explicit ExternalIntegrations(FuzzConfig & fcc);
 
-    void createExternalDatabaseTable(
-        RandomGenerator & rg, IntegrationCall dc, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+    void createExternalDatabaseTable(RandomGenerator & rg, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
-    void createExternalDatabase(RandomGenerator & rg, IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+    void createExternalDatabase(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);

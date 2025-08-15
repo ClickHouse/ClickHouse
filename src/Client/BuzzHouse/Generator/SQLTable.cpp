@@ -1169,37 +1169,35 @@ void StatementGenerator::generateEngineDetails(
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
             || b.isRedisEngine() || b.isExternalDistributedEngine()))
     {
-        IntegrationCall next = IntegrationCall::MinIO;
-
         if (b.isExternalDistributedEngine())
         {
-            next = (b.sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
+            b.integration = (b.sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
         }
         else if (b.isMySQLEngine())
         {
-            next = IntegrationCall::MySQL;
+            b.integration = IntegrationCall::MySQL;
         }
         else if (b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine())
         {
-            next = IntegrationCall::PostgreSQL;
+            b.integration = IntegrationCall::PostgreSQL;
         }
         else if (b.isSQLiteEngine())
         {
-            next = IntegrationCall::SQLite;
+            b.integration = IntegrationCall::SQLite;
         }
         else if (b.isMongoDBEngine())
         {
-            next = IntegrationCall::MongoDB;
+            b.integration = IntegrationCall::MongoDB;
         }
         else if (b.isRedisEngine())
         {
-            next = IntegrationCall::Redis;
+            b.integration = IntegrationCall::Redis;
         }
         else
         {
             chassert(0);
         }
-        connections.createExternalDatabaseTable(rg, next, b, entries, te);
+        connections.createExternalDatabaseTable(rg, b, entries, te);
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
@@ -1291,7 +1289,8 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isURLEngine())
     {
-        connections.createExternalDatabaseTable(rg, IntegrationCall::HTTP, b, entries, te);
+        b.integration = IntegrationCall::HTTP;
+        connections.createExternalDatabaseTable(rg, b, entries, te);
         /// Set format
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
@@ -1316,9 +1315,9 @@ void StatementGenerator::generateEngineDetails(
     {
         /// Set what the filename is going to be first
         b.setTablePath(rg, fc);
-        if (b.isOnS3() || b.isOnAzure())
+        if (b.integration != IntegrationCall::None)
         {
-            connections.createExternalDatabaseTable(rg, b.isOnS3() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+            connections.createExternalDatabaseTable(rg, b, entries, te);
         }
         else
         {
@@ -2586,7 +2585,8 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     else if (next.isDataLakeCatalogDatabase())
     {
         svs = svs ? svs : cd->mutable_setting_values();
-        connections.createExternalDatabase(rg, IntegrationCall::MinIO, next, deng, svs);
+        next.integration = IntegrationCall::Dolor;
+        connections.createExternalDatabase(rg, next, deng, svs);
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
