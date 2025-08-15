@@ -1,6 +1,7 @@
 #include <Storages/HivePartitioningUtils.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
@@ -69,7 +70,11 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
 
     const auto hive_map = parseHivePartitioningKeysAndValues(sample_path);
 
+    std::map<std::string_view, std::string_view> hive_map_sorted;
     for (const auto & item : hive_map)
+        hive_map_sorted.insert(item);
+
+    for (const auto & item : hive_map_sorted)
     {
         const std::string key(item.first);
         const std::string value(item.second);
@@ -83,7 +88,14 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         {
             if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                if (type->canBeInsideLowCardinality())
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+                }
+                else
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                }
             }
             else
             {

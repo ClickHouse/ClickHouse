@@ -445,14 +445,35 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(
+    const NamesAndTypesList & virtuals,
+    std::optional<const std::unordered_set<std::string_view>> hive_partitioning_columns) const
 {
     auto res = getSampleBlock();
+    size_t size = res.columns();
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
         res.insert({column.type->createColumn(), column.type, column.name});
+
+    /// Hive partitioning columns must be after virtual.
+    /// Now they are materialized, returned from getSampleBlock with other columns.
+    if (hive_partitioning_columns.has_value())
+    {
+        size_t i = 0;
+        while (i < size)
+        {
+            if (hive_partitioning_columns.value().contains(res.getByPosition(i).name))
+            {
+                res.insert(res.getByPosition(i));
+                res.erase(i);
+                --size;
+            }
+            else
+                ++i;
+        }
+    }
 
     return res;
 }

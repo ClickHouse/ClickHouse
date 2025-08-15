@@ -19,6 +19,12 @@ void addPartitionColumnsToChunk(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path);
 
+NamesAndTypesList extractHivePartitionColumnsFromPath(
+    const ColumnsDescription & storage_columns,
+    const std::string & sample_path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
+
 void extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
     NamesAndTypesList & hive_partition_columns_to_read_from_file_path,

@@ -83,12 +83,16 @@ public:
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
+    std::unordered_set<std::string_view> getHivePartitioningColumns() const override;
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
+    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     ObjectStorageType type;
     const std::string engine_name;
@@ -164,6 +168,9 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 };
 
 }
