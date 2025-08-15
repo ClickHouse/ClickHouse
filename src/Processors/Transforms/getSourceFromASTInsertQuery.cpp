@@ -1,9 +1,7 @@
-#include <cstddef>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
@@ -55,14 +53,18 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
+    /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
+    auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
+        ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
+
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
         ? getReadBufferFromASTInsertQuery(ast)
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
-    format->addBuffer(std::move(input_buffer));
-    return format;
+    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    source->addBuffer(std::move(input_buffer));
+    return source;
 }
 
 Pipe getSourceFromInputFormat(
@@ -127,7 +129,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
 
-    std::vector<ReadBufferUniquePtr> buffers;
+    std::vector<std::unique_ptr<ReadBuffer>> buffers;
     if (insert_query->data)
     {
         /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
@@ -137,14 +139,9 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         buffers.emplace_back(std::move(ast_buffer));
     }
 
-    /// tail does not possess the input buffer
     if (insert_query->tail)
-    {
-        buffers.emplace_back(wrapReadBufferPointer(insert_query->tail));
-        insert_query->tail.reset();
-    }
+        buffers.emplace_back(wrapReadBufferReference(*insert_query->tail));
 
-    chassert(!buffers.empty());
     return std::make_unique<ConcatReadBuffer>(std::move(buffers));
 }
 

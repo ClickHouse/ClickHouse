@@ -9,7 +9,6 @@ echo '/google/cloud/*.h' >> $FILES_TO_CHECKOUT
 echo '/google/cloud/internal/*' >> $FILES_TO_CHECKOUT
 echo '/google/cloud/grpc_utils/*' >> $FILES_TO_CHECKOUT
 echo '/google/cloud/kms/*' >> $FILES_TO_CHECKOUT
-echo '/google/cloud/storage/*' >> $FILES_TO_CHECKOUT
 echo '/cmake/*' >> $FILES_TO_CHECKOUT
 echo '/protos/*' >> $FILES_TO_CHECKOUT
 echo '/external/googleapis' >> $FILES_TO_CHECKOUT

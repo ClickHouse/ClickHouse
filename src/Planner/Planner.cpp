@@ -143,7 +143,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
 }
 
@@ -246,21 +245,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// disable parallel replicas to collect filters
-    {
-        if (auto * query_node = updated_query_tree->as<QueryNode>())
-        {
-            auto new_context = Context::createCopy(query_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            query_node->getMutableContext() = new_context;
-        }
-        else if (auto * union_node = updated_query_tree->as<UnionNode>())
-        {
-            auto new_context = Context::createCopy(union_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            union_node->getMutableContext() = new_context;
-        }
-    }
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
@@ -504,11 +488,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_overflow_mode],
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
-            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
-                && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
+            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty()
+                && aggregation_analysis_result.group_by_with_constant_keys),
         query_context->getTempDataOnDisk(),
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
@@ -519,8 +502,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]);
+        stats_collecting_params);
 
     return aggregator_params;
 }
@@ -1638,7 +1620,7 @@ void Planner::buildPlanForQueryNode()
             planner_context);
     }
 
-    auto from_stage = join_tree_query_plan.stage;
+    auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;

@@ -457,7 +457,6 @@ struct FormatSettings
         bool dictionary_as_low_cardinality = true;
         String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
-        UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
     /// For capnProto format we should determine how to

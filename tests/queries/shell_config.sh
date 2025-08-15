@@ -225,12 +225,6 @@ function run_with_error()
     return 0
 }
 
-function with_lock()
-{
-    local lock_file="${CLICKHOUSE_TMP}/lock_${CLICKHOUSE_TEST_UNIQUE_NAME}_$1.lock"; shift
-    flock "$lock_file" "$@"
-}
-
 # BASH_XTRACEFD is supported only since 4.1
 if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"

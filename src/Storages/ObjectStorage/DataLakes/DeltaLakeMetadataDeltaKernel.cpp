@@ -11,13 +11,12 @@ namespace DB
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration_,
-    ContextPtr context)
+    StorageObjectStorageConfigurationWeakPtr configuration_)
     : log(getLogger("DeltaLakeMetadata"))
-    , table_snapshot(std::make_shared<DeltaLake::TableSnapshot>(
+    , table_snapshot(
+        std::make_shared<DeltaLake::TableSnapshot>(
             getKernelHelper(configuration_.lock(), object_storage),
             object_storage,
-            context,
             log))
 {
 }
@@ -25,14 +24,12 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
-    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
-bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
+bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 {
-    std::lock_guard lock(table_snapshot_mutex);
-    return table_snapshot->update(context);
+    return table_snapshot->update();
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
@@ -41,13 +38,11 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     size_t list_batch_size,
     ContextPtr /* context  */) const
 {
-    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
 {
-    std::lock_guard lock(table_snapshot_mutex);
     return table_snapshot->getTableSchema();
 }
 
@@ -71,13 +66,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// 2. columnMapping.mode = 'name' or 'id'.
     /// So we add partition columns to read schema and put it together into format_header.
     /// Partition values will be added to result data right after data is read.
-    DB::NameToNameMap physical_names_map;
-    DB::NameSet read_columns;
-    {
-        std::lock_guard lock(table_snapshot_mutex);
-        physical_names_map = table_snapshot->getPhysicalNamesMap();
-        read_columns = table_snapshot->getReadSchema().getNameSet();
-    }
+    const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
+    const auto read_columns = table_snapshot->getReadSchema().getNameSet();
 
     Block format_header;
     for (auto && column_with_type_and_name : info.format_header)

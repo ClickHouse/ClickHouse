@@ -218,7 +218,7 @@ protected:
                 break;
             if (f->name() == "headers")
                 result.nested_maps.push_back(f->name());
-            else if (f->name() != "extra_credentials" && f->name() != "equals")
+            else if (f->name() != "extra_credentials")
                 break;
             count -= 1;
         }
@@ -236,8 +236,6 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
-
-        findSecretNamedArgument("secret_access_key", url_arg_idx);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -550,8 +548,6 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
-
-        findSecretNamedArgument("secret_access_key", 0);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])

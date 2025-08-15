@@ -249,11 +249,8 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << "UNLOCK SNAPSHOT ";
         ostr << quoteString(snapshot_name);
-        if (snapshot_desc != nullptr)
-        {
-            ostr << "FROM ";
-            snapshot_desc->format(ostr, settings, state, frame);
-        }
+        ostr << "FROM ";
+        snapshot_desc->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
