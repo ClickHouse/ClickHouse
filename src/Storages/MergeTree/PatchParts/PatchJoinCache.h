@@ -16,12 +16,12 @@ namespace DB
 
 struct RangesInPatchParts;
 
-/**  We use two-level hash map (_block_number -> (_block_offset -> (patch_block_idx, row_number))).
+/**  We use two-level hash map (_block_number -> (_block_offset -> (block_idx, row_idx))).
   *  Block numbers are usually the same for large ranges of consecutive rows.
   *  Therefore, we rarely switch between hash maps for blocks.
-  *  It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (patch_block_idx, row_number)).
+  *  It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> (block_idx, row_idx)).
   */
-using OffsetsHashMap = absl::flat_hash_map<UInt64, std::pair<UInt64, UInt64>, DefaultHash<UInt64>>;
+using OffsetsHashMap = absl::flat_hash_map<UInt64, std::pair<UInt32, UInt32>, DefaultHash<UInt64>>;
 using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
 
 /**  A cache of hash tables and blocks for applying patch parts in Join mode.

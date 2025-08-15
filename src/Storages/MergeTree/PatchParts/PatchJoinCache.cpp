@@ -18,6 +18,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
+}
+
 static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name)
 {
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
@@ -237,11 +243,22 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
     if (num_read_rows == 0)
         return;
 
+    /// System columns are not needed in block, they are stored in the hash map.
+    auto block_with_data = std::make_shared<Block>(read_block);
+    block_with_data->erase(BlockNumberColumn::name);
+    block_with_data->erase(BlockOffsetColumn::name);
+
     {
         std::lock_guard lock(mutex);
         new_block_idx = blocks.size();
-        blocks.push_back(std::make_shared<Block>(read_block));
+        blocks.push_back(std::move(block_with_data));
     }
+
+    if (new_block_idx > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large index of block ({}) in patch join cache", new_block_idx);
+
+    if (num_read_rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::TOO_MANY_ROWS, "Too many rows ({}) in patch ranges", num_read_rows);
 
     const auto & block_number_column = getColumnUInt64Data(read_block, BlockNumberColumn::name);
     const auto & block_offset_column = getColumnUInt64Data(read_block, BlockOffsetColumn::name);
@@ -272,7 +289,7 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
         /// Keep only the row with the highest version.
         if (inserted || data_version_column[i] > data_version_column[it->second.second])
-            it->second = std::make_pair(new_block_idx, i);
+            it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
     }
 
     {
@@ -286,9 +303,14 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
             auto [it, inserted] = hash_map.try_emplace(block_number);
 
             if (inserted)
+            {
                 it->second = std::move(offsets_map);
+            }
             else
+            {
+                it->second.reserve(it->second.size() + offsets_map.size());
                 it->second.insert(offsets_map.begin(), offsets_map.end());
+            }
         }
     }
 }
