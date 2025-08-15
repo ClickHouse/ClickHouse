@@ -25,9 +25,10 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
         {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
         {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role assigned to user account."},
         {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues()), "Access parameters for ClickHouse user account."},
-        {"parameter", std::make_shared<DataTypeString>(), "Parameter for access_type. Contains: "
+        {"access_object", std::make_shared<DataTypeString>(), "Parameter for access_type. Contains: "
             "1 - Name of the source type for READ/WRITE grants."
             "2 - Name of the table engine for TABLE ENGINE  grants."
+            "3 - Name of the user for grants like `SET DEFINER`."
         },
         {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a database."},
         {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a table."},
@@ -58,7 +59,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_role_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_role_name_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();
-    auto & column_parameter = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_access_object = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_database = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_database_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_table = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
@@ -71,7 +72,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto add_row = [&](const String & grantee_name,
                        AccessEntityType grantee_type,
                        AccessType access_type,
-                       const String & parameter,
+                       const String & access_object,
                        const String * database,
                        const String * table,
                        const String * column,
@@ -96,7 +97,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             assert(false);
 
         column_access_type.push_back(static_cast<Int16>(access_type));
-        column_parameter.insertData(parameter.data(), parameter.length());
+        column_access_object.insertData(access_object.data(), access_object.length());
         if (database)
         {
             column_database.insertData(database->data(), database->length());
