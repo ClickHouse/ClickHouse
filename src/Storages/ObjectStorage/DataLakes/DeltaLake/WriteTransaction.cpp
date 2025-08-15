@@ -30,6 +30,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DeltaLake
@@ -193,9 +194,15 @@ void WriteTransaction::create()
         path_prefix = write_path.substr(pos_to_file);
     }
     else
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Not implemented storage type: {}", storage_type_str);
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}",
+            storage_type_str);
+    }
 
-    LOG_TEST(log, "Write path: {}, schema: {}", write_path, write_schema.toString());
+    LOG_TEST(
+        log, "Write path: {}, data prefix: {} schema: {}",
+        write_path, path_prefix, write_schema.toString());
 }
 
 void WriteTransaction::validateSchema(const DB::Block & header) const

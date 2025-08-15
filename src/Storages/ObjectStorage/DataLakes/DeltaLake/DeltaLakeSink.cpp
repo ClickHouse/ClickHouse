@@ -52,9 +52,7 @@ void DeltaLakeSink::onFinish()
     {
         std::vector<DeltaLake::WriteTransaction::CommitFile> files;
         auto file_location = getPath().substr(delta_transaction->getDataPath().size());
-
-        files.emplace_back(file_location, written_bytes, Map{});
-
+        files.emplace_back(std::move(file_location), written_bytes, Map{});
         delta_transaction->commit(files);
     }
     catch (...)
