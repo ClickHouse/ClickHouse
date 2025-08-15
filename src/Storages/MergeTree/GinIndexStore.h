@@ -66,7 +66,7 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    static std::shared_ptr<FastPForLib::IntegerCODEC> & codec();
+    static std::shared_ptr<FastPForLib::IntegerCODEC> codec();
     static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
