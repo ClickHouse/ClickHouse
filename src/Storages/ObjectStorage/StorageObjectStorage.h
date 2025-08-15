@@ -15,6 +15,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 #include <memory>
 
@@ -129,6 +130,9 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
