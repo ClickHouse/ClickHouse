@@ -122,33 +122,6 @@ REGISTER_FUNCTION(SplitByChar)
 Splits a string separated by a specified constant string `separator` of exactly one character into an array of substrings.
 Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
-:::note Behavior change from ClickHouse v22.11
-The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11.
-In older versions, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
-For example, in v22.10:
-
-```sql
-SELECT splitByChar('=', 'a=b=c=d', 2);
-```
-
-Returned:
-
-```response
-['a','b','c=d']
-```
-
-In v22.11:
-
-```sql
-SELECT splitByChar('=', 'a=b=c=d', 2);
-```
-
-Returns:
-
-```sql
-['a','b']
-```
-
 :::note
 Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 :::
