@@ -4,7 +4,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/reverse.h>
+#include "reverse.h"
 
 
 namespace DB

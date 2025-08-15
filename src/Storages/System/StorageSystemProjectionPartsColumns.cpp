@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include "StorageSystemProjectionPartsColumns.h"
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>

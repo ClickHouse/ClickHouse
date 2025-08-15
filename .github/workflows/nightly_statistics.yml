@@ -33,9 +33,7 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_nightlystatistics.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
+
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -70,9 +68,7 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_nightlystatistics.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
+
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF

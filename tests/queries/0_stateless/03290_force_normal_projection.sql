@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS users;
-
 CREATE TABLE users
 (
     `uid` Int16,
@@ -24,5 +22,3 @@ SELECT
 FROM users
 ORDER BY age ASC
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
-
-DROP TABLE users;

@@ -1,4 +1,4 @@
-#include <Formats/ProtobufWriter.h>
+#include "ProtobufWriter.h"
 
 #if USE_PROTOBUF
 #   include <IO/WriteHelpers.h>
