@@ -27,6 +27,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -644,5 +645,18 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
+
+void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+}
+
+void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    configuration->checkMutationIsPossible(commands);
+}
+
 
 }

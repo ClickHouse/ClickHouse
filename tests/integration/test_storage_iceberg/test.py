@@ -530,11 +530,13 @@ def test_delete_files(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied'] FROM system.query_log where query_id = '{query_id}' and type = 'QueryFinish'") == "1\n"
 
 
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_position_deletes(started_cluster, storage_type):
+def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps};")
 
     spark.sql(
         f"""
@@ -2219,7 +2221,7 @@ def test_writes(started_cluster, format_version, storage_type):
     if storage_type != "local":
         return
 
-    default_download_directory(
+    initial_files = default_download_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -2231,6 +2233,20 @@ def test_writes(started_cluster, format_version, storage_type):
 
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 3
+
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_cleanup")
+    with pytest.raises(Exception):
+        instance.query(f"INSERT INTO {TABLE_NAME} VALUES (777777777777);", settings={"allow_experimental_insert_into_iceberg": 1})
+
+
+    files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(initial_files) == len(files)
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -2608,7 +2624,6 @@ def test_writes_create_version_hint(started_cluster, format_version, storage_typ
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
-
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_writes_drop_table(started_cluster, format_version, storage_type):
@@ -2634,3 +2649,55 @@ def test_writes_drop_table(started_cluster, format_version, storage_type):
     )
     # drop should not delete user data
     assert len(files) > 0
+    
+
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
+@pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
+def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
+    format_version = 2
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
+
+    with pytest.raises(Exception):
+        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, "", True)    
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (999);", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '123';", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\n999\n'
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '999';", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\n'
+
+    if storage_type != "local":
+        return
+    initial_files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_cleanup")
+    with pytest.raises(Exception):
+        instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '456';", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(initial_files) == len(files)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Common/Logger.h>
 #include <Compression/ICompressionCodec.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -17,7 +18,7 @@
 #include "config.h"
 
 #if USE_FASTPFOR
-#include <codecfactory.h>
+#  include <codecfactory.h>
 #endif
 
 
@@ -69,7 +70,7 @@ private:
     static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
-    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
+    static constexpr String FASTPFOR_CODEC_NAME = "simdfastpfor128";
     /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
     static constexpr size_t FASTPFOR_THRESHOLD = 4;
 };
@@ -208,8 +209,33 @@ public:
         v1 = 1, /// Initial version, supports adaptive compression
     };
 
+    class Statistics
+    {
+    public:
+        explicit Statistics(const GinIndexStore & store);
+
+        String toString() const;
+
+        Statistics operator-(const Statistics & other)
+        {
+            metadata_file_size -= other.metadata_file_size;
+            bloom_filter_file_size -= other.bloom_filter_file_size;
+            dictionary_file_size -= other.dictionary_file_size;
+            posting_lists_file_size -= other.posting_lists_file_size;
+            return *this;
+        }
+
+    private:
+        size_t num_terms;
+        size_t current_size;
+        size_t metadata_file_size;
+        size_t bloom_filter_file_size;
+        size_t dictionary_file_size;
+        size_t posting_lists_file_size;
+    };
+
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
+    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<String, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -256,6 +282,8 @@ public:
     void writeSegment();
 
     const String & getName() const { return name; }
+
+    Statistics getStatistics();
 
 private:
     /// FST size less than 100KiB does not worth to compress.
@@ -308,6 +336,8 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
+
+    LoggerPtr logger = getLogger("TextIndex");
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -316,7 +346,7 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
 
 /// Postings lists and terms built from query string
-using GinPostingsCache = std::unordered_map<std::string, GinSegmentedPostingsListContainer>;
+using GinPostingsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
 using GinPostingsCachePtr = std::shared_ptr<GinPostingsCache>;
 
 /// Gin index store reader which helps to read segments, dictionaries and postings list
@@ -335,7 +365,7 @@ public:
     void prepareSegmentForReading(UInt32 segment_id);
 
     /// Read FST for given segment dictionary from .gin_dict files
-    void readSegmentFST(GinSegmentDictionaryPtr segment_dictionary);
+    void readSegmentFST(UInt32 segment_id, GinSegmentDictionaryPtr segment_dictionary);
 
     /// Read postings lists for the term
     GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
@@ -356,8 +386,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
 
-    /// Current segment, used in building index
-    GinIndexSegment current_segment;
+    LoggerPtr logger = getLogger("TextIndex");
 };
 
 /// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
@@ -390,7 +419,7 @@ public:
     void remove(const String & part_path);
 
     /// GinIndexStores indexed by part file path
-    using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
+    using GinIndexStores = std::unordered_map<String, GinIndexStorePtr>;
 
 private:
     GinIndexStores stores;

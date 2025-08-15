@@ -40,6 +40,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/StorageID.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -66,6 +69,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int UNSUPPORTED_METHOD;
 extern const int TABLE_ALREADY_EXISTS;
@@ -78,6 +82,7 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 }
 
@@ -443,6 +448,34 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
+void IcebergMetadata::mutate(
+    const MutationCommands & commands,
+    ContextPtr context,
+    const StorageID & storage_id,
+    StorageMetadataPtr metadata_snapshot,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const std::optional<FormatSettings> & format_settings)
+{
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::mutate(
+        commands,
+        context,
+        metadata_snapshot,
+        storage_id,
+        object_storage,
+        configuration_ptr,
+        format_settings,
+        catalog);
+}
+
+void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -484,12 +517,17 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, compression_method);
+    auto cleanup = [&] ()
+    {
+        object_storage->removeObjectIfExists(StoredObject(filename));
+    };
+
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, cleanup, compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context);
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, cleanup);
     }
     if (catalog)
     {
@@ -938,8 +976,12 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     String delete_object_format = configuration_ptr->format;
     String delete_object_compression_method = configuration_ptr->compression_method;
 
-    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    else
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
 ParsedDataFileInfo::ParsedDataFileInfo(

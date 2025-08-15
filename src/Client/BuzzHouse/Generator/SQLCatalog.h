@@ -115,11 +115,10 @@ public:
 struct SQLDatabase
 {
 public:
-    std::optional<String> cluster;
-    DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
-    uint32_t zoo_path_counter;
+    std::optional<String> cluster;
+    DetachStatus attached = DetachStatus::ATTACHED;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -149,21 +148,20 @@ public:
 
     String getName() const { return "d" + std::to_string(dname); }
 
-    void finishDatabaseSpecification(DatabaseEngine * dspec) const;
+    void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
 struct SQLBase
 {
 public:
-    bool is_temp = false, is_deterministic = false, has_metadata = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster;
+    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, host_params, bucket_path;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    String file_comp, partition_strategy, partition_columns_in_data_file;
     std::optional<InOutFormat> file_format;
     CatalogTable catalog = CatalogTable::None;
 
@@ -187,6 +185,8 @@ public:
     {
         return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
     }
+
+    bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
 
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 
@@ -270,6 +270,8 @@ public:
 
     bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
 
+    bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
+
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;
@@ -294,9 +296,11 @@ public:
 
     String getDatabaseName() const;
 
-    String getTablePath(const FuzzConfig & fc, bool client) const;
+    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    String getMetadataPath(const FuzzConfig & fc, bool client) const;
+    String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
+
+    String getMetadataPath(const FuzzConfig & fc) const;
 };
 
 struct SQLTable : SQLBase
