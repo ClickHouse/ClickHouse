@@ -31,6 +31,8 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
+#include <Common/thread_local_rng.h>
+#include <random>
 
 
 namespace ProfileEvents
