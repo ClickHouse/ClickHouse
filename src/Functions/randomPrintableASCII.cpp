@@ -136,7 +136,7 @@ If you pass `length < 0`, the behavior of the function is undefined.
 ┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
 │      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
 │      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
-│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+│      2 │ /"+<"with:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
         )"}
     };
