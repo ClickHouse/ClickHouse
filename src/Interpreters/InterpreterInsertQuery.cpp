@@ -800,8 +800,7 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorag
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
 
-    auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, src_cluster);
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here

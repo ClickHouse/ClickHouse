@@ -40,6 +40,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/StorageID.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -66,6 +69,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int UNSUPPORTED_METHOD;
 extern const int TABLE_ALREADY_EXISTS;
@@ -78,6 +82,8 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsString iceberg_metadata_compression_method;
 }
 
 using namespace Iceberg;
@@ -100,7 +106,7 @@ IcebergMetadata::IcebergMetadata(
     , relevant_snapshot_schema_id(-1)
     , table_location(metadata_object_->getValue<String>(f_location))
 {
-    updateState(context_, metadata_object_, true);
+    updateState(context_, metadata_object_);
 }
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
@@ -228,11 +234,9 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
 
-    bool metadata_file_changed = false;
     if (last_metadata_version != metadata_version)
     {
         last_metadata_version = metadata_version;
-        metadata_file_changed = true;
     }
 
     auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log, compression_method);
@@ -241,7 +245,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     auto previous_snapshot_id = relevant_snapshot_id;
     auto previous_snapshot_schema_id = relevant_snapshot_schema_id;
 
-    updateState(local_context, metadata_object, metadata_file_changed);
+    updateState(local_context, metadata_object);
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
@@ -346,7 +350,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             configuration_ptr->getPathForRead().path);
 }
 
-void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed)
+void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
 {
     auto configuration_ptr = configuration.lock();
     std::optional<String> manifest_list_file;
@@ -387,7 +391,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
         relevant_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
         updateSnapshot(local_context, metadata_object);
     }
-    else if (metadata_file_changed)
+    else
     {
         if (!metadata_object->has(f_current_snapshot_id))
             relevant_snapshot_id = -1;
@@ -444,6 +448,34 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
+void IcebergMetadata::mutate(
+    const MutationCommands & commands,
+    ContextPtr context,
+    const StorageID & storage_id,
+    StorageMetadataPtr metadata_snapshot,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const std::optional<FormatSettings> & format_settings)
+{
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::mutate(
+        commands,
+        context,
+        metadata_snapshot,
+        storage_id,
+        object_storage,
+        configuration_ptr,
+        format_settings,
+        catalog);
+}
+
+void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -477,13 +509,25 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
-    writeMessageToFile(metadata_content, filename, object_storage, local_context);
+    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+
+    auto compression_suffix = compression_method_str;
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+
+    auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+    auto cleanup = [&] ()
+    {
+        object_storage->removeObjectIfExists(StoredObject(filename));
+    };
+
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, cleanup, compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context);
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, cleanup);
     }
     if (catalog)
     {
@@ -932,8 +976,12 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     String delete_object_format = configuration_ptr->format;
     String delete_object_compression_method = configuration_ptr->compression_method;
 
-    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+    else
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+            header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
 ParsedDataFileInfo::ParsedDataFileInfo(

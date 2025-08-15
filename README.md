@@ -46,9 +46,6 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
-* [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025
-* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
 * [Manaila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26,2025
 * [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
@@ -63,6 +60,9 @@ Upcoming meetups
 * [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/310154624) - November 20, 2025
 
 Recent meetups
+* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
+* [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
+* [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025
 * [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/309468074/) - August 6, 2025
 * [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819394/) - August 5, 2025
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/309004297/) - July 29, 2025
