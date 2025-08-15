@@ -445,9 +445,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             if (element.getType() != Field::Types::String)
                 return false;
             const auto & value = element.safeGet<String>();
-            gin_filters.emplace_back(GinFilter());
-            gin_filters.back().addTerm(value);
-            gin_filters.back().setQueryString(value);
+            gin_filters.emplace_back(GinFilter(value, {value}));
             search_tokens.push_back(value);
         }
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
@@ -463,15 +461,15 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->setGinFilterParameters(gin_filter_params);
-                search_function->setSearchTokens(search_tokens);
+                search_function->trySetGinFilterParameters(gin_filter_params);
+                search_function->trySetSearchTokens(search_tokens);
             }
             else
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->setGinFilterParameters(gin_filter_params);
-                search_function->setSearchTokens(search_tokens);
+                search_function->trySetGinFilterParameters(gin_filter_params);
+                search_function->trySetSearchTokens(search_tokens);
             }
         }
         return true;

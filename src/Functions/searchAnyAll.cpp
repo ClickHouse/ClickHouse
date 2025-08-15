@@ -39,7 +39,7 @@ FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters & params)
+void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilterParameters & params)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
@@ -68,7 +68,7 @@ void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterPar
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setSearchTokens(const std::vector<String> & tokens)
+void FunctionSearchImpl<SearchTraits>::trySetSearchTokens(const std::vector<String> & tokens)
 {
     static constexpr size_t supported_number_of_needles = 64;
 
