@@ -602,11 +602,11 @@ def add_single_disk(
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://minio1:9001/root/data{i}"
+            endpoint_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data{i}"
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = "ClickHouse_Minio_P@ssw0rd"
+            secret_access_key_xml.text = minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = (
@@ -618,7 +618,7 @@ def add_single_disk(
             account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://nginx:80/data{i}/"
+            endpoint_xml.text = f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
