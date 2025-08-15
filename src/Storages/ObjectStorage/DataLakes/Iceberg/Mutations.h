@@ -14,10 +14,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
-
-using namespace DB;
 
 void mutate(
     const MutationCommands & commands,

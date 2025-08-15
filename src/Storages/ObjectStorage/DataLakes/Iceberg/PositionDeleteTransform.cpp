@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/Utils.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -35,13 +36,13 @@ extern const int LOGICAL_ERROR;
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->parsed_data_file_info.data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : iceberg_object_info->parsed_data_file_info.position_deletes_objects)
+    for (const auto & position_deletes_object : relevant_position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
@@ -50,13 +51,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
-        auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 
+        auto delete_source_object = RelativePathWithMetadata(object_path, object_metadata);
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema
-                = StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(delete_source_object, object_storage, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(delete_object_format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -69,7 +69,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, delete_object_compression_method);
 
-        delete_read_buffers.push_back(StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(delete_source_object, object_storage, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -168,17 +168,13 @@ void IcebergStreamingPositionDeleteTransform::initialize()
         size_t position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
         size_t filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
-        delete_source_column_indices.push_back(PositionDeleteFileIndexes{
-            .filename_index = filename_index,
-            .position_index = position_index
-        });
+        delete_source_column_indices.push_back(
+            PositionDeleteFileIndexes{.filename_index = filename_index, .position_index = position_index});
         auto latest_chunk = delete_source->read();
         iterator_at_latest_chunks.push_back(0);
         if (latest_chunk.hasRows())
-        {
-            size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0);
-            latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, i});
-        }
+            latest_positions.insert(
+                std::pair<size_t, size_t>{latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), i});
         latest_chunks.push_back(std::move(latest_chunk));
     }
 }
@@ -187,10 +183,9 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t del
 {
     auto latest_chunk = delete_sources[delete_source_index]->read();
     if (latest_chunk.hasRows())
-    {
-        size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices[delete_source_index].position_index]->get64(0);
-        latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, delete_source_index});
-    }
+        latest_positions.insert(
+            std::pair<size_t, size_t>{
+                latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0), delete_source_index});
 
     iterator_at_latest_chunks[delete_source_index] = 0;
     latest_chunks[delete_source_index] = std::move(latest_chunk);
@@ -206,9 +201,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
     size_t total_previous_chunks_size = chunk_info->row_num_offset;
-    if (previous_chunk_offset && previous_chunk_offset.value() > total_previous_chunks_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");
-    previous_chunk_offset = total_previous_chunks_size;
+
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
         while (!latest_positions.empty())
@@ -218,7 +211,8 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
             {
                 size_t delete_source_index = it->second;
                 latest_positions.erase(it);
-                if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
+                if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows()
+                    && latest_chunks[delete_source_index].getNumRows() > 0)
                 {
                     fetchNewChunkFromSource(delete_source_index);
                 }
@@ -226,8 +220,11 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
                 {
                     ++iterator_at_latest_chunks[delete_source_index];
                     auto position_index = delete_source_column_indices[delete_source_index].position_index;
-                    size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
-                    latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
+                    latest_positions.insert(
+                        std::pair<size_t, size_t>{
+                            latest_chunks[delete_source_index].getColumns()[position_index]->get64(
+                                iterator_at_latest_chunks[delete_source_index]),
+                            delete_source_index});
                 }
             }
             else if (it->first == i + total_previous_chunks_size)
@@ -247,7 +244,6 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
 
     chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }
-
 }
 
 #endif

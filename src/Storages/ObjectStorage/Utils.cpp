@@ -1,6 +1,14 @@
-#include <Storages/ObjectStorage/Utils.h>
+#include <Core/Settings.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -108,4 +116,24 @@ void validateSupportedColumns(
     }
 }
 
+namespace Setting
+{
+extern const SettingsUInt64 max_download_buffer_size;
+extern const SettingsBool use_cache_for_count_from_files;
+extern const SettingsString filesystem_cache_name;
+extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+}
+
+ObjectInfos convertRelativePathsToPlainObjectInfos(RelativePathsWithMetadata && relative_paths_with_metadata)
+{
+    ObjectInfos object_infos;
+    object_infos.reserve(relative_paths_with_metadata.size());
+
+    for (const auto & relative_path : relative_paths_with_metadata)
+    {
+        object_infos.emplace_back(std::make_shared<ObjectInfoPlain>(std::move(relative_path->relative_path)));
+    }
+
+    return object_infos;
+}
 }

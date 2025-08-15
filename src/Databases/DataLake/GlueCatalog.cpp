@@ -466,18 +466,18 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     }
     auto metadata_object = *metadata_objects.get(metadata_path);
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));
         if (schema->getValue<Int64>("schema-id") == current_schema_id)
         {
-            auto fields = schema->getArray(Iceberg::f_fields);
+            auto fields = schema->getArray(DB::Iceberg::f_fields);
             for (size_t j = 0; j < fields->size(); ++j)
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>(Iceberg::f_name) == column_name)
-                    return field->getValue<String>(Iceberg::f_type) == Iceberg::f_timestamptz;
+                if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
+                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
             }
         }
     }
