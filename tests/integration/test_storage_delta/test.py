@@ -2926,29 +2926,14 @@ def test_writes(started_cluster):
     table_name = randomize_table_name("test_writes")
     result_file = f"{table_name}_data"
 
-    spark = started_cluster.spark_session
-    # We cannot just do
-    # spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '/{result_file}'")
-    # because a table must have non-empty schema.
-    #
-    # This also does not create _delta_log directory:
-    # schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
-    # empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    # write_deltalake(
-    #     f"s3://root/{table_name}",
-    #     pa.Table.from_arrays(empty_arrays, schema=schema),
-    #     storage_options=get_storage_options(started_cluster),
-    #     mode="overwrite",
-    # )
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), True),
-            StructField("name", StringType(), True),
-        ]
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
     )
-    empty_df = spark.createDataFrame([], schema)
-    empty_df.write.format("delta").save(f"/{result_file}")
-    upload_directory(minio_client, bucket, f"/{result_file}", "")
 
     instance.query(
         f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -3020,21 +3005,23 @@ def test_partitioned_writes(started_cluster):
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_partitioned_writes")
     result_file = f"{table_name}_data"
-    spark = started_cluster.spark_session
     partition_columns = ["id", "comment"]
 
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), True),
-            StructField("name", StringType(), True),
-            StructField("comment", StringType(), True),
-        ]
+    schema = pa.schema(
+        [("id", pa.int32()), ("name", pa.string()), ("comment", pa.string())]
     )
-    empty_df = spark.createDataFrame([], schema)
-    empty_df.write.format("delta").partitionBy(partition_columns).save(
-        f"/{result_file}"
+    empty_arrays = [
+        pa.array([], type=pa.int32()),
+        pa.array([], type=pa.string()),
+        pa.array([], type=pa.string()),
+    ]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+        partition_by=partition_columns,
     )
-    upload_directory(minio_client, bucket, f"/{result_file}", "")
 
     instance.query(
         f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -3047,7 +3034,9 @@ def test_partitioned_writes(started_cluster):
     )
 
     def check_files(expected):
-        s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
+        s3_objects = list(
+            minio_client.list_objects(bucket, result_file, recursive=True)
+        )
         file_names = []
         for obj in s3_objects:
             print(f"File: {obj.object_name}")
@@ -3135,25 +3124,20 @@ def test_partitioned_writes(started_cluster):
 @pytest.mark.parametrize("partitioned", [False, True])
 def test_concurrent_queries(started_cluster, partitioned):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_concurrent_queries")
     result_file = f"{TABLE_NAME}"
 
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), True),
-            StructField("name", StringType(), True),
-        ]
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+        partition_by=["name"] if partitioned else [],
     )
-    empty_df = spark.createDataFrame([], schema)
-    if partitioned:
-        empty_df.write.format("delta").partitionBy("name").save(f"/{result_file}")
-    else:
-        empty_df.write.format("delta").save(f"/{result_file}")
-
-    upload_directory(minio_client, bucket, f"/{result_file}", "")
 
     instance.query(
         f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
