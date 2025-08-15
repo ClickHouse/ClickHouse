@@ -98,6 +98,11 @@ public:
         ContextPtr /*context*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("write"); }
 
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,

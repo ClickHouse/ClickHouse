@@ -108,7 +108,27 @@ private:
 
 REGISTER_FUNCTION(RandomFixedString)
 {
-    factory.registerFunction<FunctionRandomFixedString>();
+    FunctionDocumentation::Description description = R"(
+Generates a random fixed-size string with the specified number of character.
+The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomFixedString(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in bytes.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"FixedString"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomFixedString(13) AS rnd, toTypeName(rnd)", R"(
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomFixedString>(documentation);
 }
 
 }
