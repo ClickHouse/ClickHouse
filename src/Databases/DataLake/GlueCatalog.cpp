@@ -184,7 +184,6 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     do
     {
         request.SetNextToken(next_token);
-
         auto outcome = glue_client->GetTables(request);
         if (outcome.IsSuccess())
         {
@@ -256,6 +255,7 @@ void GlueCatalog::getTableMetadata(
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
+
 
     auto outcome = glue_client->GetTable(request);
     if (outcome.IsSuccess())
