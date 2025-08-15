@@ -139,8 +139,10 @@ elseif (SANITIZE STREQUAL "address")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-if (NOT SANITIZE STREQUAL "")
-    # Set metadata flag to force different hashes for different sanitizers
+# Set metadata flag to force different hashes for different sanitizers
+if (SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
