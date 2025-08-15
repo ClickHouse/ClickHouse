@@ -50,15 +50,25 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/HivePartitioningUtils.h>
+#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace VirtualColumnUtils
 {
@@ -129,8 +139,7 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())}};
+            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
@@ -138,16 +147,64 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns)
+static auto makeExtractor()
+{
+    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
+}
+
+HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
+{
+    static auto extractor = makeExtractor();
+
+    HivePartitioningKeysAndValues key_values;
+
+    // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
+    // not sure if we actually need to do that, but just in case. Plus, the previous regex impl took care of it
+    const auto last_slash_pos = path.find_last_of('/');
+
+    if (last_slash_pos == std::string::npos)
+    {
+        // nothing to extract, there is no path, just a filename
+        return key_values;
+    }
+
+    std::string_view path_without_filename(path.data(), last_slash_pos);
+
+    try
+    {
+        extractor.extract(path_without_filename, key_values);
+    }
+    catch (const extractKV::DuplicateKeyFoundException & ex)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
+    }
+
+    return key_values;
+}
+
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & path,
+    std::optional<FormatSettings> format_settings_,
+    bool is_data_lake)
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair)
+    auto add_virtual = [&](const NameAndTypePair & pair, bool prefer_virtual_column) /// By using prefer_virtual_column we define whether we will overwrite the storage column with the virtual one
     {
         const auto & name = pair.getNameInStorage();
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
+            if (!prefer_virtual_column)
+                return;
+
+            if (storage_columns.size() == 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read/write this file", path);
+            auto local_type = storage_columns.get(name).type;
+            storage_columns.remove(name);
+            desc.addEphemeral(name, local_type, "");
             return;
         }
 
@@ -155,12 +212,33 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
-        add_virtual(item);
+        add_virtual(item, false);
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning] && !is_data_lake)
+    {
+        const auto map = parseHivePartitioningKeysAndValues(path);
+        auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+
+        for (const auto & item : map)
+        {
+            const std::string key(item.first);
+            const std::string value(item.second);
+
+            auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Raw);
+
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                add_virtual({key, std::make_shared<DataTypeLowCardinality>(type)}, true);
+            else
+                add_virtual({key, type}, true);
+        }
+    }
 
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool parse_hive_columns)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool use_hive_partitioning)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -177,9 +255,9 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    if (parse_hive_columns)
+    if (use_hive_partitioning)
     {
-        const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+        const auto keys_and_values = parseHivePartitioningKeysAndValues(path);
         for (const auto & [key, value] : keys_and_values)
         {
             if (const auto * column = block.findByName(key))
@@ -193,7 +271,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -206,16 +284,11 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
-    for (const auto & column : hive_columns)
-    {
-        block.insert({column.type->createColumn(), column.type, column.name});
-    }
-
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -224,16 +297,10 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
         if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
-
-    for (const auto & column : hive_columns)
-    {
-        block.insert({column.type->createColumn(), column.type, column.name});
-    }
-
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), /* parse_hive_columns */ !hive_columns.empty());
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
 
     filterBlockWithExpression(actions, block);
 
@@ -242,8 +309,12 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr)
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
+    HivePartitioningKeysAndValues hive_map;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
+
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -277,17 +348,14 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        {
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
+        }
         else if (virtual_column.name == "_etag")
         {
             if (virtual_values.etag)
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
-            else
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-        }
-        else if (virtual_column.name == "_data_lake_snapshot_version")
-        {
-            if (virtual_values.data_lake_snapshot_version)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.data_lake_snapshot_version)->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }

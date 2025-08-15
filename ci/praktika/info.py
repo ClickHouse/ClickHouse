@@ -38,10 +38,6 @@ class Info:
         return self.env.WORKFLOW_NAME
 
     @property
-    def event_time(self):
-        return self.env.EVENT_TIME
-
-    @property
     def job_config(self):
         return self.env.JOB_CONFIG
 

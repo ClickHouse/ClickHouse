@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
@@ -50,7 +49,7 @@ using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 template <typename Allocator>
 struct Memory;
 
-struct FormatParserSharedResources;
+struct FormatParserGroup;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
@@ -101,8 +100,7 @@ private:
         const FormatSettings & settings,
         const ReadSettings & read_settings,
         bool is_remote_fs,
-        FormatParserSharedResourcesPtr parser_shared_resources,
-        FormatFilterInfoPtr format_filter_info)>;
+        FormatParserGroupPtr parser_group)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -173,8 +171,7 @@ public:
         const ContextPtr & context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
-        FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(),
+        std::shared_ptr<FormatParserGroup> parser_group = nullptr,
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
@@ -292,7 +289,7 @@ private:
         const FormatSettings & format_settings,
         const Settings & settings,
         bool is_remote_fs,
-        const FormatParserSharedResourcesPtr & parser_shared_resources) const;
+        const FormatParserGroupPtr & parser_group) const;
 };
 
 }

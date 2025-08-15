@@ -7,9 +7,6 @@
 
 HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
-# We don't want to use clang-tidy diagnostics in the "contrib" folder.
-ExcludeHeaderFilterRegex: '^.*/contrib/.*'
-
 Checks: [
   '*',
 

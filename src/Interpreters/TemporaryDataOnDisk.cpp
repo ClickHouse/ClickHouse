@@ -155,7 +155,7 @@ public:
             if (disk->existsFile(path_to_file))
             {
                 LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
-                disk->removeFile(path_to_file);
+                disk->removeRecursive(path_to_file);
             }
             else
             {

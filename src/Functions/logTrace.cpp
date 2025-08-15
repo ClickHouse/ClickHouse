@@ -57,32 +57,7 @@ namespace
 
 REGISTER_FUNCTION(LogTrace)
 {
-    FunctionDocumentation::Description description = R"(
-Emits a trace log message to the server log for each [Block](/development/architecture/#block).
-    )";
-    FunctionDocumentation::Syntax syntax = "logTrace(message)";
-    FunctionDocumentation::Arguments arguments = {
-        {"message", "Message that is emitted to the server log.", {"const String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` always.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Basic example",
-        R"(
-SELECT logTrace('logTrace message');
-        )",
-        R"(
-┌─logTrace('logTrace message')─┐
-│                            0 │
-└──────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionLogTrace>(documentation);
+    factory.registerFunction<FunctionLogTrace>();
 }
 
 }
