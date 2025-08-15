@@ -6,6 +6,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -115,11 +117,62 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
+/// Try to split the left most OR atom to a separate DAG.
+static std::optional<ActionsAndName> trySplitSingleOrFilter(ActionsDAG & dag, const std::string & filter_name)
+{
+    const auto * filter = &dag.findInOutputs(filter_name);
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    if (filter->type != ActionsDAG::ActionType::FUNCTION || filter->function_base->getName() != "or")
+        return {};
+
+    const ActionsDAG::Node * condition_to_split = nullptr;
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(filter);
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "or")
+        {
+            /// The order is important. We should take the left-most atom, so put conditions on stack in reverse order.
+            for (const auto * child : node->children | std::ranges::views::reverse)
+                nodes.push(child);
+
+            continue;
+        }
+
+        if (isTrivialSubtree(node))
+            continue;
+
+        /// Do not split subtree if it's the last non-trivial one.
+        /// So, split the first found condition only when there is a another one found.
+        if (condition_to_split)
+            return splitSingleAndFilter(dag, condition_to_split); // does the same thing for OR
+
+        condition_to_split = node;
+    }
+
+    return {};
+}
+
 std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
     std::vector<ActionsAndName> res;
 
     while (auto condition = trySplitSingleAndFilter(dag, filter_name))
+        res.push_back(std::move(*condition));
+
+    return res;
+}
+
+std::vector<ActionsAndName> splitORChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+{
+    std::vector<ActionsAndName> res;
+
+    while (auto condition = trySplitSingleOrFilter(dag, filter_name))
         res.push_back(std::move(*condition));
 
     return res;
@@ -142,6 +195,8 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    StackTrace stack_trace;
+    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: stack trace: {}", stack_trace.toString());
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,
@@ -158,6 +213,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
 
+    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: and_atoms size: {}", and_atoms.size());
+
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
@@ -165,6 +222,25 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
             return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals);
+        });
+    }
+
+    std::vector<ActionsAndName> or_atoms;
+
+    /// Splitting OR filter condition to steps under the setting, which is enabled with merge_filters optimization.
+    /// This is needed to support short-circuit properly.
+    if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
+        or_atoms = splitORChainIntoMultipleFilters(actions_dag, filter_column_name);
+
+    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: or_atoms size: {}", or_atoms.size());
+
+    for (auto & or_atom : or_atoms)
+    {
+        auto expression = std::make_shared<ExpressionActions>(std::move(or_atom.dag), settings.getActionsSettings());
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+        {
+            bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+            return std::make_shared<FilterTransform>(header, expression, or_atom.name, true, on_totals);
         });
     }
 
@@ -191,7 +267,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
-void FilterStep::describeActions(FormatSettings & settings) const
+void FilterStep::describeActions(FormatSettings & settings) const /// HERE?
 {
     String prefix(settings.offset, settings.indent_char);
 
@@ -201,10 +277,25 @@ void FilterStep::describeActions(FormatSettings & settings) const
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
+    LOG_DEBUG(getLogger("FilterStep"), "describeActions: and_atoms size: {}", and_atoms.size());
+
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
         settings.out << prefix << "AND column: " << and_atom.name << '\n';
+        expression->describeActions(settings.out, prefix);
+    }
+
+    std::vector<ActionsAndName> or_atoms;
+    if (!actions_dag.hasStatefulFunctions())
+        or_atoms = splitORChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
+    LOG_DEBUG(getLogger("FilterStep"), "describeActions: or_atoms size: {}", or_atoms.size());
+
+    for (auto & or_atom : or_atoms)
+    {
+        auto expression = std::make_shared<ExpressionActions>(std::move(or_atom.dag));
+        settings.out << prefix << "OR column: " << or_atom.name << '\n';
         expression->describeActions(settings.out, prefix);
     }
 
@@ -230,6 +321,17 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
         map.add("AND column", and_atom.name);
+        map.add("Expression", expression->toTree());
+    }
+
+    std::vector<ActionsAndName> or_atoms;
+    if (!actions_dag.hasStatefulFunctions())
+        or_atoms = splitORChainIntoMultipleFilters(cloned_dag, filter_column_name);
+
+    for (auto & or_atom : or_atoms)
+    {
+        auto expression = std::make_shared<ExpressionActions>(std::move(or_atom.dag));
+        map.add("OR column", or_atom.name);
         map.add("Expression", expression->toTree());
     }
 

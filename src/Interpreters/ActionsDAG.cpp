@@ -278,12 +278,22 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string alias)
 {
+    ///unwrap any existing aliases
+    const Node * base = &child;
+    while (base->type == ActionType::ALIAS)
+        base = base->children.front();
+
+    /// if the required name is already in place, just return the base node
+    if (base->result_name == alias)
+        return *base;
+
+    /// create exactly one-layer alias
     Node node;
     node.type = ActionType::ALIAS;
-    node.result_type = child.result_type;
+    node.result_type = base->result_type;
     node.result_name = std::move(alias);
-    node.column = child.column;
-    node.children.emplace_back(&child);
+    node.column = base->column;
+    node.children.emplace_back(base);
 
     return addNode(std::move(node));
 }
@@ -2365,6 +2375,11 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs allowed;
     ActionsDAG::NodeRawConstPtrs rejected;
 };
+struct DisjunctionNodes
+{
+    std::vector<const ActionsDAG::Node *> allowed;
+    std::vector<const ActionsDAG::Node *> rejected;
+};
 
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
@@ -2472,6 +2487,100 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
     return conjunction;
 }
+
+/// Collect leaf predicates, condition of which contains at least one OR node
+/// and decide which of them can be pushed‑down
+DisjunctionNodes getDisjunctionNodes(
+    const ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
+{
+    DisjunctionNodes disjunction;
+    if (!predicate)
+        return disjunction;
+
+    std::unordered_set<const ActionsDAG::Node *> leaves_under_or;
+    {
+        struct Frame
+        {
+            const ActionsDAG::Node * node;
+            bool under_or;
+        };
+        std::stack<Frame> st;
+        st.push({predicate, false});
+
+        while (!st.empty())
+        {
+            const auto [n, under_or] = st.top();
+            st.pop();
+
+            bool is_func = n->type == ActionsDAG::ActionType::FUNCTION;
+            bool is_or = is_func && n->function_base->getName() == "or";
+            bool is_and = is_func && n->function_base->getName() == "and";
+            bool is_alias = n->type == ActionsDAG::ActionType::ALIAS;
+
+            if (is_or || is_and || is_alias)
+            {
+                for (const auto * ch : n->children)
+                    st.push({ch, under_or || is_or});
+            }
+            else if (under_or)
+            {
+                leaves_under_or.insert(n);
+            }
+        }
+    }
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+        size_t ok_children = 0;
+    };
+
+    std::stack<Frame> dfs;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    dfs.push({predicate});
+    visited.insert(predicate);
+
+    while (!dfs.empty())
+    {
+        auto & f = dfs.top();
+        while (f.next_child < f.node->children.size())
+        {
+            const auto * ch = f.node->children[f.next_child];
+            if (!visited.contains(ch))
+            {
+                visited.insert(ch);
+                dfs.push({ch});
+                break;
+            }
+            ++f.next_child;
+        }
+
+        if (f.next_child == f.node->children.size())
+        {
+            bool nondet = !allow_non_deterministic_functions && f.node->type == ActionsDAG::ActionType::FUNCTION
+                && !f.node->function_base->isDeterministicInScopeOfQuery();
+
+            bool subtree_pushable = !nondet
+                && (f.node->children.empty() ? (allowed_nodes.contains(f.node) || f.node->type == ActionsDAG::ActionType::COLUMN)
+                                             : f.ok_children == f.node->children.size());
+
+            if (leaves_under_or.contains(f.node))
+            {
+                auto & dst = subtree_pushable ? disjunction.allowed : disjunction.rejected;
+                if (std::find(dst.begin(), dst.end(), f.node) == dst.end())
+                    dst.push_back(f.node);
+            }
+
+            dfs.pop();
+            if (!dfs.empty() && subtree_pushable)
+                ++dfs.top().ok_children;
+        }
+    }
+
+    return disjunction;
+}
+
 
 ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
@@ -2620,6 +2729,140 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
+std::optional<ActionsDAG::ActionsForFilterPushDown>
+ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
+{
+    if (disjunction.empty())
+    {
+        return {};
+    }
+
+    // for a single disjunction node, use the conjunction handler
+    // as we have the well-tested conjunction code path, we can use it.
+    if (disjunction.size() == 1)
+    {
+        return createActionsForConjunction({disjunction[0]}, all_inputs);
+    }
+
+    ActionsDAG actions;
+    bool remove_filter = true;
+
+    FunctionOverloadResolverPtr func_builder_or = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
+    std::unordered_map<std::string, std::list<const Node *>> required_inputs;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node = nullptr;
+        size_t next_child_to_visit = 0;
+    };
+
+    std::stack<Frame> stack;
+
+    /// DFS
+    for (const auto * predicate : disjunction)
+    {
+        if (nodes_mapping.contains(predicate))
+        {
+            continue;
+        }
+
+        stack.push({.node = predicate});
+        while (!stack.empty())
+        {
+            auto & cur = stack.top();
+            /// firstly visit all children
+            while (cur.next_child_to_visit < cur.node->children.size())
+            {
+                const auto * child = cur.node->children[cur.next_child_to_visit];
+
+                if (!nodes_mapping.contains(child))
+                {
+                    stack.push({.node = child});
+                    break;
+                }
+
+                ++cur.next_child_to_visit;
+            }
+
+            if (cur.next_child_to_visit == cur.node->children.size())
+            {
+                auto & node = actions.nodes.emplace_back(*cur.node);
+                nodes_mapping[cur.node] = &node;
+
+                for (auto & child : node.children)
+                    child = nodes_mapping[child];
+
+                if (node.type == ActionType::INPUT)
+                    required_inputs[node.result_name].push_back(&node);
+
+                stack.pop();
+            }
+        }
+    }
+
+    const Node * result_predicate = nodes_mapping[*disjunction.begin()];
+
+    if (disjunction.size() > 1)
+    {
+        NodeRawConstPtrs args;
+        args.reserve(disjunction.size());
+        for (const auto * predicate : disjunction)
+            args.emplace_back(nodes_mapping[predicate]);
+
+        result_predicate = &actions.addFunction(func_builder_or, std::move(args), {});
+    }
+
+    size_t filter_pos = 0;
+    bool has_input_name_collision = false;
+
+    for (const auto & col : all_inputs)
+    {
+        const Node * input;
+        auto & list = required_inputs[col.name];
+        if (list.empty())
+            input = &actions.addInput(col);
+        else
+        {
+            input = list.front();
+            list.pop_front();
+            actions.inputs.push_back(input);
+        }
+
+        /// we dont add result_predicate into the outputs for the second time
+        /// if the predicate is an input, do not remove it
+        if (input == result_predicate)
+        {
+            remove_filter = false;
+            filter_pos = actions.getOutputs().size();
+        }
+        /// predicate name has a collision with another node, rename it
+        else if (input->result_name == result_predicate->result_name)
+            has_input_name_collision = true;
+
+        actions.outputs.push_back(input);
+    }
+
+    if (has_input_name_collision)
+    {
+        for (size_t idx = 0;; ++idx)
+        {
+            std::string rename = fmt::format("_filter_{}_{}", result_predicate->result_name, idx);
+            if (required_inputs.contains(rename))
+                continue;
+
+            result_predicate = &actions.addAlias(*result_predicate, std::move(rename));
+            break;
+        }
+    }
+
+    if (remove_filter)
+        actions.outputs.insert(actions.outputs.begin(), result_predicate);
+
+    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+}
+
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
@@ -2659,8 +2902,9 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+    auto disjunction = getDisjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
 
-    if (conjunction.allowed.empty())
+    if (conjunction.allowed.empty() && disjunction.allowed.empty())
         return {};
 
     chassert(predicate->result_type);
@@ -2677,14 +2921,123 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
+    std::optional<ActionsForFilterPushDown> actions;
+    
+    actions = createActionsForMixed(conjunction.allowed, disjunction.allowed, all_inputs);
+
     if (!actions)
         return {};
 
     /// Now, when actions are created, update the current DAG.
-    removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
+    if (!conjunction.rejected.empty())
+        removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
 
     return actions;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForMixed(
+    NodeRawConstPtrs conjunction_nodes, NodeRawConstPtrs disjunction_nodes, const ColumnsWithTypeAndName & all_inputs)
+{
+    if (disjunction_nodes.empty())
+        return createActionsForConjunction(conjunction_nodes, all_inputs);
+    if (conjunction_nodes.empty())
+        return createActionsForDisjunction(disjunction_nodes, all_inputs);
+
+    ActionsDAG actions;
+    std::unordered_map<const Node *, const Node *> map;
+    std::unordered_map<std::string, std::list<const Node *>> required_inputs;
+
+    auto clone = [&](const Node * n)
+    {
+        if (map.contains(n))
+            return map[n];
+
+        std::stack<const Node *> dfs;
+        dfs.push(n);
+        while (!dfs.empty())
+        {
+            const Node * cur = dfs.top();
+            if (map.contains(cur))
+            {
+                dfs.pop();
+                continue;
+            }
+
+            bool ready = true;
+            for (const auto * ch : cur->children)
+                if (!map.contains(ch))
+                {
+                    dfs.push(ch);
+                    ready = false;
+                }
+
+            if (!ready)
+                continue;
+
+            auto & copy = actions.nodes.emplace_back(*cur);
+            map[cur] = &copy;
+            for (auto *& ch : copy.children)
+                ch = map[ch];
+
+            if (copy.type == ActionType::INPUT)
+                required_inputs[copy.result_name].push_back(&copy);
+
+            dfs.pop();
+        }
+        return map[n];
+    };
+
+    /// clone every node we need
+    NodeRawConstPtrs conj_cloned;
+    conj_cloned.reserve(conjunction_nodes.size());
+    for (const auto * n : conjunction_nodes)
+        conj_cloned.push_back(clone(n));
+
+    NodeRawConstPtrs disj_cloned;
+    disj_cloned.reserve(disjunction_nodes.size());
+    for (const auto * n : disjunction_nodes)
+        disj_cloned.push_back(clone(n));
+
+    /// OR-part
+    FunctionOverloadResolverPtr or_fn = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+    const Node * or_node = disj_cloned.size() == 1 ? disj_cloned.front() : &actions.addFunction(or_fn, disj_cloned, {});
+
+    /// AND the common predicates with the OR-part
+    NodeRawConstPtrs and_args = conj_cloned;
+    and_args.push_back(or_node);
+
+    const Node * final = and_args.size() == 1
+        ? and_args.front()
+        : &actions.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>()), and_args, {});
+
+    for (const auto & col : all_inputs)
+    {
+        const Node * in;
+        auto & lst = required_inputs[col.name];
+        if (lst.empty())
+            in = &actions.addInput(col);
+        else
+        {
+            in = lst.front();
+            lst.pop_front();
+            actions.inputs.push_back(in);
+        }
+        actions.outputs.push_back(in);
+    }
+
+    bool remove_filter = true;
+    if (final->type == ActionType::INPUT)
+    {
+        remove_filter = false;
+    }
+    else
+    {
+        actions.outputs.insert(actions.outputs.begin(), final);
+    }
+
+    size_t filter_pos = remove_filter ? 0 : std::find(actions.outputs.begin(), actions.outputs.end(), final) - actions.outputs.begin();
+
+    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
@@ -2792,7 +3145,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     {
         auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[filter_pos]}, columns_to_replace);
         chassert(updated_filter.getOutputs().size() == 1);
-
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
           * actual input column. It is necessary because after filter step, filter column became constant column with value 1, and
           * not all JOIN algorithms properly work with constants.
@@ -2944,16 +3296,25 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
-        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
+        if (new_children.size() == 1)
         {
-            /// Rejected set has only one predicate. And the type is the same as the result_type.
-            /// Just add alias.
-            Node node;
-            node.type = ActionType::ALIAS;
-            node.result_name = predicate->result_name;
-            node.result_type = predicate->result_type;
-            node.children.swap(new_children);
-            *predicate = std::move(node);
+            const Node * child = new_children.front();
+            while (child->type == ActionType::ALIAS)
+                child = child->children.front();
+
+            if (child->result_name == predicate->result_name)
+            {
+                /// predicate can become its only child – no alias needed at all
+                *predicate = *child;
+            }
+            else
+            {
+                predicate->type = ActionType::ALIAS;
+                predicate->children = {const_cast<Node *>(child)};
+                predicate->column = child->column;
+                predicate->function = nullptr;
+                predicate->function_base = nullptr;
+            }
         }
         else
         {

@@ -477,6 +477,12 @@ private:
 #endif
 
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsForFilterPushDown> createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    static std::optional<ActionsForFilterPushDown> createActionsForMixed(
+        NodeRawConstPtrs conjunction_nodes,
+        NodeRawConstPtrs disjunction_nodes,
+        const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };

@@ -234,6 +234,7 @@ struct JoinInfoBuildContext
 
 bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContext & builder_context, JoinCondition & join_condition)
 {
+    LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, function_node: {}", function_node->getFunctionName());
     if (!function_node || function_node->getArguments().getNodes().size() != 2)
         return false;
 
@@ -241,6 +242,7 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
     if (!predicate_operator.has_value())
         return false;
 
+    LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, predicate_operator: {}", predicate_operator.value());
     auto left_node = function_node->getArguments().getNodes().at(0);
     auto left_expr_source = builder_context.getExpressionSource(left_node);
 
@@ -249,6 +251,7 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
 
     if (left_expr_source == JoinInfoBuildContext::JoinSource::Left && right_expr_source == JoinInfoBuildContext::JoinSource::Right)
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, 1");
         join_condition.predicates.emplace_back(JoinPredicate{
             builder_context.addExpression(left_node, JoinInfoBuildContext::JoinSource::Left),
             builder_context.addExpression(right_node, JoinInfoBuildContext::JoinSource::Right),
@@ -258,6 +261,7 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
 
     if (left_expr_source == JoinInfoBuildContext::JoinSource::Right && right_expr_source == JoinInfoBuildContext::JoinSource::Left)
     {
+        LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, 2");
         join_condition.predicates.push_back(JoinPredicate{
             builder_context.addExpression(right_node, JoinInfoBuildContext::JoinSource::Left),
             builder_context.addExpression(left_node, JoinInfoBuildContext::JoinSource::Right),
@@ -295,7 +299,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & bu
     if (function_node)
         function_name = function_node->getFunction()->getName();
 
-    if (function_name == "and")
+    if (function_name == "and" || function_name == "or")
     {
         for (const auto & child : function_node->getArguments())
             buildJoinCondition(child, builder_context, join_condition);
@@ -329,6 +333,15 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
     {
         for (const auto & child : function_node->getArguments())
             buildDisjunctiveJoinConditions(child, builder_context, join_conditions);
+
+        // Mark all join conditions as using disjunctive semantics for their filters
+        // This is important for OR predicates so they're properly pushed down with OR semantics
+        for (auto & condition : join_conditions)
+        {
+            condition.left_filter_disjunctive = true;
+            condition.right_filter_disjunctive = true;
+            condition.residual_disjunctive = true;
+        }
         return;
     }
     buildJoinCondition(node, builder_context, join_conditions.emplace_back());
@@ -383,6 +396,14 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
         for (const auto & lhs_clause : lhs)
         {
             result.emplace_back(concatConditions(lhs_clause, rhs_clause));
+
+            auto & merged = result.back();
+            merged.left_filter_disjunctive =
+                    lhs_clause.left_filter_disjunctive || rhs_clause.left_filter_disjunctive;
+            merged.right_filter_disjunctive =
+                    lhs_clause.right_filter_disjunctive || rhs_clause.right_filter_disjunctive;
+            merged.residual_disjunctive =
+                    lhs_clause.residual_disjunctive || rhs_clause.residual_disjunctive;
         }
     }
     return result;
