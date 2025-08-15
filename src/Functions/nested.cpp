@@ -1,7 +1,6 @@
 #include <memory>
 
 #include <Common/assert_cast.h>
-#include "Interpreters/Context_fwd.h"
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeTuple.h>
