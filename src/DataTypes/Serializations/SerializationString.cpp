@@ -149,6 +149,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 
 template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+try
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
@@ -171,8 +172,6 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
                 max_string_size);
 
         offset += size + 1;
-        offsets.push_back(offset);
-
         if (unlikely(offset > data.size()))
             data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
@@ -205,9 +204,17 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         }
 
         data[offset - 1] = 0;
+
+        offsets.push_back(offset);
     }
 
     data.resize_exact(offset);
+}
+catch (...)
+{
+    /// We are doing resize_exact() of bigger values than we have, let's make sure that it will be correct (even in case of exceptions)
+    data.resize_exact(offsets.back());
+    throw;
 }
 
 
