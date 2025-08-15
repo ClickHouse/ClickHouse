@@ -15,6 +15,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 #include <memory>
 
@@ -81,6 +82,8 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -95,7 +98,7 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
+    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
@@ -127,6 +130,9 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);

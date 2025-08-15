@@ -7,12 +7,12 @@ title: 'Full-text Search using Text Indexes'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 # Full-text search using text indexes
 
 <ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 Text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types) which provide fast text search capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) columns.
 The main idea of a text index is to store a mapping from "terms" to the rows which contain these terms.
@@ -49,7 +49,7 @@ ORDER BY key
 
 `tokenizer` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
+- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric ASCII characters.
 - `ngram` set the tokenizer to "tokens('ngram')". i.e. split strings into equally large n-grams.
 - `split` set the tokenizer to "tokens('split')", i.e. split strings along certain user-defined separator strings.
 - `no_op` set the tokenizer to "tokens('no_op')", i.e. no tokenization takes place (every row value is a token).
@@ -116,7 +116,6 @@ INSERT INTO tab(key, str) VALUES (1, 'Hello World');
 SELECT * from tab WHERE str == 'Hello World';
 SELECT * from tab WHERE str IN ('Hello', 'World');
 SELECT * from tab WHERE str LIKE '%Hello%';
-SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
 SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
@@ -177,18 +176,6 @@ Similarly, if you like to search a column value ending with `olap engine`, use s
 :::note
 Index lookups for functions `startsWith` and `endWidth` are generally less efficient than for functions `like`/`notLike`/`match`.
 :::
-
-#### `multiSearchAny` {#functions-example-multisearchany}
-
-Function [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany) searches the provided search term as a substring in the column value.
-As a result, search term should be a complete token to use with the `text` index.
-This can be achieved by putting a space before and after the input needle.
-
-Example:
-
-```sql
-SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
-```
 
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
@@ -322,7 +309,7 @@ We can also search for one or all of multiple terms, i.e., disjunctions or conju
 -- multiple OR'ed terms
 SELECT count(*)
 FROM hackernews
-WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+WHERE hasToken(lower(comment), 'avx') OR hasToken(lower(comment), 'sve');
 
 -- multiple AND'ed terms
 SELECT count(*)

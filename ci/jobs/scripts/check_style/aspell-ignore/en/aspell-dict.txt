@@ -1721,6 +1721,7 @@ dateName
 dateTime
 dateTimeToSnowflake
 dateTimeToSnowflakeID
+dateTimeToUUIDv
 dateTrunc
 datetime
 datetimes
@@ -2733,6 +2734,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantized
+quantizations
 quartile
 queryID
 queryString
@@ -3123,11 +3125,15 @@ timeSeries
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
+timeSeriesFromGrid
+timeSeriesGroupArray
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
+timeSeriesLastToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
 timeSeriesPredictLinearToGrid
+timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags

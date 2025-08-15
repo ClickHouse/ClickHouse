@@ -5,6 +5,8 @@
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
@@ -20,6 +22,13 @@
 #include <unordered_map>
 #include <algorithm>
 
+#include "config.h"
+
+#if USE_FASTPFOR
+#  include <codecfactory.h>
+#  include <fastpfor.h>
+#endif
+
 namespace DB
 {
 
@@ -27,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 };
 
 const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
@@ -38,31 +48,110 @@ const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
     return codec;
 }
 
-bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
+#if USE_FASTPFOR
+UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
 {
-    return rowids.contains(row_id);
-}
+    std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
-void GinIndexPostingsBuilder::add(UInt32 row_id)
-{
-    rowids.add(row_id);
-}
-
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
-{
-    rowids.runOptimize();
-
-    const UInt64 cardinality = rowids.cardinality();
-
-    if (cardinality < MIN_SIZE_FOR_ROARING_ENCODING)
+    /// FastPFOR requires the output buffer to be "big enough", so +20% buffer is our attempt to comply with that.
+    std::vector<UInt32> compressed(static_cast<size_t>(std::ceil(deltas.size() * 1.2)));
+    size_t compressed_size = compressed.size();
+    if (deltas.size() < FASTPFOR_THRESHOLD)
     {
-        std::vector<UInt32> values(cardinality);
+        std::memcpy(compressed.data(), deltas.data(), sizeof(UInt32) * deltas.size());
+        compressed_size = deltas.size();
+    }
+    else
+    {
+        codec()->encodeArray(deltas.data(), deltas.size(), compressed.data(), compressed_size);
+    }
+
+    UInt64 written_bytes = 0;
+
+    UInt64 num_deltas = deltas.size();
+    writeVarUInt(num_deltas, buffer);
+    written_bytes += getLengthOfVarUInt(num_deltas);
+
+    writeVarUInt(compressed_size, buffer);
+    written_bytes += getLengthOfVarUInt(compressed_size);
+
+    buffer.write(reinterpret_cast<char *>(compressed.data()), compressed_size * sizeof(UInt32));
+    written_bytes += compressed_size * sizeof(UInt32);
+
+    return written_bytes;
+}
+
+GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
+{
+    size_t num_deltas = 0;
+    size_t compressed_size = 0;
+    readVarUInt(num_deltas, buffer);
+    readVarUInt(compressed_size, buffer);
+
+    std::vector<UInt32> compressed(compressed_size);
+    buffer.readStrict(reinterpret_cast<char *>(compressed.data()), compressed_size * sizeof(UInt32));
+
+    std::vector<UInt32> deltas(num_deltas);
+    if (deltas.size() < FASTPFOR_THRESHOLD)
+    {
+        std::memcpy(deltas.data(), compressed.data(), sizeof(UInt32) * deltas.size());
+    }
+    else
+    {
+        codec()->decodeArray(compressed.data(), compressed_size, deltas.data(), num_deltas);
+    }
+
+    decodeDeltaScalar(deltas);
+
+    GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+    postings_list->addMany(deltas.size(), deltas.data());
+    return postings_list;
+}
+
+std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
+{
+    static thread_local FastPForLib::CODECFactory factory;
+    static thread_local std::shared_ptr<FastPForLib::IntegerCODEC> codec = factory.getFromName(FASTPFOR_CODEC_NAME);
+    return codec;
+}
+
+std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
+{
+    const UInt64 num_rowids = rowids.cardinality();
+    std::vector<UInt32> deltas(num_rowids);
+    UInt32 prev = 0;
+    for (size_t i = 0; const UInt32 rowid : rowids)
+    {
+        deltas[i] = rowid - prev;
+        prev = rowid;
+        ++i;
+    }
+    return deltas;
+}
+
+void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
+{
+    for (size_t i = 1; i < deltas.size(); ++i)
+        deltas[i] += deltas[i - 1];
+}
+#endif
+
+UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
+{
+    const UInt64 num_rowids = rowids.cardinality();
+
+    if (num_rowids < MIN_SIZE_FOR_ROARING_ENCODING)
+    {
+        std::vector<UInt32> values(num_rowids);
         rowids.toUint32Array(values.data());
 
-        UInt64 header = (cardinality << 1) | ARRAY_CONTAINER_MASK;
-        writeVarUInt(header, buffer);
+        UInt64 header = (num_rowids << 1) | ARRAY_CONTAINER_MASK;
 
-        UInt64 written_bytes = getLengthOfVarUInt(header);
+        UInt64 written_bytes = 0;
+
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
         for (const auto & value : values)
         {
             writeVarUInt(value, buffer);
@@ -72,7 +161,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
         return written_bytes;
     }
 
-    const bool compress = cardinality >= ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD;
+    const bool compress = num_rowids >= ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD;
     const UInt64 uncompressed_size = rowids.getSizeInBytes();
 
     std::vector<char> buf(uncompressed_size);
@@ -88,24 +177,36 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 
         header = (header << 2) | (ROARING_COMPRESSED_MASK << 1) | ROARING_CONTAINER_MASK;
 
-        writeVarUInt(header, buffer);
-        writeVarUInt(compressed_size, buffer);
-        buffer.write(memory.data(), compressed_size);
+        UInt64 written_bytes = 0;
 
-        return getLengthOfVarUInt(header) + getLengthOfVarUInt(compressed_size) + compressed_size;
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
+        writeVarUInt(compressed_size, buffer);
+        written_bytes += getLengthOfVarUInt(compressed_size);
+
+        buffer.write(memory.data(), compressed_size);
+        written_bytes += compressed_size;
+
+        return written_bytes;
     }
     else
     {
         header = (header << 2) | (ROARING_UNCOMPRESSED_MASK << 1) | ROARING_CONTAINER_MASK;
 
-        writeVarUInt(header, buffer);
-        buffer.write(buf.data(), uncompressed_size);
+        UInt64 written_bytes = 0;
 
-        return getLengthOfVarUInt(header) + uncompressed_size;
+        writeVarUInt(header, buffer);
+        written_bytes += getLengthOfVarUInt(header);
+
+        buffer.write(buf.data(), uncompressed_size);
+        written_bytes += uncompressed_size;
+
+        return written_bytes;
     }
 }
 
-GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
+GinIndexPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /**
      * Header value maps into following states:
@@ -155,6 +256,55 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
             return std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.data()));
         }
     }
+}
+
+bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
+{
+    return rowids.contains(row_id);
+}
+
+void GinIndexPostingsBuilder::add(UInt32 row_id)
+{
+    rowids.add(row_id);
+}
+
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
+{
+    rowids.runOptimize();
+
+    UInt64 written_bytes = 0;
+#if USE_FASTPFOR
+    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinIndexPostingListDeltaPforSerialization::serialize(buffer, rowids);
+#else
+    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinIndexPostingListRoaringZstdSerialization::serialize(buffer, rowids);
+#endif
+    return written_bytes;
+}
+
+GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
+{
+    UInt8 serialization = 0;
+    readBinary(serialization, buffer);
+
+    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
+    {
+#if USE_FASTPFOR
+        return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED, "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
+#endif
+    }
+
+    return GinIndexPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
@@ -363,6 +513,33 @@ void GinIndexStore::cancel() noexcept
         postings_file_stream->cancel();
 }
 
+GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
+    : num_terms(store.current_postings.size())
+    , current_size(store.current_size)
+    , metadata_file_size(store.metadata_file_stream ? store.metadata_file_stream->count() : 0)
+    , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
+    , dictionary_file_size(store.dict_file_stream ? store.dict_file_stream->count() : 0)
+    , posting_lists_file_size(store.postings_file_stream ? store.postings_file_stream->count() : 0)
+{
+}
+
+String GinIndexStore::Statistics::toString() const
+{
+    return fmt::format(
+        "number of terms = {}, terms size = {}, metadata size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
+        num_terms,
+        ReadableSize(current_size),
+        ReadableSize(metadata_file_size),
+        ReadableSize(bloom_filter_file_size),
+        ReadableSize(dictionary_file_size),
+        ReadableSize(posting_lists_file_size));
+}
+
+GinIndexStore::Statistics GinIndexStore::getStatistics()
+{
+    return Statistics(*this);
+}
+
 void GinIndexStore::initSegmentId()
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
@@ -432,6 +609,10 @@ void GinIndexStore::writeSegment()
     if (metadata_file_stream == nullptr)
         initFileStreams();
 
+    LOG_TRACE(
+        logger, "Start writing text index '{}' segment id {} of part '{}'", name, current_segment.segment_id, storage->getPartDirectory());
+    Statistics before_write_segment_stats = getStatistics();
+
     /// Write segment
     metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
 
@@ -470,7 +651,7 @@ void GinIndexStore::writeSegment()
     /// Write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
-    FST::FstBuilder fst_builder(write_buf);
+    FST::Builder fst_builder(write_buf);
 
     UInt64 offset = 0;
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
@@ -514,6 +695,15 @@ void GinIndexStore::writeSegment()
         current_segment.dict_start_offset += uncompressed_size;
     }
 
+    auto statistics = getStatistics() - before_write_segment_stats;
+    LOG_TRACE(
+        logger,
+        "Done writing text index '{}' segment id {} of part '{}': {}",
+        name,
+        current_segment.segment_id,
+        storage->getPartDirectory(),
+        statistics.toString());
+
     current_size = 0;
     current_postings.clear();
     current_segment.segment_id = getNextSegmentID();
@@ -551,6 +741,8 @@ void GinIndexStoreDeserializer::readSegments()
 
     assert(metadata_file_stream != nullptr);
 
+    LOG_TRACE(logger, "Start reading text index '{}' segments of part '{}'", store->getName(), store->storage->getPartDirectory());
+
     if (store->getVersion() == GinIndexStore::Format::v1)
     {
         std::vector<GinIndexSegment> segments(num_segments);
@@ -564,6 +756,13 @@ void GinIndexStoreDeserializer::readSegments()
             store->segment_dictionaries[segments[i].segment_id] = seg_dict;
         }
     }
+
+    LOG_TRACE(
+        logger,
+        "Done reading text index '{}' segments of part '{}': number of segments = {}",
+        store->getName(),
+        store->storage->getPartDirectory(),
+        num_segments);
 }
 
 void GinIndexStoreDeserializer::prepareSegmentsForReading()
@@ -579,6 +778,13 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
+    LOG_TRACE(
+        logger,
+        "Start reading the bloom filter of text index '{}' segment id {} of part '{}'",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory());
+
     const GinSegmentDictionaryPtr & seg_dict = it->second;
     switch (auto version = store->getVersion(); version)
     {
@@ -587,18 +793,33 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 
             /// Set file pointer of filter file
             assert(bloom_filter_file_stream != nullptr);
-            bloom_filter_file_stream->seek(it->second->bloom_filter_start_offset, SEEK_SET);
+            bloom_filter_file_stream->seek(seg_dict->bloom_filter_start_offset, SEEK_SET);
             seg_dict->bloom_filter = GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_file_stream);
             break;
         }
     }
+
+    LOG_TRACE(
+        logger,
+        "Done reading the bloom filter of text index '{}' segment id {} of part '{}': size = {}",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory(),
+        ReadableSize(bloom_filter_file_stream->count() - seg_dict->bloom_filter_start_offset));
 }
 
-void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_dictionary)
+void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDictionaryPtr segment_dictionary)
 {
     /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
     dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
+
+    LOG_TRACE(
+        logger,
+        "Start reading the dictionary (FST) of text index '{}' segment id {} of part '{}'",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory());
 
     segment_dictionary->fst = std::make_unique<FST::FiniteStateTransducer>();
     switch (auto version = store->getVersion(); version)
@@ -633,6 +854,14 @@ void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_d
             break;
         }
     }
+
+    LOG_TRACE(
+        logger,
+        "Done reading the dictionary (FST) of text index '{}' segment id {} of part '{}': size = {}",
+        store->getName(),
+        segment_id,
+        store->storage->getPartDirectory(),
+        ReadableSize(dict_file_stream->count() - segment_dictionary->dict_start_offset));
 }
 
 GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
@@ -644,26 +873,48 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     {
         auto segment_id = seg_dict.first;
 
-        if (seg_dict.second->fst == nullptr)
+        FST::FiniteStateTransducer::Output fst_output;
         {
-            /// Segment dictionary is not loaded, first check the term in bloom filter
-            if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
-                continue;
+            std::lock_guard guard(seg_dict.second->fst_mutex);
 
-            /// Term might be in segment dictionary
-            readSegmentFST(seg_dict.second);
+            if (seg_dict.second->fst == nullptr)
+            {
+                /// Segment dictionary is not loaded, first check the term in bloom filter
+                if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
+                    continue;
+
+                /// Term might be in segment dictionary
+                readSegmentFST(segment_id, seg_dict.second);
+            }
+
+            fst_output = seg_dict.second->fst->getOutput(term);
+            if (!fst_output.found)
+                continue;
         }
 
-        auto [offset, found] = seg_dict.second->fst->getOutput(term);
-        if (!found)
-            continue;
+        LOG_TRACE(
+            logger,
+            "Start reading the posting list for term '{}' from text index '{}' segment id {} of part '{}'",
+            term,
+            store->getName(),
+            segment_id,
+            store->storage->getPartDirectory());
 
         // Set postings file pointer for reading postings list
-        postings_file_stream->seek(seg_dict.second->postings_start_offset + offset, SEEK_SET);
+        postings_file_stream->seek(seg_dict.second->postings_start_offset + fst_output.offset, SEEK_SET);
 
         // Read posting list
         auto postings_list = GinIndexPostingsBuilder::deserialize(*postings_file_stream);
         container[segment_id] = postings_list;
+
+        LOG_TRACE(
+            logger,
+            "Done reading the posting list for term '{}' from text index '{}' segment id {} of part '{}': size = {}",
+            term,
+            store->getName(),
+            segment_id,
+            store->storage->getPartDirectory(),
+            ReadableSize(postings_file_stream->count() - seg_dict.second->postings_start_offset));
     }
     return container;
 }

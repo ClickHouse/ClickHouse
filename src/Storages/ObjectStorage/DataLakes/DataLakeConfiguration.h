@@ -121,6 +121,29 @@ public:
         );
     }
 
+    bool supportsDelete() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsDelete();
+    }
+
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        current_metadata->mutate(commands, context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    void checkMutationIsPossible(const MutationCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkMutationIsPossible(commands);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -151,6 +174,24 @@ public:
     {
         assertInitialized();
         return current_metadata->getSchemaTransformer(local_context, data_path);
+    }
+
+    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
+    {
+        if (!current_metadata)
+            return false;
+        return current_metadata->hasPositionDeleteTransformer(object_info);
+    }
+
+    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & object_info,
+        const SharedHeader & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
     }
 
     bool hasExternalDynamicMetadata() override
