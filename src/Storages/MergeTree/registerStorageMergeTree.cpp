@@ -798,6 +798,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
             for (const auto & column : metadata.columns)
             {
+                if (column.default_desc.kind == ColumnDefaultKind::Alias)
+                    continue;
+
                 ColumnStatisticsDescription stats_desc;
                 stats_desc.data_type = column.type;
                 stats_desc.types_to_desc = stats_ast_map;
