@@ -2097,10 +2097,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(table_to_replace_name);
     }
 
     {
-        const String name_hash = getHexUIntLowercase(sipHash64(create.getDatabase() + create.getTable()));
+        const String name_hash = TemporaryReplaceTableName::calculateHash(create.getDatabase(), create.getTable());
         const String random_suffix = [&]()
         {
             if (auto txn = current_context->getZooKeeperMetadataTransaction())

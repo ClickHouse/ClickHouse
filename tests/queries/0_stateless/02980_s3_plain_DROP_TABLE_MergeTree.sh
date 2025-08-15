@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-encrypted-storage
 # Tag no-fasttest: requires S3
 # Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
 
