@@ -1159,7 +1159,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
                 // Now update the table's metadata version
                 // We only update the in-memory version and let the replication system handle ZooKeeper synchronization
-                auto metadata_ptr = table_infos.at(table_name).storage->getInMemoryMetadataPtr();
+                auto metadata_ptr = table_info.storage->getInMemoryMetadataPtr();
                 auto new_metadata = metadata_ptr->withMetadataVersion(metadata_version);
                 storage->setInMemoryMetadata(new_metadata);
 
