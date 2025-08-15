@@ -181,6 +181,13 @@ public:
     IntegrationCall integration = IntegrationCall::None;
     CatalogTable catalog = CatalogTable::None;
 
+    SQLBase() = default;
+    virtual ~SQLBase() = default;
+    SQLBase(const SQLBase &) = default;
+    SQLBase & operator=(const SQLBase &) = default;
+    SQLBase(SQLBase &&) = default;
+    SQLBase & operator=(SQLBase &&) = default;
+
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
     static bool supportsFinal(const TableEngineValues teng)

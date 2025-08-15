@@ -62,6 +62,9 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
         && !partition_columns_in_data_file.has_value() && catalog == CatalogTable::None);
+    has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
+                        || isAzureEngine() || isS3Engine())
+        && rg.nextSmallNumber() < 5;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
@@ -158,27 +161,56 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         {
             integration = IntegrationCall::Azurite;
         }
+    }
+    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
+    {
         /// Set other parameters
-        if (rg.nextMediumNumber() < 91)
+        if (isFileEngine() || rg.nextMediumNumber() < 91)
         {
-            file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+            std::uniform_int_distribution<uint32_t> inout_range(1, static_cast<uint32_t>(InOutFormat_MAX));
+
+            file_format = static_cast<InOutFormat>(inout_range(rg.generator));
         }
         if (rg.nextMediumNumber() < 51)
         {
             file_comp = rg.pickRandomly(compressionMethods);
         }
-        if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
-        {
-            partition_strategy = rg.nextBool() ? "wildcard" : "hive";
-        }
-        if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
-        {
-            partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
-        }
     }
-    else
+    if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
-        chassert(0);
+        partition_strategy = rg.nextBool() ? "wildcard" : "hive";
+    }
+    if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
+    {
+        partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
+    }
+    if (isExternalDistributedEngine())
+    {
+        integration = (sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
+    }
+    else if (isMySQLEngine())
+    {
+        integration = IntegrationCall::MySQL;
+    }
+    else if (isPostgreSQLEngine() || isMaterializedPostgreSQLEngine())
+    {
+        integration = IntegrationCall::PostgreSQL;
+    }
+    else if (isSQLiteEngine())
+    {
+        integration = IntegrationCall::SQLite;
+    }
+    else if (isMongoDBEngine())
+    {
+        integration = IntegrationCall::MongoDB;
+    }
+    else if (isRedisEngine())
+    {
+        integration = IntegrationCall::Redis;
+    }
+    else if (isURLEngine())
+    {
+        integration = IntegrationCall::HTTP;
     }
 }
 

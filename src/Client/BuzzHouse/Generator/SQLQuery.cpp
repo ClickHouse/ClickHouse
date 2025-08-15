@@ -374,7 +374,7 @@ void StatementGenerator::setTableFunction(
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             if (allow_chaos)
             {
-                setRandomShardKey(rg, t, rfunc->mutable_key());
+                setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_key());
             }
             structure = rg.nextMediumNumber() < 96 ? rfunc->mutable_structure() : nullptr;
             if (rg.nextBool())
@@ -466,7 +466,7 @@ void StatementGenerator::setTableFunction(
         if (rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
-            setRandomShardKey(rg, t, cdf->mutable_sharding_key());
+            setRandomShardKey(rg, std::make_optional<SQLTable>(t), cdf->mutable_sharding_key());
         }
     }
     else if (usage == TableFunctionUsage::RemoteCall || (usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer()))
@@ -494,7 +494,7 @@ void StatementGenerator::setTableFunction(
         if (rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
-            setRandomShardKey(rg, t, rfunc->mutable_sharding_key());
+            setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
         }
     }
     else

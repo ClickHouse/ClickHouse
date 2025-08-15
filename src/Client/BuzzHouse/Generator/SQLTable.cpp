@@ -1038,15 +1038,8 @@ void StatementGenerator::generateEngineDetails(
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
-    if (te->has_engine()
-        && (b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine() || b.isAnyIcebergEngine() || b.isAzureEngine()
-            || b.isS3Engine())
-        && rg.nextSmallNumber() < 5)
-    {
-        /// Optional PARTITION BY
-        generateTableKey(rg, rel, b, false, te->mutable_partition_by());
-        b.has_partition_by = true;
-    }
+    /// Set what the filename is going to be first
+    b.setTablePath(rg, fc);
     if (b.isMergeTreeFamily())
     {
         if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)
@@ -1068,12 +1061,10 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
         te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
-        if (rg.nextBool())
+        if (b.file_comp.has_value())
         {
-            b.file_comp = rg.pickRandomly(compressionMethods);
             te->add_params()->set_svalue(b.file_comp.value());
         }
     }
@@ -1169,37 +1160,9 @@ void StatementGenerator::generateEngineDetails(
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
             || b.isRedisEngine() || b.isExternalDistributedEngine()))
     {
-        if (b.isExternalDistributedEngine())
+        if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
-            b.integration = (b.sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
-        }
-        else if (b.isMySQLEngine())
-        {
-            b.integration = IntegrationCall::MySQL;
-        }
-        else if (b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine())
-        {
-            b.integration = IntegrationCall::PostgreSQL;
-        }
-        else if (b.isSQLiteEngine())
-        {
-            b.integration = IntegrationCall::SQLite;
-        }
-        else if (b.isMongoDBEngine())
-        {
-            b.integration = IntegrationCall::MongoDB;
-        }
-        else if (b.isRedisEngine())
-        {
-            b.integration = IntegrationCall::Redis;
-        }
-        else
-        {
-            chassert(0);
-        }
-        if (typeid(b) == typeid(SQLTable))
-        {
-            connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+            connections.createExternalDatabaseTable(rg, *t, entries, te);
         }
     }
     else if (te->has_engine() && b.isMergeEngine())
@@ -1292,18 +1255,16 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isURLEngine())
     {
-        b.integration = IntegrationCall::HTTP;
-        if (typeid(b) == typeid(SQLTable))
+        if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
-            connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+            connections.createExternalDatabaseTable(rg, *t, entries, te);
         }
-        /// Set format
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        te->add_params()->set_in_out(b.file_format.value());
-        /// Optional compression
-        if (rg.nextBool())
+        if (b.file_format.has_value())
         {
-            b.file_comp = rg.pickRandomly(compressionMethods);
+            te->add_params()->set_in_out(b.file_format.value());
+        }
+        if (b.file_comp.has_value())
+        {
             te->add_params()->set_svalue(b.file_comp.value());
         }
     }
@@ -1319,13 +1280,11 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        /// Set what the filename is going to be first
-        b.setTablePath(rg, fc);
         if (b.integration != IntegrationCall::None)
         {
-            if (typeid(b) == typeid(SQLTable))
+            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
             {
-                connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
             }
         }
         else
@@ -1352,6 +1311,11 @@ void StatementGenerator::generateEngineDetails(
         && add_pkey && !entries.empty())
     {
         colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+    }
+    if (te->has_engine() && b.has_partition_by)
+    {
+        /// Optional PARTITION BY
+        generateTableKey(rg, rel, b, false, te->mutable_partition_by());
     }
     if (te->has_engine())
     {
@@ -1530,7 +1494,7 @@ void StatementGenerator::addTableColumnInternal(
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
             flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
-            generateTTLExpression(rg, t, cd->mutable_ttl_expr());
+            generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
             this->entries.clear();
         }
         cd->set_is_pkey(is_pk);
@@ -2243,7 +2207,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     else if (!next.is_deterministic && next.isMergeTreeFamily() && rg.nextBool())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
-        generateNextTTL(rg, next, te, te->mutable_ttl_expr());
+        generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
         entries.clear();
     }
 
