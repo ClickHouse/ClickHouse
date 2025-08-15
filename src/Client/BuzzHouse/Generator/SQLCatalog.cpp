@@ -59,7 +59,9 @@ static const constexpr String PARTITION_STR = "{_partition_id}";
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    chassert(!bucket_path.has_value() && catalog == CatalogTable::None);
+    chassert(
+        !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
+        && !partition_columns_in_data_file.has_value() && catalog == CatalogTable::None);
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set catalog first if possible
@@ -155,6 +157,23 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         else if (isOnAzure())
         {
             integration = IntegrationCall::Azurite;
+        }
+        /// Set other parameters
+        if (rg.nextMediumNumber() < 91)
+        {
+            file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        }
+        if (rg.nextMediumNumber() < 51)
+        {
+            file_comp = rg.pickRandomly(compressionMethods);
+        }
+        if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
+        {
+            partition_strategy = rg.nextBool() ? "wildcard" : "hive";
+        }
+        if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
+        {
+            partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
         }
     }
     else

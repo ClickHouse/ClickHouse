@@ -1197,7 +1197,10 @@ void StatementGenerator::generateEngineDetails(
         {
             chassert(0);
         }
-        connections.createExternalDatabaseTable(rg, b, entries, te);
+        if (typeid(b) == typeid(SQLTable))
+        {
+            connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+        }
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
@@ -1290,7 +1293,10 @@ void StatementGenerator::generateEngineDetails(
     else if (te->has_engine() && b.isURLEngine())
     {
         b.integration = IntegrationCall::HTTP;
-        connections.createExternalDatabaseTable(rg, b, entries, te);
+        if (typeid(b) == typeid(SQLTable))
+        {
+            connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+        }
         /// Set format
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
@@ -1317,14 +1323,17 @@ void StatementGenerator::generateEngineDetails(
         b.setTablePath(rg, fc);
         if (b.integration != IntegrationCall::None)
         {
-            connections.createExternalDatabaseTable(rg, b, entries, te);
+            if (typeid(b) == typeid(SQLTable))
+            {
+                connections.createExternalDatabaseTable(rg, static_cast<SQLTable &>(b), entries, te);
+            }
         }
         else
         {
             chassert(b.isOnLocal());
             te->add_params()->set_rvalue("local");
         }
-        setObjectStoreParams<SQLBase, TableEngine>(rg, b, true, te);
+        setObjectStoreParams<SQLBase, TableEngine>(rg, b, false, te);
     }
     else if (te->has_engine() && b.isArrowFlightEngine())
     {

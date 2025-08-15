@@ -49,9 +49,9 @@ public:
     {
     }
 
-    virtual void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) { }
+    virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) { return false; }
+    virtual bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -72,7 +72,7 @@ public:
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
@@ -113,7 +113,7 @@ public:
     static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
@@ -157,7 +157,7 @@ public:
     static std::unique_ptr<PostgreSQLIntegration>
     testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -199,7 +199,7 @@ public:
 
     static std::unique_ptr<SQLiteIntegration> testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc);
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -230,9 +230,9 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -264,9 +264,9 @@ public:
 
     static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc);
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MongoDBIntegration() override = default;
 #else
@@ -293,11 +293,11 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
@@ -310,11 +310,11 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~AzuriteIntegration() override = default;
 };
@@ -327,9 +327,9 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
 };
@@ -344,9 +344,9 @@ public:
 
     void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~DolorIntegration() override = default;
 };
@@ -421,7 +421,7 @@ public:
 
     explicit ExternalIntegrations(FuzzConfig & fcc);
 
-    void createExternalDatabaseTable(RandomGenerator & rg, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+    void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
     void createExternalDatabase(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
