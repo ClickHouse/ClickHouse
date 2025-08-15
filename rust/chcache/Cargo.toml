@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-blake3 = "1.5.4"
+blake3 = { version = "1.5.4", features = ["no_neon"] }
 clickhouse = { version = "0.13.1", features = ["rustls-tls"] }
 env_logger = { version = "0.11.5", default-features = false }
 log = "0.4.22"
