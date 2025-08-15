@@ -63,7 +63,7 @@ UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer
     }
     else
     {
-        codec()->encodeArray(deltas.data(), deltas.size(), compressed.data(), compressed_size);
+        codec().encodeArray(deltas.data(), deltas.size(), compressed.data(), compressed_size);
     }
 
     UInt64 written_bytes = 0;
@@ -98,7 +98,7 @@ GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(R
     }
     else
     {
-        codec()->decodeArray(compressed.data(), compressed_size, deltas.data(), num_deltas);
+        codec().decodeArray(compressed.data(), compressed_size, deltas.data(), num_deltas);
     }
 
     decodeDeltaScalar(deltas);
@@ -108,10 +108,10 @@ GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(R
     return postings_list;
 }
 
-std::unique_ptr<FastPForLib::IntegerCODEC> & GinIndexPostingListDeltaPforSerialization::codec()
+FastPForLib::IntegerCODEC & GinIndexPostingListDeltaPforSerialization::codec()
 {
     static thread_local auto codec = FastPForLib::simdfastpfor128_codec();
-    return codec;
+    return *codec;
 }
 
 std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
