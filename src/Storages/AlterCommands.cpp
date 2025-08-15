@@ -683,6 +683,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == COMMENT_COLUMN)
     {
+        // If column doesn't exist and IF EXISTS is used, skip silently
+        if (!metadata.columns.has(column_name) && if_exists)
+            return;
+        
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
     }
