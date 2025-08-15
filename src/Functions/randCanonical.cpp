@@ -48,7 +48,7 @@ public:
 REGISTER_FUNCTION(CanonicalRand)
 {
     FunctionDocumentation::Description description = R"(
-Returns a random distributed `Float64` number with uniform distibution between `0` (inclusive) and `1` (exclusive).
+Returns a random distributed `Float64` number with uniform distribution between `0` (inclusive) and `1` (exclusive).
     )";
     FunctionDocumentation::Syntax syntax = "randCanonical([x])";
     FunctionDocumentation::Arguments arguments = {
