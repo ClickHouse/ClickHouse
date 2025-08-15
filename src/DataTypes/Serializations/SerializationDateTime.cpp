@@ -41,20 +41,11 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
     x = std::max<time_t>(0, x);
 }
 
-inline void readTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline void readTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & time_zone, const DateLUTImpl & /*utc_time_zone*/)
 {
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            readTimeTextImpl<>(x, istr, time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseTimeBestEffort(x, istr, time_zone, utc_time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
-            break;
-    }
+    readTimeTextImpl<>(x, istr, time_zone);
+
+    x = std::max<time_t>(0, x);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
@@ -83,21 +74,10 @@ inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & se
     return res;
 }
 
-inline bool tryReadTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline bool tryReadTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & time_zone, const DateLUTImpl & /*utc_time_zone*/)
 {
     bool res;
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadTimeText(x, istr, time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseTimeBestEffort(x, istr, time_zone, utc_time_zone);
-            break;
-        case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
-            break;
-    }
+    res = tryReadTimeText(x, istr, time_zone);
 
     x = std::max<time_t>(0, x);
     return res;
@@ -415,36 +395,13 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '493808'
     {
-        try
-        {
-            readTimeText(x, istr, settings, time_zone, utc_time_zone);
-            assertChar('\'', istr);
-        }
-        catch (const Exception &)
-        {
-            throw;
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time value");
-        }
+        readTimeText(x, istr, settings, time_zone, utc_time_zone);
+        assertChar('\'', istr);
     }
-    else
+    else /// Just 493808 or 0493808
     {
-        try
-        {
-            readAsIntText(x, istr);
-        }
-        catch (const Exception &)
-        {
-            throw;
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse Time value as number");
-        }
+        readAsIntText(x, istr);
     }
-
     /// It's important to do this at the end - for exception safety.
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
