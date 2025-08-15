@@ -362,7 +362,8 @@ void writeMetadataFiles(
                 configuration->format,
                 partititon_spec,
                 partition_spec_id,
-                *buffer_manifest_entry);
+                *buffer_manifest_entry,
+                Iceberg::FileContentType::DATA);
 
             manifest_file_sizes[manifest_entry->patched_path.path_in_metadata] += buffer_manifest_entry->count();
             buffer_manifest_entry->finalize();
@@ -408,6 +409,7 @@ void writeMetadataFiles(
             new_snapshots[i].snapshot,
             total_manifest_file_sizes,
             *buffer_manifest_list,
+            Iceberg::FileContentType::DATA,
             false);
         buffer_manifest_list->finalize();
     }
