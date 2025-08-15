@@ -173,7 +173,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     }
 
     return std::make_shared<DeltaLakePartitionedSink>(
-        delta_transaction, configuration, partition_columns, object_storage, context, sample_block, format_settings);
+        delta_transaction, configuration, partition_columns, object_storage,
+        context, sample_block, format_settings);
 }
 
 }

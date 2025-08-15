@@ -154,11 +154,11 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_ke
     if (it == partition_id_to_sink.end())
     {
         auto data = std::make_shared<PartitionData>();
-        data->file_name = DeltaLake::generateWritePath(partition_key.toString(), configuration->format);
+        auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
+        data->path = DeltaLake::generateWritePath(std::move(data_prefix), configuration->format);
 
-        auto full_path = std::filesystem::path(delta_transaction->getDataPath()) / data->file_name;
         data->sink = std::make_shared<StorageObjectStorageSink>(
-            full_path,
+            data->path,
             object_storage,
             configuration,
             format_settings,
@@ -172,7 +172,7 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_ke
 
 void DeltaLakePartitionedSink::onFinish()
 {
-    if (isCancelled())
+    if (isCancelled() || partition_id_to_sink.empty())
         return;
 
     for (auto & [_, data] : partition_id_to_sink)
@@ -182,16 +182,16 @@ void DeltaLakePartitionedSink::onFinish()
     {
         std::vector<DeltaLake::WriteTransaction::CommitFile> files;
         files.reserve(partition_id_to_sink.size());
+        const auto data_prefix = delta_transaction->getDataPath();
         for (auto & [_, data] : partition_id_to_sink)
         {
-            auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->file_name);
-
+            auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->path);
             Map partition_values;
             partition_values.reserve(keys_and_values.size());
             for (const auto & [key, value] : keys_and_values)
                 partition_values.emplace_back(DB::Tuple({key, value}));
 
-            files.emplace_back(data->file_name, data->size, partition_values);
+            files.emplace_back(data->path.substr(data_prefix.size()), data->size, partition_values);
         }
         delta_transaction->commit(files);
     }
@@ -199,8 +199,7 @@ void DeltaLakePartitionedSink::onFinish()
     {
         for (auto & [_, data] : partition_id_to_sink)
         {
-            auto full_path = std::filesystem::path(delta_transaction->getDataPath()) / data->file_name;
-            object_storage->removeObjectIfExists(StoredObject(full_path));
+            object_storage->removeObjectIfExists(StoredObject(data->path));
         }
         throw;
     }

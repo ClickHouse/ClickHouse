@@ -52,7 +52,7 @@ private:
     struct PartitionData
     {
         SinkPtr sink;
-        std::string file_name;
+        std::string path;
         size_t size = 0;
     };
     using PartitionDataPtr = std::shared_ptr<PartitionData>;
