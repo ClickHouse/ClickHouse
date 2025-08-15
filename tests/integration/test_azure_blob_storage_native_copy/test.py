@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import string
 import threading
 import time
 
@@ -184,15 +185,25 @@ def azure_query(
                 node.query(query_on_retry)
             continue
 
+
+def random_str(length=6):
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+
+
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
+    azure_query(
+        node1,
+        "DROP TABLE IF EXISTS test_simple_merge_tree",
+    )
     azure_query(
         node1,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node1, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup_{random_str()}')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node1,
@@ -219,13 +230,17 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
     azure_query(
         node2,
+        "DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket",
+    )
+    azure_query(
+        node2,
         f"CREATE TABLE test_simple_merge_tree_different_bucket(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_other_bucket'",
     )
     azure_query(
         node2, f"INSERT INTO test_simple_merge_tree_different_bucket VALUES (1, 'a')"
     )
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_different_bucket_backup_different_bucket')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_different_bucket_backup_different_bucket_{random_str()}')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node2,
@@ -255,11 +270,15 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     node3 = cluster.instances["node3"]
     azure_query(
         node3,
+        "DROP TABLE IF EXISTS test_simple_merge_tree_async",
+    )
+    azure_query(
+        node3,
         f"CREATE TABLE test_simple_merge_tree_async(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node3, f"INSERT INTO test_simple_merge_tree_async VALUES (1, 'a')")
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_async_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_async_backup_{random_str()}')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node3,
@@ -288,13 +307,17 @@ def test_backup_restore_native_copy_disabled_in_query(cluster):
     node4 = cluster.instances["node4"]
     azure_query(
         node4,
+        "DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query",
+    )
+    azure_query(
+        node4,
         f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_in_query(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure'",
     )
     azure_query(
         node4, f"INSERT INTO test_simple_merge_tree_native_copy_disabled_in_query VALUES (1, 'a')"
     )
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_in_query_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_in_query_backup_{random_str()}')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node4,
@@ -307,13 +330,17 @@ def test_backup_restore_native_copy_disabled_due_to_different_auth(cluster):
     node4 = cluster.instances["node4"]
     azure_query(
         node4,
+        "DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_due_to_different_auth",
+    )
+    azure_query(
+        node4,
         f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_due_to_different_auth(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_different_auth'",
     )
     azure_query(
         node4, f"INSERT INTO test_simple_merge_tree_native_copy_disabled_due_to_different_auth VALUES (1, 'a')"
     )
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_due_to_different_auth_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_due_to_different_auth_backup_{random_str()}')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node4,
