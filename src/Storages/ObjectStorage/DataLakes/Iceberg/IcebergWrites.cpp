@@ -555,6 +555,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     Int64 timestamp = user_defined_timestamp.value_or(ms.count());
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
+    metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
@@ -1012,6 +1013,7 @@ bool IcebergStorageSink::initializeMetadata()
                 return false;
             }
 
+            std::cerr << "json_representation " << json_representation << '\n';
             Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup, metadata_compression_method);
             if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
             {
