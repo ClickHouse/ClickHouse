@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -485,17 +486,23 @@ public:
 
 
 /// Leave date part as is and apply pseudorandom permutation to time difference with previous value within the same log2 class.
+template <typename Underlying>
 class DateTimeModel : public IModel
 {
 private:
-    UInt64 seed;
-    UInt32 src_prev_value = 0;
-    UInt32 res_prev_value = 0;
+    using Diff = std::make_signed_t<Underlying>;
 
-    const DateLUTImpl & date_lut;
+    UInt64 seed;
+    Underlying date_multiplier;
+    Underlying src_prev_value = 0;
+    Underlying res_prev_value = 0;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
+    explicit DateTimeModel(UInt64 seed_, Underlying scale_multiplier_ = 1)
+    :   seed(seed_),
+        date_multiplier(scale_multiplier_ * 86400)
+    {
+    }
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -504,22 +511,22 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = assert_cast<const ColumnVector<UInt32> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<Underlying> &>(column).getData();
         size_t size = src_data.size();
 
-        auto res_column = ColumnVector<UInt32>::create(size);
-        auto & res_data = assert_cast<ColumnVector<UInt32> &>(*res_column).getData();
+        auto res_column = ColumnVector<Underlying>::create(size);
+        auto & res_data = assert_cast<ColumnVector<Underlying> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
-            UInt32 src_datetime = src_data[i];
-            UInt32 src_date = static_cast<UInt32>(date_lut.toDate(src_datetime));
+            Underlying src_datetime = src_data[i];
+            Underlying src_date = src_datetime / date_multiplier * date_multiplier;
 
-            Int32 src_diff = src_datetime - src_prev_value;
-            Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
+            Diff src_diff = src_datetime - src_prev_value;
+            Diff res_diff = static_cast<Diff>(transformSigned(src_diff, seed));
 
-            UInt32 new_datetime = res_prev_value + res_diff;
-            UInt32 new_time = new_datetime - static_cast<UInt32>(date_lut.toDate(new_datetime));
+            Underlying new_datetime = res_prev_value + res_diff;
+            Underlying new_time = new_datetime - new_datetime / date_multiplier * date_multiplier;
             res_data[i] = src_date + new_time;
 
             src_prev_value = src_datetime;
@@ -1122,7 +1129,10 @@ public:
             return std::make_unique<IdentityModel>();
 
         if (typeid_cast<const DataTypeDateTime *>(&data_type))
-            return std::make_unique<DateTimeModel>(seed);
+            return std::make_unique<DateTimeModel<UInt32>>(seed);
+
+        if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+            return std::make_unique<DateTimeModel<UInt64>>(seed, type->getScaleMultiplier());
 
         if (typeid_cast<const DataTypeString *>(&data_type))
             return std::make_unique<StringModel>(seed, markov_model_params);
