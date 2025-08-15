@@ -120,7 +120,8 @@ void Connection::connect()
 
 void Connection::close()
 {
-    if (connection) {
+    if (connection)
+    {
         CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnectionsIdle, 1);
         CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnections, 1);
 

@@ -865,6 +865,9 @@ PostHistory
 PostLink
 PostLinks
 Postfiltering
+PostgreSQLClientConnections
+PostgreSQLClientConnectionsIdle
+PostgreSQLClientConnectionsInUse
 PostgreSQLConnection
 PostgreSQLThreads
 PostgreSQLWire

@@ -36,7 +36,7 @@ public:
     class Lease
     {
     public:
-        Lease(pqxx::connection & connection_);
+        explicit Lease(pqxx::connection & connection_);
         ~Lease();
 
         Lease(const Lease &);
