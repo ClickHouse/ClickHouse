@@ -233,7 +233,10 @@ public:
         return std::make_pair(it, false);
     }
 
-    void reserve(size_t node_num) { map.reserve(node_num); }
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+    }
 
     void insertOrReplace(const std::string & key, V value)
     {
