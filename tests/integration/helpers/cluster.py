@@ -3814,13 +3814,14 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        {entrypoint_or_command}: {entrypoint_cmd}
+        entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
         # increase it to allow jeprof to dump the profile report
         stop_grace_period: 2m
         tmpfs: {tmpfs}
@@ -5340,16 +5341,10 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
-        entrypoint_cmd = self.clickhouse_start_command
-
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
-            entrypoint_cmd = (
-                "["
-                + ", ".join(map(lambda x: '"' + x + '"', entrypoint_cmd.split()))
-                + "]"
-            )
+            entrypoint_cmd = self.clickhouse_start_command
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
@@ -5398,10 +5393,6 @@ class ClickHouseInstance:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
                     image=self.image,
-                    # FIXME: we cannot use "command" for old images, and
-                    # besides, they don't have entrypoint.sh that we use only
-                    # for integration tests that collects jemalloc profiles
-                    entrypoint_or_command="command" if self.image == "clickhouse/integration-test" else "entrypoint",
                     tag=self.tag,
                     name=self.name,
                     hostname=self.hostname,

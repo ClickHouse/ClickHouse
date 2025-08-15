@@ -82,6 +82,3 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/fips.so \
   \
   /etc/ssl/
-
-COPY entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
