@@ -351,13 +351,8 @@ static void explainStep(
 
                 first = false;
                 elem.dumpNameAndType(settings.out);
-                if (elem.column)
-                {
-                    if (isColumnLazy(*elem.column.get()))
-                        settings.out << " (Lazy)";
-                    else if (isColumnConst(*elem.column.get()))
-                        settings.out << " (Const)";
-                }
+                if (elem.column && isColumnLazy(*elem.column.get()))
+                    settings.out << " (Lazy)";
             }
         }
         settings.out.write('\n');
