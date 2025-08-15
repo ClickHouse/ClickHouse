@@ -50,6 +50,7 @@ public:
     FileNamesGenerator() = default;
     explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_);
 
+    FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
     Result generateDataFileName();
@@ -83,7 +84,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const String & data_file_name,
+    const std::vector<String> & data_file_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
@@ -100,7 +101,8 @@ void generateManifestList(
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
     WriteBuffer & buf,
-    Iceberg::FileContentType content_type);
+    Iceberg::FileContentType content_type,
+    bool use_previous_snapshots = true);
 
 class MetadataGenerator
 {
@@ -109,7 +111,7 @@ public:
 
     struct NextMetadataResult
     {
-        Poco::JSON::Object::Ptr snapshot;
+        Poco::JSON::Object::Ptr snapshot = nullptr;
         String metadata_path;
         String storage_metadata_path;
     };
@@ -123,7 +125,9 @@ public:
         Int32 added_files_size,
         Int32 num_partitions,
         Int32 added_delete_files,
-        Int32 num_deleted_rows);
+        Int32 num_deleted_rows,
+        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+        std::optional<Int64> user_defined_timestamp = std::nullopt);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
