@@ -165,6 +165,9 @@ public:
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
+    /// Drop table from catalog.
+    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
     /// So the REST catalog is transactional.
