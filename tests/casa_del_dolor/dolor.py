@@ -15,7 +15,7 @@ from integration.helpers.cluster import is_port_free, ZOOKEEPER_CONTAINERS
 
 
 # Needs to get free ports before importing ClickHouseCluster
-def get_unique_free_ports(total):
+def get_unique_free_ports(total: int) -> list[int]:
     ports = []
     for port in range(30000, 55000):
         if is_port_free(port) and port not in ports:
@@ -31,7 +31,15 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 
 from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from integration.helpers.iceberg_utils import get_spark
 from integration.helpers.postgres_utility import get_postgres_conn
+from integration.helpers.s3_tools import (
+    AzureUploader,
+    LocalUploader,
+    S3Uploader,
+    LocalDownloader,
+    prepare_s3_bucket,
+)
 from generators import Generator, BuzzHouseGenerator
 from oracles import ElOraculoDeTablas
 from properties import (
@@ -39,6 +47,8 @@ from properties import (
     modify_user_settings,
     modify_keeper_settings,
 )
+from httpserver import DolorHTTPServer
+from datalakes import LosCatalogos
 
 
 def ordered_pair(value):
@@ -286,6 +296,9 @@ parser.add_argument(
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
+parser.add_argument(
+    "--with-spark", action="store_true", help="With Spark support in the HTTP server"
+)
 
 args = parser.parse_args()
 
@@ -332,7 +345,9 @@ with open(current_server, "r+") as f:
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
-cluster = ClickHouseCluster(__file__, custom_keeper_configs=keeper_configs)
+cluster = ClickHouseCluster(
+    __file__, custom_keeper_configs=keeper_configs, with_spark=args.with_spark
+)
 
 # Set environment variables such as locales and timezones
 test_env_variables = set_environment_variables(logger, args, "cluster")
@@ -400,6 +415,25 @@ for i in range(0, len(args.replica_values)):
     )
 servers[len(servers) - 1].wait_start(8)
 
+# Uploaders for object storage
+if args.with_spark:
+    cluster.spark_session = get_spark()
+if args.with_minio:
+    prepare_s3_bucket(cluster)
+    cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
+if args.with_azurite:
+    cluster.azure_container_name = "cont"
+    cluster.blob_service_client = cluster.blob_service_client
+    cluster.container_client = cluster.blob_service_client.create_container(
+        cluster.azure_container_name
+    )
+    cluster.default_azure_uploader = AzureUploader(
+        cluster.blob_service_client, cluster.azure_container_name
+    )
+cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
+cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
+cluster.catalog = LosCatalogos()
+
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
         ip=cluster.postgres_ip, port=cluster.postgres_port
@@ -408,6 +442,22 @@ if args.with_postgresql:
     cursor.execute(f"CREATE DATABASE test")
     cursor.close()
     postgres_conn.close()
+
+
+# Start HTTP server
+def my_processor(path, data, headers, custom_data):
+    # Process the data
+    if path == "/api/users":
+        # Custom logic here
+        return {"status": "user created", "id": 123}
+    return {"status": "processed"}
+
+
+catalog_server = DolorHTTPServer(
+    port=get_unique_free_ports(1)[0],
+    handler_kwargs={"callback": my_processor, "custom_data": {"cluster": cluster}},
+)
+catalog_server.start()
 
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
@@ -418,6 +468,8 @@ client = generator.run_generator(servers[0], logger, args)
 
 
 def dolor_cleanup():
+    if catalog_server.is_alive():
+        catalog_server.stop()
     if client.process.poll() is None:
         client.process.kill()
         client.process.wait()
