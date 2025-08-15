@@ -149,7 +149,10 @@ Returns:
 ['a','b']
 ```
 
-A behavior similar to ClickHouse pre-v22.11 can be achieved by setting [`splitby_max_substrings_includes_remaining_string`](/operations/settings/settings#splitby_max_substrings_includes_remaining_string).
+:::note
+Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+:::
+
 Empty substrings may be selected when:
 - A separator occurs at the beginning or end of the string
 - There are multiple consecutive separators

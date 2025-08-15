@@ -152,6 +152,10 @@ Empty substrings may be selected when:
 - A non-empty separator occurs at the beginning or end of the string
 - There are multiple consecutive non-empty separators
 - The original string `s` is empty while the separator is not empty
+
+:::note
+Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+:::
 )";
     FunctionDocumentation::Syntax syntax = "splitByString(separator, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
