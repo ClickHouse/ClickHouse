@@ -46,7 +46,7 @@ struct DataFilePlan
     UInt64 new_records_count = 0;
 };
 
-/// Plan of compaction consists information about all data files and what delete files should be applied for them.
+/// Plan of compaction consists of information about all data files and what delete files should be applied for them.
 /// Also it contains some other information about previous metadata.
 struct Plan
 {
