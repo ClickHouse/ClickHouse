@@ -251,6 +251,7 @@ struct FormatSettings
         size_t pretty_print_indent_multiplier = 4;
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
+        bool json_type_escape_dots_in_keys = false;
     } json{};
 
     struct

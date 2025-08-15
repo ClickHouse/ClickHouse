@@ -1864,7 +1864,10 @@ private:
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
-                path += key;
+                if (insert_settings.escape_dots_in_json_keys)
+                    path += escapeDotInJSONKey(String(key));
+                else
+                    path += key;
 
                 if (!visited_keys.insert(key).second)
                 {
