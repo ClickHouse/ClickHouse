@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Functions for Working with Nullable Values'
 sidebar_label: 'Nullable'
+sidebar_position: 135
 slug: /sql-reference/functions/functions-for-nulls
 title: 'Functions for Working with Nullable Values'
 ---
 
-# Functions for working with nullable values
+# Functions for Working with Nullable Values
 
 ## isNull {#isnull}
 

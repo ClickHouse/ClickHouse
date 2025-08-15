@@ -59,6 +59,25 @@
     https://github.com/ClickHouse/ClickHouse/issues/74711
 03080_incorrect_join_with_merge
 
+    https://github.com/ClickHouse/ClickHouse/issues/74226
+    Database _table_function does not exist
+    clickhouse-test --no-shard
+00944_ml_test
+00098_shard_i_union_all
+00459_group_array_insert_at
+03303_distributed_explain
+00163_shard_join_with_empty_table
+01568_window_functions_distributed
+00162_shard_global_join
+01223_dist_on_dist
+01418_query_scope_constants_and_remote
+01758_optimize_skip_unused_shards_once
+03164_parallel_replicas_range_filter_min_max
+01245_limit_infinite_sources
+01812_optimize_skip_unused_shards_single_node
+01913_exact_rows_before_limit_full
+
+
     Storage Join/Set
     https://github.com/ClickHouse/ClickHouse/issues/74362
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
@@ -67,11 +86,9 @@
 02498_storage_join_key_positions.gen
 03447_storage_join_unsupported_keys
 
-    https://github.com/ClickHouse/ClickHouse/issues/74360
-    LOGICAL ERROR https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=84536&sha=516c114f38828a2853efa3f0935f19d11b7c0d23&name_0=PR&name_1=Stateless+tests+%28amd_binary%2C+ParallelReplicas%2C+s3+storage%2C+parallel%29
-    https://github.com/ClickHouse/ClickHouse/issues/81144
+    https://github.com/ClickHouse/ClickHouse/pull/73609
     Cannot parse string
-    03208_multiple_joins_with_storage_join
+03208_multiple_joins_with_storage_join
 
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
@@ -341,7 +358,6 @@
 02346_aggregation_in_order_fixed_prefix
 02377_optimize_sorting_by_input_stream_properties_explain
 03000_minmax_index_first
-03563_coarser_minmax_indexes_first
 00940_order_by_read_in_order_query_plan
 02493_max_streams_for_merge_tree_reading
 02675_predicate_push_down_filled_join_fix

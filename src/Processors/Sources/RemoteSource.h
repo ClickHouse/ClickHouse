@@ -101,7 +101,7 @@ private:
 struct UnmarshallBlocksTransform : ISimpleTransform
 {
 public:
-    explicit UnmarshallBlocksTransform(SharedHeader header_)
+    explicit UnmarshallBlocksTransform(const Block & header_)
         : ISimpleTransform(header_, header_, false)
     {
     }

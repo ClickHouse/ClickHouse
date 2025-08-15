@@ -1,4 +1,4 @@
-#include <TableFunctions/TableFunctionRemote.h>
+#include "TableFunctionRemote.h"
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
@@ -20,7 +20,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

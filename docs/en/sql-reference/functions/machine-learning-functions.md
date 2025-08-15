@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Machine Learning Functions'
 sidebar_label: 'Machine Learning'
+sidebar_position: 115
 slug: /sql-reference/functions/machine-learning-functions
 title: 'Machine Learning Functions'
 ---
 
-# Machine learning functions
+# Machine Learning Functions
 
 ## evalMLMethod {#evalmlmethod}
 

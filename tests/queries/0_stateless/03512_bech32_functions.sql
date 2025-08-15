@@ -1,46 +1,41 @@
 -- Tags: no-fasttest
 
 -- baseline test, encode of value should match expected val
-SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 -- different hrp value should yield a different result
-SELECT bech32Encode('tb', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('tb', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 -- exactly the max amount of characters (50) should work
-SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494'));
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494'));
 -- strange, but valid
-SELECT bech32Encode('bcrt', unhex(''));
+select bech32Encode('bcrt', unhex(''));
 
 -- test other hrps
-SELECT bech32Encode('bcrt', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
-SELECT bech32Encode('tltc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
-SELECT bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfasdfasdfasdf', unhex('751e'));
+select bech32Encode('bcrt', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('tltc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfasdfasdfasdf', unhex('751e'));
+-- too many chars
+select bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfasdfasdfasdfdljsdfasdfahc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 
 -- negative tests
--- too many chars
-SELECT bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfasdfasdfasdfdljsdfasdfahc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 -- empty hrp
-SELECT bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('bc', unhex('751E76E8199196D454941C45D1B3A323F1433BD6'));
 -- 51 chars should return nothing
-SELECT bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
+select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
 
 -- test with explicit witver = 1, should be same as default
-SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) ==
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) ==
        bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 
 -- testing old bech32 algo
-SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0);
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0);
 
--- different witvers will not match perfectly, but the encoded data should match, so we strip off the first 4 chars (hrp and prepended witver)
--- as well as the last 6 chars (checksum)
-SELECT substring(s1, 5, -6) == substring(s2, 5, -6)
-FROM
-(
-    SELECT
-        bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) AS s1,
-        bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10) AS s2
-);
+-- witversions >=1 should all be the same
+select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) ==
+       bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10);
 
 -- roundtrip
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode(bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))) AS tup);
+select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode(bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))) as tup);
 
 DROP TABLE IF EXISTS hex_data;
 CREATE TABLE hex_data
@@ -92,9 +87,6 @@ SELECT
     bech32Encode(hrp, unhex(data), witver) = bech32Encode(hrp_fixed, unhex(data), witver) AS match3
 FROM bech32_test;
 
--- sanity check, should return hrp and data used to create it
-SELECT tup.1, hex(tup.2) FROM (SELECT bech32Decode('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq') AS tup);
-
 SELECT
     hrp,
     data,
@@ -105,7 +97,7 @@ FROM
     SELECT
         hrp,
         data,
-        bech32Decode(bech32Encode(hrp, unhex(data), witver)) AS tup
+        bech32Decode(bech32Encode(hrp, unhex(data), witver)) as tup
     FROM bech32_test
 ) AS round_trip;
 
@@ -113,26 +105,24 @@ DROP TABLE hex_data;
 DROP TABLE bech32_test;
 
 -- negative tests
-SELECT bech32Decode('');
-SELECT bech32Decode('foo');
+select bech32Decode('');
+select bech32Decode('foo');
 
 -- decode valid string, witver 0, hrp=bc
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru') AS tup);
+select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') as tup);
 -- decode valid string, witver 1, hrp=tb
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1pw508d6qejxtdg4y5r3zarvary0c5xw7kcr49c0') AS tup);
--- decoding address created with same data but different witvers should be same
-SELECT t1.1 != '', t1.1 == t2.1, t1.2 == t2.2 FROM (
-	SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS t1,
-           bech32Decode('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru') AS t2);
--- decoding address created with same data but different witvers should be same
-SELECT t1.1 != '', t1.1 == t2.1, t1.2 == t2.2 FROM (
-	SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS t1,
-           bech32Decode('tb1pw508d6qejxtdg4y5r3zarvary0c5xw7kcr49c0') AS t2);
+select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') as tup);
+-- decode valid string, witver 1, hrp=bc, should be same as witver 0 since same string was used to encode them
+select bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq') ==
+       bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z');
+-- decode valid string, witver 1, hrp=tb, see above comment
+select bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7khalasw') ==
+       bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v');
 
 -- testing max length, this should work
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('b1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y565gdg8') AS tup);
--- testing max length, this should return nothing
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('b1w508dfqejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5xgqsaanm') AS tup);
+select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('b1w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5xgqsaanm') as tup);
+-- testing max length, this should returun nothing
+select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('b1w508dfqejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5xgqsaanm') as tup);
 
 -- test decode from table
 DROP TABLE IF EXISTS addresses;
@@ -143,10 +133,10 @@ CREATE TABLE addresses
 ENGINE = Memory;
 
 INSERT INTO addresses VALUES
-    ('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'),
-    ('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'),
-    ('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru'),
-    ('tb1pw508d6qejxtdg4y5r3zarvary0c5xw7kcr49c0');
+    ('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z'),
+    ('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v'),
+    ('tb1w508d6qejxtdg4y5r3zarvary0c5xw7khalasw'),
+    ('bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq');
 
 -- test that fixed strings give same result as regular string column
 DROP TABLE IF EXISTS bech32_test;
