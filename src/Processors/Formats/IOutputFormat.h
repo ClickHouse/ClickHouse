@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
+#include <string>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -27,7 +27,7 @@ class IOutputFormat : public IProcessor
 public:
     enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
 
-    IOutputFormat(SharedHeader header_, WriteBuffer & out_);
+    IOutputFormat(const Block & header_, WriteBuffer & out_);
 
     Status prepare() override;
     void work() override;
@@ -53,6 +53,9 @@ public:
 
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
+
+    /// Content-Type to set when sending HTTP response.
+    virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 

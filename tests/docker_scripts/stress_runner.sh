@@ -7,6 +7,8 @@ set -x
 
 # Avoid overlaps with previous runs
 dmesg --clear
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 
@@ -46,21 +48,18 @@ export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
 export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
 
-export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
-
 export ZOOKEEPER_FAULT_INJECTION=1
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
+/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
+setup_logs_replication
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
@@ -264,10 +263,10 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-start_server || (echo "Failed to start server" && exit 1)
+start_server
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 

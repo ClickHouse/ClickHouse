@@ -2,8 +2,8 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/AsynchronousReader.h>
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <Common/IThrottler.h>
+#include <Interpreters/Context.h>
+#include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 
 #include <optional>
@@ -46,8 +46,7 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {},
-        FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
+        ThrottlerPtr throttler_ = {});
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
@@ -75,20 +74,6 @@ public:
 
 private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
-
-    const std::string query_id;
-    const std::string current_reader_id;
-
-    struct LastPrefetchInfo
-    {
-        std::chrono::system_clock::time_point submit_time;
-        Priority priority;
-    };
-    LastPrefetchInfo last_prefetch_info;
-
-    FilesystemReadPrefetchesLogPtr prefetches_log;
-
-    void appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch);
 };
 
 }

@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -83,7 +82,7 @@ void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num
 }
 
 MergeTreeLazilyReader::MergeTreeLazilyReader(
-    SharedHeader header_,
+    const Block & header_,
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
@@ -99,7 +98,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     for (const auto & column_name : lazily_read_info_->lazily_read_columns)
         columns_name_set.insert(column_name.name);
 
-    for (const auto & column : *header_)
+    for (const auto & column : header_)
     {
         const auto it = alias_index_.find(column.name);
         if (it == alias_index_.end())
@@ -109,7 +108,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
         if (columns_name_set.contains(requested_column_name))
         {
             requested_column_names.emplace_back(requested_column_name);
-            lazy_columns.emplace_back(header_->getByName(column.name));
+            lazy_columns.emplace_back(header_.getByName(column.name));
         }
     }
 }
