@@ -381,7 +381,7 @@ struct PostingsCacheForStore
     GinPostingsCachePtr getCachedPostings(const GinFilter & filter) const;
 
     /// Get postings lists for query string, return nullptr if not found
-    GinPostingsCachePtr getPostings(const GinFilter & filter) const;
+    GinPostingsCachePtr getOrRetrievePostings(const GinFilter & filter) const;
 };
 
 /// A singleton for storing GinIndexStores

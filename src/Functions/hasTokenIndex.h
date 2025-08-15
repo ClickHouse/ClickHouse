@@ -27,8 +27,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/SelectQueryInfo.h>
-#include <iterator>
-#include <print>
 #include <algorithm>
 #include <Functions/FunctionsStringSearchBase.h>
 
@@ -55,9 +53,9 @@ concept FunctionIndexConcept = requires(T t)
 
 
 template <FunctionIndexConcept Impl>
-class FunctionIndex : public FunctionsStringSearchBase
+class FunctionSearchTextIndex : public FunctionsStringSearchBase
 {
-    /// Helper function to extract the index and conditions safety.
+    /// Helper function to extract the index and conditions safely.
     /// This performs all the checks and searches locally, so external code shouldn't check for them.
     static std::pair<const MergeTreeIndexPtr, const MergeTreeIndexConditionGin *> extractIndexAndCondition(
         const std::shared_ptr<const UsefulSkipIndexes> skip_indexes, String index_name)
@@ -111,12 +109,12 @@ class FunctionIndex : public FunctionsStringSearchBase
         PaddedPODArray<typename Impl::ResultType> & result)
     {
         chassert(!matching_rows.empty());
-        const PaddedPODArray<UInt64> &offsets = col_part_offset_vector->getData();
+        const PaddedPODArray<UInt64> & offsets = col_part_offset_vector->getData();
 
-        const UInt64 *it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
+        const UInt64 * it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
         chassert(it != offsets.end());
 
-        const UInt64 *end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
+        const UInt64 * end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
 
         for (UInt32 row : matching_rows)
         {
@@ -150,11 +148,11 @@ public:
     static constexpr auto name = Impl::name;
     using ResultType = typename Impl::ResultType;
 
-    explicit FunctionIndex(ContextPtr _context)
+    explicit FunctionSearchTextIndex(ContextPtr _context)
         : FunctionsStringSearchBase(_context, FunctionsStringSearchBase::Info::Optimized)
     {}
 
-    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionIndex<Impl>>(_context); }
+    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionSearchTextIndex<Impl>>(_context); }
 
     String getName() const override { return name; }
 
@@ -310,6 +308,6 @@ struct HasTokenIndexImpl
 };
 
 
-using FunctionHasTokenIndex = FunctionIndex<HasTokenIndexImpl>;
+using FunctionHasTokenIndex = FunctionSearchTextIndex<HasTokenIndexImpl>;
 
 }

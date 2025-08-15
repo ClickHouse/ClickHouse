@@ -14,7 +14,7 @@ protected:
 
 public:
 
-    const enum Info
+    const enum class Info
     {
         None,
         Optimizable,
@@ -23,9 +23,9 @@ public:
 
     ContextPtr getContext() const { return context; }
 
-    explicit FunctionsStringSearchBase(ContextPtr _context, Info _info)
-        : context(_context)
-        , info(_info)
+    explicit FunctionsStringSearchBase(ContextPtr context_, Info info_)
+        : context(context_)
+        , info(info_)
     {}
 
 };

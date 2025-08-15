@@ -852,7 +852,7 @@ GinPostingsCachePtr PostingsCacheForStore::getCachedPostings(const GinFilter & f
     return nullptr;
 }
 
-GinPostingsCachePtr PostingsCacheForStore::getPostings(const GinFilter & filter) const
+GinPostingsCachePtr PostingsCacheForStore::getOrRetrievePostings(const GinFilter & filter) const
 {
     if (auto cached_posting = this->getCachedPostings(filter))
         return cached_posting;

@@ -189,7 +189,7 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
     if (filter.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(filter);
+    GinPostingsCachePtr postings_cache = cache_store.getOrRetrievePostings(filter);
 
     switch (search_mode)
     {
@@ -217,7 +217,7 @@ std::vector<uint32_t> GinFilter::getIndices(
     const PostingsCacheForStore *cache_store,
     const MarkRanges &ranges) const
 {
-    chassert(ranges.size() > 0);
+    chassert(!ranges.empty());
 
     if (filter->getTerms().empty())
         return {};
