@@ -15,6 +15,8 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
+
 #include <memory>
 
 #include <Storages/IPartitionStrategy.h>
@@ -137,6 +139,10 @@ public:
         const Names & /* deduplicate_by_columns */,
         bool /*cleanup*/,
         ContextPtr context) override;
+
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 
 protected:
     /// Get path sample for hive partitioning implementation.

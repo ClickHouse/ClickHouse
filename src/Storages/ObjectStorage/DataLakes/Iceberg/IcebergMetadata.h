@@ -117,6 +117,15 @@ public:
     CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+    bool supportsDelete() const override { return true; }
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override;
+
+    void checkMutationIsPossible(const MutationCommands & commands) override;
 
 protected:
     ObjectIterator iterate(

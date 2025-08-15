@@ -15,6 +15,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Common/randomSeed.h>
 
 #include <Poco/JSON/Array.h>
@@ -57,10 +58,12 @@ public:
     Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
     Result generateMetadataName();
     Result generateVersionHint();
+    Result generatePositionDeleteFile();
 
     String convertMetadataPathToStoragePath(const String & metadata_path) const;
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
+    void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
 private:
     Poco::UUIDGenerator uuid_generator;
@@ -86,7 +89,8 @@ void generateManifestFile(
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type);
 
 void generateManifestList(
     const FileNamesGenerator & filename_generator,
@@ -97,6 +101,7 @@ void generateManifestList(
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
     WriteBuffer & buf,
+    Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
 
 class MetadataGenerator
@@ -119,6 +124,8 @@ public:
         Int32 added_records,
         Int32 added_files_size,
         Int32 num_partitions,
+        Int32 added_delete_files,
+        Int32 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
 
