@@ -574,16 +574,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
             Identifier column_identifier(column_name);
             IdentifierView suffix(column_identifier);
+            size_t prefix_size = identifier_without_column_qualifier.getPartsSize();
 
             for (const auto & part : identifier_without_column_qualifier.getParts())
             {
-                if (!suffix.empty() && part == suffix.front())
-                    suffix.popFirst();
-                else
+                if (suffix.empty() || part != suffix.front())
                     break;
+
+                suffix.popFirst();
             }
 
-            if (suffix.empty() || identifier_without_column_qualifier.getPartsSize() + suffix.getPartsSize() != column_identifier.getPartsSize())
+            if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
                 continue;
 
             /// Ignore compound identifiers because of the compatibility setting.
@@ -595,7 +596,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             /// identifier `x.b` can be resolved into `Array(Nested(first String), second String))`.
             /// But for now, nested functions does not support the inner nesting.
             /// So, we will get the incorrect result `Nested(first Array(String)), second Array(String))`.
-            if (identifier_without_column_qualifier.getPartsSize() != 1)
+            if (prefix_size != 1)
                 continue;
 
             auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
@@ -605,7 +606,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             const auto & column_node = column_node_it->second;
             auto column_type = column_node->getColumnType();
 
-            for (size_t i = 0; i < identifier_without_column_qualifier.getPartsSize(); ++i)
+            for (size_t i = 0; i < prefix_size; ++i)
             {
 
                 const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
