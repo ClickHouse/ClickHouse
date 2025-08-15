@@ -40,7 +40,7 @@ struct ManifestFilePlan
 
 struct DataFilePlan
 {
-    IcebergDataObjectInfo data_object_info;
+    IcebergDataObjectInfoPtr data_object_info;
     std::shared_ptr<ManifestFilePlan> manifest_list;
 
     FileNamesGenerator::Result patched_path;
@@ -145,8 +145,8 @@ Plan getPlan(
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
-                IcebergDataObjectInfo data_object_info(configuration, data_file, {});
-                data_object_info.sequence_number = data_file.added_sequence_number;
+                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file);
+                data_object_info->sequence_number = data_file.added_sequence_number;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
@@ -175,8 +175,8 @@ Plan getPlan(
         std::vector<Iceberg::ManifestFileEntry> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info.sequence_number <= delete_file.added_sequence_number)
-                data_file->data_object_info.position_deletes_objects_range.push_back(delete_file);
+            if (data_file->data_object_info->sequence_number <= delete_file.added_sequence_number)
+                data_file->data_object_info->position_deletes_objects.push_back(delete_file);
         }
     }
     plan.history = std::move(snapshots_info);
@@ -195,15 +195,9 @@ void writeDataFiles(
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            sample_block,
-            std::make_shared<IcebergDataObjectInfo>(data_file),
-            object_storage,
-            format_settings,
-            context,
-            configuration->format,
-            configuration->compression_method);
+            sample_block, data_file->data_object_info, object_storage, format_settings, context);
 
-        StorageObjectStorage::ObjectInfo object_info(data_file->data_object_info.getPath());
+        StorageObjectStorage::ObjectInfo object_info(data_file->data_object_info->getPath());
         auto read_buffer = createReadBuffer(object_info, object_storage, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();
@@ -221,7 +215,7 @@ void writeDataFiles(
             parser_shared_resources,
             std::make_shared<FormatFilterInfo>(nullptr, context, nullptr),
             true /* is_remote_fs */,
-            chooseCompressionMethod(data_file->data_object_info.getPath(), configuration->compression_method),
+            chooseCompressionMethod(data_file->data_object_info->getPath(), configuration->compression_method),
             false);
 
         auto write_buffer = object_storage->writeObject(

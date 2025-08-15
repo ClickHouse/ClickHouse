@@ -23,17 +23,13 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context_,
-        String delete_object_format_,
-        String delete_object_compression_method_)
+        ContextPtr context_)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
-        , delete_object_format(delete_object_format_)
-        , delete_object_compression_method(delete_object_compression_method_)
         , relevant_position_deletes_objects(iceberg_object_info_->position_deletes_objects)
     {
         initializeDeleteSources();
@@ -53,8 +49,6 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
-    const String delete_object_format;
-    const String delete_object_compression_method;
     std::span<const Iceberg::ManifestFileEntry> relevant_position_deletes_objects;
 
     /// We need to keep the read buffers alive since the delete_sources depends on them.
@@ -70,17 +64,8 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context_,
-        String delete_object_format_,
-        String delete_object_compression_method_)
-        : IcebergPositionDeleteTransform(
-              header_,
-              iceberg_object_info_,
-              object_storage_,
-              format_settings_,
-              context_,
-              delete_object_format_,
-              delete_object_compression_method_)
+        ContextPtr context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
     {
         initialize();
     }
@@ -103,17 +88,8 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         const ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context_,
-        String delete_object_format_,
-        String delete_object_compression_method_)
-        : IcebergPositionDeleteTransform(
-              header_,
-              iceberg_object_info_,
-              object_storage_,
-              format_settings_,
-              context_,
-              delete_object_format_,
-              delete_object_compression_method_)
+        ContextPtr context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
     {
         initialize();
     }

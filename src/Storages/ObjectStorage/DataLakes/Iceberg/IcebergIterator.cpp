@@ -90,10 +90,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
             current_manifest_file_content = Iceberg::getManifestFile(
                 object_storage,
                 configuration.lock(),
-                iceberg_metadata_cache,
-                schema_processor,
-                format_version,
-                table_location,
+                persistent_components,
                 local_context,
                 log,
                 data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
@@ -115,7 +112,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                         current_manifest_file_content->getPathToManifestFile());
                 }
                 current_pruner.emplace(
-                    *schema_processor,
+                    *persistent_components.schema_processor,
                     table_snapshot->schema_id,
                     manifest_file_entry.schema_id,
                     filter_dag.get(),
@@ -163,17 +160,12 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     const ActionsDAG * filter_dag_,
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-    IcebergSchemaProcessorPtr schema_processor_,
-    Int32 format_version_,
-    String table_location_)
+    PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
     , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , local_context(local_context_)
     , table_snapshot(table_snapshot_)
     , data_snapshot(data_snapshot_)
-    , iceberg_metadata_cache(iceberg_metadata_cache_)
-    , schema_processor(schema_processor_)
     , configuration(std::move(configuration_))
     , use_partition_pruning(
           [this]()
@@ -187,8 +179,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
               }
               return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
           }())
-    , format_version(format_version_)
-    , table_location(std::move(table_location_))
+    , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
     , content_type(content_type_)
     , manifest_file_content_type(
@@ -205,10 +196,7 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-    IcebergSchemaProcessorPtr schema_processor_,
-    Int32 format_version_,
-    String table_location_)
+    PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , data_files_iterator(
@@ -219,10 +207,7 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          iceberg_metadata_cache_,
-          schema_processor_,
-          format_version_,
-          table_location_)
+          persistent_components_)
     , position_deletes_iterator(
           object_storage,
           local_context_,
@@ -231,10 +216,7 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          iceberg_metadata_cache_,
-          schema_processor_,
-          format_version_,
-          table_location_)
+          persistent_components_)
     , blocking_queue(100)
     , producer_task(local_context_->getSchedulePool().createTask(
           "IcebergMetaReaderThread",
@@ -309,10 +291,10 @@ std::shared_ptr<ISimpleTransform> IcebergIterator::getPositionDeleteTransformer(
 
     if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         return std::make_shared<IcebergStreamingPositionDeleteTransform>(
-            header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
+            header, iceberg_object_info, object_storage, format_settings, context_);
     else
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            header, iceberg_object_info, object_storage, format_settings, context_, format, compression_method, position_deletes_files);
+            header, iceberg_object_info, object_storage, format_settings, context_);
 }
 }
 

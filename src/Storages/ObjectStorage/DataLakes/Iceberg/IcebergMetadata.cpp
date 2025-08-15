@@ -330,9 +330,16 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
     {
         auto configuration_ptr = configuration.lock();
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto manifest_list = getManifestList(object_storage, configuration, context, persistent_components, snapshot.manifest_list_path, log);
         auto snapshots_info = getHistory(context);
-        compactIcebergTable(snapshots_info, persistent_components, object_storage, configuration_ptr, format_settings, sample_block, context);
+        compactIcebergTable(
+            snapshots_info,
+            persistent_components,
+            object_storage,
+            configuration_ptr,
+            format_settings,
+            sample_block,
+            context,
+            metadata_compression_method);
         return true;
     }
     else
@@ -725,10 +732,7 @@ ObjectIterator IcebergMetadata::iterate(
         callback,
         table_snapshot,
         relevant_snapshot,
-       persistent_components.metadata_cache,
-        persistent_components.schema_processor,
-        persistent_components.format_version,
-        persistent_components.table_location);
+        persistent_components);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

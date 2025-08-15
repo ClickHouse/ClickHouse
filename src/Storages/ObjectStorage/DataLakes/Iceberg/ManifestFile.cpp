@@ -350,6 +350,9 @@ ManifestFileContent::ManifestFileContent(
         }
 
         Int64 added_sequence_number = 0;
+
+        String file_format = manifest_file_deserializer.getValueFromRowByName(i, f_file_format, TypeIndex::String).safeGet<String>();
+
         if (format_version_ > 1)
         {
             switch (status)
@@ -386,6 +389,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
+                    file_format,
                     /*reference_data_file = */ std::nullopt);
                 break;
             case FileContentType::POSITION_DELETE: {
@@ -407,6 +411,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
+                    file_format,
                     reference_file_path);
                 break;
             }

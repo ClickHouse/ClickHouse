@@ -19,6 +19,8 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_,
         const String & format);
 
+    explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_);
+
 public:
     String data_object_file_path_key; // Full path to the data object file
     Int32 underlying_format_read_schema_id;

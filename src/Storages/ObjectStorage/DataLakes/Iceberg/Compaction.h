@@ -18,7 +18,8 @@ void compactIcebergTable(
     DB::StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
-    DB::ContextPtr context_);
+    DB::ContextPtr context_,
+    DB::CompressionMethod compression_method_);
 
 #endif
 }

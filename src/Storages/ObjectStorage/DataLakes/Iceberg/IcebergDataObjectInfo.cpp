@@ -87,6 +87,14 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects(definePositionDeletesSpan(data_manifest_file_entry_, position_deletes_, format))
+{
+}
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_)
+    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
+    , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
+    , position_deletes_objects({})
 {}
 #endif
 }

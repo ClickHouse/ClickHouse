@@ -72,6 +72,7 @@ struct ManifestFileEntry
     PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
+    String file_format;
     std::optional<String> reference_data_file_path; // For position delete files only.
 };
 
