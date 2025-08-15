@@ -64,10 +64,7 @@ namespace Iceberg
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache,
-    IcebergSchemaProcessorPtr schema_processor,
-    Int32 format_version,
-    String table_location,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
@@ -80,7 +77,7 @@ Iceberg::ManifestFilePtr getManifestFile(
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (iceberg_metadata_cache)
+        if (persistent_table_components.metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
@@ -89,20 +86,20 @@ Iceberg::ManifestFilePtr getManifestFile(
         return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
             filename,
-            format_version,
+            persistent_table_components.format_version,
             configuration->getPathForRead().path,
-            *schema_processor,
+            *persistent_table_components.schema_processor,
             inherited_sequence_number,
             inherited_snapshot_id,
-            table_location,
+            persistent_table_components.table_location,
             local_context,
             filename);
     };
 
-    if (iceberg_metadata_cache)
+    if (persistent_table_components.metadata_cache)
     {
-        auto manifest_file
-            = iceberg_metadata_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
+        auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
+            IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -111,9 +108,7 @@ Iceberg::ManifestFilePtr getManifestFile(
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
-    Int32 format_version,
-    String table_location,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const String & filename,
     LoggerPtr log)
@@ -128,7 +123,7 @@ ManifestFileCacheKeys getManifestList(
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (iceberg_metadata_cache)
+        if (persistent_table_components.metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
@@ -140,8 +135,8 @@ ManifestFileCacheKeys getManifestList(
         {
             const std::string file_path
                 = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name
-                = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPathForRead().path, table_location);
+            const auto manifest_file_name = getProperFilePathFromMetadataInfo(
+                file_path, configuration_ptr->getPathForRead().path, persistent_table_components.table_location);
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -151,7 +146,7 @@ ManifestFileCacheKeys getManifestList(
                     i,
                     f_added_snapshot_id);
 
-            if (format_version > 1)
+            if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number
                     = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
@@ -165,8 +160,8 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (iceberg_metadata_cache)
-        manifest_file_cache_keys = iceberg_metadata_cache->getOrSetManifestFileCacheKeys(
+    if (persistent_table_components.metadata_cache)
+        manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
             IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
     else
         manifest_file_cache_keys = create_fn();

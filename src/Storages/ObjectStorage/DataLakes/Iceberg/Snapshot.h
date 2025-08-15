@@ -50,6 +50,8 @@ struct IcebergHistoryRecord
     Int32 added_files_size;
     Int32 num_partitions;
 };
+
+using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 }
 
 #endif
