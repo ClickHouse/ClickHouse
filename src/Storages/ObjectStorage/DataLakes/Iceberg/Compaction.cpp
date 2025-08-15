@@ -288,6 +288,8 @@ void writeMetadataFiles(
             total_records_count,
             history_record.added_files_size,
             history_record.num_partitions,
+            0,
+            0,
             history_record.snapshot_id,
             history_record.made_current_at.value);
 

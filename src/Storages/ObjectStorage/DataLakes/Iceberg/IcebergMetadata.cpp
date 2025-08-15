@@ -1,4 +1,3 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include "config.h"
 #if USE_AVRO
