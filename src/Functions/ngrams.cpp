@@ -121,10 +121,10 @@ REGISTER_FUNCTION(Ngrams)
     FunctionDocumentation::Description description = R"(
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 )";
-    FunctionDocumentation::Syntax syntax = "ngrams(s, ngramsize)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, ngram_size)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string.", {"String", "FixedString"}},
-        {"ngramsize", "The size of an n-gram.", {"const UInt8/16/32/64"}}
+        {"ngram_size", "The size of an n-gram.", {"const UInt8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

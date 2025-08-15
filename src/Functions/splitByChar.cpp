@@ -135,7 +135,7 @@ Empty substrings may be selected when:
     FunctionDocumentation::Arguments arguments = {
         {"separator", "The separator must be a single-byte character.", {"String"}},
         {"s", "The string to split.", {"String"}},
-        {"[, max_substrings]", "Optional. If `max_substrings > 0`, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible. The default value is `0`. ", {"Int64"}}
+        {"max_substrings", "Optional. If `max_substrings > 0`, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible. The default value is `0`. ", {"Int64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

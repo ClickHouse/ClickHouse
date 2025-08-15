@@ -205,7 +205,7 @@ Concatenates string representations of values listed in the array with the provi
     FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, separator])";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The array to concatenate.", {"Array(T)"}},
-        {"[separator]", "Optional. Separator string. By default an empty string.", {"const String"}}
+        {"separator", "Optional. Separator string. By default an empty string.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the concatenated string.", {"String"}};
     FunctionDocumentation::Examples examples = {

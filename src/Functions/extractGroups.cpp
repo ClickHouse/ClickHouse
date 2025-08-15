@@ -114,7 +114,7 @@ REGISTER_FUNCTION(ExtractGroups)
     FunctionDocumentation::Description description = R"(
 Extracts all groups from non-overlapping substrings matched by a regular expression.
     )";
-    FunctionDocumentation::Syntax syntax = "extractAllGroups(text, regexp)";
+    FunctionDocumentation::Syntax syntax = "extractAllGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
         {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
