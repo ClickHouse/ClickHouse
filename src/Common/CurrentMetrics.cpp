@@ -40,7 +40,7 @@
     M(MySQLConnection, "Number of client connections using MySQL protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \
     M(InterserverConnection, "Number of connections from other replicas to fetch parts") \
-    M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
+    M(PostgreSQLConnection, "Number of incoming connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Compressing, "Number of compress operations using internal compression codecs") \
@@ -442,9 +442,9 @@
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
     \
-    M(PostgreSQLClientConnections, "Number of PostgreSQL client connections") \
-    M(PostgreSQLClientConnectionsIdle, "Number of PostgreSQL client connections with no active queries") \
-    M(PostgreSQLClientConnectionsInUse, "Number of PostgreSQL client connections with active queries") \
+    M(PostgreSQLClientConnections, "Number of outgoing PostgreSQL client connections") \
+    M(PostgreSQLClientConnectionsIdle, "Number of outgoing PostgreSQL client connections with no active queries") \
+    M(PostgreSQLClientConnectionsInUse, "Number of outgoing PostgreSQL client connections with active queries") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
