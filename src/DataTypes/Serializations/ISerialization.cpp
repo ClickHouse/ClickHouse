@@ -623,13 +623,12 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
     /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
-    /// constructing another column). In we need to insert data into resulting column from cached column.
+    /// constructing another column). In this case we need to insert data into resulting column from cached column.
     /// To determine what case we have we store number of read rows in last range in cache.
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (!result_column->empty() && cached_column->size() == num_read_rows))
         result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
     else
         result_column = cached_column;
-
 }
 
 }
