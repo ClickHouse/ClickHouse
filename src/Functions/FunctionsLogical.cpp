@@ -28,10 +28,118 @@ namespace DB
 
 REGISTER_FUNCTION(Logical)
 {
-    factory.registerFunction<FunctionAnd>();
-    factory.registerFunction<FunctionOr>();
-    factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical conjunction of two or more values.
+
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "and(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `0`, if at least one argument evaluates to `false`
+- `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`
+- `1`, otherwise
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT and(0, 1, -2);", "0"},
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionAnd>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical disjunction of two or more values.
+
+Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "or(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, if at least one argument evaluates to `true`
+- `0`, if all arguments evaluate to `false`
+- `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
+            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionOr>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical exclusive disjunction of two or more values.
+For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "xor(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, for two values: if one of the values evaluates to `false` and other does not
+- `0`, for two values: if both values evaluate to `false` or to both `true`
+- `NULL`, if at least one of the inputs is `NULL`.
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT xor(0, 1, 1);", "0"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionXor>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical negation of a value.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "not(val)";
+        FunctionDocumentation::Arguments arguments = {
+            {"val", "The value.", {"(U)Int*", "Float*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, if `val` evaluates to `false`
+- `0`, if `val` evaluates to `true`
+- `NULL`, if `val` is `NULL`.
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT NOT(1);", "0"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionNot>(documentation, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
+    }
 }
 
 namespace ErrorCodes
