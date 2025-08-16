@@ -61,7 +61,6 @@ accurateCastOrNull
 acos
 acosh
 alphaTokens
-and
 appendTrailingCharIfAbsent
 ascii
 asin
@@ -363,7 +362,6 @@ normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
-not
 notILike
 notIn
 notInIgnoreSet
@@ -372,7 +370,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-or
 overlay
 overlayUTF8
 parseDateTime
@@ -746,5 +743,4 @@ visibleWidth
 widthBucket
 windowID
 wkt
-xor
 zookeeperSessionUptime

@@ -52,7 +52,6 @@ accurateCastOrNull
 acos
 acosh
 alphaTokens
-and
 appendTrailingCharIfAbsent
 asinh
 atan
@@ -257,7 +256,6 @@ normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
-not
 notILike
 notIn
 notInIgnoreSet
@@ -266,7 +264,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-or
 parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
@@ -590,5 +587,4 @@ version
 visibleWidth
 windowID
 wkt
-xor
 zookeeperSessionUptime
