@@ -1,5 +1,17 @@
+cluster_1S_2R	1	1	clickhouse-01	9000	\N
+cluster_1S_2R	1	2	clickhouse-02	9000	\N
+default	1	1	localhost	9000	\N
+cluster_1S_2R	1	1	clickhouse-01	9000	\N
+cluster_1S_2R	1	2	clickhouse-02	9000	\N
+default	1	1	localhost	9000	\N
 default	begin inserts
 default	end inserts
 default	threads finished
+cluster_1S_2R	1	1	clickhouse-01	9000	\N
+cluster_1S_2R	1	2	clickhouse-02	9000	\N
+default	1	1	localhost	9000	\N
+cluster_1S_2R	1	1	clickhouse-01	9000	\N
+cluster_1S_2R	1	2	clickhouse-02	9000	\N
+default	1	1	localhost	9000	\N
 30	465
 30	465
