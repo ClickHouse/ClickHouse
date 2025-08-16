@@ -704,6 +704,7 @@ public:
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
+    size_t getTotalUncompressedBytesInPatches() const;
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -743,6 +744,9 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.
     void delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+
+    /// If the table contains too many uncompressed bytes in patches, throw an exception.
+    void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -1822,11 +1826,15 @@ private:
     void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
+    void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+    void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
+    std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);

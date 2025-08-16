@@ -1,11 +1,13 @@
 #pragma once
+#include <Processors/Formats/IInputFormat.h>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+
 
 namespace DB
 {
@@ -19,19 +21,16 @@ public:
     IcebergPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
-        const ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context_,
-        String delete_object_format_,
-        String delete_object_compression_method_)
+        ContextPtr context_)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
-        , delete_object_format(delete_object_format_)
-        , delete_object_compression_method(delete_object_compression_method_)
+        , relevant_position_deletes_objects(iceberg_object_info_->position_deletes_objects)
     {
         initializeDeleteSources();
     }
@@ -50,8 +49,7 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
-    const String delete_object_format;
-    const String delete_object_compression_method;
+    std::span<const Iceberg::ManifestFileEntry> relevant_position_deletes_objects;
 
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
@@ -64,19 +62,10 @@ public:
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
-        const ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context_,
-        String delete_object_format_,
-        String delete_object_compression_method_ = "auto")
-        : IcebergPositionDeleteTransform(
-              header_,
-              iceberg_object_info_,
-              object_storage_,
-              format_settings_,
-              context_,
-              delete_object_format_,
-              delete_object_compression_method_)
+        ContextPtr context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
     {
         initialize();
     }
@@ -88,6 +77,44 @@ public:
 private:
     void initialize();
     RoaringBitmapWithSmallSet<size_t, 32> bitmap;
+};
+
+
+class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
+{
+public:
+    IcebergStreamingPositionDeleteTransform(
+        const SharedHeader & header_,
+        IcebergDataObjectInfoPtr iceberg_object_info_,
+        ObjectStoragePtr object_storage_,
+        const std::optional<FormatSettings> & format_settings_,
+        ContextPtr context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
+    {
+        initialize();
+    }
+
+    String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }
+
+    void transform(Chunk & chunk) override;
+
+private:
+    void initialize();
+
+    struct PositionDeleteFileIndexes
+    {
+        size_t filename_index;
+        size_t position_index;
+    };
+
+    void fetchNewChunkFromSource(size_t delete_source_index);
+
+    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
+    std::vector<Chunk> latest_chunks;
+    std::vector<size_t> iterator_at_latest_chunks;
+    std::set<std::pair<size_t, size_t>> latest_positions;
+
+    std::optional<size_t> previous_chunk_offset;
 };
 
 }
