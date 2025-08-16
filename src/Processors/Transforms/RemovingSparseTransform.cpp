@@ -1,5 +1,5 @@
 #include <Processors/Transforms/RemovingSparseTransform.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 
 namespace DB

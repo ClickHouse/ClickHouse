@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -128,7 +129,7 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
-    convertToFullIfSparse(chunk);
+    materializeChunk(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & algorithm : algorithms)

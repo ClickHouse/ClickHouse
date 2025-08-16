@@ -31,7 +31,7 @@ class ConditionSelectivityEstimator
 public:
     RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
 
-    void addStatistics(ColumnStatisticsPtr column_stat);
+    void addStatistics(const String & column_name, ColumnStatisticsPtr column_stat);
     void incrementRowCount(UInt64 rows);
 
     struct RPNElement

@@ -12,7 +12,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnLazy.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>

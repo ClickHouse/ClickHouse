@@ -702,6 +702,8 @@ public:
 
     [[nodiscard]] virtual bool lowCardinality() const { return false; }
 
+    [[nodiscard]] virtual bool isNativeLowCardinality() const { return false; }
+
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
     [[nodiscard]] virtual bool isConst() const { return false; }

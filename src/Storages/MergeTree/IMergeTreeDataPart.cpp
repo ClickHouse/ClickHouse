@@ -87,6 +87,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -852,25 +853,57 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
+    ColumnsStatistics result(metadata_snaphost.getColumns());
 
-    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
-
-    ColumnsStatistics result;
-    for (auto & stat : total_statistics)
+    if (auto all_stats_file = readFileIfExists(String(ColumnsStatistics::FILENAME)))
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
-        String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
-
-        if (auto stat_file = readFileIfExists(file_name))
-        {
-            CompressedReadBuffer compressed_buffer(*stat_file);
-            stat->deserialize(compressed_buffer);
-            result.push_back(stat);
-        }
-        else
-            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+        CompressedReadBuffer compressed_buffer(*all_stats_file);
+        result.deserialize(compressed_buffer);
     }
+    else
+    {
+        for (auto it = result.begin(); it != result.end();)
+        {
+            String file_name = ColumnsStatistics::getFileName(it->first);
+            String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+
+            if (auto stat_file = readFileIfExists(file_name))
+            {
+                CompressedReadBuffer compressed_buffer(*stat_file);
+                it->second->deserialize(compressed_buffer);
+                ++it;
+            }
+            else
+            {
+                LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+                result.erase(it++);
+            }
+        }
+    }
+
     return result;
+}
+
+Estimates IMergeTreeDataPart::getEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+
+    if (estimates.has_value())
+        return *estimates;
+
+    estimates = Estimates();
+    auto statistics = loadStatistics();
+
+    for (const auto & [column_name, stats] : statistics)
+        estimates->emplace(column_name, stats->getEstimate());
+
+    return *estimates;
+}
+
+void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
+{
+    std::lock_guard lock(estimates_mutex);
+    estimates = new_estimates;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1716,15 +1749,23 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
+    auto storage_settings = storage.getSettings();
+
     SerializationInfo::Settings settings =
     {
-        .ratio_of_defaults_for_sparse = (*storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false,
+        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .number_of_uniq_for_low_cardinality = (*storage_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
     SerializationInfoByName infos;
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
+    {
+        auto result = loadSerializationInfosFromBuffer(*in, settings);
+        infos = result.infos;
+
+        if (result.stats)
+            estimates = std::move(*result.stats);
+    }
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)

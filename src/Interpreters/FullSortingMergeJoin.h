@@ -3,7 +3,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
@@ -105,6 +105,7 @@ public:
     {
         for (const auto & col : *right_sample_block)
             block.insert(col);
+
         block = materializeBlock(block).cloneEmpty();
         return IJoinResult::createFromBlock(std::move(block));
     }

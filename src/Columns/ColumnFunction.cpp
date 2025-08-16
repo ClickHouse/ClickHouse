@@ -2,6 +2,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -370,6 +371,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -377,6 +379,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
             function->getName(),
             res.type->getColumnType(),
             res.column->getDataType());
+
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);

@@ -6,6 +6,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
 #include <Common/formatReadable.h>

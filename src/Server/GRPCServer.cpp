@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>

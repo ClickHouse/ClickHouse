@@ -10,7 +10,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/FilterDescription.h>
 
 #include <Core/callOnTypeIndex.h>
@@ -205,8 +205,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
         if (!defaults_mask.empty())
         {
-            column_read.column = recursiveRemoveSparse(column_read.column);
-            column_def.column = recursiveRemoveSparse(column_def.column);
+            column_read.column = materializeColumn(column_read.column);
+            column_def.column = materializeColumn(column_def.column);
 
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))

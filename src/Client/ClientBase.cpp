@@ -36,6 +36,7 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Formats/FormatFactory.h>
 
 #include <Parsers/parseQuery.h>

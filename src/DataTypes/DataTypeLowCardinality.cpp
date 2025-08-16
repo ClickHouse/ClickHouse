@@ -131,9 +131,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 
 MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
-    MutableColumnPtr indexes = DataTypeUInt8().createColumn();
-    MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+    return createEmptyLowCardinalityColumn(*dictionary_type, true);
 }
 
 Field DataTypeLowCardinality::getDefault() const
@@ -157,7 +155,7 @@ void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
 
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationLowCardinality>(dictionary_type);
+    return std::make_shared<SerializationLowCardinality>(dictionary_type, true);
 }
 
 void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
@@ -193,4 +191,12 @@ DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
 {
     return removeNullable(removeLowCardinality(type));
 };
+
+MutableColumnPtr createEmptyLowCardinalityColumn(const IDataType & type, bool is_native)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(type);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), false, is_native);
+}
+
 }

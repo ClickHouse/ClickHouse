@@ -1,6 +1,7 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/IJoin.h>

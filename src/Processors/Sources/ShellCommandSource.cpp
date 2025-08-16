@@ -13,6 +13,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/Field.h>
 

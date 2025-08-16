@@ -2,7 +2,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 namespace DB
 {
@@ -58,7 +58,10 @@ public:
     {
         auto res = arguments[0].column->convertToFullColumnIfConst();
         if constexpr (remove_sparse)
+        {
             res = recursiveRemoveSparse(res);
+            res = recursiveRemoveNonNativeLowCardinality(res);
+        }
         return res;
     }
 

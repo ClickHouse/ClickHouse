@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Functions/FunctionFactory.h>
@@ -403,9 +404,7 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             /// For simplicity, totals and extremes chunks are immediately squashed (totals/extremes are obscure and even if enabled, few
             /// such chunks are expected).
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
-
-            convertToFullIfSparse(chunk);
-            convertToFullIfConst(chunk);
+            materializeChunk(chunk);
 
             if (!buffered_chunk.has_value())
                 buffered_chunk = std::move(chunk);
@@ -453,8 +452,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            convertToFullIfSparse(chunk);
-            convertToFullIfConst(chunk);
+            materializeChunk(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)

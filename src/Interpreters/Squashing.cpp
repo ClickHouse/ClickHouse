@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <base/defines.h>
 
 namespace DB
@@ -165,9 +166,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
+            mutable_columns[i] = materializeColumn(std::move(mutable_columns[i]))->assumeMutable();
             for (auto & column : source_columns_list[i])
-                column = recursiveRemoveSparse(column);
+                column = materializeColumn(column);
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.

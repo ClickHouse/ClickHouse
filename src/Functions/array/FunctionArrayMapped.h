@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 

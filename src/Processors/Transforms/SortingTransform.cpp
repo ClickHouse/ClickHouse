@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Transforms/SortingTransform.h>
 
 #include <Core/SortDescription.h>
@@ -37,10 +38,8 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         /// Convert to full column, because sparse column has
         /// access to element in O(log(K)), where K is number of non-default rows,
         /// which can be inefficient.
-        convertToFullIfSparse(chunk);
-
         /// Convert to full column, because some cursors expect non-contant columns
-        convertToFullIfConst(chunk);
+        materializeChunk(chunk);
 
         cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;

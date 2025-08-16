@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+using NullMap = ColumnUInt8::Container;
+
 /**
  * How data is stored (in a nutshell):
  * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
@@ -28,7 +30,7 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
+    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false, bool is_native = true);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -36,19 +38,19 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false, bool is_native = true)
     {
-        return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
+        return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared, is_native);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false, bool is_native = true)
     {
-        return Base::create(std::move(column_unique), std::move(indexes), is_shared);
+        return Base::create(std::move(column_unique), std::move(indexes), is_shared, is_native);
     }
 
     std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
+    TypeIndex getDataType() const override { return is_native ? TypeIndex::LowCardinality : getDictionary().getNestedColumn()->getDataType(); }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
     ColumnPtr convertToFullColumnIfLowCardinality() const override { return convertToFullColumn(); }
@@ -75,7 +77,7 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), dictionary.isShared(), is_native);
     }
 
     void insert(const Field & x) override;
@@ -121,7 +123,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), dictionary.isShared(), is_native);
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -131,12 +133,12 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), dictionary.isShared(), is_native);
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), dictionary.isShared(), is_native);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -165,7 +167,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), dictionary.isShared(), is_native);
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;
@@ -264,6 +266,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
+    bool isNativeLowCardinality() const override { return is_native; }
     bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
 
     /**
@@ -277,6 +280,11 @@ public:
     MutableColumnPtr cloneNullable() const;
 
     ColumnPtr cloneWithDefaultOnNull() const;
+
+    void applyNullMap(const ColumnUInt8 & map);
+    void applyNullMap(const NullMap & map);
+    void applyNegatedNullMap(const ColumnUInt8 & map);
+    void applyNegatedNullMap(const NullMap & map);
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
@@ -415,6 +423,7 @@ private:
 
     Dictionary dictionary;
     Index idx;
+    bool is_native = true;
 
     void compactInplace();
     void compactIfSharedDictionary();
@@ -427,6 +436,12 @@ private:
     void updatePermutationWithIndexType(
         IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
         IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+
+    template <bool negative>
+    void applyNullMapImpl(const NullMap & map);
+
+    template <bool negative, typename IndexColumn>
+    void applyNullMapImplType(const NullMap & map);
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

@@ -1,3 +1,4 @@
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Common/memcpySmall.h>
@@ -33,15 +34,31 @@ static void correctNullabilityInplace(
     if (nullable)
     {
         JoinCommon::convertColumnToNullable(column);
+
         if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
-            assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+
+            if (auto * column_nullable = typeid_cast<ColumnNullable *>(mutable_column.get()))
+            {
+                column_nullable->applyNegatedNullMap(negative_null_map);
+            }
+            else if (auto * column_low_cardinality = typeid_cast<ColumnLowCardinality *>(mutable_column.get()))
+            {
+                column_low_cardinality->applyNegatedNullMap(negative_null_map);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply null map to column of type {}", column.type->getName());
+            }
+
             column.column = std::move(mutable_column);
         }
     }
     else
+    {
         JoinCommon::removeColumnNullability(column);
+    }
 }
 
 static ColumnWithTypeAndName copyLeftKeyColumnToRight(

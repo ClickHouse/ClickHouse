@@ -128,8 +128,8 @@ namespace
 }
 
 
-ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
-    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
+ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared, bool is_native_)
+    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_)), is_native(is_native_)
 {
 }
 
@@ -165,7 +165,10 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        insertFromFullColumn(src, n);
+        return;
+    }
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -197,7 +200,10 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        insertRangeFromFullColumn(src, start, length);
+        return;
+    }
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -979,6 +985,66 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
 
     return res;
 }
+
+template <bool negative>
+void ColumnLowCardinality::applyNullMapImpl(const NullMap & map)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply null map to non-nullable LowCardinality column");
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            applyNullMapImplType<negative, ColumnUInt8>(map);
+            return;
+        case sizeof(UInt16):
+            applyNullMapImplType<negative, ColumnUInt16>(map);
+            return;
+        case sizeof(UInt32):
+            applyNullMapImplType<negative, ColumnUInt32>(map);
+            return;
+        case sizeof(UInt64):
+            applyNullMapImplType<negative, ColumnUInt64>(map);
+            return;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+    }
+}
+
+template <bool negative, typename IndexColumn>
+void ColumnLowCardinality::applyNullMapImplType(const NullMap & map)
+{
+    auto & indexes = idx.getPositionsPtr();
+    auto & indexes_data = assert_cast<IndexColumn &>(*indexes).getData();
+
+    for (size_t i = 0, size = indexes_data.size(); i < size; ++i)
+    {
+        /// Zero index always means null.
+        if (map[i] ^ negative)
+            indexes_data[i] = 0;
+    }
+}
+
+void ColumnLowCardinality::applyNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<false>(map.getData());
+}
+
+void ColumnLowCardinality::applyNullMap(const NullMap & map)
+{
+    applyNullMapImpl<false>(map);
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<true>(map.getData());
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map)
+{
+    applyNullMapImpl<true>(map);
+}
+
 
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {

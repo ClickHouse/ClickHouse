@@ -881,24 +881,4 @@ void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_
     values->takeDynamicStructureFromSourceColumns(values_source_columns);
 }
 
-ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
-    {
-        auto columns = column_tuple->getColumns();
-        if (columns.empty())
-            return column;
-
-        for (auto & element : columns)
-            element = recursiveRemoveSparse(element);
-
-        return ColumnTuple::create(columns);
-    }
-
-    return column->convertToFullColumnIfSparse();
-}
-
 }

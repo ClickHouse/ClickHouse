@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -147,8 +148,7 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    if (col->isSparse())
-        col = recursiveRemoveSparse(col);
+    col = materializeColumn(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -298,9 +298,9 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-ColumnPtr materializeColumn(const ColumnPtr & column)
+ColumnPtr materializeColumnAndRemoveLowCardinality(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(materializeColumn(column));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
@@ -311,7 +311,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = materializeColumn(column);
+        column = materializeColumnAndRemoveLowCardinality(column);
         ptrs.push_back(column.get());
     }
 
@@ -321,7 +321,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
-    return materializeColumn(src_column);
+    return materializeColumnAndRemoveLowCardinality(src_column);
 }
 
 Columns materializeColumns(const Block & block, const Names & names)

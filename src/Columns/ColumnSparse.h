@@ -259,6 +259,4 @@ private:
     size_t _size; /// NOLINT
 };
 
-ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
-
 }

@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/IJoin.h>

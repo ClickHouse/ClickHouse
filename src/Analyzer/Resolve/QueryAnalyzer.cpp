@@ -1,6 +1,7 @@
 #include <Common/FieldVisitorToString.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnMaterializationUtils.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>

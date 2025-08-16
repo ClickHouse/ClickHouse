@@ -6,7 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
-
+#include <Columns/ColumnMaterializationUtils.h>
 #include <parquet/arrow/writer.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>

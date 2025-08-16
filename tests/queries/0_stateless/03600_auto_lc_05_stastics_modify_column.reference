@@ -1,0 +1,4 @@
+a	UInt64	['Uniq','MinMax']	1000
+b	UInt64	['TDigest','Uniq','MinMax']	1000
+a	String	['Uniq']	1000
+b	UInt64	['TDigest','Uniq','MinMax']	1000

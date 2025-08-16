@@ -3,6 +3,7 @@
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
+#include <Storages/Statistics/Statistics.h>
 
 namespace Poco::JSON
 {
@@ -18,7 +19,8 @@ class WriteBuffer;
 class NamesAndTypesList;
 class Block;
 
-constexpr auto SERIALIZATION_INFO_VERSION = 0;
+constexpr size_t SERIALIZATION_INFO_VERSION_WITH_STATS = 0;
+constexpr size_t SERIALIZATION_INFO_VERSION_WITHOUT_STATS = 1;
 
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
@@ -33,32 +35,12 @@ class SerializationInfo
 {
 public:
     using Settings = SerializationInfoSettings;
-
-    struct Data
-    {
-        size_t num_rows = 0;
-        size_t num_defaults = 0;
-
-        void add(const IColumn & column);
-        void add(const Data & other);
-        void remove(const Data & other);
-        void addDefaults(size_t length);
-    };
-
     SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
     virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
     virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(SerializationInfo) == typeid(rhs); }
-
-    virtual void add(const IColumn & column);
-    virtual void add(const SerializationInfo & other);
-    virtual void remove(const SerializationInfo & other);
-    virtual void addDefaults(size_t length);
-    virtual void replaceData(const SerializationInfo & other);
-
     virtual std::shared_ptr<SerializationInfo> clone() const;
 
     virtual std::shared_ptr<SerializationInfo> createWithType(
@@ -70,20 +52,18 @@ public:
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
     virtual void toJSON(Poco::JSON::Object & object) const;
+    virtual void toJSONWithStats(Poco::JSON::Object & object, const Estimate & stats) const;
+
     virtual void fromJSON(const Poco::JSON::Object & object);
+    virtual void fromJSONWithStats(const Poco::JSON::Object & object, Estimate & stats);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
     const SerializationInfoSettings & getSettings() const { return settings; }
-    const Data & getData() const { return data; }
     ISerialization::Kind getKind() const { return kind; }
-
-    static ISerialization::Kind chooseKind(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
     const SerializationInfoSettings settings;
-
     ISerialization::Kind kind;
-    Data data;
 };
 
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -101,30 +81,28 @@ public:
     SerializationInfoByName() = default;
     SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
 
-    void add(const Block & block);
-    void add(const SerializationInfoByName & other);
-    void add(const String & name, const SerializationInfo & info);
-
-    void remove(const SerializationInfoByName & other);
-    void remove(const String & name, const SerializationInfo & info);
-
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::Kind getKind(const String & column_name) const;
 
-    /// Takes data from @other, but keeps current serialization kinds.
-    /// If column exists in @other infos, but not in current infos,
-    /// it's cloned to current infos.
-    void replaceData(const SerializationInfoByName & other);
-
     void writeJSON(WriteBuffer & out) const;
+    void writeJSONWithStats(WriteBuffer & out, const Estimates & stats) const;
 
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
-
-    static SerializationInfoByName readJSONFromString(
-        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
-
+private:
+    template <typename ElementWriter>
+    void writeJSONImpl(size_t version, WriteBuffer & out, ElementWriter && write_element) const;
 };
+
+struct SerializationInfosLoadResult
+{
+    SerializationInfoByName infos;
+    std::optional<Estimates> stats;
+};
+
+SerializationInfosLoadResult loadSerializationInfosFromBuffer(ReadBuffer & in, const SerializationInfoSettings & settings);
+SerializationInfosLoadResult loadSerializationInfosFromString(const std::string & str, const SerializationInfoSettings & settings);
+SerializationInfoByName loadSerializationInfosFromStatistics(const ColumnsStatistics & statistics, const SerializationInfoSettings & settings);
+
+ColumnsStatistics getImplicitStatisticsForSparseSerialization(const Block & block, const SerializationInfoSettings & settings);
 
 }

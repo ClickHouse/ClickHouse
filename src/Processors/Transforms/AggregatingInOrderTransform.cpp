@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
@@ -285,7 +286,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
     chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
+    materializeChunk(current_chunk);
     return Status::Ready;
 }
 

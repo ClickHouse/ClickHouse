@@ -656,7 +656,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 }
             }
         });
-
     }
     else if (type == MODIFY_ORDER_BY)
     {
@@ -1333,6 +1332,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             throw;
         }
     }
+
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
