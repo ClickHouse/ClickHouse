@@ -1,0 +1,12 @@
+<clickhouse>
+   <query_cache>
+		<type>redis</type>
+		<redis>
+			<host>redis1</host>
+			<port>6379</port>
+			<password>clickhouse</password>
+			<db_index>0</db_index>
+			<pool_size>4</pool_size>
+		</redis>
+	</query_cache>
+</clickhouse>
