@@ -2919,6 +2919,9 @@ void ReadFromMergeTree::registerColumnsChanges(
             storage_snapshot->getSampleBlockForColumns(all_column_names),
             lazily_read_info, query_info.prewhere_info));
     }
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 
