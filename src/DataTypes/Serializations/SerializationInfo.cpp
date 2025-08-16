@@ -317,7 +317,7 @@ ColumnsStatistics getImplicitStatisticsForSparseSerialization(const Block & bloc
             continue;
 
         ColumnStatisticsDescription desc;
-        SingleStatisticsDescription stat_desc(StatisticsType::Defaults, nullptr);
+        SingleStatisticsDescription stat_desc(StatisticsType::Defaults, nullptr, true);
 
         desc.data_type = column.type;
         desc.types_to_desc.emplace(StatisticsType::Defaults, std::move(stat_desc));

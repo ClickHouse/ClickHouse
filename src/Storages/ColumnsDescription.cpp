@@ -156,7 +156,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
-    if (!statistics.empty())
+    if (statistics.hasExplicitStatistics())
     {
         writeChar('\t', buf);
         writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);

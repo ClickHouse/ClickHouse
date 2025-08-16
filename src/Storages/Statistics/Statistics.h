@@ -155,4 +155,7 @@ private:
     Creators creators;
 };
 
+void removeImplicitStatistics(ColumnsDescription & columns);
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
 }

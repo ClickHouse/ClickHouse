@@ -16,6 +16,9 @@
 #include <Storages/Statistics/StatisticDefaults.h>
 #include <Storages/StatisticsDescription.h>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -28,6 +31,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int ILLEGAL_STATISTICS;
+    extern const int BAD_ARGUMENTS;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -486,6 +490,72 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     }
 
     return column_stat;
+}
+
+static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)
+{
+    ParserStatisticsType stat_type_parser;
+    auto stats_ast = parseQuery(stat_type_parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    ColumnStatisticsDescription::StatisticsTypeDescMap result;
+
+    for (const auto & arg : stats_ast->as<ASTFunction &>().arguments->children)
+    {
+        const auto * arg_func = arg->as<ASTFunction>();
+        if (!arg_func)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
+
+        auto stat_type = stringToStatisticsType(arg_func->name);
+        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg, true));
+    }
+
+    return result;
+}
+
+void removeImplicitStatistics(ColumnsDescription & columns)
+{
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            continue;
+
+        columns.modify(column.name, [&](ColumnDescription & column_desc)
+        {
+            auto & stats = column_desc.statistics.types_to_desc;
+            for (auto it = stats.begin(); it != stats.end();)
+            {
+                if (it->second.is_implicit)
+                    it = stats.erase(it);
+                else
+                    ++it;
+            }
+        });
+    }
+}
+
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
+{
+    auto stats_ast_map = parseColumnStatisticsFromString(statistics_types_str);
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            continue;
+
+        ColumnStatisticsDescription stats_desc;
+        stats_desc.data_type = column.type;
+        stats_desc.types_to_desc = stats_ast_map;
+        stats_desc = factory.cloneWithSupportedStatistics(stats_desc, column.type);
+
+        if (!stats_desc.empty())
+        {
+            columns.modify(column.name, [&](ColumnDescription & column_desc)
+            {
+                column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/ true);
+            });
+        }
+    }
 }
 
 }

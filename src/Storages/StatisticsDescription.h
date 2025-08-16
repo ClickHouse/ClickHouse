@@ -23,13 +23,13 @@ enum class StatisticsType : UInt8
 struct SingleStatisticsDescription
 {
     StatisticsType type;
-
     ASTPtr ast;
+    bool is_implicit = false;
 
     String getTypeName() const;
 
     SingleStatisticsDescription() = delete;
-    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_);
+    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
 
     SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
@@ -46,6 +46,8 @@ struct ColumnStatisticsDescription
     bool operator==(const ColumnStatisticsDescription & other) const;
 
     bool empty() const;
+
+    bool hasExplicitStatistics() const;
 
     bool contains(const String & stat_type) const;
 
