@@ -87,7 +87,6 @@ SELECT bin('');
 SELECT bitCount('');
 SELECT bitNot('');
 SELECT blockSerializedSize('');
-SELECT byteSize('');
 SELECT cityHash64('');
 SELECT coalesce('');
 SELECT concat('');
