@@ -69,7 +69,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
-## Data Type supported
+## Data Types supported
 
 | Paimon Data Type | Clickhouse Data Type 
 |-------|--------|
