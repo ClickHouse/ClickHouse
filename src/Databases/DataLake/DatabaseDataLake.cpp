@@ -445,7 +445,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded,
+    bool /* skip_not_loaded */,
     bool skip_data_lake_catalog) const
 {
     Tables tables;
