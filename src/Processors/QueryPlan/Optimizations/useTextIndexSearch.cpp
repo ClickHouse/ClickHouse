@@ -138,14 +138,16 @@ class FunctionReplacerDAG
         const auto map_it = columns_to_index_name.find(column.result_name);
         chassert(map_it != columns_to_index_name.end());
 
+        String name = fmt::format("'{}'_String", map_it->second);
+
         { /// Check if the associated index column already exist
 
             /// This uses backward iterators because the index column node (if exists already) should be inserted by a previous call of this
             /// same function.  Which uses dag.addColumn (push_back).
             const auto index_column_it = std::find_if(dag.nodes.rbegin(), dag.nodes.rend(),
-                [&map_it](const ActionsDAG::Node &index_column) -> bool
+                [&name](const ActionsDAG::Node &index_column) -> bool
                 {
-                    return index_column.result_name == map_it->second;
+                    return index_column.result_name == name;
                 });
 
             if (index_column_it != dag.nodes.rend())
@@ -156,7 +158,7 @@ class FunctionReplacerDAG
         Field cast_type_constant_value(map_it->second);
 
         ColumnWithTypeAndName tmp;
-        tmp.name = fmt::format("'{}'_String", map_it->second);
+        tmp.name = name;
         tmp.type = std::make_shared<DataTypeString>();
         tmp.column = tmp.type->createColumnConst(0, cast_type_constant_value);
 
