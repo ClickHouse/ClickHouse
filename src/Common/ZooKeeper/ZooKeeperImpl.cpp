@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -30,6 +31,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Coordination/KeeperConstants.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include "config.h"
 
 #if USE_SSL
@@ -393,11 +395,13 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_)
+    std::shared_ptr<ZooKeeperLog> zk_log_,
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_)
     : path_acls(args_.path_acls), args(args_)
 {
     log = getLogger("ZooKeeperClient");
-    std::atomic_store(&zk_log, std::move(zk_log_));
+    zk_log = std::move(zk_log_);
+    aggregated_zookeeper_log = std::move(aggregated_zookeeper_log_);
 
     if (!args.chroot.empty())
     {
@@ -1076,6 +1080,7 @@ void ZooKeeper::receiveEvent()
         }
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
+        observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
     }
     catch (...)
     {
@@ -1095,6 +1100,7 @@ void ZooKeeper::receiveEvent()
                 request_info.callback(*response);
 
             logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
+            observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
         }
         catch (...)
         {
@@ -1198,7 +1204,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true, elapsed_microseconds);
+                        logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
+                        observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1260,6 +1267,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         info.callback(*response);
                         UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
+                        observeOperationIfNeeded(info.request, response, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1296,7 +1304,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
-        auto maybe_zk_log = std::atomic_load(&zk_log);
+        auto maybe_zk_log = getZooKeeperLog();
         if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
@@ -1785,16 +1793,50 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
-void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    /// logOperationIfNeeded(...) uses zk_log and can be called from different threads, so we have to use atomic shared_ptr
-    std::atomic_store(&zk_log, std::move(zk_log_));
+    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
+    {
+        return maybe_zk_log;
+    }
+
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
+        {
+            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
+            return maybe_zk_log;
+        }
+    }
+
+    return nullptr;
 }
+
+
+std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
+{
+    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
+    {
+        return maybe_aggregated_zookeeper_log;
+    }
+
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
+        {
+            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
+            return maybe_aggregated_zookeeper_log;
+        }
+    }
+
+    return nullptr;
+}
+
 
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
-    auto maybe_zk_log = std::atomic_load(&zk_log);
+    auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
         return;
 
@@ -1843,6 +1885,16 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool, UInt64)
 {}
 #endif
+
+void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
+{
+    chassert(response);
+    if (auto maybe_aggregated_zookeeper_log = getAggregatedZooKeeperLog(); maybe_aggregated_zookeeper_log && request)
+    {
+        chassert(elapsed_microseconds > 0);
+        maybe_aggregated_zookeeper_log->observe(session_id, request->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
+    }
+}
 
 
 void ZooKeeper::setServerCompletelyStarted()
