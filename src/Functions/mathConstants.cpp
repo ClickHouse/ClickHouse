@@ -45,8 +45,8 @@ Returns Euler's constant (e).
     FunctionDocumentation::Syntax syntax = "e()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns Euler's constant", {"Float64"}};
-    FunctionDocumentation::Examples examples = {};
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT e();", "2.718281828459045"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
