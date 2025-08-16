@@ -118,7 +118,24 @@ using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<Funct
 
 REGISTER_FUNCTION(DetectProgrammingLanguage)
 {
-    factory.registerFunction<FunctionDetectProgrammingLanguage>();
+    FunctionDocumentation::Description description = R"(
+Determines the programming language from the source code.
+Calculates all the unigrams and bigrams of commands in the source code.
+Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
+)";
+    FunctionDocumentation::Syntax syntax = "detectProgrammingLanguage('source_code')";
+    FunctionDocumentation::Arguments arguments = {
+        {"source_code", "String representation of the source code to analyze.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns programming language", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"C++ code detection", "SELECT detectProgrammingLanguage('#include <iostream>')", "C++"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDetectProgrammingLanguage>(documentation);
 }
 
 }
