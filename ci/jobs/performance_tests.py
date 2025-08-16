@@ -516,6 +516,10 @@ def main():
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
+            # May slow down the server
+            f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
+            f"rm {perf_right_config}/config.d/serverwide_trace_collector.xml ||:",
+            f"rm {perf_right_config}/config.d/jemalloc_flush_profile.yaml ||:",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
