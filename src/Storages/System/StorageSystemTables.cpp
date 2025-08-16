@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace
@@ -120,7 +121,11 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
+            auto table_it = database->getLightweightTablesIterator(context,
+                                                                   /* filter_by_table_name */ {},
+                                                                   /* skip_not_loaded */ false,
+                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
+            for (; table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -396,7 +401,10 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context,
+                        /* filter_by_table_name */ {},
+                        /* skip_not_loaded */ false,
+                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
