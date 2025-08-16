@@ -36,7 +36,7 @@ public:
     BloomFilter(size_t size_, size_t hashes_, size_t seed_);
 
     void resize(size_t size_);
-    bool find(const char * data, size_t len);
+    bool find(const char * data, size_t len) const;
     void add(const char * data, size_t len);
     void clear();
 
@@ -78,6 +78,5 @@ public:
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
-
 
 }
