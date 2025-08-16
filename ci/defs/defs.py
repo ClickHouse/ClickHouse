@@ -64,6 +64,11 @@ SECRETS = [
         name="clickhouse-test-stat-password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
+    Secret.Config(
+        name="chcache_password",
+        type=Secret.Type.AWS_SSM_VAR,
+        region="us-east-1",
+    ),
     azure_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",

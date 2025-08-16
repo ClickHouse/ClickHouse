@@ -55,6 +55,7 @@ def clone_submodules():
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
+        "contrib/rust_vendor",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -142,10 +143,14 @@ def main():
             Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
         Shell.check(f"chmod +x {clickhouse_bin_path}")
     else:
-        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        Shell.check("sccache --show-stats", verbose=True)
+        os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
+        os.environ["CH_USER"] = 'ci_builder'
+        os.environ["CH_PASSWORD"] = Info().get_secret(Settings.SECRET_CHCACHE_PASSWORD).get_value()
+
+    #     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+    #     os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    #     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    #     Shell.check("sccache --show-stats", verbose=True)
 
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
@@ -176,14 +181,14 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 -DCOMPILER_CACHE=chcache",
                 workdir=build_dir,
             )
         )
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        # Shell.check("sccache --show-stats")
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
@@ -191,13 +196,13 @@ def main():
                 workdir=build_dir,
             )
         )
-        Shell.check("sccache --show-stats")
+        # Shell.check("sccache --show-stats")
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
         commands = [
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
-            "sccache --show-stats",
+            # "sccache --show-stats",
             "clickhouse-client --version",
             # "clickhouse-test --help",
         ]
