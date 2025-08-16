@@ -164,16 +164,16 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, data_path);
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, data_path);
+        return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
