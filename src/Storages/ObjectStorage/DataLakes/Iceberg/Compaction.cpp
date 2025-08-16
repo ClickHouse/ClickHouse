@@ -360,6 +360,7 @@ void writeMetadataFiles(
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
                 std::vector(data_filenames.begin(), data_filenames.end()),
+                std::nullopt,
                 snapshot,
                 configuration->format,
                 partititon_spec,
