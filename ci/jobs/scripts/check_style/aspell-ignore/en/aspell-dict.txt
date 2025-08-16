@@ -1228,6 +1228,7 @@ VideoContainer
 ViewAllLink
 VirtualBox
 Vose
+VARBINARY
 WALs
 WSFG
 Welch
@@ -2699,6 +2700,8 @@ punycodeEncode
 pushdown
 pwrite
 py
+paimon
+paimonCluster
 qryn
 quantile
 quantileBFloat
