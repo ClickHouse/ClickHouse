@@ -1,22 +1,38 @@
+#include <cstddef>
 #include <memory>
+#include <ranges>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <Columns/IColumn_fwd.h>
+#include <Core/Block_fwd.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include "Common/Exception.h"
-#include "Core/Names.h"
-#include "Core/SortDescription.h"
-#include "Processors/QueryPlan/LimitStep.h"
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "Processors/QueryPlan/SortingStep.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+#include "Columns/IColumn.h"
+
+
 namespace DB
 {
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int
+    NOT_FOUND_COLUMN_IN_BLOCK; // should we use this error code? or should we use LOGICAL_ERROR instead because we don't expect this error to occur?
 }
 
 namespace QueryPlanOptimizations
@@ -24,60 +40,83 @@ namespace QueryPlanOptimizations
 namespace
 {
 
-using DirectParentNodesMap = std::unordered_map<QueryPlan::Node *, std::vector<QueryPlan::Node *>>;
+const std::string PUSHDOWN_BETA_NOTE = "if this is not expected, disable `query_plan_push_down_volume_reducing_functions`";
+
+extern inline const ActionsDAG::Node * dealiasNode(const ActionsDAG::Node * node);
+struct ColumnCandidate;
+struct PushdownRequest;
+
+using NodeToParentsMap = std::unordered_map<QueryPlan::Node *, std::vector<QueryPlan::Node *>>;
 using NodeToNameMap = std::unordered_map<QueryPlan::Node *, std::string>;
+using ColumnCandidatePtr = std::shared_ptr<ColumnCandidate>;
+using ColumnCandidatesStack = std::vector<ColumnCandidatePtr>;
+using PushdownRequestPtr = std::shared_ptr<PushdownRequest>;
+using PushdownRequestsStack = std::vector<PushdownRequestPtr>;
 
 /// Represents a column that can potentially have functions pushed down through it
 struct ColumnCandidate
 {
+    /// This represents how far back functions using this node can be pushed down
     QueryPlan::Node * max_pushdown_point;
-    int max_pushdown_depth;
     NodeToNameMap node_to_input_name;
     NodeToNameMap node_to_output_name;
 
-    [[maybe_unused]] ColumnCandidate(
-        QueryPlan::Node * initial_node, int initial_depth, const std::string & input_name, const std::string & output_name)
-        : max_pushdown_point(initial_node)
-        , max_pushdown_depth(initial_depth)
-        , node_to_input_name({{initial_node, input_name}})
-        , node_to_output_name({{initial_node, output_name}})
+    [[maybe_unused]] ColumnCandidate(QueryPlan::Node * node, const std::string & input_name, const std::string & output_name)
+        : max_pushdown_point(node)
+        , node_to_input_name({{node, input_name}})
+        , node_to_output_name({{node, output_name}})
     {
     }
 };
-using ColumnCandidatePtr = std::shared_ptr<ColumnCandidate>;
-using ColumnCandidatesStack = std::vector<ColumnCandidatePtr>;
 
 /// Represents a request to push down a volume-reducing function
 struct PushdownRequest
 {
-    const ActionsDAG::Node * function_node;
+    QueryPlan::Node * requesting_node;
     std::shared_ptr<ColumnCandidate> input_column_candidate;
-    std::shared_ptr<ColumnCandidate> function_column_candidate;
+    std::vector<std::shared_ptr<ColumnCandidate>> function_column_candidates;
 
     [[maybe_unused]] PushdownRequest(
-        const ActionsDAG::Node * node, const ColumnCandidatePtr & input_candidate, const ColumnCandidatePtr & function_candidate)
-        : function_node(node)
+        QueryPlan::Node * node,
+        const ColumnCandidatePtr & input_candidate,
+        const std::vector<std::shared_ptr<ColumnCandidate>> & function_candidates)
+        : requesting_node(node)
         , input_column_candidate(input_candidate)
-        , function_column_candidate(function_candidate)
+        , function_column_candidates(function_candidates)
     {
+    }
+
+    const ActionsDAG::Node * getFunctionNode(const ColumnCandidatePtr & function_candidate) const
+    {
+        std::string name = function_candidate->node_to_output_name[requesting_node];
+        ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(requesting_node->step.get());
+        FilterStep * filter_step = typeid_cast<FilterStep *>(requesting_node->step.get());
+
+        chassert(expression_step || filter_step);
+
+        ActionsDAG & actions_dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
+
+        for (const ActionsDAG::Node * child : actions_dag.getOutputs())
+            if (child->result_name == name)
+                return dealiasNode(child);
+
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Function node not found for column {}, {}", name, PUSHDOWN_BETA_NOTE);
     }
 };
 
-using PushdownRequestPtr = std::shared_ptr<PushdownRequest>;
-using PushdownRequestsStack = std::vector<PushdownRequestPtr>;
 
 inline const ActionsDAG::Node * dealiasNode(const ActionsDAG::Node * node)
 {
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+    while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node;
 }
 
 /// phase 1
 
-DirectParentNodesMap buildDirectParentNodesMap(QueryPlan::Node * root_node)
+NodeToParentsMap buildDirectParentNodesMap(QueryPlan::Node * root_node)
 {
-    DirectParentNodesMap direct_parent_nodes_map;
+    NodeToParentsMap direct_parent_nodes_map;
     std::vector<QueryPlan::Node *> stack;
     stack.push_back(root_node);
 
@@ -97,7 +136,7 @@ DirectParentNodesMap buildDirectParentNodesMap(QueryPlan::Node * root_node)
 ColumnCandidatePtr
 findInputColumn(const ColumnCandidatesStack & column_candidates, QueryPlan::Node * node, const std::string & input_column_name)
 {
-    for (const auto & column_candidate : column_candidates)
+    for (ColumnCandidatePtr column_candidate : column_candidates)
     {
         auto input_it = column_candidate->node_to_input_name.find(node);
         if (input_it != column_candidate->node_to_input_name.end() && input_it->second == input_column_name)
@@ -109,7 +148,7 @@ findInputColumn(const ColumnCandidatesStack & column_candidates, QueryPlan::Node
 ColumnCandidatePtr
 findOutputColumn(const ColumnCandidatesStack & column_candidates, QueryPlan::Node * node, const std::string & output_column_name)
 {
-    for (const auto & column_candidate : column_candidates)
+    for (ColumnCandidatePtr column_candidate : column_candidates)
     {
         auto output_it = column_candidate->node_to_output_name.find(node);
         if (output_it != column_candidate->node_to_output_name.end() && output_it->second == output_column_name)
@@ -148,48 +187,18 @@ bool isColumnCandidateOnlyInputOfFunction(
     return the_candidate_is_the_only_input_of_the_function && the_candidate_is_there;
 }
 
-void analyzeFilterStep(QueryPlan::Node * node, FilterStep * filter_step, int depth, ColumnCandidatesStack & candidates)
+void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack & candidates)
 {
-    const auto & outputs = filter_step->getExpression().getOutputs();
+    ExpressionStep * expression_step = dynamic_cast<ExpressionStep *>(node->step.get());
+    FilterStep * filter_step = dynamic_cast<FilterStep *>(node->step.get());
 
-    for (const ActionsDAG::Node * output : outputs)
+    chassert(expression_step || filter_step);
+
+    ActionsDAG & expression_dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
+    // check columns that are already passed from child nodes
+    for (const SharedHeader & block : node->step->getInputHeaders())
     {
-        std::string output_name = output->result_name;
-        std::string input_name = output_name;
-
-        if (output->type == ActionsDAG::ActionType::ALIAS)
-        {
-            std::string alias_target = dealiasNode(output)->result_name;
-            if (!alias_target.empty())
-                input_name = alias_target;
-        }
-
-        // Try to find existing column candidate from child nodes based on the input name
-        ColumnCandidatePtr column_candidate = nullptr;
-        for (QueryPlan::Node * child : node->children)
-        {
-            column_candidate = findOutputColumn(candidates, child, input_name);
-            if (column_candidate)
-                break;
-        }
-
-        if (!column_candidate)
-        {
-            candidates.emplace_back(std::make_shared<ColumnCandidate>(node, depth, input_name, output_name));
-        }
-        else
-        {
-            column_candidate->node_to_input_name[node] = input_name;
-            column_candidate->node_to_output_name[node] = output_name;
-        }
-    }
-}
-
-void analyzeExpressionStep(QueryPlan::Node * node, ExpressionStep * expression_step, ColumnCandidatesStack & candidates, int depth)
-{
-    for (const auto & block : node->step->getInputHeaders())
-    {
-        for (const auto & input_name : block->getNames())
+        for (const std::string & input_name : block->getNames())
         {
             ColumnCandidatePtr column_candidate = nullptr;
 
@@ -199,24 +208,19 @@ void analyzeExpressionStep(QueryPlan::Node * node, ExpressionStep * expression_s
                 if (column_candidate)
                     break;
             }
+
             if (!column_candidate)
-                column_candidate = findInputColumn(candidates, node, input_name);
-            if (!column_candidate)
-            {
-                column_candidate = candidates.emplace_back(std::make_shared<ColumnCandidate>(node, depth, input_name, ""));
-                if (node->step->getOutputHeader()->has(input_name))
-                    column_candidate->node_to_output_name[node] = input_name;
-            }
+                column_candidate = candidates.emplace_back(std::make_shared<ColumnCandidate>(node, input_name, ""));
             else
-            {
                 column_candidate->node_to_input_name[node] = input_name;
-                if (node->step->getOutputHeader()->has(input_name))
-                    column_candidate->node_to_output_name[node] = input_name;
-            }
+
+            if (node->step->getOutputHeader()->has(input_name))
+                column_candidate->node_to_output_name[node] = input_name;
         }
     }
 
-    for (const ActionsDAG::Node * output_node : expression_step->getExpression().getOutputs())
+    // check new columns/potential functions that are not passed from child nodes
+    for (const ActionsDAG::Node * output_node : expression_dag.getOutputs())
     {
         const ActionsDAG::Node * dealiased_output_node = dealiasNode(output_node);
 
@@ -224,20 +228,26 @@ void analyzeExpressionStep(QueryPlan::Node * node, ExpressionStep * expression_s
         {
             ColumnCandidatePtr column_candidate = findInputColumn(candidates, node, dealiased_output_node->result_name);
             if (!column_candidate)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column candidate not found for output {}", dealiased_output_node->result_name);
-            column_candidate->node_to_output_name[node] = output_node->result_name; // use alias
+                throw Exception(
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                    "Column candidate not found for output {}, {}",
+                    dealiased_output_node->result_name,
+                    PUSHDOWN_BETA_NOTE);
+            column_candidate->node_to_output_name[node] = output_node->result_name;
         }
-        else
+        else if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            candidates.emplace_back(std::make_shared<ColumnCandidate>(node, depth, "", output_node->result_name));
+            // make sure we update max pushdown point for filter columns
+            if (filter_step && output_node->result_name == filter_step->getFilterColumnName())
+                continue;
+            candidates.emplace_back(std::make_shared<ColumnCandidate>(node, "", output_node->result_name));
         }
     }
 }
 
-void analyzeNonExpressionStep(
-    QueryPlan::Node * node, ColumnCandidatesStack & candidates, int depth, LimitStep * limit_step, SortingStep * sorting_step)
+void analyzeNonExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack & candidates)
 {
-    for (const auto & block : node->step->getInputHeaders())
+    for (const SharedHeader & block : node->step->getInputHeaders())
     {
         for (const std::string & input_name : block->getNames())
         {
@@ -255,30 +265,30 @@ void analyzeNonExpressionStep(
             column_candidate->node_to_output_name[node] = input_name;
         }
     }
-
+    LimitStep * limit_step = typeid_cast<LimitStep *>(node->step.get());
+    // for non limit steps, we may move the max push down point
     if (!limit_step)
     {
+        SortingStep * sorting_step = typeid_cast<SortingStep *>(node->step.get());
         NameSet name_set;
+        // if it's a sorting step, we only need to change the pushdown point for columns used in sorting
         if (sorting_step)
         {
             for (const SortColumnDescription & sort_description : sorting_step->getSortDescription())
                 name_set.insert(sort_description.column_name);
         }
 
-        for (auto & column_candidate : candidates)
+        for (ColumnCandidatePtr & column_candidate : candidates)
         {
             auto input_it = column_candidate->node_to_input_name.find(node);
-            if (sorting_step
-                && ((input_it != column_candidate->node_to_input_name.end() && !name_set.contains(input_it->second))
-                    || input_it == column_candidate->node_to_input_name.end()))
-            {
-                continue;
-            }
+
             if (input_it == column_candidate->node_to_input_name.end())
-                continue;
+                continue; // if the column is not an input to the node
+
+            if (sorting_step && !name_set.contains(input_it->second))
+                continue; // if the column is not used in sorting
 
             column_candidate->max_pushdown_point = node;
-            column_candidate->max_pushdown_depth = depth;
         }
     }
 }
@@ -288,19 +298,24 @@ PushdownRequestsStack createPushdownRequestsForColumnCandidates(QueryPlan::Node 
 {
     PushdownRequestsStack requests;
 
-    for (const auto & column_candidate : column_candidates)
+    ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
+    if (!expression_step && !filter_step)
+        return requests;
+
+    std::unordered_map<ColumnCandidatePtr, std::vector<ColumnCandidatePtr>> column_candidate_to_functions_map;
+    std::unordered_set<ColumnCandidatePtr> unsuitable_columns;
+
+    // find suitable functions
+    for (const ColumnCandidatePtr & function_candidate : column_candidates)
     {
-        auto input_it = column_candidate->node_to_input_name.find(node);
-        if (input_it == column_candidate->node_to_input_name.end() || !input_it->second.empty())
+        auto input_it = function_candidate->node_to_input_name.find(node);
+        if (input_it == function_candidate->node_to_input_name.end() || !input_it->second.empty())
             continue;
 
-        auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-        if (!expression_step)
-            continue;
-
-        const auto & dag = expression_step->getExpression();
-        auto output_it = column_candidate->node_to_output_name.find(node);
-        if (output_it == column_candidate->node_to_output_name.end())
+        const ActionsDAG & dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
+        auto output_it = function_candidate->node_to_output_name.find(node);
+        if (output_it == function_candidate->node_to_output_name.end())
             continue;
 
         const ActionsDAG::Node * output = dag.tryFindInOutputs(output_it->second);
@@ -312,7 +327,7 @@ PushdownRequestsStack createPushdownRequestsForColumnCandidates(QueryPlan::Node 
             continue;
 
         // Check each input of the function
-        for (const auto & input : dealiased_output_node->children)
+        for (const ActionsDAG::Node * input : dealiased_output_node->children)
         {
             const ActionsDAG::Node * dealiased_input_node = dealiasNode(input);
             if (dealiased_input_node->type != ActionsDAG::ActionType::INPUT)
@@ -320,46 +335,59 @@ PushdownRequestsStack createPushdownRequestsForColumnCandidates(QueryPlan::Node 
 
             // Find the column candidate for this input
             ColumnCandidatePtr column_candidate_for_input = nullptr;
-            for (const auto & node_child : node->children)
+            for (QueryPlan::Node * node_child : node->children)
             {
                 column_candidate_for_input = findOutputColumn(column_candidates, node_child, dealiased_input_node->result_name);
                 if (column_candidate_for_input)
                     break;
             }
 
-            const bool no_longer_outputs_original_column
-                = !(column_candidate_for_input && column_candidate_for_input->node_to_output_name.contains(node));
+            if (!column_candidate_for_input)
+                continue;
 
-            if (column_candidate_for_input && no_longer_outputs_original_column
-                && isColumnCandidateOnlyInputOfFunction(dealiased_output_node, column_candidate_for_input, node)
-                && dealiased_output_node->function_base && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter())
+            if (column_candidate_for_input->node_to_output_name.contains(node))
+                continue;
+
+            if (!isColumnCandidateOnlyInputOfFunction(dealiased_output_node, column_candidate_for_input, node))
             {
-                requests.emplace_back(
-                    std::make_shared<PushdownRequest>(dealiased_output_node, column_candidate_for_input, column_candidate));
+                unsuitable_columns.insert(column_candidate_for_input);
+                continue;
             }
+
+            if (dealiased_output_node->function_base && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter())
+                column_candidate_to_functions_map[column_candidate_for_input].push_back(function_candidate);
+            else
+                unsuitable_columns.insert(column_candidate_for_input);
         }
+    }
+
+    for (const auto & [column_candidate, function_candidates] : column_candidate_to_functions_map)
+    {
+        if (unsuitable_columns.contains(column_candidate))
+            continue;
+
+        requests.emplace_back(std::make_shared<PushdownRequest>(node, column_candidate, function_candidates));
     }
 
     return requests;
 }
 
-using PushdownRequestMap = std::unordered_map<QueryPlan::Node *, PushdownRequestPtr>;
-using ColumnCandidatesToRequestsMap = std::unordered_map<ColumnCandidatePtr, PushdownRequestMap>;
-
 PushdownRequestsStack aggregateParentRequests(const std::unordered_map<QueryPlan::Node *, PushdownRequestsStack> & parent_to_requests)
 {
-    ColumnCandidatesToRequestsMap column_to_requests;
+    using NodeToPushdownRequests = std::unordered_map<QueryPlan::Node *, PushdownRequestPtr>;
+
+    std::unordered_map<ColumnCandidatePtr, NodeToPushdownRequests> column_to_requests;
     PushdownRequestsStack requests;
 
     for (const auto & [parent_node, parent_requests] : parent_to_requests)
     {
-        for (const auto & request : parent_requests)
+        for (const PushdownRequestPtr & request : parent_requests)
             column_to_requests[request->input_column_candidate][parent_node] = request;
     }
 
+    // only return requests shared by all parents
     for (const auto & [column_candidate, request_map] : column_to_requests)
     {
-        // remove requests for columns that are still needed by other parents
         if (request_map.size() == parent_to_requests.size())
             requests.emplace_back(request_map.begin()->second);
     }
@@ -367,215 +395,327 @@ PushdownRequestsStack aggregateParentRequests(const std::unordered_map<QueryPlan
 }
 
 /// phase 3
-
-void executeRequestOnStep(
-    QueryPlan::Node * node, const PushdownRequestPtr & request, FilterStep * filter_step, ExpressionStep * expression_step)
+const ActionsDAG::Node *
+tryFindOrAddInputToExpressionFromHeader(QueryPlan::Node * node, const std::string & column_name, ActionsDAG & expression)
 {
-    if (!filter_step && !expression_step)
+    // try to find it first
+    const auto & inputs = expression.getInputs();
+    for (const ActionsDAG::Node * input : inputs)
+    {
+        const ActionsDAG::Node * dealiased_input = dealiasNode(input);
+        if (dealiased_input->type == ActionsDAG::ActionType::INPUT && input->result_name == column_name)
+            return input;
+    }
+    // otherwise, add it from the input header
+    for (const SharedHeader & block : node->step->getInputHeaders())
+    {
+        for (const ColumnWithTypeAndName & column : block->getColumnsWithTypeAndName())
+        {
+            if (column.name == column_name)
+                return &(expression.addInput(column));
+        }
+    }
+    return nullptr;
+}
+
+void updateInputsAfterChildAppliesRequest(
+    QueryPlan::Node * node_to_update, QueryPlan::Node * changed_child, const PushdownRequestPtr & request)
+{
+    // Find index of output header that matches the current step
+    size_t index = 0;
+    for (; index < node_to_update->children.size(); index++)
+    {
+        if (node_to_update->children[index] == changed_child)
+            break;
+    }
+    if (index == node_to_update->children.size())
         return;
 
-    ActionsDAG expression = expression_step ? expression_step->getExpression().clone() : filter_step->getExpression().clone();
+    NodeToNameMap & column_output_names = request->input_column_candidate->node_to_output_name;
+    ExpressionStep * as_expression_step = typeid_cast<ExpressionStep *>(node_to_update->step.get());
+    FilterStep * as_filter_step = typeid_cast<FilterStep *>(node_to_update->step.get());
 
-    const ActionsDAG::Node * node_to_remove = nullptr;
-    std::vector<const ActionsDAG::Node *> new_children;
-    for (const auto & input_node : request->function_node->children)
+    ActionsDAG new_dag;
+    if (as_expression_step || as_filter_step)
+        new_dag = as_expression_step ? as_expression_step->getExpression().clone() : as_filter_step->getExpression().clone();
+
+
+    for (const ColumnCandidatePtr & function_candidate : request->function_column_candidates)
     {
-        const ActionsDAG::Node * dealiased_input_node = dealiasNode(input_node);
+        const ActionsDAG::Node * new_function_node = nullptr;
+        NodeToNameMap & function_output_names = function_candidate->node_to_output_name;
+        NodeToNameMap & function_input_names = function_candidate->node_to_input_name;
 
-        if (dealiased_input_node->type == ActionsDAG::ActionType::INPUT)
+        if (as_expression_step || as_filter_step)
         {
-            chassert(node_to_remove == nullptr); // expecting single input node
-            const ActionsDAG::Node * input_node_in_expression = expression.tryFindInOutputs(dealiased_input_node->result_name);
-            if (!input_node_in_expression)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node not found in expression");
-            new_children.push_back(input_node_in_expression);
-            node_to_remove = dealiased_input_node;
+            const ActionsDAG::Node * input_node = nullptr;
+            for (const ActionsDAG::Node * node : new_dag.getInputs())
+            {
+                if (node->result_name == function_output_names[changed_child])
+                {
+                    input_node = node;
+                }
+            }
+            if (!input_node)
+                input_node
+                    = &new_dag.addInput(function_output_names[changed_child], request->getFunctionNode(function_candidate)->result_type);
+            // if function is aliased at the parent, ensure we use the same alias
+            if (function_output_names.find(node_to_update) != function_output_names.end())
+            {
+                new_function_node = &new_dag.addAlias(*input_node, function_output_names[node_to_update]);
+            }
+            else
+            {
+                new_function_node = input_node;
+            }
+
+            // either replace input column or function instance with the new function node while maintaining order
+            if (column_output_names.find(node_to_update) != column_output_names.end())
+            {
+                auto it = new_dag.getOutputs().begin();
+                for (; it != new_dag.getOutputs().end(); ++it)
+                {
+                    const ActionsDAG::Node * output = *it;
+
+                    if ((output->result_name == column_output_names[node_to_update]))
+                    {
+                        new_dag.removeUnusedResult(output->result_name);
+                        column_output_names.erase(node_to_update);
+                        break;
+                    }
+                }
+            }
+
+            new_dag.addOrReplaceInOutputs(*new_function_node);
+        }
+
+        function_input_names[node_to_update] = function_output_names[changed_child];
+        function_output_names[node_to_update] = new_function_node ? new_function_node->result_name : function_input_names[node_to_update];
+    }
+
+    if (as_expression_step || as_filter_step)
+    {
+        if (as_expression_step)
+        {
+            node_to_update->step = std::make_unique<ExpressionStep>(changed_child->step->getOutputHeader(), std::move(new_dag));
         }
         else
         {
-            new_children.push_back(input_node);
+            node_to_update->step = std::make_unique<FilterStep>(
+                changed_child->step->getOutputHeader(),
+                std::move(new_dag),
+                as_filter_step->getFilterColumnName(),
+                as_filter_step->removesFilterColumn());
+        }
+    }
+    else
+    {
+        node_to_update->step->updateInputHeader(changed_child->step->getOutputHeader(), index);
+    }
+}
+
+void propagateExecutedRequestToParents(
+    QueryPlan::Node * starting_node, const PushdownRequestPtr & request, NodeToParentsMap & direct_parent_nodes_map)
+{
+    std::unordered_set<QueryPlan::Node *> visited_nodes;
+    std::vector<QueryPlan::Node *> children_stack;
+    children_stack.emplace_back(starting_node);
+    visited_nodes.insert(starting_node);
+    while (!children_stack.empty())
+    {
+        QueryPlan::Node * child_node = children_stack.back();
+        children_stack.pop_back();
+        std::vector<QueryPlan::Node *> parents_stack(direct_parent_nodes_map[child_node]);
+        while (!parents_stack.empty())
+        {
+            QueryPlan::Node * node_to_update = parents_stack.back();
+            parents_stack.pop_back();
+            if (visited_nodes.contains(node_to_update))
+                continue;
+            visited_nodes.insert(node_to_update);
+
+            updateInputsAfterChildAppliesRequest(node_to_update, child_node, request);
+
+            children_stack.push_back(node_to_update);
+        }
+    }
+}
+
+
+bool tryExecuteRequestOnStepOrParents(
+    QueryPlan::Node * node, const PushdownRequestPtr & request, NodeToParentsMap & direct_parent_nodes_map)
+{
+    ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
+    if (!expression_step && !filter_step)
+    {
+        for (QueryPlan::Node * parent_node : direct_parent_nodes_map[node])
+        {
+            if (!parent_node)
+                continue;
+            tryExecuteRequestOnStepOrParents(parent_node, request, direct_parent_nodes_map);
+        }
+        return false;
+    }
+    ActionsDAG expression = expression_step ? expression_step->getExpression().clone() : filter_step->getExpression().clone();
+    const ActionsDAG::Node * node_to_remove = nullptr;
+    // const ActionsDAG::Node * one_of_the_functions = nullptr;
+    for (ColumnCandidatePtr & function_candidate : request->function_column_candidates)
+    {
+        const ActionsDAG::Node * function_node = request->getFunctionNode(function_candidate);
+        std::vector<const ActionsDAG::Node *> new_children;
+        for (const ActionsDAG::Node * function_child_node : function_node->children)
+        {
+            const ActionsDAG::Node * dealiased_child_node = dealiasNode(function_child_node);
+            const ActionsDAG::Node * child_node_in_expression = expression.tryFindInOutputs(dealiased_child_node->result_name);
+
+            // input can be in the header but the not the dag inputs
+            if (!child_node_in_expression)
+                child_node_in_expression = tryFindOrAddInputToExpressionFromHeader(node, dealiased_child_node->result_name, expression);
+            else if (dealiased_child_node->type == ActionsDAG::ActionType::INPUT)
+                node_to_remove = child_node_in_expression;
+
+            switch (dealiased_child_node->type)
+            {
+                case ActionsDAG::ActionType::COLUMN:
+                    if (!child_node_in_expression)
+                    {
+                        ColumnWithTypeAndName column;
+                        column.column = dealiased_child_node->column;
+                        column.name = dealiased_child_node->result_name;
+                        column.type = dealiased_child_node->result_type;
+                        new_children.push_back(&expression.addColumn(column));
+                    }
+                    else
+                    {
+                        new_children.push_back(child_node_in_expression);
+                    }
+                    break;
+                default:
+                    if (!child_node_in_expression)
+                        return false;
+                    new_children.push_back(child_node_in_expression);
+                    break;
+            }
+        }
+
+        const ActionsDAG::Node * new_function_node = nullptr;
+
+        // if the function node is already there and is aliased, make sure to use the same alias
+        NodeToNameMap & function_output_names = function_candidate->node_to_output_name;
+        if (function_output_names.find(node) != function_output_names.end())
+            new_function_node = &expression.addAlias(
+                expression.addFunction(function_node->function_base, new_children, function_node->result_name),
+                function_output_names[node]);
+        else
+            new_function_node = &expression.addFunction(function_node->function_base, new_children, function_node->result_name);
+
+
+        expression.addOrReplaceInOutputs(*new_function_node);
+
+        function_output_names[node] = new_function_node->result_name;
+        // one_of_the_functions = new_function_node;
+    }
+    // ensure order is preserved by replacing existing nodes
+    if (node_to_remove)
+    {
+        for (auto & output : expression.getOutputs())
+        {
+            if (output == node_to_remove)
+            {
+                //output = one_of_the_functions;
+                expression.removeUnusedResult(output->result_name);
+                request->input_column_candidate->node_to_output_name.erase(node);
+                break;
+            }
         }
     }
 
-    chassert(request->function_node->function_base && node_to_remove);
-
-    const ActionsDAG::Node * new_function_node
-        = &expression.addFunction(request->function_node->function_base, new_children, request->function_node->result_name);
-
-    NodeToNameMap & function_output_names = request->function_column_candidate->node_to_output_name;
-
-    if (function_output_names.contains(node) && !function_output_names[node].empty()
-        && function_output_names[node] != new_function_node->result_name)
-    {
-        expression.removeUnusedResult(function_output_names[node]);
-        expression.getOutputs().push_back(&expression.addAlias(*new_function_node, function_output_names[node]));
-    }
-    else
-    {
-        expression.getOutputs().push_back(new_function_node);
-        function_output_names[node] = new_function_node->result_name;
-    }
-
-    expression.removeUnusedResult(node_to_remove->result_name);
-
     if (expression_step)
-    {
         node->step = std::make_unique<ExpressionStep>(node->children[0]->step->getOutputHeader(), std::move(expression));
-    }
     else
-    {
         node->step = std::make_unique<FilterStep>(
             node->children[0]->step->getOutputHeader(),
             std::move(expression),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
-    }
+    propagateExecutedRequestToParents(node, request, direct_parent_nodes_map);
+    return true;
 }
 
-void updateParentSteps(QueryPlan::Node * node, const PushdownRequestPtr & request, DirectParentNodesMap & direct_parent_nodes_map)
-{
-    const auto & parent_nodes = direct_parent_nodes_map[node];
-
-    std::vector<QueryPlan::Node *> nodes_stack(parent_nodes.rbegin(), parent_nodes.rend());
-    QueryPlan::Node * current_bottom_node = node;
-
-    while (!nodes_stack.empty())
-    {
-        QueryPlan::Node * node_to_update = nodes_stack.back();
-        nodes_stack.pop_back();
-
-        // Find index of output header that matches the current step
-        size_t index = 0;
-        for (; index < node_to_update->children.size(); index++)
-        {
-            if (node_to_update->children[index] == current_bottom_node)
-                break;
-        }
-        if (index == node_to_update->children.size())
-            break;
-
-        NodeToNameMap & function_output_names = request->function_column_candidate->node_to_output_name;
-        NodeToNameMap & function_input_names = request->function_column_candidate->node_to_input_name;
-
-        if (auto * node_to_update_as_expression_step = typeid_cast<ExpressionStep *>(node_to_update->step.get()))
-        {
-            ActionsDAG new_dag(current_bottom_node->step->getOutputHeader()->getNamesAndTypesList());
-            ActionsDAG existing_dag = node_to_update_as_expression_step->getExpression().clone();
-
-
-            const ActionsDAG::Node * function_node_in_new_dag = new_dag.tryFindInOutputs(function_output_names[current_bottom_node]);
-
-            const ActionsDAG::Node * function_node_in_existing_dag = existing_dag.tryFindInOutputs(function_output_names[node_to_update]);
-
-            // Get the column name for this request from the mappings
-            auto name_it = request->input_column_candidate->node_to_output_name.find(node_to_update);
-            if (name_it != request->input_column_candidate->node_to_output_name.end())
-            {
-                const ActionsDAG::Node * column_node_in_existing_dag = existing_dag.tryFindInOutputs(name_it->second);
-                if (column_node_in_existing_dag)
-                    existing_dag.removeUnusedResult(column_node_in_existing_dag->result_name);
-            }
-
-            if (function_node_in_existing_dag && function_node_in_new_dag)
-            {
-                if (function_node_in_existing_dag)
-                    existing_dag.removeUnusedResult(function_output_names[node_to_update]);
-
-                new_dag.getOutputs().push_back(&new_dag.addAlias(*function_node_in_new_dag, function_output_names[node_to_update]));
-                new_dag.removeUnusedResult(function_node_in_new_dag->result_name);
-            }
-
-            new_dag.mergeInplace(std::move(existing_dag));
-            node_to_update->step
-                = std::make_unique<ExpressionStep>(node_to_update->children[0]->step->getOutputHeader(), std::move(new_dag));
-
-            function_input_names[node_to_update] = function_output_names[current_bottom_node];
-            function_output_names[node_to_update]
-                = function_node_in_existing_dag ? function_node_in_existing_dag->result_name : function_input_names[node_to_update];
-        }
-        else
-        {
-            node_to_update->step->updateInputHeader(current_bottom_node->step->getOutputHeader(), index);
-            function_input_names[node_to_update] = function_output_names[current_bottom_node];
-            function_output_names[node_to_update] = function_input_names[node_to_update];
-        }
-
-        current_bottom_node = node_to_update;
-        const auto & parent_nodes_to_update = direct_parent_nodes_map[node_to_update];
-        nodes_stack.insert(nodes_stack.begin(), parent_nodes_to_update.rbegin(), parent_nodes_to_update.rend());
-    }
-}
-
-/// main function
-PushdownRequestsStack processNodeRecursively(
-    QueryPlan::Node * node, ColumnCandidatesStack column_candidates, int depth, DirectParentNodesMap & direct_parent_nodes_map)
+/// entry function
+PushdownRequestsStack
+processNodeRecursively(QueryPlan::Node * node, ColumnCandidatesStack column_candidates, NodeToParentsMap & direct_parent_nodes_map)
 {
     PushdownRequestsStack requests;
 
     // Phase 1: Analyze current node to update column candidates
     FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
     ExpressionStep * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    LimitStep * limit_step = typeid_cast<LimitStep *>(node->step.get());
-    SortingStep * sorting_step = typeid_cast<SortingStep *>(node->step.get());
 
-    if (filter_step)
-        analyzeFilterStep(node, filter_step, depth, column_candidates);
-    else if (expression_step)
-        analyzeExpressionStep(node, expression_step, column_candidates, depth);
+    if (filter_step || expression_step)
+        analyzeFilterOrExpressionStep(node, column_candidates);
     else
-        analyzeNonExpressionStep(node, column_candidates, depth, limit_step, sorting_step);
+        analyzeNonExpressionStep(node, column_candidates);
 
     // Phase 2: Create pushdown requests for current node
     PushdownRequestsStack local_requests = createPushdownRequestsForColumnCandidates(node, column_candidates);
     requests.insert(requests.end(), local_requests.begin(), local_requests.end());
 
     // Process parents before execution
-    const auto & parent_nodes = direct_parent_nodes_map[node];
+    const std::vector<QueryPlan::Node *> & parent_nodes = direct_parent_nodes_map[node];
     std::unordered_map<QueryPlan::Node *, PushdownRequestsStack> parent_to_requests;
     for (QueryPlan::Node * parent_node : parent_nodes)
-        parent_to_requests[parent_node] = processNodeRecursively(parent_node, column_candidates, depth + 1, direct_parent_nodes_map);
+        parent_to_requests[parent_node] = processNodeRecursively(parent_node, column_candidates, direct_parent_nodes_map);
 
     // Aggregate parent requests
     PushdownRequestsStack parents_requests = aggregateParentRequests(parent_to_requests);
     requests.insert(requests.end(), parents_requests.begin(), parents_requests.end());
 
     // Phase 3: Execute pushdown requests
-    for (const PushdownRequestPtr & request : parents_requests)
+    for (const PushdownRequestPtr & request : requests)
     {
         const ColumnCandidatePtr & column_candidate = request->input_column_candidate;
-        if ((expression_step || filter_step) && column_candidate && column_candidate->max_pushdown_point == node)
-        {
-            // These steps can get recreated; read latest
-            if (filter_step)
-                filter_step = typeid_cast<FilterStep *>(node->step.get());
-            if (expression_step)
-                expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-
-            executeRequestOnStep(node, request, filter_step, expression_step);
-            updateParentSteps(node, request, direct_parent_nodes_map);
-        }
+        if (column_candidate && column_candidate->max_pushdown_point == node)
+            tryExecuteRequestOnStepOrParents(node, request, direct_parent_nodes_map);
     }
 
     return requests;
 }
 
+QueryPlan::Node * findSourceNode(QueryPlan::Node * root_node)
+{
+    std::vector<QueryPlan::Node *> nodes_stack;
+    nodes_stack.push_back(root_node);
+    while (!nodes_stack.empty())
+    {
+        QueryPlan::Node * current_node = nodes_stack.back();
+        nodes_stack.pop_back();
+        if (dynamic_cast<ISourceStep *>(current_node->step.get()))
+        {
+            return current_node;
+        }
+        for (QueryPlan::Node * child_node : current_node->children)
+        {
+            nodes_stack.push_back(child_node);
+        }
+    }
+    return nullptr;
+}
 }
 
-void pushDownVolumeReducingFunctions(
-    QueryPlan::Node * node, QueryPlan::Node * root_node, const QueryPlanOptimizationSettings & optimization_settings)
+void pushDownVolumeReducingFunctions(QueryPlan::Node * root_node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!optimization_settings.push_down_volume_reducing_functions)
         return;
 
-    if (!node || node->children.empty())
+    QueryPlan::Node * node = findSourceNode(root_node);
+
+    if (!node)
         return;
 
-    FilterStep * filter_step = typeid_cast<FilterStep *>(node->step.get());
-    if (!filter_step)
-        return;
-
-    DirectParentNodesMap direct_parent_nodes_map = buildDirectParentNodesMap(root_node);
-    processNodeRecursively(node, {}, 0, direct_parent_nodes_map);
+    NodeToParentsMap direct_parent_nodes_map = buildDirectParentNodesMap(root_node);
+    processNodeRecursively(node, {}, direct_parent_nodes_map);
 }
 
 } // namespace QueryPlanOptimizations
