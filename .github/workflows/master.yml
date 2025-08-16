@@ -1916,7 +1916,7 @@ jobs:
           fi
 
   stateless_tests_amd_tsan_sequential_1_2:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-small-mem]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCwgMS8yKQ==') }}
     name: "Stateless tests (amd_tsan, sequential, 1/2)"
@@ -1954,7 +1954,7 @@ jobs:
           fi
 
   stateless_tests_amd_tsan_sequential_2_2:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-small-mem]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCwgMi8yKQ==') }}
     name: "Stateless tests (amd_tsan, sequential, 2/2)"
