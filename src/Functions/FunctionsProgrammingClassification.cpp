@@ -131,7 +131,7 @@ Then using a marked-up dictionary with weights of unigrams and bigrams of comman
     FunctionDocumentation::Examples examples = {
         {"C++ code detection", "SELECT detectProgrammingLanguage('#include <iostream>')", "C++"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
