@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-};
-
 using ObjectInfo = RelativePathWithMetadata;
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;

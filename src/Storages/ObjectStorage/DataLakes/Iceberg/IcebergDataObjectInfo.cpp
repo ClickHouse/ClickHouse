@@ -21,8 +21,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
+extern const int LOGICAL_ERROR;
 }
 
 #if USE_AVRO

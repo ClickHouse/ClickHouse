@@ -1,9 +1,13 @@
 #pragma once
+#include "config.h"
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
-namespace DB::Iceberg {
-
+namespace DB::Iceberg
+{
 struct PersistentTableComponents
 {
     mutable IcebergSchemaProcessorPtr schema_processor;
@@ -13,3 +17,5 @@ struct PersistentTableComponents
 };
 
 }
+
+#endif
