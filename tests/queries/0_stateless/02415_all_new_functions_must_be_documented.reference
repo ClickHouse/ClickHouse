@@ -378,7 +378,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
