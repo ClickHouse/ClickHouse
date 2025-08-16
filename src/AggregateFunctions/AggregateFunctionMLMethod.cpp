@@ -306,7 +306,7 @@ AS state FROM train_data
         R"(
 WITH (SELECT state FROM your_model) AS model
 SELECT
-evalMLMethod(model, param1, param2)
+evalMLMethod(model, x1, x2)
 FROM test_data
         )",
         "Returns probability values for test data"
@@ -314,10 +314,10 @@ FROM test_data
     {
         "Classification with threshold",
         R"(
-SELECT ans < 1.1 AND ans > 0.5
+SELECT result < 1.1 AND result > 0.5
 FROM (
 WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, param1, param2) AS ans FROM test_data)
+evalMLMethod(model, x1, x2) AS result FROM test_data)
         )",
         "Returns binary classification labels using probability threshold"
     }
