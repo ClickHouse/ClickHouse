@@ -176,7 +176,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     {
         case QueryTreeNodeType::QUERY:
         {
-            if (table_expression)
+            if (!node->as<QueryNode &>().isSubquery() && table_expression)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "For query analysis table expression must be empty");
 
