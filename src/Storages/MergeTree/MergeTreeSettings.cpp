@@ -611,6 +611,11 @@ namespace ErrorCodes
     If true patch parts are applied on merges
     )", 0) \
     \
+    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
+    The maximum uncompressed size of data in all patch parts in bytes.
+    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+    0 - unlimited.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1279,6 +1284,9 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
+    )", 0) \
+    DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
+    How often replica will try to reload it's flags according to background schedule.
     )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
