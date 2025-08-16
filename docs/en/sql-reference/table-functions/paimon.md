@@ -69,6 +69,50 @@ Table function `paimon` is an alias to `paimonS3` now.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
+## Data Type supported
+
+| Paimon Data Type | Clickhouse Data Type 
+|-------|--------|
+|BOOLEAN     |Int8      |
+|TINYINT     |Int8      |
+|SMALLINT     |Int16      |
+|INTEGER     |Int32      |
+|BIGINT     |Int64      |
+|FLOAT     |Float32      |
+|DOUBLE     |Float64      |
+|STRING,VARCHAR,BYTES,VARBINARY     |String      |
+|DATE     |Date      |
+|TIME(p),TIME     |Time('UTC')      |
+|TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
+|TIMESTAMP(p)     |DateTime64('UTC')      |
+|CHAR     |FixedString(1)      |
+|BINARY(n)     |FixedString(n)      |
+|DECIMAL(P,S)     |Decimal(P,S)      |
+|ARRAY<t>     |Array      |
+|MAP<kt, vt>     |Map    |
+
+
+:::important
+In Apache Paimon, the 'p' in TIMESTAMP(p) can be between 0 and 9, but in ClickHouse, we use DateTime64, and it can only be between 0 and 3.
+:::
+
+## Partition supported
+Data types supported in Paimon partition keys:
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME_WITHOUT_TIME_ZONE`
+* `TIMESTAMP_WITHOUT_TIME_ZONE`
+* `TIMESTAMP_WITH_LOCAL_TIME_ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`
+
 ## See Also {#see-also}
 
 * [Paimon cluster table function](/sql-reference/table-functions/paimonCluster.md)
