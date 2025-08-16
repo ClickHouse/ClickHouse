@@ -40,7 +40,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -397,7 +397,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)
@@ -690,7 +690,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         if not profiles:
             return []
 
-        profiles = profiles.split('\n')
+        profiles = profiles.split("\n")
 
         res = []
 
@@ -702,7 +702,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # group profiles by pid
         grouped_profiles = defaultdict(list)
         for profile in profiles:
-            parts = profile.split('.')
+            parts = profile.split(".")
             pid = int(parts[2])
             count = int(parts[3])
             grouped_profiles[pid].append((count, profile))
@@ -926,10 +926,6 @@ quit
             "minio_audit_logs",
             "minio_server_logs",
         ]
-
-        if "_tsan" in Info().job_name:
-            print("minio_audit_logs scrapping is too slow with tsan - skip")
-            TABLES.remove("minio_audit_logs")
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"

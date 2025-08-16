@@ -21,7 +21,7 @@ workflow = Workflow.Config(
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
+        *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_tests_jobs_azure_master_only,
