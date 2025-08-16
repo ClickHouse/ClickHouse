@@ -226,11 +226,26 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
 
     ffi::FFI_ArrowArray array;
     ffi::FFI_ArrowSchema schema;
+    SCOPE_EXIT({
+        if (schema.release)
+            schema.release(&schema);
+    });
     exportTable(write_metadata, array, schema);
 
-    KernelEngineData engine_data(DeltaLake::KernelUtils::unwrapResult(
-        ffi::get_engine_data(array, &schema, engine.get()),
-        "get_engine_data"));
+    KernelEngineData engine_data;
+    try
+    {
+        /// Takes ownership of `array` (but not`schema`) if successfully called.
+        engine_data = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_engine_data(array, &schema, engine.get()),
+            "get_engine_data");
+    }
+    catch (...)
+    {
+        if (array.release)
+            array.release(&array);
+        throw;
+    }
 
     ffi::add_files(transaction.get(), engine_data.release());
     auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
