@@ -40,19 +40,20 @@ public:
         {
             try
             {
-                // First try to close the connection gracefully.
-                connection->close();
+                // First try to reset the connection.
+                connection->resetConnection();
             }
             catch (...)
             {
                 // If that fails for some reason, hard-reset it.
+                // This calls the destructor, no exceptions can be thrown from here.
                 connection.reset();
             }
         }
         pool->returnObject(std::move(connection));
     }
 
-    postgres::Connection::Lease getLease()
+    [[nodiscard]] postgres::Connection::Lease getLease()
     {
         return connection->getLease();
     }

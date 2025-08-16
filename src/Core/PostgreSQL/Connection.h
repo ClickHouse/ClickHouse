@@ -39,8 +39,13 @@ public:
         explicit Lease(pqxx::connection & connection_);
         ~Lease();
 
-        Lease(const Lease &);
-        Lease & operator=(const Lease &);
+        // Only allow moving a Lease
+        Lease(Lease && other) noexcept;
+        Lease & operator=(Lease && other) noexcept;
+
+        // No copying
+        Lease(const Lease &) = delete;
+        Lease & operator=(const Lease &) = delete;
 
         pqxx::connection & getRef() { return *connection; }
 
@@ -52,12 +57,12 @@ public:
         const ConnectionInfo & connection_info_,
         bool replication_ = false,
         size_t num_tries = 3);
-    
+
     ~Connection();
 
     void execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec);
 
-    Lease getLease();
+    [[nodiscard]] Lease getLease();
 
     void connect();
 
@@ -71,7 +76,8 @@ public:
 
     String getInfoForLog() const { return connection_info.host_port; }
 
-    void close();
+    void resetConnection();
+    void close() noexcept;
 
 private:
 

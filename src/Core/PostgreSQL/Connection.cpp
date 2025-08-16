@@ -29,15 +29,22 @@ Connection::Lease::Lease(pqxx::connection & connection_) : connection(&connectio
 
 Connection::Lease::~Lease()
 {
-    CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnectionsInUse, 1);
-    CurrentMetrics::add(CurrentMetrics::PostgreSQLClientConnectionsIdle, 1);
+    if (connection != nullptr)
+    {
+        CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnectionsInUse, 1);
+        CurrentMetrics::add(CurrentMetrics::PostgreSQLClientConnectionsIdle, 1);
+    }
 }
 
-Connection::Lease::Lease(const Lease & other) : Lease(*other.connection) {}
-
-Connection::Lease & Connection::Lease::operator=(const Lease & other)
+Connection::Lease::Lease(Lease && other) noexcept
 {
     connection = other.connection;
+    other.connection = nullptr;
+}
+
+Connection::Lease & Connection::Lease::operator=(Lease && other) noexcept
+{
+    std::swap(connection, other.connection);
     return *this;
 }
 
@@ -118,13 +125,21 @@ void Connection::connect()
         updateConnection();
 }
 
-void Connection::close()
+void Connection::resetConnection()
+{
+    // pqxx::connection::reset(), not std::unique_ptr::reset()
+    connection->reset();
+}
+
+void Connection::close() noexcept
 {
     if (connection)
     {
         CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnectionsIdle, 1);
         CurrentMetrics::sub(CurrentMetrics::PostgreSQLClientConnections, 1);
 
+        // Deletes the connection object, closing the connection
+        // No exceptions can be thrown from here
         connection.reset();
     }
 }
