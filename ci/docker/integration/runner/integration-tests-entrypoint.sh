@@ -14,18 +14,25 @@ if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     function handle_term()
     {
         echo "Sending TERM to $PID"
+        ps aux
         kill -TERM "$PID"
     }
     trap handle_term TERM
 fi
 
+echo "Runnig: $*"
 "$@" &
 PID=$!
+# This may be interrupted by SIGTERM that is received by this script
 wait $PID
 server_exit_code=$?
+
+while kill -0 "$PID"; do
+    wait $PID
+    server_exit_code=$?
+done
 echo "Server exited with $server_exit_code"
 
-EXIT_CODE_SIGTERM=$((128+15)) # 143
 if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     jemalloc_reports=/var/lib/clickhouse/jemalloc
     mkdir -p "$jemalloc_reports"
