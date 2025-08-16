@@ -125,11 +125,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        R"(SELECT splitByNonAlpha('  1!  a,  b.  ');)",
+        R"(SELECT splitByNonAlpha('user@domain.com');)"
         R"(
-┌─splitByNonAl⋯ a,  b.  ')─┐
-│ ['1','a','b']            │
-└──────────────────────────┘
+['user','domain','com']
         )"
     }
     };
