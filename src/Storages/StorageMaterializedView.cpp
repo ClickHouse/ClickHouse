@@ -137,6 +137,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (to_table_engine && to_table_engine->primary_key)
         storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
+                                                                     mode,
                                                                      local_context->getGlobalContext());
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
