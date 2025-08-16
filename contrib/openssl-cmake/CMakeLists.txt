@@ -1178,6 +1178,13 @@ elseif(ARCH_S390X)
 elseif(ARCH_RISCV64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-riscv64-zkn.S
+        asm/crypto/aes/aes-riscv64-zkned.S
+        asm/crypto/aes/aes-riscv64-zvbb-zvkg-zvkned.S
+        asm/crypto/aes/aes-riscv64-zvkb-zvkned.S
+        asm/crypto/aes/aes-riscv64.S
+        asm/crypto/modes/aes-gcm-riscv64-zvkb-zvkg-zvkned.S
+        asm/crypto/modes/ghash-riscv64-zvkb-zvbc.S
+        asm/crypto/modes/ghash-riscv64-zvkg.S
         asm/crypto/modes/ghash-riscv64.S
         asm/crypto/riscv64cpuid.S
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
@@ -1248,14 +1255,21 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/tls13_enc.c
     ${OPENSSL_SOURCE_DIR}/ssl/tls_depr.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/cc_newreno.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/json_enc.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/qlog.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/qlog_event_helpers.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_ackm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_cfq.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_channel.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_demux.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_engine.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_fc.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_fifd.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_fifd.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_impl.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_lcidm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_method.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_port.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_reactor.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_record_rx.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_record_shared.c
@@ -1264,6 +1278,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rstream.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rx_depack.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sf_list.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_srtm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sstream.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_statm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_stream_map.c
@@ -1273,6 +1288,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_tserver.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_txp.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_txpim.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_types.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_wire.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_wire_pkt.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/uint_set.c
