@@ -1995,6 +1995,7 @@ try
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(*config);
                 global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+                global_context->loadOrReloadUserDefinedDrivers(*config);
             }
 
             global_context->setRemoteHostFilter(*config);
@@ -2697,6 +2698,17 @@ try
         catch (...)
         {
             tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
+            throw;
+        }
+
+        /// try to load user defined drivers, throw on error and die
+        try
+        {
+            global_context->loadOrReloadUserDefinedDrivers(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading user defined drivers.");
             throw;
         }
 

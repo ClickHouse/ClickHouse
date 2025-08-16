@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -45,7 +46,19 @@ BlockIO InterpreterDropFunctionQuery::execute()
 
     bool throw_if_not_exists = !drop_function_query.if_exists;
 
-    UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
+    if (UserDefinedSQLFunctionFactory::instance().has(drop_function_query.function_name))
+    {
+        UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
+    }
+    else if (UserDefinedDriverFunctionFactory::instance().has(drop_function_query.function_name))
+    {
+        UserDefinedDriverFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
+    }
+    else
+    {
+        // TODO: This branch is only to throw an exception. Maybe exists something better than it
+        UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
+    }
 
     return {};
 }

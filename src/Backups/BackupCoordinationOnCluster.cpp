@@ -617,8 +617,11 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
         path += "/";
         switch (object_type)
         {
-            case UserDefinedSQLObjectType::Function:
+            case UserDefinedSQLObjectType::SQLFunction:
                 path += "functions";
+                break;
+            case UserDefinedSQLObjectType::DriverFunction:
+                path += "driver_functions";
                 break;
         }
 
@@ -656,10 +659,18 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
 
             if (String functions_path = objects_path + "/functions"; zk->exists(functions_path))
             {
-                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
+                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::SQLFunction;
                 for (const String & host_id : zk->getChildren(functions_path))
                 {
                     String dir = zk->get(functions_path + "/" + host_id);
+                    directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
+                }
+            } else if (String driver_functions_path = objects_path + "/driver_functions"; zk->exists(driver_functions_path))
+            {
+                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::DriverFunction;
+                for (const String & host_id : zk->getChildren(driver_functions_path))
+                {
+                    String dir = zk->get(driver_functions_path + "/" + host_id);
                     directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
                 }
             }
