@@ -3,12 +3,16 @@
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
-#include <Common/logger_useful.h>
-
 #include <base/defines.h>
 #include <base/EnumReflection.h>
 
+#include <Common/logger_useful.h>
+#include <Core/UUID.h>
+#include <Core/Field.h>
+
+#include <Poco/String.h>
 #include <fmt/ranges.h>
+#include <filesystem>
 
 namespace DB::ErrorCodes
 {
@@ -18,6 +22,11 @@ namespace DB::ErrorCodes
 
 namespace DeltaLake
 {
+
+std::string generateWritePath(const std::string & prefix, const std::string & format_str)
+{
+    return std::filesystem::path(prefix) / (DB::toString(DB::UUIDHelpers::generateV4()) + "." + Poco::toLower(format_str));
+}
 
 ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
 {
