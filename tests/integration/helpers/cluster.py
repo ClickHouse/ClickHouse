@@ -682,7 +682,7 @@ class ClickHouseCluster:
         self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
-        self.nats_port = 4444
+        self._nats_port = 0
         self.nats_docker_id = None
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
@@ -904,6 +904,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def nats_port(self):
+        if self._nats_port:
+            return self._nats_port
+        self._nats_port = self.port_pool.get_port()
+        return self._nats_port
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.port_pool.return_used_ports()
