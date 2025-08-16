@@ -374,7 +374,7 @@ private:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                DB::formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
+                formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
                 offsets_res[i] = pos - begin;
             }
 
