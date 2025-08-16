@@ -397,7 +397,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
         num_low_cardinality_types += arg.type->lowCardinality();
     }
 
-    if (!result_type->canBeInsideLowCardinality() || num_low_cardinality_columns != 1 || num_full_columns != 0)
+    if (!dictionary_type->canBeInsideLowCardinality() || num_low_cardinality_columns != 1 || num_full_columns != 0)
     {
         convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
         return executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
