@@ -20,6 +20,7 @@ public:
         return name;
     }
 
+    /// FIX-ME: This method does not include hive partition columns
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
 protected:

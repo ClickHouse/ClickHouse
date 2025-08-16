@@ -118,7 +118,7 @@ namespace
 
         if (file_format.empty() || file_format == "auto")
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File format can't be empty for hive style partitioning");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File format can't be empty for hive style partitioning");
         }
 
         const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
