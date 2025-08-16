@@ -573,7 +573,7 @@ void ReadFromRemote::addLazyPipe(
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
@@ -612,7 +612,7 @@ void ReadFromRemote::addLazyPipe(
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *out_header);
 }
 
 void ReadFromRemote::addPipe(
@@ -699,7 +699,7 @@ void ReadFromRemote::addPipe(
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
+            addConvertingActions(pipes.back(), *output_header);
         }
     }
     else
@@ -734,7 +734,7 @@ void ReadFromRemote::addPipe(
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-        addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+        addConvertingActions(pipes.back(), *out_header);
     }
 }
 
