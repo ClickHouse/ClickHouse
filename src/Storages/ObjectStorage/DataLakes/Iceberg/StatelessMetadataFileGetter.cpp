@@ -146,12 +146,16 @@ ManifestFileCacheKeys getManifestList(
                     i,
                     f_added_snapshot_id);
 
+            ManifestFileContentType content_type = ManifestFileContentType::DATA;
             if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number
                     = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
+                content_type = Iceberg::ManifestFileContentType(
+                    manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
-            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>());
+            manifest_file_cache_keys.emplace_back(
+                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.

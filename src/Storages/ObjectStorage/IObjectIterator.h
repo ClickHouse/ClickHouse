@@ -20,11 +20,6 @@ struct IObjectIterator
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
     virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
-    virtual std::shared_ptr<ISimpleTransform>
-    getPositionDeleteTransformer(const ObjectInfoPtr &, const SharedHeader &, const std::optional<FormatSettings> &, ContextPtr) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getPositionDeleteTransformer is not implemented for this iterator type");
-    }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -43,14 +38,6 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        return iterator->getPositionDeleteTransformer(object_info, header, format_settings, context_);
-    }
 
 private:
     const ObjectIterator iterator;

@@ -64,7 +64,6 @@ extern const int LOGICAL_ERROR;
 }
 namespace Setting
 {
-extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsBool use_iceberg_partition_pruning;
 };
 
@@ -263,7 +262,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files, format);
+        return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files, manifest_file_entry.file_format);
     }
     return nullptr;
 }
@@ -277,24 +276,6 @@ IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
     producer_task->deactivate();
-}
-
-std::shared_ptr<ISimpleTransform> IcebergIterator::getPositionDeleteTransformer(
-    const ObjectInfoPtr & object_info,
-    const SharedHeader & header,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context_) const
-{
-    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
-    if (!iceberg_object_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The object with path '{}' info is not IcebergDataObjectInfo", object_info->getPath());
-
-    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(
-            header, iceberg_object_info, object_storage, format_settings, context_);
-    else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            header, iceberg_object_info, object_storage, format_settings, context_);
 }
 }
 

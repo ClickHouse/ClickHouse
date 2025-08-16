@@ -28,6 +28,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -134,6 +135,12 @@ struct RelativePathWithMetadata
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual bool hasPositionDeleteTransformer() const { return false; }
+    virtual std::shared_ptr<ISimpleTransform>
+    getPositionDeleteTransformer(ObjectStoragePtr, const SharedHeader &, const std::optional<FormatSettings> &, ContextPtr)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Position delete transformer is not implemented for object with path: {}", relative_path);
+    }
 };
 
 struct ObjectKeyWithMetadata

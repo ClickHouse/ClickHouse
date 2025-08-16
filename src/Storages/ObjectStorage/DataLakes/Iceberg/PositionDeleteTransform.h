@@ -21,7 +21,7 @@ public:
     IcebergPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
-        const ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_)
         : ISimpleTransform(header_, header_, false)
@@ -62,7 +62,7 @@ public:
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
-        const ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_)
         : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
@@ -86,7 +86,7 @@ public:
     IcebergStreamingPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
-        const ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_)
         : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)

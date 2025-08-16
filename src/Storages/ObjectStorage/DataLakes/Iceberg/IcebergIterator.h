@@ -95,19 +95,13 @@ public:
     size_t estimatedKeysCount() override;
     ~IcebergIterator() override;
 
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override;
-
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator position_deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
-    BackgroundSchedulePool::TaskHolder producer_task;
+    BackgroundSchedulePool::TaskHolder producer_task; 
     IDataLakeMetadata::FileProgressCallback callback;
     const String format;
     const String compression_method;
