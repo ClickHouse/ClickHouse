@@ -10,6 +10,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Processors/Chunk.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -194,11 +195,7 @@ void convertToSerializations(Block & block, const SerializationInfoByName & info
     for (auto & column : block)
     {
         auto kind = infos.getKind(column.name);
-
-        if (kind != ISerialization::Kind::DEFAULT)
-        {
-            column.column = convertToSerialization(column.column, *column.type, kind);
-        }
+        column.column = convertToSerialization(column.column, *column.type, kind);
     }
 }
 
