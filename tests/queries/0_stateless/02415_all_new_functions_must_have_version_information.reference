@@ -60,7 +60,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
 appendTrailingCharIfAbsent
 ascii
@@ -199,9 +198,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 extractTextFromHTML
@@ -357,7 +353,6 @@ ngramSearch
 ngramSearchCaseInsensitive
 ngramSearchCaseInsensitiveUTF8
 ngramSearchUTF8
-ngrams
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -521,11 +516,6 @@ sparseGrams
 sparseGramsHashes
 sparseGramsHashesUTF8
 sparseGramsUTF8
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 startsWithUTF8
@@ -680,7 +670,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-tokens
 topLevelDomain
 topLevelDomainRFC
 transactionID
