@@ -2027,7 +2027,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         case Protocol::Client::MergeTreeReadTaskResponse:
         {
             ParallelReadResponse response;
-            response.deserialize(*in);
+            response.deserialize(*in, client_parallel_replicas_protocol_version);
             return response;
         }
 
