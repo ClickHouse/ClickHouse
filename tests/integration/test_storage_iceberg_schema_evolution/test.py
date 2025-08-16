@@ -1444,7 +1444,7 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_evolved_schema_simple_"
+        "test_not_evolved_schema_"
         + format_version
         + "_"
         + storage_type
