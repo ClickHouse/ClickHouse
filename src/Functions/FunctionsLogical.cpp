@@ -28,7 +28,6 @@ namespace DB
 
 REGISTER_FUNCTION(Logical)
 {
-    // Register FunctionAnd with documentation
     {
         FunctionDocumentation::Description description = R"(
 Calculates the logical conjunction of two or more values.
@@ -48,7 +47,7 @@ Returns:
 - `0`, if at least one argument evaluates to `false`
 - `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`
 - `1`, otherwise
-        )", {"UInt8", "Nullable(UInt8)"}};
+        )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
             {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
@@ -60,7 +59,6 @@ Returns:
         factory.registerFunction<FunctionAnd>(documentation);
     }
 
-    // Register FunctionOr with documentation
     {
         FunctionDocumentation::Description description = R"(
 Calculates the logical disjunction of two or more values.
@@ -80,7 +78,7 @@ Returns:
 - `1`, if at least one argument evaluates to `true`
 - `0`, if all arguments evaluate to `false`
 - `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`
-        )", {"UInt8", "Nullable(UInt8)"}};
+        )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
             {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
@@ -92,7 +90,6 @@ Returns:
         factory.registerFunction<FunctionOr>(documentation);
     }
 
-    // Register FunctionXor with documentation
     {
         FunctionDocumentation::Description description = R"(
 Calculates the logical exclusive disjunction of two or more values.
@@ -108,7 +105,7 @@ Returns:
 - `1`, for two values: if one of the values evaluates to `false` and other does not
 - `0`, for two values: if both values evaluate to `false` or to both `true`
 - `NULL`, if at least one of the inputs is `NULL`.
-        )", {"UInt8", "Nullable(UInt8)"}};
+        )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT xor(0, 1, 1);", "0"}
         };
@@ -119,7 +116,6 @@ Returns:
         factory.registerFunction<FunctionXor>(documentation);
     }
 
-    // Register FunctionNot with documentation
     {
         FunctionDocumentation::Description description = R"(
 Calculates the logical negation of a value.
@@ -127,14 +123,14 @@ Zero as an argument is considered `false`, non-zero values are considered `true`
 )";
         FunctionDocumentation::Syntax syntax = "not(val)";
         FunctionDocumentation::Arguments arguments = {
-            {"val", "The value.", {"Int", "UInt", "Float", "Nullable"}}
+            {"val", "The value.", {"(U)Int*", "Float*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns:
 - `1`, if `val` evaluates to `false`
 - `0`, if `val` evaluates to `true`
 - `NULL`, if `val` is `NULL`.
-        )", {"UInt8", "Nullable(UInt8)"}};
+        )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT NOT(1);", "0"}
         };
