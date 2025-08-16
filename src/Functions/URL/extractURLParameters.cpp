@@ -27,7 +27,8 @@ public:
 
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        FunctionArgumentDescriptors mandatory_args{
+        FunctionArgumentDescriptors mandatory_args
+        {
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
@@ -88,6 +89,7 @@ public:
         else if (pos + 1 >= end)
         {
             token_end = end;
+            ++pos;
         }
         else
         {

@@ -2,6 +2,7 @@
 #include <Functions/FunctionsStringSearchToString.h>
 #include <base/find_symbols.h>
 
+
 namespace DB
 {
 
