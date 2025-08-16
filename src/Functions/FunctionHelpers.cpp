@@ -228,6 +228,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
 
     if (src->onlyNull())
         return src;
+
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
@@ -272,7 +273,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
     }
 
     if (!result_null_map_column)
-        return makeNullable(src);
+        return makeNullableOrLowCardinalityNullable(src);
 
     return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }

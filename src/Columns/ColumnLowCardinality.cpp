@@ -986,6 +986,66 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
     return res;
 }
 
+template <bool negative>
+void ColumnLowCardinality::applyNullMapImpl(const NullMap & map)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply null map to non-nullable LowCardinality column");
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            applyNullMapImplType<negative, ColumnUInt8>(map);
+            return;
+        case sizeof(UInt16):
+            applyNullMapImplType<negative, ColumnUInt16>(map);
+            return;
+        case sizeof(UInt32):
+            applyNullMapImplType<negative, ColumnUInt32>(map);
+            return;
+        case sizeof(UInt64):
+            applyNullMapImplType<negative, ColumnUInt64>(map);
+            return;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+    }
+}
+
+template <bool negative, typename IndexColumn>
+void ColumnLowCardinality::applyNullMapImplType(const NullMap & map)
+{
+    auto & indexes = idx.getPositionsPtr();
+    auto & indexes_data = assert_cast<IndexColumn &>(*indexes).getData();
+
+    for (size_t i = 0, size = indexes_data.size(); i < size; ++i)
+    {
+        /// Zero index always means null.
+        if (map[i] ^ negative)
+            indexes_data[i] = 0;
+    }
+}
+
+void ColumnLowCardinality::applyNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<false>(map.getData());
+}
+
+void ColumnLowCardinality::applyNullMap(const NullMap & map)
+{
+    applyNullMapImpl<false>(map);
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const ColumnUInt8 & map)
+{
+    applyNullMapImpl<true>(map.getData());
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map)
+{
+    applyNullMapImpl<true>(map);
+}
+
+
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {
     if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(&column))

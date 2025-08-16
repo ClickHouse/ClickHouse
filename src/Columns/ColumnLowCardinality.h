@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+using NullMap = ColumnUInt8::Container;
+
 /**
  * How data is stored (in a nutshell):
  * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
@@ -279,6 +281,11 @@ public:
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
+    void applyNullMap(const ColumnUInt8 & map);
+    void applyNullMap(const NullMap & map);
+    void applyNegatedNullMap(const ColumnUInt8 & map);
+    void applyNegatedNullMap(const NullMap & map);
+
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
@@ -429,6 +436,12 @@ private:
     void updatePermutationWithIndexType(
         IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
         IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+
+    template <bool negative>
+    void applyNullMapImpl(const NullMap & map);
+
+    template <bool negative, typename IndexColumn>
+    void applyNullMapImplType(const NullMap & map);
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);
