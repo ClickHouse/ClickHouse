@@ -24,10 +24,9 @@ struct InitcapUTF8Impl
         ColumnString::Offsets & res_offsets,
         size_t /*input_rows_count*/)
     {
-        if (data.empty())
-            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
+
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
@@ -78,13 +77,12 @@ struct InitcapUTF8Impl
     }
 
 private:
-
     static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
         const auto * offset_it = offsets.begin();
         const UInt8 * begin = src;
 
-        /// handle remaining symbols, row by row (to avoid influence of bad UTF8 symbols from one row, to another)
+        /// Handle remaining symbols, row by row (to avoid influence of bad UTF8 symbols from one row to another)
         while (src < src_end)
         {
             const UInt8 * row_end = begin + *offset_it;

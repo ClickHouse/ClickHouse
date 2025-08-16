@@ -210,10 +210,10 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
-            size_t str1_length = str1_offsets[i] - str1_data_offset - 1;
+            size_t str1_length = str1_offsets[i] - str1_data_offset;
 
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
-            size_t str2_length = str2_offsets[i] - str2_data_offset - 1;
+            size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
@@ -248,7 +248,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t str1_length = str1_offsets[i] - str1_data_offset - 1;
+            size_t str1_length = str1_offsets[i] - str1_data_offset;
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2.size(), str2_offset, result[i]))
             {
                 const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
@@ -326,7 +326,7 @@ private:
             auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
 
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
-            size_t str2_length = str2_offsets[i] - str2_data_offset - 1;
+            size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {

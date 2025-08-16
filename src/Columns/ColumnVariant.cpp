@@ -790,7 +790,7 @@ StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char c
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
-    char * pos = arena.allocContinue(sizeof(global_discr), begin);
+    char * pos = arena.allocContinue(sizeof(global_discr), begin, sizeof(global_discr));
     memcpy(pos, &global_discr, sizeof(global_discr));
     StringRef res(pos, sizeof(global_discr));
 

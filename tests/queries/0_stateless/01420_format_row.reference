@@ -112,6 +112,6 @@ formatRow
 (1,\'good\')
 (2,\'good\')
 formatRowNoNewline
-(0,\'good\'
-(1,\'good\'
-(2,\'good\'
+(0,\'good\')
+(1,\'good\')
+(2,\'good\')

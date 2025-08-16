@@ -1,6 +1,4 @@
 #include <Common/formatIPv6.h>
-#include <base/hex.h>
-#include <Common/StringUtils.h>
 
 #include <base/range.h>
 #include <array>
@@ -168,7 +166,6 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
             if constexpr (std::endian::native == std::endian::little)
                 std::ranges::reverse(ipv4_buffer);
             formatIPv4(ipv4_buffer, dst, std::min(zeroed_tail_bytes_count, static_cast<uint8_t>(IPV4_BINARY_LENGTH)), "0");
-            // formatIPv4 has already added a null-terminator for us.
             return;
         }
 
@@ -178,8 +175,6 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
     /// Was it a trailing run of 0x00's?
     if (best.base != -1 && static_cast<size_t>(best.base) + static_cast<size_t>(best.len) == words.size())
         *dst++ = ':';
-
-    *dst++ = '\0';
 }
 
 }

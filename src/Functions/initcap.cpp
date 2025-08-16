@@ -14,19 +14,31 @@ struct InitcapImpl
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t /*input_rows_count*/)
+        size_t input_rows_count)
     {
-        if (data.empty())
-            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
-        array(data.data(), data.data() + data.size(), res_data.data());
+
+        ColumnString::Offset prev_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            ColumnString::Offset next_offset = offsets[i];
+            array(&data[prev_offset], &data[next_offset], &res_data[prev_offset]);
+            prev_offset = next_offset;
+        }
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data, size_t)
+    static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data, size_t input_rows_count)
     {
         res_data.resize(data.size());
-        array(data.data(), data.data() + data.size(), res_data.data());
+
+        ColumnString::Offset prev_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            ColumnString::Offset next_offset = prev_offset + n;
+            array(&data[prev_offset], &data[next_offset], &res_data[prev_offset]);
+            prev_offset = next_offset;
+        }
     }
 
 private:
@@ -39,10 +51,12 @@ private:
             char c = *src;
             bool alphanum = isAlphaNumericASCII(c);
             if (alphanum && !prev_alphanum)
+            {
                 if (isAlphaASCII(c))
                     *dst = toUpperIfAlphaASCII(c);
                 else
                     *dst = c;
+            }
             else if (isAlphaASCII(c))
                 *dst = toLowerIfAlphaASCII(c);
             else
