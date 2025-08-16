@@ -81,13 +81,14 @@ void PostgreSQLSource<T>::onStart()
     {
         try
         {
-            auto & conn = connection_holder->get();
-            tx = std::make_shared<T>(conn);
+            conn_lease.emplace(connection_holder->getLease());
+            tx = std::make_shared<T>(conn_lease->getRef());
         }
         catch (const pqxx::broken_connection &)
         {
             connection_holder->update();
-            tx = std::make_shared<T>(connection_holder->get());
+            conn_lease.emplace(connection_holder->getLease());
+            tx = std::make_shared<T>(conn_lease->getRef());
         }
     }
 
@@ -208,6 +209,7 @@ PostgreSQLSource<T>::~PostgreSQLSource()
 
         stream.reset();
         tx.reset();
+        conn_lease.reset();
 
         if (connection_holder)
             connection_holder->setBroken();
