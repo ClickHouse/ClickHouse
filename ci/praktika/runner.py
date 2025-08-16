@@ -225,7 +225,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).digest_dockers
+                    RunConfig.from_workflow_data().digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -252,7 +252,7 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
+                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
                 )
                 if Utils.is_arm():
                     docker_tag += "_arm"
@@ -395,6 +395,26 @@ class Runner:
         result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+
+        job_outputs = env.JOB_KV_DATA
+        pipeline_status = Result.Status.SUCCESS
+        if not result.is_ok():
+            if result.ext.get("pipeline_status", "") == Result.Status.SUCCESS:
+                # job explicitly says to not block ci even though result is not ok
+                pass
+            else:
+                pipeline_status = Result.Status.FAILED
+        job_outputs["pipeline_status"] = pipeline_status
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(job_outputs)}",
+                file=f,
+            )
+            print(
+                f"pipeline_status={pipeline_status}",
+                file=f,
+            )
 
         if job.post_hooks:
             sw_ = Utils.Stopwatch()

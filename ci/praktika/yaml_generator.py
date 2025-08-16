@@ -139,6 +139,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -229,11 +230,11 @@ jobs:
 """
 
         TEMPLATE_IF_EXPRESSION = """
-    if: ${{{{ !failure() && !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
+    if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """
 
         TEMPLATE_IF_EXPRESSION_SKIPPED_OR_SUCCESS = """
-    if: ${{ !failure() && !cancelled() }}\
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}\
 """
 
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
@@ -341,15 +342,15 @@ class PullRequestPushYamlGen:
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
                     )
                 )
-            if self.workflow_config.config._enabled_workflow_config():
-                secrets_envs.append(
-                    YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
-                        WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
-                            self.workflow_config.name
-                        ),
-                        WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
-                    )
-                )
+            # if self.workflow_config.config._enabled_workflow_config():
+            #     secrets_envs.append(
+            #         YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
+            #             WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
+            #                 self.workflow_config.name
+            #             ),
+            #             WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
+            #         )
+            #     )
 
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
