@@ -1148,6 +1148,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -2680,6 +2681,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -3135,6 +3138,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
