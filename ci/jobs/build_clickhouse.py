@@ -193,7 +193,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command=f"ninja {targets}",
+                command=f"command time -v ninja {targets}",
                 workdir=build_dir,
             )
         )
@@ -228,7 +228,7 @@ def main():
             Result.from_commands_run(
                 name="Build Packages",
                 command=[
-                    f"DESTDIR={build_dir}/root ninja programs/install",
+                    f"DESTDIR={build_dir}/root command time -v ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
                     f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version_dict['string']} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
                 ],

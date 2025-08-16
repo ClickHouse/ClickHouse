@@ -36,6 +36,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnMap.h>
@@ -130,7 +131,9 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
             {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())}};
+            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
+    };
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
@@ -290,6 +293,22 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.data_lake_snapshot_version)->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_row_number")
+        {
+#if USE_PARQUET
+            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
+            if (chunk_info)
+            {
+                size_t row_num_offset = chunk_info->row_num_offset;
+                auto column = ColumnInt64::create();
+                for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                    column->insertValue(i + row_num_offset);
+                chunk.addColumn(std::move(column));
+                return;
+            }
+#endif
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), -1)->convertToFullColumnIfConst());
         }
     }
 }
