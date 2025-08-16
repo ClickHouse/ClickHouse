@@ -397,7 +397,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)

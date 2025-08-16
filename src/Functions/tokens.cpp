@@ -152,12 +152,12 @@ private:
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
 
-        std::vector<String> tokens;
+        std::vector<std::string_view> tokens;
         size_t tokens_count = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i).toView();
-            tokens = token_extractor->getTokens(input.data(), input.size());
+            tokens = token_extractor->getTokensView(input.data(), input.size());
             tokens_count += tokens.size();
 
             for (const auto & token : tokens)

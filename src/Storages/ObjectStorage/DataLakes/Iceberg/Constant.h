@@ -66,9 +66,12 @@ DEFINE_ICEBERG_FIELD(branch);
 DEFINE_ICEBERG_FIELD(main);
 DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
+DEFINE_ICEBERG_FIELD(overwrite);
 DEFINE_ICEBERG_FIELD(file_sequence_number);
 DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
+DEFINE_ICEBERG_FIELD(properties);
+DEFINE_ICEBERG_FIELD(owner);
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
@@ -103,6 +106,9 @@ DEFINE_ICEBERG_FIELD_ALIAS(partition_specs, partition-specs);
 DEFINE_ICEBERG_FIELD_ALIAS(spec_id, spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(added_records, added-records);
 DEFINE_ICEBERG_FIELD_ALIAS(added_data_files, added-data-files);
+DEFINE_ICEBERG_FIELD_ALIAS(added_delete_files, added-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(added_position_delete_files, added-position-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(added_position_deletes, added-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(added_files_size, added-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(total_data_files, total-data-files);
 DEFINE_ICEBERG_FIELD_ALIAS(changed_partition_count, changed-partition-count);

@@ -60,6 +60,10 @@ using GinSegmentWithRowIdRangeVector = std::vector<GinSegmentWithRowIdRange>;
 class GinFilter
 {
 public:
+    GinFilter() = default;
+
+    GinFilter(std::string_view query_string_, const std::vector<String> & search_terms_);
+
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
     /// for building text index for the given store.
     void add(const String & term, UInt32 rowID, GinIndexStorePtr & store) const;

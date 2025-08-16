@@ -40,7 +40,8 @@
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
-#include "config.h"
+#include <config.h>
+#include <base/sleep.h>
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -78,6 +79,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -2039,12 +2041,31 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
+        static constexpr int MAX_TRY = 10;
+        static constexpr UInt64 INTERVAL_MS = 100;
+        bool acquired_db_mutex_lock = false;
+        for (int i = 0; i < MAX_TRY; ++i)
+        {
+            acquired_db_mutex_lock = db_mutex.try_lock_shared();
+            if (acquired_db_mutex_lock)
+                break;
 
-        bool locked_database_for_read = db_mutex.try_lock_shared();
-        if (!locked_database_for_read)
+            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
+            {
+                releaseTableLock();
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+            }
+
+            sleepForMilliseconds(INTERVAL_MS);
+        }
+        if (!acquired_db_mutex_lock)
         {
             releaseTableLock();
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Unable to acquire the database lock of {} after {} ms",
+                database_name,
+                MAX_TRY * INTERVAL_MS);
         }
     }
 }

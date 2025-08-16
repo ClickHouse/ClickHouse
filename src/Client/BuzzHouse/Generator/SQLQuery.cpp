@@ -319,10 +319,6 @@ void StatementGenerator::setTableFunction(
                 : (t.isIcebergLocalEngine() ? LocalFunc_FName::LocalFunc_FName_icebergLocal
                                             : LocalFunc_FName::LocalFunc_FName_deltaLakeLocal);
 
-            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
-            {
-                lfunc->mutable_cluster()->set_cluster(cluster.value());
-            }
             lfunc->set_fname(val);
             lfunc->set_credential("local");
         }

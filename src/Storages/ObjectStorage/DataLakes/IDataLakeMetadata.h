@@ -9,6 +9,9 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Storages/MutationCommands.h>
+#include <Interpreters/StorageID.h>
+#include <Databases/DataLake/ICatalog.h>
 
 namespace DB
 {
@@ -76,6 +79,20 @@ public:
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
+
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 protected:
     virtual ObjectIterator createKeysIterator(
         Strings && data_files_,

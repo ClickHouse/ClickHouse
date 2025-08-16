@@ -2612,10 +2612,9 @@ message LocalFunc {
         icebergLocal = 2;
     }
     required FName fname = 1;
-    optional Cluster cluster = 2;
-    required string credential = 3;
-    repeated KeyValuePair params = 4;
-    optional SettingValues setting_values = 5;
+    required string credential = 2;
+    repeated KeyValuePair params = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message URLFunc {
