@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool StorageObjectStorageConfiguration::update( ///NOLINT
+bool ConnectionConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     bool /* if_not_updated_before */,
@@ -28,7 +28,7 @@ bool StorageObjectStorageConfiguration::update( ///NOLINT
     return true;
 }
 
-void StorageObjectStorageConfiguration::create( ///NOLINT
+void ConnectionConfiguration::create( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     const std::optional<ColumnsDescription> & /*columns*/,
@@ -57,11 +57,8 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-void StorageObjectStorageConfiguration::initialize(
-    StorageObjectStorageConfiguration & configuration_to_initialize,
-    ASTs & engine_args,
-    ContextPtr local_context,
-    bool with_table_structure)
+void Connection::initialize(
+    Connection & configuration_to_initialize, ASTs & engine_args, ContextPtr local_context, bool with_table_structure)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -175,10 +172,6 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
     return path.substr(0, end_of_path_without_globs);
 }
 
-void StorageObjectStorageConfiguration::check(ContextPtr) const
-{
-    FormatFactory::instance().checkFormatName(format);
-}
 
 bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 {
@@ -202,12 +195,6 @@ void StorageObjectStorageConfiguration::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
     }
 }
-
-bool StorageObjectStorageConfiguration::hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const
-{
-    return false;
-}
-
 
 std::shared_ptr<ISimpleTransform> StorageObjectStorageConfiguration::getPositionDeleteTransformer(
     const ObjectInfoPtr & /*object_info*/,

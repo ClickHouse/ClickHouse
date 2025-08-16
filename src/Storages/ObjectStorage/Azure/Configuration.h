@@ -12,7 +12,7 @@ namespace DB
 {
 class BackupFactory;
 
-class StorageAzureConfiguration : public StorageObjectStorageConfiguration
+class StorageAzureConfiguration : public ConnectionConfiguration
 {
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;
@@ -66,9 +66,6 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     Path getRawPath() const override { return blob_path; }
-
-    const Paths & getPaths() const override { return blobs_paths; }
-    void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }

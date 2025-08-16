@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
+class StorageHDFSConfiguration : public ConnectionConfiguration
 {
 public:
     static constexpr auto type = ObjectStorageType::HDFS;

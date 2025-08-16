@@ -40,13 +40,8 @@ struct StorageObjectStorageQuerySettings
     bool ignore_non_existent_file;
 };
 
-
-class StorageObjectStorageConfiguration
+struct StorageObjectStorageConfiguration
 {
-public:
-    StorageObjectStorageConfiguration() = default;
-    virtual ~StorageObjectStorageConfiguration() = default;
-
     struct Path
     {
         Path() = default;
@@ -63,13 +58,20 @@ public:
     };
 
     using Paths = std::vector<Path>;
+};
+
+class ConnectionConfiguration
+{
+public:
+    using Path = StorageObjectStorageConfiguration::Path;
+    using Paths = StorageObjectStorageConfiguration::Paths;
+
+    ConnectionConfiguration() = default;
+    virtual ~ConnectionConfiguration() = default;
 
     /// Initialize configuration from either AST or NamedCollection.
     static void initialize(
-        StorageObjectStorageConfiguration & configuration_to_initialize,
-        ASTs & engine_args,
-        ContextPtr local_context,
-        bool with_table_structure);
+        ConnectionConfiguration & configuration_to_initialize, ASTs & engine_args, ContextPtr local_context, bool with_table_structure);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -93,14 +95,6 @@ public:
         read_path = path;
     }
 
-    /*
-     * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
-     * This list is used to determine the next file name and the set of files that shall be read from remote storage.
-     * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
-     */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
-
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
@@ -112,107 +106,18 @@ public:
 
     bool isNamespaceWithGlobs() const;
 
-    virtual bool isArchive() const { return false; }
-    bool isPathInArchiveWithGlobs() const;
-    virtual std::string getPathInArchive() const;
-
-    virtual void check(ContextPtr context) const;
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
-    virtual bool isDataLakeConfiguration() const { return false; }
-
-    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
-
-    virtual bool hasExternalDynamicMetadata() { return false; }
-
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
-
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
-
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
-
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /*object_info*/,
-        const SharedHeader & /*header*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        ContextPtr /*context_*/) const;
-
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        ObjectStoragePtr object_storage,
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context,
-        const PrepareReadingFromFormatHiveParams & hive_parameters);
+    virtual void check(ContextPtr context) const = 0;
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
-    virtual bool supportsFileIterator() const { return false; }
-    virtual bool supportsWrites() const { return true; }
-
     virtual bool supportsPartialPathPrefix() const { return true; }
-
-    virtual ObjectIterator iterate(
-        const ActionsDAG * /* filter_dag */,
-        std::function<void(FileProgress)> /* callback */,
-        size_t /* list_batch_size */,
-        ContextPtr /*context*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
-    }
-
-    /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
-
-    virtual void create(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by,
-        bool if_not_exists,
-        std::shared_ptr<DataLake::ICatalog> catalog,
-        const StorageID & table_id_);
-
-    virtual bool supportsDelete() const { return false; }
-    virtual void mutate(const MutationCommands & /*commands*/,
-        ContextPtr /*context*/,
-        const StorageID & /*storage_id*/,
-        StorageMetadataPtr /*metadata_snapshot*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/) {}
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
-
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
-    }
-
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
-
-    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
-
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
-    /// Whether partition column values are contained in the actual data.
-    /// And alternative is with hive partitioning, when they are contained in file path.
-    bool partition_columns_in_data_file = true;
-    std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -228,8 +133,126 @@ private:
     Path read_path;
 };
 
-using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
-using StorageObjectStorageConfigurationWeakPtr = std::weak_ptr<StorageObjectStorageConfiguration>;
+class EngineConfiguration
+{
+    using Path = StorageObjectStorageConfiguration::Path;
+    using Paths = StorageObjectStorageConfiguration::Paths;
+
+    virtual bool getTypeName() const = 0;
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(
+        const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/)
+    {
+    }
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { }
+
+    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+
+    virtual bool update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before,
+        bool check_consistent_with_previous_metadata);
+
+    virtual void create(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
+
+    virtual void modifyFormatSettings(FormatSettings &) const { }
+
+    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
+
+    virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual bool hasExternalDynamicMetadata() { return false; }
+
+    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    /*
+     * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
+     * This list is used to determine the next file name and the set of files that shall be read from remote storage.
+     * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
+     */
+    virtual const Paths & getPaths() const = 0;
+    virtual void setPaths(const Paths & paths) = 0;
+    virtual void check() = 0;
+
+    virtual bool isArchive() const { return false; }
+    bool isPathInArchiveWithGlobs() const;
+    virtual std::string getPathInArchive() const;
+
+    virtual ObjectIterator iterate(
+        const ActionsDAG * /* filter_dag */,
+        std::function<void(FileProgress)> /* callback */,
+        size_t /* list_batch_size */,
+        ContextPtr /*context*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const SharedHeader & /*header*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context_*/) const;
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context,
+        const PrepareReadingFromFormatHiveParams & hive_parameters);
+
+    virtual bool supportsFileIterator() const { return false; }
+    virtual bool supportsWrites() const { return true; }
+
+    virtual ~EngineConfiguration();
+};
+
+class PlainConfiguration : EngineConfiguration
+{
+    void StorageObjectStorageConfiguration::check(ContextPtr) const { FormatFactory::instance().checkFormatName(format); }
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    /// Whether partition column values are contained in the actual data.
+    /// And alternative is with hive partitioning, when they are contained in file path.
+    bool partition_columns_in_data_file = true;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
+    /// Returns true, if metadata is of the latest version, false if unknown.
 
 
+    Paths paths;
+};
+
+using ConnectionConfigurationPtr = std::shared_ptr<ConnectionConfiguration>;
+using ConnectionConfigurationWeakPtr = std::weak_ptr<ConnectionConfiguration>;
+
+using EngineConfigurationPtr = std::shared_ptr<EngineConfiguration>;
+using EngineConfigurationWeakPtr = std::weak_ptr<EngineConfiguration>;
 }

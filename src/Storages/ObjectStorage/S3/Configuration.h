@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class StorageS3Configuration : public StorageObjectStorageConfiguration
+class StorageS3Configuration : public ConnectionConfiguration
 {
 public:
     static constexpr auto type = ObjectStorageType::S3;
@@ -76,15 +76,9 @@ public:
 
     Path getRawPath() const override { return url.key; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override { keys = paths; }
-
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
-
-    bool isArchive() const override { return url.archive_pattern.has_value(); }
-    std::string getPathInArchive() const override;
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;

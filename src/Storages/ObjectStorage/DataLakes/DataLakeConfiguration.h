@@ -176,13 +176,6 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & object_info,
         const SharedHeader & header,
