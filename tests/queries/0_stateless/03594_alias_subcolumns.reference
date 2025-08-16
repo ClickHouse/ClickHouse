@@ -1,0 +1,81 @@
+2
+1
+1
+0
+QUERY id: 0
+  PROJECTION COLUMNS
+    aa.size0 UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: aa.size0, result_type: UInt64, source_id: 3
+        EXPRESSION
+          FUNCTION id: 4, function_name: getSubcolumn, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 5, nodes: 2
+                COLUMN id: 6, column_name: a, result_type: Array(UInt64), source_id: 3
+                CONSTANT id: 7, constant_value: \'size0\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_alias_subcolumns
+  ORDER BY
+    LIST id: 8, nodes: 1
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 3
+0
+1
+0
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    na.null UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: na.null, result_type: UInt8, source_id: 3
+        EXPRESSION
+          FUNCTION id: 4, function_name: getSubcolumn, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 5, nodes: 2
+                COLUMN id: 6, column_name: n, result_type: Nullable(String), source_id: 3
+                CONSTANT id: 7, constant_value: \'null\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_alias_subcolumns
+  ORDER BY
+    LIST id: 8, nodes: 1
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 3
+2
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_alias_subcolumns
+  WHERE
+    FUNCTION id: 4, function_name: not, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 1
+          FUNCTION id: 6, function_name: empty, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 1
+                COLUMN id: 8, column_name: aa, result_type: Array(UInt64), source_id: 3
+                  EXPRESSION
+                    COLUMN id: 9, column_name: a, result_type: Array(UInt64), source_id: 3
+1
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count(na) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: na, result_type: Nullable(String), source_id: 5
+              EXPRESSION
+                COLUMN id: 6, column_name: n, result_type: Nullable(String), source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_alias_subcolumns
