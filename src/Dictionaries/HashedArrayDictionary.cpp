@@ -1,6 +1,8 @@
+#include <memory>
 #include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -34,6 +36,7 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -41,6 +44,7 @@ HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedArrayDictionary"))
+    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -974,58 +978,22 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        std::optional<DictionaryParallelLoaderType> parallel_loader;
+        std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
-            parallel_loader.emplace(*this);
+            parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-
-        UInt64 pull_time_microseconds = 0;
-        UInt64 process_time_microseconds = 0;
-
-        size_t total_rows = 0;
-        size_t total_blocks = 0;
-        String dictionary_name = getFullName();
-
-        Block block;
-        while (true)
+        auto [query_scope, query_context] = createLoadQueryScope(context);
+        BlockIO io = source_ptr->loadAll(query_context);
+        try
         {
-            Stopwatch watch_pull;
-            bool has_data = executor.pull(block);
-            pull_time_microseconds += watch_pull.elapsedMicroseconds();
-
-            if (!has_data)
-                break;
-
-            ++total_blocks;
-            total_rows += block.rows();
-
-            Stopwatch watch_process;
-            resize(total_rows);
-
-            if (parallel_loader)
-            {
-                parallel_loader->addBlock(std::move(block));
-            }
-            else
-            {
-                DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-                blockToAttributes(block, arena_holder, /* shard = */ 0);
-            }
-            process_time_microseconds += watch_process.elapsedMicroseconds();
+            loadDataImpl(io.pipeline, parallel_loader.get());
+            io.onFinish();
         }
-
-        if (parallel_loader)
-            parallel_loader->finish();
-
-        LOG_DEBUG(log,
-            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
-            configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows,
-            dictionary_name,
-            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
     }
     else
     {
@@ -1036,6 +1004,58 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
             getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sharded>
+void HashedArrayDictionary<dictionary_key_type, sharded>::loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+
+    UInt64 pull_time_microseconds = 0;
+    UInt64 process_time_microseconds = 0;
+
+    size_t total_rows = 0;
+    size_t total_blocks = 0;
+    String dictionary_name = getFullName();
+
+    Block block;
+    while (true)
+    {
+        Stopwatch watch_pull;
+        bool has_data = executor.pull(block);
+        pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+        if (!has_data)
+            break;
+
+        ++total_blocks;
+        total_rows += block.rows();
+
+        Stopwatch watch_process;
+        resize(total_rows);
+
+        if (parallel_loader)
+        {
+            parallel_loader->addBlock(std::move(block));
+        }
+        else
+        {
+            DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+            blockToAttributes(block, arena_holder, /* shard = */ 0);
+        }
+        process_time_microseconds += watch_process.elapsedMicroseconds();
+    }
+
+    if (parallel_loader)
+        parallel_loader->finish();
+
+    LOG_DEBUG(log,
+        "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+        configuration.use_async_executor ? "asynchronous " : "",
+        total_blocks, total_rows,
+        dictionary_name,
+        pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -1195,15 +1215,15 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (shards > 1)
-                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(context, dict_id, dict_struct, std::move(source_ptr), configuration);
         }
 
         if (shards > 1)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
+                context, dict_id, dict_struct, std::move(source_ptr), configuration);
         return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
-            dict_id, dict_struct, std::move(source_ptr), configuration);
+            context, dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed_array",

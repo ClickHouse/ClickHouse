@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
@@ -105,21 +106,23 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-QueryPipeline LibraryDictionarySource::loadAll()
+BlockIO LibraryDictionarySource::loadAll(ContextMutablePtr)
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    return bridge_helper->loadAll();
+    BlockIO io;
+    io.pipeline = bridge_helper->loadAll();
+    return io;
 }
 
 
-QueryPipeline LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline LibraryDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     return bridge_helper->loadIds(ids);
 }
 
 
-QueryPipeline LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+QueryPipeline LibraryDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);

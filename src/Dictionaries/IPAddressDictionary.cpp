@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
+#include "Interpreters/Context_fwd.h"
+#include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/Context.h>
 #include <base/itoa.h>
 #include <base/range.h>
@@ -206,6 +208,7 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
 }
 
 IPAddressDictionary::IPAddressDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -216,6 +219,7 @@ IPAddressDictionary::IPAddressDictionary(
     , configuration(configuration_)
     , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
     , logger(getLogger("IPAddressDictionary"))
+    , context(std::move(context_))
 {
     createAttributes();
     loadData();
@@ -406,42 +410,49 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    auto [query_scope, query_context] = createLoadQueryScope(context);
+    BlockIO io = source_ptr->loadAll(query_context);
 
     std::vector<IPRecord> ip_records;
-
     bool has_ipv6 = false;
-
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-    while (executor.pull(block))
+    try
     {
-        const auto rows = block.rows();
-        element_count += rows;
-
-        const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = Columns{
-            std::from_range_t{},
-            collections::range(0, dict_struct.attributes.size())
-                | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
-
-        for (const auto row : collections::range(0, rows))
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+        Block block;
+        while (executor.pull(block))
         {
-            for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+            const auto rows = block.rows();
+            element_count += rows;
+
+            const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
+            const auto attribute_column_ptrs = Columns{
+                std::from_range_t{},
+                collections::range(0, dict_struct.attributes.size())
+                    | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
+
+            for (const auto row : collections::range(0, rows))
             {
-                const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
-                auto & attribute = attributes[attribute_idx];
+                for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+                {
+                    const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+                    auto & attribute = attributes[attribute_idx];
 
-                setAttributeValue(attribute, attribute_column[row]);
+                    setAttributeValue(attribute, attribute_column[row]);
+                }
+
+                const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
+                has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
+
+                size_t row_number = ip_records.size();
+                ip_records.emplace_back(addr, prefix, row_number);
             }
-
-            const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
-            has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
-
-            size_t row_number = ip_records.size();
-            ip_records.emplace_back(addr, prefix, row_number);
         }
+        io.onFinish();
+    }
+    catch (...)
+    {
+        io.onException();
     }
 
     if (access_to_key_from_attributes)
@@ -1204,7 +1215,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
             .use_async_executor = use_async_executor,
         };
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<IPAddressDictionary>(std::move(context), dict_id, dict_struct, std::move(source_ptr), configuration);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

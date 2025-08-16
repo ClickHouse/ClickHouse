@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
+#include "Interpreters/Context.h"
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
@@ -30,6 +31,7 @@ public:
     };
 
     IPAddressDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -246,6 +248,8 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     LoggerPtr logger;
+
+    ContextPtr context;
 };
 
 }

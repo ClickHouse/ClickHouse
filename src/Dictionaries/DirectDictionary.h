@@ -7,6 +7,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include "Interpreters/Context_fwd.h"
 
 
 namespace DB
@@ -21,6 +22,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_);
@@ -104,6 +106,8 @@ private:
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    ContextPtr context;
 
     bool use_async_executor = false;
 
