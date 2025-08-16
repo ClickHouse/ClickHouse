@@ -2466,7 +2466,7 @@ def test_join_with_distributed(started_cluster):
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    # All cases which were reproted as faulty
+    # All cases which were reported as faulty
     assert int(instance.query(f"SELECT count() FROM {table_function_cluster} SETTINGS prefer_localhost_replica = 0").strip()) == 9
     assert int(instance.query(f"SELECT count() FROM {table_function} SETTINGS cluster_for_parallel_replicas='cluster', max_parallel_replicas=2, allow_experimental_parallel_reading_from_replicas=2, parallel_replicas_for_cluster_engines=1").strip()) == 9
 
