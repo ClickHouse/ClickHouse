@@ -2,6 +2,10 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
@@ -232,6 +236,104 @@ std::set<MarkRange> RangesInPatchParts::getIntersectingRanges(const String & pat
     }
 
     return res;
+}
+
+static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & granule)
+{
+    const auto & minmax_granule = assert_cast<const MergeTreeIndexGranuleMinMax &>(granule);
+    chassert(minmax_granule.hyperrectangle.size() == 1);
+
+    UInt64 min = minmax_granule.hyperrectangle[0].left.safeGet<UInt64>();
+    UInt64 max = minmax_granule.hyperrectangle[0].right.safeGet<UInt64>();
+
+    return {min, max};
+}
+
+MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+
+    auto metadata_snapshot = patch_part->getMetadataSnapshot();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+
+    auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
+    {
+        return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+    });
+
+    if (it == secondary_indices.end())
+        return {};
+
+    if (it->type != "minmax")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", BlockNumberColumn::name, it->type);
+
+    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    if (!index_ptr->getDeserializedFormat(patch_part->getDataPartStorage(), index_ptr->getFileName()))
+        return {};
+
+    size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
+    MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
+
+    MergeTreeIndexReader reader(
+        index_ptr,
+        patch_part,
+        total_marks_without_final,
+        index_mark_ranges,
+        /*mark_cache=*/ nullptr,
+        /*uncompressed_cache=*/ nullptr,
+        /*vector_similarity_index_cache=*/ nullptr,
+        /*settings_=*/ {});
+
+    MergeTreeIndexGranulePtr granule = nullptr;
+    PatchRangesStats result(ranges.size());
+
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        auto & stats = result[i];
+        size_t last_mark = std::min(ranges[i].end, total_marks_without_final);
+
+        if (ranges[i].begin == last_mark)
+            continue;
+
+        reader.read(ranges[i].begin, granule);
+        std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
+
+        for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
+        {
+            reader.read(j, granule);
+            auto [min, max] = getMinMaxValues(*granule);
+
+            stats.min = std::min(stats.min, min);
+            stats.max = std::max(stats.max, max);
+        }
+    }
+
+    return result;
+}
+
+bool intersects(const MinMaxStats & lhs, const MinMaxStats & rhs)
+{
+    return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
+}
+
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+    MarkRanges result;
+
+    for (auto range : ranges)
+    {
+        auto it = patch_stats.find(range);
+
+        if (it != patch_stats.end()
+            && intersects(result_stats.block_number_stats, it->second.block_number_stats)
+            && intersects(result_stats.block_offset_stats, it->second.block_offset_stats))
+        {
+            result.push_back(range);
+        }
+    }
+
+    return result;
 }
 
 }
