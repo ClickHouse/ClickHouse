@@ -92,10 +92,6 @@ Table function `paimon` is an alias to `paimonS3` now.
 |MAP<kt, vt>     |Map    |
 
 
-:::important
-In Apache Paimon, the 'p' in TIMESTAMP(p) can be between 0 and 9, but in ClickHouse, we use DateTime64, and it can only be between 0 and 3.
-:::
-
 ## Partition supported
 Data types supported in Paimon partition keys:
 * `CHAR`
@@ -106,9 +102,9 @@ Data types supported in Paimon partition keys:
 * `SMALLINT`
 * `INTEGER`
 * `DATE`
-* `TIME_WITHOUT_TIME_ZONE`
-* `TIMESTAMP_WITHOUT_TIME_ZONE`
-* `TIMESTAMP_WITH_LOCAL_TIME_ZONE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
 * `BIGINT`
 * `FLOAT`
 * `DOUBLE`
