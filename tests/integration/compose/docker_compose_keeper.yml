@@ -1,6 +1,7 @@
 services:
     zoo1:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -38,6 +39,7 @@ services:
             - rotate
     zoo2:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -75,6 +77,7 @@ services:
             - rotate
     zoo3:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
