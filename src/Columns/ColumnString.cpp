@@ -275,7 +275,7 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
         for (size_t i = 0; i < rows; ++i)
         {
             size_t string_size = sizeAt(i);
-            sizes[i] += !!is_null[i] + !is_null[i] * (sizeof(string_size) + string_size + 1 /* null byte */);
+            sizes[i] += 1 + !is_null[i] * (sizeof(string_size) + string_size + 1 /* null byte */);
         }
     }
     else
