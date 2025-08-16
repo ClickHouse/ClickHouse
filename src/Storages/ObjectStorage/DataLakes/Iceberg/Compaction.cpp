@@ -146,7 +146,6 @@ Plan getPlan(
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file);
-                data_object_info->sequence_number = data_file.added_sequence_number;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
@@ -176,7 +175,7 @@ Plan getPlan(
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->sequence_number <= delete_file.added_sequence_number)
-                data_file->data_object_info->position_deletes_objects.push_back(delete_file);
+                data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
     plan.history = std::move(snapshots_info);
