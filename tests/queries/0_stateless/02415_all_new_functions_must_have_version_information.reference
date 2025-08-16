@@ -193,7 +193,6 @@ endsWithUTF8
 erf
 erfc
 errorCodeToName
-evalMLMethod
 exp
 exp10
 exp2

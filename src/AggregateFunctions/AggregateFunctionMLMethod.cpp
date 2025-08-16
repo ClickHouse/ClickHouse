@@ -269,9 +269,9 @@ Note that first argument of `evalMLMethod` is an `AggregateFunctionState` object
 We can also set a bound of probability, which assigns elements to different labels.
 
 ```sql
-SELECT ans < 1.1 AND ans > 0.5 FROM
+SELECT result < 1.1 AND result > 0.5 FROM
 (WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, param1, param2) AS ans FROM test_data)
+evalMLMethod(model, param1, param2) AS result FROM test_data)
 ```
 
 Then the result will be labels.
