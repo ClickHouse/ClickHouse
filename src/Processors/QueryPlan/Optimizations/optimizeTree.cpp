@@ -174,6 +174,8 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
     };
 
+    pushDownVolumeReducingFunctions(&root, optimization_settings);
+
     Stack stack;
     stack.push_back({.node = &root});
 
@@ -189,8 +191,6 @@ void optimizeTreeSecondPass(
             optimizePrewhere(stack, nodes);
 
         auto & frame = stack.back();
-
-        pushDownVolumeReducingFunctions(frame.node, &root, optimization_settings);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
