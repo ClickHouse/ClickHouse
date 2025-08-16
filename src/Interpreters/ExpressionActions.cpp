@@ -670,8 +670,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
 
-                if (res_column.column->getDataType() != res_column.type->getColumnType()
-                    && res_column.column->getDataType() != TypeIndex::LowCardinality)
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,

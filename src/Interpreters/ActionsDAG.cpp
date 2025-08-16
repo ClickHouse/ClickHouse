@@ -412,6 +412,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
         {
             size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
             column = node.function->execute(arguments, node.result_type, num_rows, true);
+
             if (column->getDataType() != node.result_type->getColumnType())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
