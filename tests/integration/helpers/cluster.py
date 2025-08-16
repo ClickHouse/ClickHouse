@@ -4735,7 +4735,7 @@ class ClickHouseInstance:
         return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(["bash", "-c", f"pgrep -f '(^|/){process_name}'"])
+        output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
         if output:
             try:
                 pid = int(output.split("\n")[0].strip())
