@@ -85,7 +85,37 @@ using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTon
 
 REGISTER_FUNCTION(DetectTonality)
 {
-    factory.registerFunction<FunctionDetectTonality>();
+    FunctionDocumentation::Description description = R"(
+Determines the sentiment of the provided text data.
+Uses a marked-up sentiment dictionary, in which each word has a tonality ranging from -12 to 6.
+For each piece of text, it calculates the average sentiment value of its words and returns it in the range [-1, 1].
+
+:::note Limitation
+This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "detectTonality(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The text to be analyzed.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the average sentiment value of the words in text", {"Float32"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Russian sentiment analysis",
+        R"(
+SELECT
+detectTonality('Шарик - хороший пёс'),
+detectTonality('Шарик - пёс'),
+detectTonality('Шарик - плохой пёс')
+        )",
+        "0.44445, 0, -0.3"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDetectTonality>(documentation);
 }
 
 }
