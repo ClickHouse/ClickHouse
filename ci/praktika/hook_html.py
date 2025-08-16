@@ -190,7 +190,7 @@ class HtmlRunnerHooks:
             workflow_config = RunConfig.from_fs(_workflow.name)
             skipped_jobs = workflow_config.cache_success
             filtered_job_and_reason = workflow_config.filtered_jobs
-            job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
+            job_cache_records = workflow_config.cache_jobs
             results = []
             info = Info()
             for skipped_job in skipped_jobs:
