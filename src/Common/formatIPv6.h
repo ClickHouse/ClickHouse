@@ -26,10 +26,10 @@ extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string
   */
 void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_bytes_count = 0);
 
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
+/** An optimized version of parsing IPv4 string.
  *
  * Parses the input string `src` and stores binary host-endian value into buffer pointed by `dst`,
- * which should be long enough.
+ * which should accommodate four bytes.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
  * In case of failure doesn't modify buffer pointed by `dst`.
@@ -45,10 +45,9 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * @return            - true if parsed successfully, false otherwise.
  */
 template <typename T, typename IsEOF>
-requires (std::is_same_v<std::remove_cv_t<T>, char>)
-inline bool parseIPv4(T *& src, IsEOF eof, unsigned char * dst, int32_t first_octet = -1)
+inline bool parseIPv4(T & src, IsEOF eof, unsigned char * dst, int32_t first_octet = -1)
 {
-    if (src == nullptr || first_octet > 255)
+    if (first_octet > 255)
         return false;
 
     UInt32 result = 0;
@@ -111,7 +110,7 @@ inline const char * parseIPv4(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
+/** An optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
@@ -127,23 +126,20 @@ inline const char * parseIPv4(const char * src, unsigned char * dst)
 * @return            - true if parsed successfully, false otherwise.
 */
 template <typename T, typename IsEOF>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6(T * &src, IsEOF eof, unsigned char * dst, int32_t first_block = -1)
+inline bool parseIPv6(T & src, IsEOF eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
     {
-        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        memset(dst, '\0', IPV6_BINARY_LENGTH);
         return false;
     };
 
-    if (src == nullptr || eof())
+    if (eof())
         return clear_dst();
 
     int groups = 0;                 /// number of parsed groups
     unsigned char * iter = dst;     /// iterator over dst buffer
     unsigned char * zptr = nullptr; /// pointer into dst buffer array where all-zeroes block ("::") is started
-
-    std::memset(dst, '\0', IPV6_BINARY_LENGTH);
 
     if (first_block >= 0)
     {
@@ -226,7 +222,7 @@ inline bool parseIPv6(T * &src, IsEOF eof, unsigned char * dst, int32_t first_bl
         group_start = false;
 
         UInt16 val = 0;   /// current decoded group
-        int xdigits = 0;  /// number of decoded hex digits in current group
+        int xdigits = 0;  /// number of decoded hex digits in the current group
 
         for (; !eof() && xdigits < 4; ++src, ++xdigits)
         {
@@ -251,8 +247,8 @@ inline bool parseIPv6(T * &src, IsEOF eof, unsigned char * dst, int32_t first_bl
     if (zptr != nullptr) /// process all-zeroes block
     {
         size_t msize = iter - zptr;
-        std::memmove(dst + IPV6_BINARY_LENGTH - msize, zptr, msize);
-        std::memset(zptr, '\0', IPV6_BINARY_LENGTH - (iter - dst));
+        memmove(dst + IPV6_BINARY_LENGTH - msize, zptr, msize);
+        memset(zptr, '\0', IPV6_BINARY_LENGTH - (iter - dst));
     }
 
     return true;
@@ -280,7 +276,7 @@ inline const char * parseIPv6(const char * src, unsigned char * dst)
     return nullptr;
 }
 
-/** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
+/** An optimized version of parsing IPv6 string.
 *
 * Parses the input string `src` IPv6 or possible IPv4 into IPv6 and stores binary big-endian value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
@@ -294,12 +290,11 @@ inline const char * parseIPv6(const char * src, unsigned char * dst)
 * @return    - true if parsed successfully, false otherwise.
 */
 template <typename T, typename IsEOF>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6orIPv4(T * &src, IsEOF eof, unsigned char * dst)
+inline bool parseIPv6orIPv4(T & src, IsEOF eof, unsigned char * dst)
 {
     const auto clear_dst = [dst]()
     {
-        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        memset(dst, '\0', IPV6_BINARY_LENGTH);
         return false;
     };
 

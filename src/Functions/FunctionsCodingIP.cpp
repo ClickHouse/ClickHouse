@@ -8,10 +8,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,11 +24,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
-#include <base/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
-#include <type_traits>
 #include <array>
 
 
