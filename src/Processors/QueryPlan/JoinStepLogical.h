@@ -112,7 +112,12 @@ public:
     QueryPlanStepPtr clone() const override;
     bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
+    bool canRemoveUnusedColumns() const override;
+    UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
 protected:
+    SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
     std::vector<std::pair<String, String>> describeJoinActions() const;

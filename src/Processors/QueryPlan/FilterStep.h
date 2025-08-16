@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -48,6 +49,10 @@ public:
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
+
+    bool canRemoveUnusedColumns() const override;
+    UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
 private:
     void updateOutputHeader() override;

@@ -505,6 +505,22 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
     return required_nodes;
 }
 
+ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(NameMultiSet possible_output_names) const
+{
+    SplitPossibleOutputNamesResult result;
+    for (const auto * output : outputs)
+    {
+        if (auto it = possible_output_names.find(output->result_name); it != possible_output_names.end())
+    {
+            auto extracted_node = possible_output_names.extract(it);
+            result.output_names.insert(std::move(extracted_node.value()));
+        }
+    }
+    result.not_output_names.reserve(possible_output_names.size());
+    result.not_output_names.assign(std::make_move_iterator(possible_output_names.begin()), std::make_move_iterator(possible_output_names.end()));
+    return result;
+}
+
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
     bool replaced = false;
@@ -584,7 +600,7 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -608,17 +624,38 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
     }
 
     outputs.swap(required_nodes);
-    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+
+    if (removeUnusedActions(allow_remove_inputs, allow_constant_folding))
+        return true;
+
+    if (required_nodes.size() != outputs.size())
+        return true;
+
+    for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
+        if (*old_it != *new_it)
+            return true;
+
+    return false;
 }
 
-void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
     auto required_nodes = findInOutputs(required_names);
     outputs.swap(required_nodes);
-    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+    if (removeUnusedActions(allow_remove_inputs, allow_constant_folding))
+        return true;
+
+    if (required_nodes.size() != outputs.size())
+        return true;
+
+    for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
+        if (*old_it != *new_it)
+            return true;
+
+    return false;
 }
 
-void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
 {
     std::unordered_set<const Node *> used_inputs;
     if (!allow_remove_inputs)
@@ -626,10 +663,10 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         for (const auto * input : inputs)
             used_inputs.insert(input);
     }
-    removeUnusedActions(used_inputs, allow_constant_folding);
+    return removeUnusedActions(used_inputs, allow_constant_folding);
 }
 
-void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding)
 {
     NodeRawConstPtrs roots;
     roots.reserve(outputs.size() + used_inputs.size());
@@ -722,8 +759,10 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         }
     }
 
-    std::erase_if(nodes, [&](const Node & node) { return !required_nodes.contains(&node); });
+    const auto erased_count = std::erase_if(nodes, [&](const Node & node) { return !required_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !required_nodes.contains(node); });
+
+    return erased_count != 0;
 }
 
 
@@ -3836,6 +3875,38 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     dag.outputs = std::move(outputs);
 
     return dag;
+}
+
+Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag)
+{
+    Names new_required_outputs;
+    new_required_outputs.reserve(required_outputs.size());
+    for (const auto & output: actions_dag.getOutputs())
+    {
+        if (auto it = required_outputs.find(output->result_name); it != required_outputs.end())
+        {
+            auto node = required_outputs.extract(it);
+            new_required_outputs.push_back(std::move(node.value()));
+        }
+    }
+    return new_required_outputs;
+}
+
+bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    NameSet unique_names;
+    for (const auto * node: nodes)
+    {
+        auto [_, inserted] = unique_names.insert(node->result_name);
+        if (!inserted)
+            return true;
+    }
+    return false;
+}
+
+bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag)
+{
+    return hasDuplicatedNames(actions_dag.getInputs()) || hasDuplicatedNames(actions_dag.getOutputs());
 }
 
 }

@@ -1,0 +1,98 @@
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+
+#include <iterator>
+#include <Core/Names.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+
+namespace DB
+{
+namespace QueryPlanOptimizations
+{
+
+namespace
+{
+NameMultiSet getNameMultiSetFromNames(Names && names)
+{
+    NameMultiSet name_multi_set;
+    name_multi_set.insert(std::move_iterator(names.begin()), std::move_iterator(names.end()));
+    return name_multi_set;
+}
+}
+
+bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
+{
+    return std::all_of(
+        node.children.begin(),
+        node.children.end(),
+        [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
+}
+
+bool removeChildrenOutputs(const QueryPlan::Node & node)
+{
+    bool updated = false;
+    const auto & parent_inputs = node.step->getInputHeaders();
+
+    for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
+    {
+        auto & child_step = node.children[child_id]->step;
+        chassert(child_step->canRemoveUnusedColumns());
+
+        // Here we never want to remove inputs because the grandchildren might cannot remove outputs
+        const auto updated_anything
+            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false).updated_anything;
+        // TODO(antaljanosbenjamin): compare the header with name and types
+        // As removeUnusedColumns might leave additional columns in the output, we have to update the input header of the parent.
+        if (updated_anything || !blocksHaveEqualStructure(*child_step->getOutputHeader(), *parent_inputs[child_id]))
+            node.step->updateInputHeader(child_step->getOutputHeader(), child_id);
+
+        if (updated_anything)
+            updated = true;
+    }
+
+    return updated;
+}
+
+size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto & parent = node->step;
+
+    bool updated_child = false;
+    bool updated_grandchild = false;
+
+    const auto & parent_inputs = parent->getInputHeaders();
+
+    for (auto child_id = 0U; child_id < node->children.size(); ++child_id)
+    {
+        auto * child_node = node->children[child_id];
+        auto & child_step = child_node->step;
+        if (!child_step->canRemoveUnusedColumns())
+            continue;
+
+        const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
+
+        const auto remove_result
+            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), can_remove_inputs);
+
+        if (remove_result.updated_anything)
+        {
+            updated_child = true;
+
+            if (remove_result.removed_any_input)
+                updated_grandchild |= removeChildrenOutputs(*child_node);
+
+            parent->updateInputHeader(child_step->getOutputHeader(), child_id);
+        }
+    }
+
+    if (updated_grandchild)
+        return 3;
+
+    if (updated_child)
+        return 2;
+
+    return 0;
+}
+
+}
+}
