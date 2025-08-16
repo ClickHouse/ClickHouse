@@ -13,7 +13,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 
-#include <AggregateFunctions/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
 
 namespace DB
