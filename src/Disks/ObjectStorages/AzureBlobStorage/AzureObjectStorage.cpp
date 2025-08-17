@@ -331,8 +331,9 @@ void AzureObjectStorage::copyObject( /// NOLINT
     const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    auto settings_ptr = settings.get();
+    auto object_metadata = getObjectMetadata(object_from.remote_path);
     auto client_ptr = client.get();
-    auto dest_blob_client = client_ptr->GetBlobClient(object_to.remote_path);
     auto source_blob_client = client_ptr->GetBlobClient(object_from.remote_path);
 
     Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
@@ -346,7 +347,45 @@ void AzureObjectStorage::copyObject( /// NOLINT
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
-    dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
+    if (object_metadata.size_bytes < settings_ptr->max_single_part_copy_size)
+    {
+        auto dest_blob_client = client_ptr->GetBlobClient(object_to.remote_path);
+        dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
+    }
+    else
+    {
+        auto block_blob_client_dest = client_ptr->GetBlockBlobClient(object_to.remote_path);
+        auto copy_op = block_blob_client_dest.StartCopyFromUri(source_blob_client.GetUrl());
+        auto copy_response = copy_op.PollUntilDone(std::chrono::milliseconds(100));
+        auto properties_model = copy_response.Value;
+
+        auto copy_status = properties_model.CopyStatus;
+        auto copy_status_description = properties_model.CopyStatusDescription;
+
+
+        if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+        {
+            LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), object_to.remote_path);
+        }
+        else
+        {
+            if (copy_status.HasValue())
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                    object_from.remote_path,
+                    object_to.remote_path,
+                    copy_status.Value().ToString(),
+                    copy_status_description.Value(),
+                    copy_op.IsDone());
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                "Copy from {} to {} didn't complete with success status (operation is done {})",
+                object_from.remote_path,
+                object_to.remote_path,
+                copy_op.IsDone());
+        }
+    }
 }
 
 void AzureObjectStorage::applyNewSettings(
