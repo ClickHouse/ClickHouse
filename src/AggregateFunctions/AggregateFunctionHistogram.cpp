@@ -124,11 +124,11 @@ private:
 
         auto cmp = [](const WeightedValue & a, const WeightedValue & b)
         { return a.mean < b.mean; };
-        
         UInt32 prefix = sorted_prefix;
         if (prefix > size) prefix = 0; // reset prefix, because it should be larger than size
         //if we have a monotone_nondecreasing function and positive prefix, we can skip sorting
-        if (!(monotone_nondecreasing && prefix > 0)){
+        if (!(monotone_nondecreasing && prefix > 0))
+        {
             if (prefix == 0)
             {
                 ::sort(points, points + size, cmp);
@@ -283,10 +283,9 @@ public:
 
         points[size] = {value, weight};
         ++size;
-        //check if the input sequence is monotonic increasing, which is a commonly ocurring pattern
-        if(monotone_nondecreasing && value < last_inserted){
+        //check if the input sequence is monotonic increasing, which is a commonly occurring pattern
+        if (monotone_nondecreasing && value < last_inserted)
             monotone_nondecreasing = false;
-        }
         last_inserted = value;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
