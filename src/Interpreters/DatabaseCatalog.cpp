@@ -15,6 +15,8 @@
 #include <Disks/IDisk.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
@@ -38,7 +40,8 @@
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
-#include "config.h"
+#include <config.h>
+#include <base/sleep.h>
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -76,11 +79,17 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -1459,11 +1468,29 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
+    /// Check if we are interested in a particular disk
+    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
+    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
+    {
+        bool is_disk_eligible = !disk->isReadOnly();
+
+        /// Disk is not actually used by MergeTree table
+        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
+        {
+            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
+            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
+        }
+
+        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
+        return is_disk_eligible;
+    };
+
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
+        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -2014,12 +2041,31 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
+        static constexpr int MAX_TRY = 10;
+        static constexpr UInt64 INTERVAL_MS = 100;
+        bool acquired_db_mutex_lock = false;
+        for (int i = 0; i < MAX_TRY; ++i)
+        {
+            acquired_db_mutex_lock = db_mutex.try_lock_shared();
+            if (acquired_db_mutex_lock)
+                break;
 
-        bool locked_database_for_read = db_mutex.try_lock_shared();
-        if (!locked_database_for_read)
+            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
+            {
+                releaseTableLock();
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+            }
+
+            sleepForMilliseconds(INTERVAL_MS);
+        }
+        if (!acquired_db_mutex_lock)
         {
             releaseTableLock();
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Unable to acquire the database lock of {} after {} ms",
+                database_name,
+                MAX_TRY * INTERVAL_MS);
         }
     }
 }

@@ -52,7 +52,7 @@ public:
     }
 
     bool isEffective() const;
-    bool needsSetup() const;
+    void setup() const;
 
     static void stop();
     static void start();
@@ -76,7 +76,7 @@ private:
     ThreadFuzzer();
 
     void initConfiguration();
-    void setup() const;
+    bool needsSetup() const;
 
     static void signalHandler(int);
 };

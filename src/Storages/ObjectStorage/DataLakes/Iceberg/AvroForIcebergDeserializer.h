@@ -11,7 +11,7 @@
 
 #include <memory>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 /// In Iceberg manifest files and manifest lists are store in Avro format: https://avro.apache.org/
