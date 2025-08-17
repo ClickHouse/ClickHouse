@@ -497,6 +497,23 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
 }
 
+void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage",
+                command.type);
+    }
+}
+
+void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
+{
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::alter(params, context, object_storage, configuration_ptr);
+}
+
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,

@@ -673,5 +673,15 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
     configuration->checkMutationIsPossible(commands);
 }
 
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+{
+    configuration->alter(params, context);
+}
+
+void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
+{
+    configuration->checkAlterIsPossible(commands);
+}
+
 
 }

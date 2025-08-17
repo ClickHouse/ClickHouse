@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include "Columns/IColumn.h"
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
 
@@ -128,6 +129,9 @@ public:
         Int32 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
+
+    void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
+    void generateDropColumnMetadata(const String & column_name);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
