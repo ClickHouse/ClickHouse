@@ -39,8 +39,7 @@
 #include <sys/stat.h>
 #include <Poco/JSON/Array.h>
 #include <Common/FailPoint.h>
-#include "Core/Range.h"
-#include "Core/TypeId.h"
+#include <Core/Range.h>
 
 #include <cstdint>
 #include <memory>
@@ -90,7 +89,7 @@ extern const char iceberg_writes_cleanup[];
 namespace
 {
 
-std::vector<uint8_t> dumpFieldToBytes(const Field & field)
+std::optional<std::vector<uint8_t>> dumpFieldToBytes(const Field & field)
 {
     if (field.getType() == Field::Types::Which::Int64)
     {
@@ -107,7 +106,17 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field)
             bytes.push_back(elem);
         return bytes;
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not impl {}", static_cast<Int32>(field.getType()));
+    return std::nullopt;
+}
+
+bool canWriteStatistics(const std::vector<std::pair<size_t, Field>> & statistics)
+{
+    for (const auto & [_, stat] : statistics)
+    {
+        if (!dumpFieldToBytes(stat))
+            return false;
+    }
+    return true;
 }
 
 }
@@ -364,7 +373,7 @@ void generateManifestFile(
         {
             {
                 auto statistics = data_file_statistics->at(data_file_index).getColumnSizes();
-                auto & data_file_record = data_file.field("column_sizes");
+                auto & data_file_record = data_file.field(Iceberg::f_column_sizes);
                 data_file_record.selectBranch(1);
                 auto & column_sizes = data_file_record.value<avro::GenericArray>();
                 auto schema_element = column_sizes.schema()->leafAt(0);
@@ -372,46 +381,42 @@ void generateManifestFile(
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
-                    record.field("key") = static_cast<Int32>(field_id);
-                    record.field("value") = static_cast<Int32>(column_size);
+                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                    record.field(Iceberg::f_value) = static_cast<Int32>(column_size);
                     column_sizes.value().push_back(record_datum);
                 }
             }
+            auto lower_statistics = data_file_statistics->at(data_file_index).getLowerBounds();
+            if (canWriteStatistics(lower_statistics))
             {
-                auto statistics = data_file_statistics->at(data_file_index).getLowerBounds();
-                auto & data_file_record = data_file.field("lower_bounds");
+                auto & data_file_record = data_file.field(Iceberg::f_lower_bounds);
                 data_file_record.selectBranch(1);
                 auto & lower_bounds = data_file_record.value<avro::GenericArray>();
                 auto schema_element = lower_bounds.schema()->leafAt(0);
-                for (const auto [field_id, lower_value] : statistics)
+                for (const auto [field_id, lower_value] : lower_statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
-                    record.field("key") = static_cast<Int32>(field_id);
-                    record.field("value") = dumpFieldToBytes(lower_value);
+                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                    record.field(Iceberg::f_value) = *dumpFieldToBytes(lower_value);
                     lower_bounds.value().push_back(record_datum);
                 }
             }
+            auto upper_statistics = data_file_statistics->at(data_file_index).getUpperBounds();
+            if (canWriteStatistics(upper_statistics))
             {
-                auto statistics = data_file_statistics->at(data_file_index).getUpperBounds();
-                auto & data_file_record = data_file.field("upper_bounds");
+                auto & data_file_record = data_file.field(Iceberg::f_upper_bounds);
                 data_file_record.selectBranch(1);
                 auto & upper_bounds = data_file_record.value<avro::GenericArray>();
                 auto schema_element = upper_bounds.schema()->leafAt(0);
-                for (const auto [field_id, upper_value] : statistics)
+                for (const auto [field_id, upper_value] : upper_statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
-                    record.field("key") = static_cast<Int32>(field_id);
-                    record.field("value") = dumpFieldToBytes(upper_value);
+                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                    record.field(Iceberg::f_value) = *dumpFieldToBytes(upper_value);
                     upper_bounds.value().push_back(record_datum);
                 }
-            }
-            {
-                auto & data_file_record = data_file.field("split_offsets");
-                data_file_record.selectBranch(1);
-                auto & split_offsets = data_file_record.value<avro::GenericArray>();
-                split_offsets.value().push_back(4);
             }
         }
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
@@ -1141,7 +1146,6 @@ bool IcebergStorageSink::initializeMetadata()
                 StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
-                std::cerr << "generateManifestFile start\n";
                 generateManifestFile(
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
@@ -1154,8 +1158,6 @@ bool IcebergStorageSink::initializeMetadata()
                     partition_spec_id,
                     *buffer_manifest_entry,
                     Iceberg::FileContentType::DATA);
-                std::cerr << "generateManifestFile end\n";
-
                 buffer_manifest_entry->finalize();
                 manifest_lengths += buffer_manifest_entry->count();
             }
