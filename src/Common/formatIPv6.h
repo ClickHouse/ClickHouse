@@ -247,7 +247,7 @@ static inline int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_strin
     if (id >= 81)
         return 0;
 
-    const uint8_t *pat = &patterns[id][0];
+    const uint8_t * pat = &patterns[id][0];
 
     const __m128i pattern = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pat));
     // The value of the shuffle mask at a specific index points at the last digit,
@@ -268,7 +268,7 @@ static inline int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_strin
     const __m128i t2 = _mm_sub_epi8(t1b, ascii0);
 
     // check that everything was in the range '0' to '9'
-    const __m128i t2z = _mm_add_epi8(t2,_mm_set1_epi8(-128) );
+    const __m128i t2z = _mm_add_epi8(t2, _mm_set1_epi8(-128));
     const __m128i c9 = _mm_set1_epi8('9' - '0' - 128);
     const __m128i t2me = _mm_cmpgt_epi8(t2z, c9);
     if (!_mm_test_all_zeros(t2me, t2me))
@@ -289,7 +289,7 @@ static inline int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_strin
 
     // pack and we are done!
     const __m128i t6 = _mm_packus_epi16(t5, t5);
-    *destination = static_cast<uint32_t>(_mm_cvtsi128_si32(t6));
+    *destination = __builtin_bswap32(static_cast<uint32_t>(_mm_cvtsi128_si32(t6)));
     return ipv4_string_length - pat[6];
 }
 
