@@ -224,6 +224,12 @@ static inline int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_strin
 
     // This function always reads 16 bytes. With AVX-512 we can do a mask
     // load, but it is not generally available with SSE 4.1.
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+    __msan_unpoison(ipv4_string, sizeof(__m128i));
+#endif
+#endif
+
     const __m128i input = _mm_loadu_si128(reinterpret_cast<const __m128i *>(ipv4_string));
     if (ipv4_string_length > 15)
         return 0;
