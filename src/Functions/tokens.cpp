@@ -190,7 +190,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Examples examples = {
     {
         "Default tokenizer",
-        "SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;",
+        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
         R"(
 ['test1','test2','test3','test4']
         )"
