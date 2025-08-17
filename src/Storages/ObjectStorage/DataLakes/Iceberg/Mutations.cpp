@@ -37,7 +37,7 @@ namespace DB::FailPoints
 extern const char iceberg_writes_cleanup[];
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 #if USE_AVRO
