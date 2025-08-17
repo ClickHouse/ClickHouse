@@ -12,14 +12,14 @@ pub struct LocalDisk {
 
 impl Disk for LocalDisk {
     fn from_config(_config: &Config) -> Self {
-        let local_path = xdg::BaseDirectories::with_prefix("chcache").unwrap();
+        let local_path = xdg::BaseDirectories::with_prefix("chcache");
         LocalDisk { local_path }
     }
 
     async fn read(&self, hash: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         let cache_file = self
             .local_path
-            .get_cache_file(LocalDisk::path_from_hash(&hash));
+            .get_cache_file(LocalDisk::path_from_hash(&hash)).unwrap();
         trace!("Reading cache file: {:?}", cache_file);
 
         let data = fs::read(cache_file)?;

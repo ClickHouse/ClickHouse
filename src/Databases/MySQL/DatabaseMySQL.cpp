@@ -79,7 +79,8 @@ DatabaseMySQL::DatabaseMySQL(
     const String & database_name_in_mysql_,
     std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
-    bool attach)
+    bool attach,
+    UUID uuid)
     : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
@@ -87,6 +88,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
+    , db_uuid(uuid)
 {
     try
     {
@@ -100,8 +102,12 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
-    auto db_disk = getDisk();
-    db_disk->createDirectories(metadata_path);
+
+    if (persistent)
+    {
+        auto db_disk = getDisk();
+        db_disk->createDirectories(metadata_path);
+    }
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
@@ -358,6 +364,9 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr)
 {
+    if (!persistent)
+        return;
+
     auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
@@ -407,6 +416,9 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     remove_or_detach_tables.erase(table_name);
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
+    if (!persistent)
+        return;
+
     auto db_disk = getDisk();
     db_disk->removeFileIfExists(remove_flag);
 }
@@ -439,6 +451,9 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
+    if (!persistent)
+        return;
+
     auto db_disk = getDisk();
     std::lock_guard lock{mutex};
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
@@ -458,8 +473,10 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
 
 void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
-    auto db_disk = getDisk();
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE is not supported for non-persistent MySQL database");
 
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
@@ -492,6 +509,9 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
 
 void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
+
     detachTablePermanently(local_context, table_name);
 }
 
@@ -519,6 +539,9 @@ DatabaseMySQL::~DatabaseMySQL()
 
 void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MySQL database engine does not support CREATE or ATTACH TABLE queries");
+
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
@@ -602,7 +625,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 configuration.database,
                 std::move(mysql_settings),
                 std::move(mysql_pool),
-                args.create_query.attach);
+                args.create_query.attach,
+                args.uuid);
         }
         catch (...)
         {

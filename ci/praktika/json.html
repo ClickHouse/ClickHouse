@@ -11,6 +11,7 @@
             --background-color: white;
             --text-color: #000;
             --tile-background: #f9f9f9;
+            --info-background: #e4e4e4;
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
@@ -51,7 +52,8 @@
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --tile-background: #1F1F1F;
+            --info-background: #575757;
             --header-background-color: #1F1F1C;
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
@@ -86,6 +88,8 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         #toggle-status-bar {
@@ -174,6 +178,7 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
+            background-color: var(--info-background);
         }
         #info-content {
             text-align: left;
@@ -227,9 +232,10 @@
             color: #e0e0e0;
         }
 
-        #theme-toggle {
+        #theme-toggle, #status-filter-toggle {
             cursor: pointer;
             color: white;
+            margin-left: 10px;
         }
 
         #theme-toggle:hover {
@@ -296,10 +302,6 @@
             text-align: left;
         }
 
-        th {
-            background-color: var(--header-background-color);
-        }
-
         .status-success {
             color: green;
             font-weight: bold;
@@ -330,6 +332,11 @@
             font-weight: bold;
         }
 
+        .status-dropped {
+            color: rgb(78, 0, 194);
+            font-weight: bold;
+        }
+
         .status-other {
             color: grey;
             font-weight: bold;
@@ -345,6 +352,7 @@
     <div class="left"></div>
     <div class="right"></div>
     <div class="settings">
+        <span id="status-filter-toggle"></span>
         <span id="theme-toggle">🔆️</span>
     </div>
 </footer>
@@ -357,6 +365,79 @@
         } else {
             localStorage.setItem('theme', 'day');
         }
+    }
+
+    function filterRowsByStatus() {
+        const filter = localStorage.getItem('filter');
+        const showOnlyFailures = filter === 'failures';
+        const showOnlyWarnings = filter === 'warnings';
+
+        const rows = document.querySelectorAll('tr[data-status]');
+
+        if (!showOnlyFailures && !showOnlyWarnings) {
+            rows.forEach(row => row.style.display = '');
+            return;
+        }
+        rows.forEach(row => {
+            row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
+        });
+    }
+
+    function shouldShowRow(filter, status) {
+        const status_ = status.toLowerCase();
+
+        const isFailure =
+            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
+        const isWarning =
+            status_.includes('pending') || status_.includes('running');
+
+        if (filter === 'failures') {
+            return isFailure;
+        }
+
+        if (filter === 'warnings') {
+            // Show both warnings and failures under 'warnings' filter
+            return isWarning || isFailure;
+        }
+
+        // If no filter is set, show all
+        return true;
+    }
+
+    function toggleStatusFilter(setValue=false) {
+        if (setValue instanceof Event) {
+            setValue = false;
+        }
+        let current = localStorage.getItem('filter');
+
+        if (!['all', 'failures', 'warnings'].includes(current)) {
+            current = 'all';
+        }
+        let newFilter;
+        if (setValue) {
+            newFilter = current;
+        } else {
+            if (current === 'all') {
+                newFilter = 'warnings';
+            } else if (current === 'warnings') {
+                newFilter = 'failures';
+            } else {
+                newFilter = 'all';
+            }
+        }
+        localStorage.setItem('filter', newFilter);
+        const toggle = document.getElementById('status-filter-toggle');
+        if (toggle) {
+            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            toggle.innerHTML =
+                newFilter === 'failures' ? redCross :
+                    newFilter === 'warnings' ? yellowExclamationMark :
+                        greenTick;
+        }
+
+        filterRowsByStatus();
     }
 
     function toggleStatusBar() {
@@ -382,6 +463,7 @@
     }
 
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -403,7 +485,7 @@
     function formatDuration(durationInSeconds, detailed = false) {
         // Check if the duration is empty, null, or not a number
         if (!durationInSeconds || isNaN(durationInSeconds)) {
-            return '';
+            return '00s';
         }
 
         // Ensure duration is a floating-point number
@@ -441,7 +523,20 @@
         if (lowerStatus.includes('broken')) return 'status-broken';
         if (lowerStatus.includes('run')) return 'status-run';
         if (lowerStatus.includes('error')) return 'status-error';
+        if (lowerStatus.includes('dropped')) return 'status-dropped';
         return 'status-other';
+    }
+
+    // Color utility
+    function stringToColor(str, dark = false) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash % 360);
+        const saturation = dark ? 90 : 60; // Higher = more vivid
+        const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
     }
 
     function addFileLinksWidget(links) {
@@ -540,8 +635,7 @@
         shaSelectorText.push("latest");
         shaSelectorValues.push("latest");
 
-        const currentSha = sha === "latest" ? (commits.at(-1)?.sha || "latest") : sha;
-        const shaDropdown = createDropdown(currentSha, shaSelectorText, shaSelectorValues, "sha");
+        const shaDropdown = createDropdown(sha, shaSelectorText, shaSelectorValues, "sha");
         topRow.appendChild(shaDropdown);
 
         widget.appendChild(topRow);
@@ -554,7 +648,9 @@
         }
 
         // Current SHA (full), small
-        addLine(currentSha, { small: true });
+        const real_sha = sha === "latest" ? commits.at(-1)?.sha : sha
+        addLine(real_sha, { small: true });
+        addLine(": " + commits.find(c => c.sha === real_sha)?.message || "", { small: true });
 
         statusContainer.appendChild(widget);
     }
@@ -693,6 +789,8 @@
 
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
+        
+        // Note: We don't need the extra style element anymore as we now handle margins directly
 
         if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
             console.error("Invalid or missing storage usage data.");
@@ -701,6 +799,8 @@
 
         const uploaded = usage_data.uploaded;
         const originalDetails = usage_data.uploaded_details;
+        // Calculate total size in MB - define it at this scope level so it's available throughout the function
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
 
         // Group small files and sort
         let sortedEntries = Object.entries(originalDetails)
@@ -717,148 +817,166 @@
         const values = grouped.map(([, value]) => value);
 
         const chartWrapper = document.createElement("div");
-        chartWrapper.className = 'status-widget'
+        chartWrapper.className = 'status-widget';
 
-        // Total uploaded row
-        const totalRow = document.createElement("div");
-        totalRow.style.display = "flex";
-        totalRow.style.justifyContent = "space-between";
-        totalRow.style.margin = 0;
+        // Create fixed-height info container (2 lines)
+        const infoContainer = document.createElement("div");
+        infoContainer.style.height = "2.2em";
+        infoContainer.style.display = "flex";
+        infoContainer.style.flexDirection = "column";
+        infoContainer.style.fontSize = "0.8em";
 
-        const totalLabel = document.createElement("span");
-        totalLabel.textContent = "uploaded:";
-        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
-        const totalSize = document.createElement("span");
-        totalSize.textContent = `${uploadedMB} MB`;
+        // First line: Item name or "total uploaded"
+        const nameRow = document.createElement("div");
+        nameRow.style.height = "1.3em";
+        nameRow.style.lineHeight = "1.3em";
+        nameRow.style.overflow = "hidden";
+        nameRow.style.whiteSpace = "nowrap";
+        nameRow.style.textOverflow = "ellipsis";
+        nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
+        nameRow.id = "storage-usage-name";
+        nameRow.textContent = "uploaded:";
+        
+        // Second line: XX% ...padding... YYYMB
+        const detailsRow = document.createElement("div");
+        detailsRow.style.display = "flex";
+        detailsRow.style.justifyContent = "space-between";
+        detailsRow.style.height = "1.3em";
+        detailsRow.style.lineHeight = "1.3em";
+        detailsRow.id = "storage-usage-details";
+        detailsRow.style.fontSize = "0.85em";
+        detailsRow.style.color = "#666";
+        
+        // Combined size and percentage info (right-aligned)
+        const sizeAndPercentEl = document.createElement("span");
+        sizeAndPercentEl.id = "storage-usage-size-percent";
+        sizeAndPercentEl.style.marginLeft = "auto"; // Push to the right
+        sizeAndPercentEl.textContent = `${uploadedMB} MB (100%)`; // Both size and percentage
+        
+        detailsRow.appendChild(sizeAndPercentEl);
+        
+        infoContainer.appendChild(nameRow);
+        infoContainer.appendChild(detailsRow);
+        chartWrapper.appendChild(infoContainer);
 
-        totalRow.appendChild(totalLabel);
-        totalRow.appendChild(totalSize);
-        chartWrapper.appendChild(totalRow);
-
-        // Canvas
-        const canvas = document.createElement("canvas");
-        canvas.width = 400;
-        canvas.height = 400;
-        canvas.style.width = "100%";
-        canvas.style.maxWidth = "400px";
-        canvas.style.margin = "0";
-        chartWrapper.appendChild(canvas);
-
-        const ctx = canvas.getContext("2d");
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        const radius = 150;
-
-        const sliceData = [];
-        let startAngle = 0;
+        // Fixed dimensions for the horizontal bar chart
+        const barHeight = 24; // Thick bar
+        
+        // Bar chart container - use 100% width to fit the widget perfectly
+        const chartContainer = document.createElement("div");
+        chartContainer.style.height = `${barHeight}px`;
+        chartContainer.style.position = "relative";
+        chartContainer.style.margin = "10px 0 0 0";
+        chartContainer.style.cursor = "pointer";
+        
+        // Create bars for each entry
+        const barData = [];
+        
+        // Use percentage-based widths instead of fixed pixels
         labels.forEach((label, index) => {
             const value = values[index];
-            const sliceAngle = (value / uploaded) * 2 * Math.PI;
+            const percent = value / uploaded;
+            // Convert to percentage width with minimum visibility
+            const percentWidth = Math.max(percent * 100, 0.5);
             const color = stringToColor(label);
-
-            sliceData.push({
-                label,
-                startAngle,
-                endAngle: startAngle + sliceAngle,
-                color,
-            });
-
-            ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
-            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
-            ctx.closePath();
-            ctx.fillStyle = color;
-            ctx.fill();
-
-            startAngle += sliceAngle;
-        });
-
-        // Legend + label mapping
-        const legend = document.createElement("div");
-        const legendMap = {}; // label => element
-
-        labels.forEach((label, index) => {
-            const value = values[index];
-            const percent = ((value / uploaded) * 100).toFixed(1);
+            
+            const bar = document.createElement("div");
+            bar.style.position = "absolute";
+            bar.style.left = barData.length > 0 ? `${barData.reduce((sum, b) => sum + b.percentWidth, 0)}%` : "0";
+            bar.style.width = `${percentWidth}%`;
+            bar.style.height = `${barHeight}px`;
+            bar.style.backgroundColor = color;
+            bar.style.transition = "opacity 0.2s";
+            bar.dataset.label = label;
+            
+            // Create tooltip data for this bar
             const sizeMB = (value / (1024 * 1024)).toFixed(2);
-            const color = stringToColor(label);
-
-            const row = document.createElement("div");
-            row.style.display = "flex";
-            row.style.alignItems = "center";
-            row.style.justifyContent = "space-between";
-            row.style.fontSize = "10px";
-            row.style.cursor = "pointer";
-
-            const left = document.createElement("span");
-            left.style.display = "flex";
-            left.style.alignItems = "center";
-
-            const dot = document.createElement("span");
-            dot.style.display = "inline-block";
-            dot.style.width = "8px";
-            dot.style.height = "8px";
-            dot.style.flexShrink = "0";
-            dot.style.marginRight = "6px";
-            dot.style.backgroundColor = color;
-
-            const labelText = document.createElement("span");
-            labelText.textContent = label;
-
-            left.appendChild(dot);
-            left.appendChild(labelText);
-
-            const right = document.createElement("span");
-            right.textContent = `${sizeMB} MB (${percent}%)`;
-
-            row.appendChild(left);
-            row.appendChild(right);
-            legend.appendChild(row);
-
-            legendMap[label] = row;
-
-            // Hover from legend to chart
-            row.addEventListener("mouseenter", () => drawChart(label));
-            row.addEventListener("mouseleave", () => drawChart(null));
+            const percentValue = ((value / uploaded) * 100).toFixed(1);
+            bar.dataset.tooltip = `${label}: ${sizeMB} MB (${percentValue}%)`;
+            
+            chartContainer.appendChild(bar);
+            
+            barData.push({
+                label,
+                element: bar,
+                percentWidth,
+                color,
+                value,
+                tooltip: `${label}: ${sizeMB} MB (${percentValue}%)`
+            });
         });
-
-        chartWrapper.appendChild(legend);
+        
+        chartWrapper.appendChild(chartContainer);
         statusContainer.appendChild(chartWrapper);
 
-        function drawChart(hoveredLabel) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            sliceData.forEach((slice) => {
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
-                ctx.closePath();
-                ctx.fillStyle = slice.color;
-                ctx.fill();
-                if (slice.label === hoveredLabel) {
-                    ctx.strokeStyle = "#000";
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                }
+        // Helper function to update display elements
+        const updateDisplay = (name, sizeMB, percent) => {
+            const nameEl = document.getElementById("storage-usage-name");
+            const sizePercentEl = document.getElementById("storage-usage-size-percent");
+            
+            if (nameEl && sizePercentEl) {
+                nameEl.textContent = name;
+                sizePercentEl.textContent = `${sizeMB} MB (${percent}%)`;
+            }
+        };
+        
+        // Show the total uploaded by default
+        const showTotalUploaded = () => {
+            updateDisplay("uploaded:", uploadedMB, 100);
+        };
 
-                // Legend underline toggle
-                const row = legendMap[slice.label];
-                if (row) {
-                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
+        // Show details for specific segment
+        const showSegmentDetails = (segment) => {
+            const sizeMB = (segment.value / (1024 * 1024)).toFixed(2);
+            const percent = ((segment.value / uploaded) * 100).toFixed(1);
+            updateDisplay(segment.label, sizeMB, percent);
+        };
+        
+        // Highlight bar function
+        function highlightBar(hoveredLabel) {
+            let hoveredSegment = null;
+            
+            barData.forEach(bar => {
+                if (bar.label === hoveredLabel) {
+                    bar.element.style.opacity = "1";
+                    //bar.element.style.boxShadow = "0 0 0 2px #000";
+                    hoveredSegment = bar;
+                } else {
+                    bar.element.style.opacity = "0.5";
                 }
             });
-        }
-
-        drawChart(null); // Initial draw
-
-        // Color utility
-        function stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            
+            // Show details for hovered segment
+            if (hoveredSegment) {
+                showSegmentDetails(hoveredSegment);
             }
-            const hue = hash % 360;
-            return `hsl(${hue}, 60%, 60%)`;
         }
+
+        // Reset bars function
+        function resetBars() {
+            barData.forEach(bar => {
+                bar.element.style.opacity = "1";
+                bar.element.style.boxShadow = "none";
+            });
+            
+            // Reset to show total uploaded
+            showTotalUploaded();
+        }
+        
+        // Add hover effects to the bar segments
+        barData.forEach(bar => {
+            bar.element.addEventListener("mouseenter", () => highlightBar(bar.label));
+            bar.element.addEventListener("mouseleave", () => resetBars());
+        });
+        
+        // Reset wrapper padding to default for text, but adjust for the bar
+        chartWrapper.style.padding = "10px"; // Restore the standard padding
+        chartWrapper.style.paddingBottom = "10px"; // Add extra bottom padding
+        
+        // Only adjust the chart container (bar) to have full width
+        chartContainer.style.marginLeft = "-10px"; // Offset the parent padding
+        chartContainer.style.marginRight = "-10px"; // Offset the parent padding
+        chartContainer.style.width = "calc(100% + 20px)"; // Compensate for the negative margins
     }
 
     function addTimeTraceWidget(results, statusWidget, originalTask) {
@@ -885,7 +1003,7 @@
         canvas.style.height = `${totalHeight}px`;
         canvas.style.display = "block";
         widget.appendChild(canvas);
-
+        
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
             canvas.height = totalHeight;
@@ -893,7 +1011,7 @@
         }
         resizeCanvas();
         window.addEventListener("resize", resizeCanvas);
-
+        
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
@@ -932,36 +1050,36 @@
                     width = task.duration * scaleX;
                     color = getColorFromName(task.name);
                 }
-
+                
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
 
                 taskRects.push({ x, y, width, height, task });
 
                 // Save failure marker position for second pass
-                if (task.status === "failure" || task.status === "error") {
+                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
                     failedMarkers.push({ x: x + width, y: y + height / 2 });
                 }
             });
 
             // Draw failure markers on top
             failedMarkers.forEach(({ x, y }) => {
-                ctx.font = "12px sans-serif";
+                ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
 
             // Event listeners
-            canvas.addEventListener("mousemove", (event) => {
-                const rect = canvas.getBoundingClientRect();
-                const mouseY = event.clientY - rect.top;
+        canvas.addEventListener("mousemove", (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseY = event.clientY - rect.top;
 
-                let hoveredTask = null;
-                for (let { y, height, task } of taskRects) {
-                    if (mouseY >= y && mouseY <= y + height) {
-                        hoveredTask = task;
-                        break;
-                    }
+            let hoveredTask = null;
+            for (let { y, height, task } of taskRects) {
+                if (mouseY >= y && mouseY <= y + height) {
+                    hoveredTask = task;
+                    break;
                 }
+            }
 
                 if (hoveredTask && statusWidget?.update) {
                     statusWidget.update(
@@ -970,19 +1088,19 @@
                         hoveredTask.start_time,
                         hoveredTask.duration
                     );
-                }
-            });
+            }
+        });
 
-            canvas.addEventListener("mouseleave", () => {
-                if (statusWidget?.update && originalTask) {
-                    statusWidget.update(
-                        originalTask.name,
-                        originalTask.status,
-                        originalTask.start_time,
-                        originalTask.duration
-                    );
-                }
-            });
+        canvas.addEventListener("mouseleave", () => {
+            if (statusWidget?.update && originalTask) {
+                statusWidget.update(
+                    originalTask.name,
+                    originalTask.status,
+                    originalTask.start_time,
+                    originalTask.duration
+                );
+            }
+        });
         }
 
         drawTimeline();
@@ -1002,11 +1120,6 @@
             const line = document.createElement('div');
             line.textContent = value;
 
-            // Truncate long names
-            line.style.whiteSpace = "nowrap";
-            line.style.overflow = "hidden";
-            line.style.textOverflow = "ellipsis";
-
             if (className) line.classList.add(className);
             widget.appendChild(line);
         }
@@ -1014,8 +1127,18 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-
-            addLine(name);
+            
+            // Create name line with fixed height for two lines
+            const nameLine = document.createElement('div');
+            nameLine.textContent = name;
+            nameLine.style.whiteSpace = "normal";
+            nameLine.style.overflow = "hidden";
+            nameLine.style.maxWidth = "100%";
+            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.lineHeight = "1.3em";
+            nameLine.style.textAlign = "left";
+            widget.appendChild(nameLine);
+            
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1063,9 +1186,10 @@
             columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
-                th.style.cursor = 'pointer'; // Make headers clickable
+                th.style.cursor = 'pointer';
+                th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -1083,45 +1207,44 @@
 
     function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);
-
-        // Clear existing rows if re-rendering (used in sorting)
+        // Clear existing rows
         tbody.innerHTML = '';
+        const filter = localStorage.getItem('filter');
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
+            const labels = result?.ext?.labels;
 
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-
+                    
                 if (column === 'status') {
-                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
                     row.dataset.status = value ? value.toLowerCase() : "";
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
                     td.appendChild(span);
-
+                    row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
 
                     if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
-                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
+                            nest_level === 0)
                     ) {
-                        // If status is pending, just show plain text
                         const span = document.createElement('span');
                         span.textContent = value;
                         span.classList.add('disabled');
                         td.classList.add('name-column');
                         td.appendChild(span);
                     } else {
-                        // Create a link for the name field
                         const newUrl = new URL(currentUrl);
                         newUrl.searchParams.set(`name_${nest_level}`, value);
 
@@ -1132,6 +1255,23 @@
                         td.appendChild(link);
                     }
 
+                    if (Array.isArray(labels)) {
+                        labels.forEach(labelStr => {
+                            const label = document.createElement('span');
+                            label.textContent = labelStr;
+                            label.style.marginLeft = '6px';
+                            label.style.padding = '2px 8px';
+                            label.style.backgroundColor = stringToColor(labelStr, true);
+                            label.style.color = 'white';
+                            label.style.fontSize = '12px';
+                            label.style.borderRadius = '8px';
+                            label.style.fontWeight = 'bold';
+                            label.style.display = 'inline-block';
+                            label.style.verticalAlign = 'middle';
+                            td.appendChild(label);
+                        });
+                    }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -1139,28 +1279,36 @@
                 } else if (column === 'duration') {
                     td.classList.add('dur-column');
                     td.textContent = value ? formatDuration(value) : '';
-
                 }
+
                 row.appendChild(td);
             });
 
             tbody.appendChild(row);
+
+            // unfold all for preview mode (nest_level = 0 in this case)
+            if (nest_level === 0 && result.results.length > 0) {
+                toggleInfoRow(row, result.info, result.results, result.links);
+            }
+
         });
     }
 
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, links = []) {
-        if (!infoText && links.length === 0) return;
-
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
         if (nextRow && nextRow.classList.contains('info-row')) {
             nextRow.remove(); // If it's there, remove it
+            closedInfoCnt++;
+            console.log(`Info row closed. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
         } else {
             // Otherwise, create a new row for the info text
+            openedInfoCnt++;
+            console.log(`Info row opened. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
             const infoRow = document.createElement('tr');
             infoRow.classList.add('info-row');
 
@@ -1174,6 +1322,16 @@
                 // Append content securely, without interpreting HTML tags.
                 infoCell.firstChild.textContent = infoText;
                 infoCell.appendChild(content);
+            }
+
+            // Handle subResults
+            if (sub_results) {
+                if (Array.isArray(sub_results) && sub_results.length > 0) {
+                    const table = createResultsTable(sub_results, 0);
+                    if (table) {
+                        infoCell.appendChild(table); // Appends table correctly
+                    }
+                }
             }
 
             // If there are links, create a list of links
@@ -1205,7 +1363,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level, columns) {
+    function sortTable(results, column, key, tbody, nest_level) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1469,6 +1627,8 @@
             } catch (error) {
                 console.error('Error fetching statistics:', error);
             }
+        } else {
+            console.log('statistics updated at:', new Date(persistentStorage.updatedAt).toISOString());
         }
     }
 
@@ -1533,14 +1693,29 @@
         return hasNewData;
     }
 
-    function startAutoRefresh(PR, REF, sha, nameParams) {
+    // Track for autorefresh toggle
+    let openedInfoCnt = 0;
+    let closedInfoCnt = 0;
+    
+    async function renderResultsAuto(PR, REF, sha, nameParams) {
+
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
-        async function checkForUpdates() {
+
+        async function checkForUpdatesAndRender(force = false) {
+            if (
+                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
+                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
+                && !force
+                || openedInfoCnt - closedInfoCnt > 0
+            ) {
+                return
+            }
+
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer.scrollTop;
 
@@ -1551,7 +1726,10 @@
                 statusContainer.scrollTop = scrollTop;
             }
         }
-        setInterval(checkForUpdates, 30000);
+
+        await checkForUpdatesAndRender(true)
+        console.log("Auto-reload started");
+        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1584,28 +1762,19 @@
             }
         });
 
-        await fetchData(PR, REF, sha, nameParams);
-        await renderResults(PR, sha, nameParams);
+        await renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
-        if (
-            (nameParams?.length === 1 &&
-                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
-            (nameParams?.length === 2 &&
-                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
-        ) {
-            console.log("Auto-reload started");
-            startAutoRefresh(PR, REF, sha, nameParams);
-        }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
         }
-        init();
+        await init();
+        toggleStatusFilter(true);
     });
 
     function createFavicon() {

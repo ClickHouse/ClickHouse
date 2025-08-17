@@ -1,6 +1,14 @@
-#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
+
+#include <Common/Logger.h>
+#include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Core/LogsLevel.h>
+
+#include <exception>
+
 
 namespace DB
 {
@@ -65,4 +73,47 @@ std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
     return std::make_unique<ReadBufferWrapper<ReadBufferPtr>>(*ptr, ReadBufferPtr{ptr});
 }
 
+void ReadBuffer::cancel()
+{
+    if (std::current_exception())
+        tryLogCurrentException(getLogger("ReadBuffer"), "ReadBuffer is canceled by the exception", LogsLevel::debug);
+    else
+        LOG_DEBUG(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
+
+    canceled = true;
+}
+
+bool ReadBuffer::next()
+{
+    chassert(!hasPendingData());
+    chassert(position() <= working_buffer.end());
+    chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
+
+    bytes += offset();
+    bool res = false;
+    try
+    {
+        res = nextImpl();
+    }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+
+    if (!res)
+    {
+        working_buffer = Buffer(pos, pos);
+    }
+    else
+    {
+        pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+        chassert(position() < working_buffer.end());
+    }
+    nextimpl_working_buffer_offset = 0;
+
+    chassert(position() <= working_buffer.end());
+
+    return res;
+}
 }

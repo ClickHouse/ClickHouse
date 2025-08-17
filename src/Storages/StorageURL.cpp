@@ -3,6 +3,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -26,7 +27,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -78,6 +81,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -184,8 +188,23 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings);
+    auto & storage_columns = storage_metadata.columns;
+
+    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            storage_columns,
+            hive_partition_columns_to_read_from_file_path,
+            getSampleURI(uri, context_),
+            columns_.empty(),
+            format_settings,
+            context_);
+    }
+
+    /// If the `partition_strategy` argument is ever implemented for URL storage, this must be updated
+    file_columns = storage_columns.getAllPhysical();
+
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -231,13 +250,13 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
         if (filter_dag)
         {
@@ -248,7 +267,7 @@ public:
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, context);
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
         }
     }
 
@@ -271,8 +290,8 @@ private:
     std::atomic_size_t index = 0;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -310,12 +329,13 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    size_t max_parsing_threads,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -326,8 +346,11 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -378,7 +401,7 @@ StorageURLSource::StorageURLSource(
             /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
             /// Instead, we use special ConstChunkGenerator that will generate chunks
             /// with max_block_size rows until total number of rows is reached.
-            auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
+            auto source = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
             builder.init(Pipe(source));
         }
         else
@@ -391,16 +414,13 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
-                /*max_download_threads*/ std::nullopt,
+                parser_shared_resources,
+                format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -409,7 +429,7 @@ StorageURLSource::StorageURLSource(
 
             if (columns_description.hasDefaults())
             {
-                builder.addSimpleTransform([&](const Block & cur_header)
+                builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
                 });
@@ -418,7 +438,7 @@ StorageURLSource::StorageURLSource(
 
         /// Add ExtractColumnsTransform to extract requested columns/subcolumns
         /// from chunk read by IInputFormat.
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
         });
@@ -465,6 +485,17 @@ Chunk StorageURLSource::generate()
                     .size = current_file_size,
                 },
                 getContext());
+
+            // The order is important, hive partition columns must be added after virtual columns
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                const auto path = curr_uri.getPath();
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
+
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
             {
@@ -483,8 +514,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            (!key_condition || key_condition->alwaysUnknownOrTrue()))
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -606,7 +637,7 @@ StorageURLSink::StorageURLSink(
     const CompressionMethod & compression_method_,
     HTTPHeaderEntries headers_,
     String method)
-    : SinkToStorage(sample_block)
+    : SinkToStorage(std::make_shared<const Block>(sample_block))
     , uri(std::move(uri_))
     , format(std::move(format_))
     , format_settings(format_settings_)
@@ -703,7 +734,7 @@ class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
     PartitionedStorageURLSink(
-        const ASTPtr & partition_by,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const String & uri_,
         const String & format_,
         const std::optional<FormatSettings> & format_settings_,
@@ -713,7 +744,7 @@ public:
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
         const String & http_method_)
-        : PartitionedSink(partition_by, context_, sample_block_)
+        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -728,7 +759,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
+        std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
@@ -1086,7 +1118,7 @@ public:
         std::function<void(std::ostream &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , uri_options(uri_options_)
         , info(std::move(info_))
@@ -1141,7 +1173,12 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -1198,18 +1235,18 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
             {
-                String next_uri = callback();
-                if (next_uri.empty())
+                auto task = callback();
+                if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(next_uri, max_addresses);
+                return getFailoverOptions(task->path, max_addresses);
             });
     }
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1248,14 +1285,15 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     if (is_empty_glob)
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(info.source_header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header))));
         return;
     }
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const size_t max_parsing_threads = num_streams >= settings[Setting::max_parsing_threads] ? 1 : (settings[Setting::max_parsing_threads] / num_streams);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1271,13 +1309,13 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            max_parsing_threads,
+            parser_shared_resources,
+            format_filter_info,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
             need_only_count);
 
-        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1291,7 +1329,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -1311,7 +1349,12 @@ void StorageURLWithFailover::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -1357,8 +1400,18 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
     if (is_partitioned_implementation)
     {
-        return std::make_shared<PartitionedStorageURLSink>(
+        auto partition_strategy = PartitionStrategyFactory::get(
+            PartitionStrategyFactory::StrategyType::WILDCARD,
             partition_by_ast,
+            metadata_snapshot->getColumns().getAll(),
+            context,
+            format_name,
+            urlWithGlobs(uri),
+            has_wildcards,
+            /* partition_columns_in_data_file */true);
+
+        return std::make_shared<PartitionedStorageURLSink>(
+            partition_strategy,
             uri,
             format_name,
             format_settings,
@@ -1660,7 +1713,7 @@ void registerStorageURL(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::URL,
+            .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }

@@ -87,7 +87,7 @@ REGISTER_FUNCTION(Negate)
     FunctionDocumentation::Syntax syntax = "negate(x)";
     FunctionDocumentation::Argument argument1 = {"x", "The value to negate."};
     FunctionDocumentation::Arguments arguments = {argument1};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns -x from x";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns -x from x"};
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT negate(10)", "-10"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

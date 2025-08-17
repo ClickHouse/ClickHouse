@@ -32,9 +32,12 @@ public:
         const String & dbname_,
         const StoragePostgreSQL::Configuration & configuration,
         postgres::PoolWithFailoverPtr pool_,
-        bool cache_tables_);
+        bool cache_tables_,
+        UUID uuid);
 
     String getEngineName() const override { return "PostgreSQL"; }
+    UUID getUUID() const override { return db_uuid; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     bool canContainMergeTreeTables() const override { return false; }
@@ -64,6 +67,8 @@ public:
 
     void alterDatabaseComment(const AlterCommand & command) override;
 
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
@@ -78,6 +83,9 @@ private:
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePoolTaskHolder cleaner_task;
     LoggerPtr log;
+
+    bool persistent = true;
+    const UUID db_uuid;
 
     String getTableNameForLogs(const String & table_name) const;
 

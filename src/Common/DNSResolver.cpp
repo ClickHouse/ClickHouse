@@ -1,4 +1,4 @@
-#include "DNSResolver.h"
+#include <Common/DNSResolver.h>
 #include <Common/CacheBase.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -13,9 +13,9 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
-#include "Common/MultiVersion.h"
+#include <Common/MultiVersion.h>
 #include <unordered_set>
-#include "DNSPTRResolverProvider.h"
+#include <Common/DNSPTRResolverProvider.h>
 
 namespace ProfileEvents
 {

@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 
 
 namespace DB
@@ -75,6 +77,8 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
         return decimal_type->getScale();
     if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
         return date_time_type->getScale();
+    if (const auto * time_type = typeid_cast<const DataTypeTime64 *>(&data_type))
+        return time_type->getScale();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
 }
@@ -91,6 +95,8 @@ inline UInt32 getDecimalPrecision(const IDataType & data_type)
         return decimal_type->getPrecision();
     if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
         return date_time_type->getPrecision();
+    if (const auto * time_type = typeid_cast<const DataTypeTime64 *>(&data_type))
+        return time_type->getPrecision();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal precision from type {}", data_type.getName());
 }
@@ -104,6 +110,8 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 #define FOR_EACH_DECIMAL_TYPE(M) \
     M(DataTypeDecimal<DateTime64>) \
     M(DataTypeDateTime64) \
+    M(DataTypeDecimal<Time64>) \
+    M(DataTypeTime64) \
     M(DataTypeDecimal32) \
     M(DataTypeDecimal64) \
     M(DataTypeDecimal128) \
@@ -112,6 +120,8 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 #define FOR_EACH_DECIMAL_TYPE_PASS(M, X) \
     M(DataTypeDecimal<DateTime64>, X) \
     M(DataTypeDateTime64, X) \
+    M(DataTypeDecimal<Time64>, X) \
+    M(DataTypeTime64, X) \
     M(DataTypeDecimal32, X) \
     M(DataTypeDecimal64, X) \
     M(DataTypeDecimal128, X) \

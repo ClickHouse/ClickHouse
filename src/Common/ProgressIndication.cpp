@@ -1,4 +1,4 @@
-#include "ProgressIndication.h"
+#include <Common/ProgressIndication.h>
 #include <algorithm>
 #include <cstddef>
 #include <mutex>

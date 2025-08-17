@@ -37,7 +37,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
     DECLARE(Milliseconds, sleep_before_leader_change_ms, 8000, "How much time we will wait before removing leader (so as leader could commit accepted but non-committed commands and they won't be lost -- leader removal is not synchronized with committing)", 0) \
     DECLARE(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
-    DECLARE(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
+    DECLARE(NonZeroUInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
     DECLARE(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
@@ -59,8 +59,11 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, false, "Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility.", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
-    DECLARE(UInt64, latest_logs_cache_size_threshold, 1 * 1024 * 1024 * 1024, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, commit_logs_cache_size_threshold, 500 * 1024 * 1024, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
+    DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
+    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
+    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
+    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Maximum number of entries in in-memory cache of log entries needed next for commit.", 0) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
     DECLARE(UInt64, disk_move_retries_during_init, 100, "The amount of retries after a failure which happened while a file was being moved between disks during initialization.", 0) \
     DECLARE(UInt64, log_slow_total_threshold_ms, 5000, "Requests for which the total latency is larger than this settings will be logged", 0) \
@@ -134,7 +137,7 @@ const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
-"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev";
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev,lgrq";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)

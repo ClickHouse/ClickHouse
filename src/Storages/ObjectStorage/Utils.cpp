@@ -1,6 +1,14 @@
-#include <Storages/ObjectStorage/Utils.h>
+#include <Core/Settings.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -13,8 +21,8 @@ namespace ErrorCodes
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
-    const StorageObjectStorage::QuerySettings & settings,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
     const String & key,
     size_t sequence_number)
 {
@@ -48,7 +56,7 @@ void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context)
@@ -97,7 +105,7 @@ void resolveSchemaAndFormat(
 
 void validateSupportedColumns(
     ColumnsDescription & columns,
-    const StorageObjectStorage::Configuration & configuration)
+    const StorageObjectStorageConfiguration & configuration)
 {
     if (!columns.hasOnlyOrdinary())
     {
@@ -108,4 +116,11 @@ void validateSupportedColumns(
     }
 }
 
+namespace Setting
+{
+extern const SettingsUInt64 max_download_buffer_size;
+extern const SettingsBool use_cache_for_count_from_files;
+extern const SettingsString filesystem_cache_name;
+extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+}
 }

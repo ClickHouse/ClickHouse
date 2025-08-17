@@ -172,20 +172,30 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    auto response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
-
-    if (!response || response->description.empty() || response->finish)
+    std::optional<ParallelReadResponse> response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
+    if (response)
     {
-        no_more_tasks = true;
-        return nullptr;
+        LOG_DEBUG(log, "Got response: {}", response->describe());
+        if (response->description.empty() || response->finish)
+            no_more_tasks = true;
     }
+    else
+    {
+        LOG_DEBUG(log, "Got no response");
+        no_more_tasks = true;
+    }
+    if (no_more_tasks)
+        return nullptr;
 
     /// Fill the buffer
     for (size_t i = 0; i < request.size(); ++i)
     {
-        auto & new_ranges = response->description[i].ranges;
-        auto & old_ranges = buffered_tasks[i].ranges;
-        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(old_ranges));
+        auto & received_ranges = response->description[i].ranges;
+        auto & ranges = buffered_tasks[i].ranges;
+        if (mode == CoordinationMode::WithOrder)
+            ranges.insert(ranges.end(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
+        else
+            ranges.insert(ranges.begin(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
     }
 
     if (auto result = get_from_buffer())

@@ -119,9 +119,9 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
 )",
         .syntax = "readWKTLineString(wkt_string)",
         .arguments{
-            {"wkt_string", "The input WKT string representing a LineString geometry."}
+            {"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}
         },
-        .returned_value = "The function returns a ClickHouse internal representation of the linestring geometry.",
+        .returned_value = {"The function returns a ClickHouse internal representation of the linestring geometry."},
         .examples{
             {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
 ┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
@@ -143,9 +143,9 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
 )",
         .syntax = "readWKTMultiLineString(wkt_string)",
         .arguments{
-            {"wkt_string", "The input WKT string representing a MultiLineString geometry."}
+            {"wkt_string", "The input WKT string representing a MultiLineString geometry.", {"String"}}
         },
-        .returned_value = "The function returns a ClickHouse internal representation of the multilinestring geometry.",
+        .returned_value = {"The function returns a ClickHouse internal representation of the multilinestring geometry."},
         .examples{
             {"first call", "SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');", R"(
 ┌─readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))')─┐

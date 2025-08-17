@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/StringRef.h>
+#include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -208,6 +209,8 @@ public:
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
+    /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
+    VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
@@ -215,11 +218,13 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-    /// IO scheduling
+    /// IO scheduling and throttling
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
+    ThrottlerPtr read_throttler;
+    ThrottlerPtr write_throttler;
 
-private:
+protected:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
 
@@ -350,7 +355,10 @@ class MainThreadStatus : public ThreadStatus
 public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
+    static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
     static bool isMainThread() { return main_thread == current_thread; }
+
+    static void reset() { is_initialized.clear(std::memory_order_relaxed); }
 
     ~MainThreadStatus();
 
@@ -358,6 +366,7 @@ private:
     MainThreadStatus();
 
     static ThreadStatus * main_thread;
+    static std::atomic_flag is_initialized;
 };
 
 }

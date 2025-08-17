@@ -29,6 +29,8 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     /// But it can brake short-circuit without splitting filter step into smaller steps.
     /// So, enable and disable this optimizations together.
     enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
+
+    block_marshalling_callback = from->getBlockMarshallingCallback();
 }
 
 }

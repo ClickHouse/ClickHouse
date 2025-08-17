@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Hash Functions'
 sidebar_label: 'Hash'
-sidebar_position: 85
 slug: /sql-reference/functions/hash-functions
 title: 'Hash Functions'
 ---
 
-# Hash Functions
+# Hash functions
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
@@ -1991,7 +1990,7 @@ Use function [hex](../functions/encoding-functions.md/#hex) to format the result
 
 Query:
 ```sql
-select hex(keccak256('hello'))
+SELECT hex(keccak256('hello'))
 ```
 
 Result:

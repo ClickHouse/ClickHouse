@@ -152,6 +152,7 @@ def main():
     res = True
     results = []
     attach_files = []
+    job_info = ""
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -173,6 +174,8 @@ def main():
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
+                -DENABLE_LEXER_TEST=1 \
+                -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
             )
@@ -184,7 +187,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="ninja clickhouse-bundle clickhouse-stripped",
+                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
                 workdir=build_dir,
             )
         )
@@ -196,7 +199,7 @@ def main():
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
-            "clickhouse-test --help",
+            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
@@ -209,9 +212,8 @@ def main():
 
     if res and JobStages.CONFIG in stages:
         commands = [
-            f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
@@ -257,6 +259,7 @@ def main():
             )
         if not results[-1].is_ok():
             attach_debug = True
+        job_info = results[-1].info
 
     if attach_debug:
         attach_files += [
@@ -268,7 +271,7 @@ def main():
     CH.terminate()
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=attach_files
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 

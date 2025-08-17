@@ -192,7 +192,7 @@ StoragePtr MultipleAccessStorage::getStorage(const UUID & id)
     auto storage = findStorage(id);
     if (storage)
         return storage;
-    throwNotFound(id);
+    throwNotFound(id, getStorageName());
 }
 
 
@@ -292,7 +292,7 @@ AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_n
         return storage->read(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return nullptr;
 }
@@ -304,7 +304,7 @@ std::optional<std::pair<String, AccessEntityType>> MultipleAccessStorage::readNa
         return storage->readNameWithType(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return std::nullopt;
 }
@@ -393,7 +393,7 @@ bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists
         return storage->remove(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return false;
 }
@@ -405,7 +405,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     if (!storage_for_updating)
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -461,7 +461,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     }
 
     if (throw_if_user_not_exists)
-        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+        throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
     else
         return std::nullopt;
 }

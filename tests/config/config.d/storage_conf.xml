@@ -1,4 +1,6 @@
 <clickhouse>
+    <local_disk_check_period_ms>30000</local_disk_check_period_ms>
+
     <storage_configuration>
         <disks>
             <s3_disk>

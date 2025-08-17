@@ -11,10 +11,10 @@ namespace ErrorCodes
 void connect(OutputPort & output, InputPort & input, bool reconnect)
 {
     if (!reconnect && input.state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", input.header.dumpStructure());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", input.header->dumpStructure());
 
     if (!reconnect && output.state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", output.header.dumpStructure());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", output.header->dumpStructure());
 
     auto out_name = output.processor ? output.getProcessor().getName() : "null";
     auto in_name = input.processor ? input.getProcessor().getName() : "null";

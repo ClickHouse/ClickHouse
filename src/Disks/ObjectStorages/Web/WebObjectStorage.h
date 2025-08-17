@@ -53,6 +53,8 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -65,12 +67,6 @@ public:
     void startup() override;
 
     String getObjectsNamespace() const override { return ""; }
-
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
     {

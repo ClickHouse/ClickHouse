@@ -1,4 +1,6 @@
-#include "Processors/Formats/Impl/Parquet/Write.h"
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Processors/Formats/Impl/Parquet/Write.h>
 
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -9,6 +11,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Block.h>
+#include <Common/Exception.h>
+#include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,7 +21,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
-
+#include <DataTypes/DataTypeCustom.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -322,12 +326,22 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Int64:  types(T::INT64); break;
         case TypeIndex::Float32: types(T::FLOAT); break;
         case TypeIndex::Float64: types(T::DOUBLE); break;
-
-        /// These don't have suitable parquet logical types, so we write them as plain numbers.
-        /// (Parquet has "enums" but they're just strings, with nowhere to declare all possible enum
-        /// values in advance as part of the data type.)
-        case TypeIndex::Enum8:    types(T::INT32, C::INT_8,   int_type(8,  true)); break; //  Int8
-        case TypeIndex::Enum16:   types(T::INT32, C::INT_16,  int_type(16, true)); break; //  Int16
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        {
+            if (options.output_enum_as_byte_array)
+            {
+                parq::LogicalType t;
+                t.__set_ENUM({});
+                types(T::BYTE_ARRAY, C::ENUM, t);
+            }
+            else if (type->getTypeId() == TypeIndex::Enum8)
+                types(T::INT32, C::INT_8, int_type(8, true));
+            else
+                types(T::INT32, C::INT_16, int_type(16, true));
+            break;
+        }
+        /// IPv4 does not have suitable parquet logical types, so we write them as plain numbers.
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
 
         /// Parquet doesn't have 16-bit date type, so we cast Date to 32 bits.
@@ -660,6 +674,38 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
     return schema;
 }
 
+void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+{
+    if (!type->getCustomName())
+        return;
+
+    std::shared_ptr<IWKBTransform> transform;
+    if (type->getCustomName()->getName() == WKBPointTransform::name)
+        transform = std::make_shared<WKBPointTransform>();
+    if (type->getCustomName()->getName() == WKBLineStringTransform::name)
+        transform = std::make_shared<WKBLineStringTransform>();
+    if (type->getCustomName()->getName() == WKBPolygonTransform::name)
+        transform = std::make_shared<WKBPolygonTransform>();
+    if (type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
+        transform = std::make_shared<WKBMultiLineStringTransform>();
+    if (type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
+        transform = std::make_shared<WKBMultiPolygonTransform>();
+
+    if (!transform)
+        return;
+
+    auto transformed_column = ColumnString::create();
+    for (size_t i = 0; i < column->size(); ++i)
+    {
+        Field current_field;
+        column->get(i, current_field);
+        auto transformed_field = transform->dumpObject(current_field);
+        transformed_column->insert(transformed_field);
+    }
+    column = std::move(transformed_column);
+    type = std::make_shared<DataTypeString>();
+}
+
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema)
@@ -669,6 +715,8 @@ void prepareColumnForWrite(
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
+    if (options.write_geometadata)
+        prepareGeoColumn(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas);
 
     if (out_columns_to_write)
