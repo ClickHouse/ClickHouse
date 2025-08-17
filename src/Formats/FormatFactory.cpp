@@ -575,7 +575,8 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteBuffer & buf,
     const Block & sample,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    FormatFilterInfoPtr format_filter_info) const
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
@@ -587,9 +588,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
         && !settings[Setting::output_format_json_array_of_rows])
     {
-        auto formatter_creator = [output_getter, sample, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        auto formatter_creator = [output_getter, sample, format_settings, format_filter_info] (WriteBuffer & output) -> OutputFormatPtr
         {
-            return output_getter(output, sample, format_settings);
+            return output_getter(output, sample, format_settings, format_filter_info);
         };
 
         ParallelFormattingOutputFormat::Params builder{buf, std::make_shared<const Block>(sample), formatter_creator, settings[Setting::max_threads]};
@@ -611,7 +612,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     WriteBuffer & buf,
     const Block & sample,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    FormatFilterInfoPtr format_filter_info) const
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
@@ -623,7 +625,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
 
-    auto format = output_getter(buf, sample, format_settings);
+    auto format = output_getter(buf, sample, format_settings, format_filter_info);
 
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
