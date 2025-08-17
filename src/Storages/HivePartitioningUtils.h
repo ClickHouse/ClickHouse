@@ -20,7 +20,7 @@ void addPartitionColumnsToChunk(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path);
 
-/// Hive partition columns and file columns (might or might not contain the hive partition columns)
+/// Hive partition columns and file columns (Note that file columns might not contain the hive partition columns)
 using HivePartitionColumnsWithFileColumnsPair = std::pair<NamesAndTypesList, NamesAndTypesList>;
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
@@ -39,6 +39,5 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
     ContextPtr context);
 
 }
-
 
 }
