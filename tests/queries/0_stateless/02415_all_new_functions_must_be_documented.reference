@@ -145,7 +145,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fuzzBits
 generateUUIDv4
 getMacro
 getOSKernelVersion
@@ -322,13 +321,6 @@ queryID
 queryString
 queryStringAndFragment
 radians
-rand
-rand64
-randConstant
-randomFixedString
-randomPrintableASCII
-randomString
-randomStringUTF8
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
