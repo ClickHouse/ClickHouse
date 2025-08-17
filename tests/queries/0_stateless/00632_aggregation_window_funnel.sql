@@ -200,3 +200,24 @@ SELECT
 FROM funnel_test_overlap;
 
 DROP TABLE funnel_test_overlap;
+
+DROP TABLE IF EXISTS conv_strict_order;
+CREATE TABLE conv_strict_order (dt UInt32, user UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_order VALUES (1, 1, 'a'), (2, 1, 'b'), (3, 1, 'c');
+INSERT INTO conv_strict_order VALUES (1, 2, 'a'), (2, 2, 'd'), (3, 2, 'b'), (4, 2, 'c');
+INSERT INTO conv_strict_order VALUES (1, 3, 'a'), (1, 3, 'b'), (2, 3, 'c');
+SELECT user, windowFunnel(100, 'strict_order', 'conversion_time')(dt, event='a', event='b', event='c') AS s
+FROM conv_strict_order GROUP BY user ORDER BY user FORMAT JSONCompactEachRow;
+DROP TABLE conv_strict_order;
+
+DROP TABLE IF EXISTS conv_strict_increase;
+CREATE TABLE conv_strict_increase (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_increase VALUES (1, 'a'), (1, 'b'), (2, 'c');
+SELECT windowFunnel(10, 'strict_increase', 'conversion_time')(ts, event='a', event='b', event='c') FROM conv_strict_increase;
+DROP TABLE conv_strict_increase;
+
+DROP TABLE IF EXISTS conv_strict_dedup;
+CREATE TABLE conv_strict_dedup (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_dedup VALUES (1, 'a'), (2, 'b'), (3, 'b'), (4, 'c');
+SELECT windowFunnel(10, 'strict_deduplication', 'conversion_time')(ts, event='a', event='b', event='c') FROM conv_strict_dedup;
+DROP TABLE conv_strict_dedup;

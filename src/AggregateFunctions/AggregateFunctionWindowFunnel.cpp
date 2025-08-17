@@ -292,7 +292,7 @@ private:
     bool strict_increase;
 
     /// When enabled, returns conversion times between funnel steps
-    bool conversion_time;
+    bool need_conversion_time;
 
     struct FunnelResult
     {
@@ -314,7 +314,7 @@ private:
         auto calculate_conversion_times = [&](UInt8 current_max_level) -> std::vector<T>
         {
             std::vector<T> times;
-            if (conversion_time && current_max_level > 1)
+            if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0);
                 for (size_t i = 0; i < current_max_level - 1; ++i)
@@ -327,7 +327,7 @@ private:
                     }
                 }
             }
-            else if (conversion_time) // Ensure vector has correct size even if max_level <= 1
+            else if (need_conversion_time) // Ensure vector has correct size even if max_level <= 1
             {
                 // Resize to events_size - 1, initialized to 0
                 times.resize(events_size - 1, 0);
@@ -342,18 +342,20 @@ private:
         {
             const T & timestamp = event_pair.first;
             const auto & event_type = event_pair.second; // This is 1-based event type
-            const UInt8 event_idx = event_type - 1; // 0-based index, max value is events_size-1 (<= 31)
-            const UInt8 current_event_level = event_idx + 1;
 
-            bool extended_winner = false;
-            bool promoted_candidate = false;
-
+            // Handle for non-matching events in strict_order mode
             if (strict_order && event_type == 0)
             {
                 if (first_event_occurred)
                     break; // Stop processing sequence if non-matching event occurs after first event
                 continue; // Ignore non-matching events before the first event
             }
+
+            const UInt8 event_idx = static_cast<UInt8>(event_type - 1); // 0-based index, max value is events_size-1 (<= 31)
+            const UInt8 current_event_level = static_cast<UInt8>(event_idx + 1);
+
+            bool extended_winner = false;
+            bool promoted_candidate = false;
 
             // If strict_deduplication, and this event's level has already been achieved by the winning sequence,
             // stop processing further events for this funnel.
@@ -494,7 +496,7 @@ private:
         auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> std::vector<T>
         {
             std::vector<T> times;
-            if (conversion_time && current_max_level > 1)
+            if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0); // Initialize all times to 0
                 for (size_t i = 0; i < current_max_level - 1; ++i)
@@ -603,8 +605,8 @@ private:
         FunnelResult result;
         result.max_level = max_level;
 
-        // If conversion_time is enabled and we found a successful funnel path
-        if (conversion_time && max_level > 1)
+        // If conversion time is enabled and we found a successful funnel path
+        if (need_conversion_time && max_level > 1)
         {
             // Get the first valid sequence that reached the max_level
             if (!event_sequences[max_level - 1].empty())
@@ -616,7 +618,7 @@ private:
             if (result.conversion_times.empty())
                  result.conversion_times.resize(events_size - 1, 0);
         }
-        else if (conversion_time) // Ensure vector has correct size even if max_level <= 1
+        else if (need_conversion_time) // Ensure vector has correct size even if max_level <= 1
         {
              result.conversion_times.resize(events_size - 1, 0);
         }
@@ -656,7 +658,7 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
-        conversion_time = false;
+        need_conversion_time = false;
 
         for (size_t i = 1; i < params.size(); ++i)
         {
@@ -671,7 +673,7 @@ public:
                 /// Checked in factory
                 chassert(Data::strict_once_enabled);
             else if (option == "conversion_time")
-                conversion_time = true;
+                need_conversion_time = true;
             else if (option == "strict")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
@@ -749,7 +751,7 @@ public:
     {
         auto result = getEventLevel(this->data(place));
 
-        if (!conversion_time)
+        if (!need_conversion_time)
         {
             // just insert the max level
             assert_cast<ColumnUInt8 &>(to).getData().push_back(result.max_level);
