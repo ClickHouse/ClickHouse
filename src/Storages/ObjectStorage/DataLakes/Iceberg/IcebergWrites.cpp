@@ -547,7 +547,6 @@ void generateManifestList(
             0,
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
-        entry.field("partitions").selectBranch(1);
 
         writer.write(entry_datum);
     }

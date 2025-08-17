@@ -129,7 +129,7 @@ DeleteFileWriteResultWithStats writeDataFiles(
                     pos_delete_schema->add(field_filename);
                     pos_delete_schema->add(field_pos);
 
-                    statistics.emplace(partition_key, DataFileStatistics(pos_delete_schema));   
+                    statistics.emplace(partition_key, DataFileStatistics(pos_delete_schema));
                 }
 
                 if (!writers.contains(partition_key))
