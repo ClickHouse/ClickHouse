@@ -115,9 +115,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
         "Usage example",
         "SELECT splitByWhitespace('  1!  a,  b.  ');",
         R"(
-┌─splitByWhite⋯ a,  b.  ')─┐
-│ ['1!','a,','b.']         │
-└──────────────────────────┘
+['1!','a,','b.']
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
