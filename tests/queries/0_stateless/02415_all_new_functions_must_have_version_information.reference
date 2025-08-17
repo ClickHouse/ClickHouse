@@ -82,7 +82,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
 compareSubstrings
 concat
 concatAssumeInjective
@@ -220,7 +219,6 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 flattenTuple
-floor
 format
 formatQuery
 formatQueryOrNull
@@ -489,12 +487,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -692,7 +684,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd
