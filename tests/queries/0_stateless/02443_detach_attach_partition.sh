@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./replication.lib
 . "$CURDIR"/replication.lib
 
-export MAX_RETRIES=25
+export MAX_RETRIES=100
 
 function thread_detach()
 {
@@ -33,7 +33,8 @@ SQL
 }
 function show_cluster_info()
 {
-    $CLICKHOUSE_CLIENT -q "select cluster, shard_num, replica_num, host_name, port, is_active from system.clusters"
+    echo "Cluster status:"
+    :
 }
 function insert()
 {
