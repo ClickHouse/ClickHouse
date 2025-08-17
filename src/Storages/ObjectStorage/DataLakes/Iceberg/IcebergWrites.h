@@ -84,7 +84,7 @@ private:
 class DataFileStatistics
 {
 public:
-    DataFileStatistics(Poco::JSON::Array::Ptr schema_);
+    explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
     void update(const Chunk & chunk, std::optional<size_t> num_non_virtual_columns = std::nullopt);
 
