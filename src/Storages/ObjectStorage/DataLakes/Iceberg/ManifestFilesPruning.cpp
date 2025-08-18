@@ -96,7 +96,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 
 
 ManifestFilesPruner::ManifestFilesPruner(
-    const DB::IcebergSchemaProcessor & schema_processor_,
+    const IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
