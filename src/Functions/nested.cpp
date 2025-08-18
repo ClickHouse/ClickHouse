@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
@@ -156,6 +157,8 @@ private:
             return nullptr;
 
         auto type = getType(array_depth + 1, array_col->getData(), arguments);
+        if (!type)
+            return nullptr;
 
         if (isArray(type) && array_col->getOffsetsColumn().size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
