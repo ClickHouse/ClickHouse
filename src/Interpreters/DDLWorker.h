@@ -52,6 +52,7 @@ class AccessRightsElements;
 struct ZooKeeperRetriesInfo;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+class WithRetries;
 
 class DDLWorker
 {
@@ -125,7 +126,7 @@ protected:
     };
 
     /// Pushes query into DDL queue, returns path to created node
-    String enqueueQueryAttempt(DDLLogEntry & entry);
+    String enqueueQueryAttempt(DDLLogEntry & entry, const WithRetries & with_retries);
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);

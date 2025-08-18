@@ -1829,7 +1829,7 @@ void DatabaseReplicated::dropReplica(
     const auto & settings = context->getSettingsRef();
 
     auto with_retries = WithRetries(
-        nullptr,
+        getLogger("DatabaseReplicated::dropReplica"),
         [&] { return context->getZooKeeper(); },
         {
             settings[Setting::keeper_max_retries],

@@ -42,6 +42,9 @@ namespace Setting
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool allow_experimental_lightweight_update;
 }
@@ -120,6 +123,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
+        params.retries_info = {
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            getContext()->getProcessListElement()
+        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
