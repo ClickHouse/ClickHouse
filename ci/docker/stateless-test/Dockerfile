@@ -1,4 +1,4 @@
-# docker build -t clickhouse/stateless-test .
+# docker build -t altinityinfra/stateless-test .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -175,5 +175,5 @@ ENV PYTHONPATH=".:./ci"
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:be2e8df7c90d7a48e6ef /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
