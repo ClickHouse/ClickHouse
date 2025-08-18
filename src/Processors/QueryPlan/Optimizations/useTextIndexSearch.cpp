@@ -104,7 +104,6 @@ class FunctionReplacerDAG
 
     ActionsDAG &dag;
     const std::map<String, String> &columns_to_index_name;
-    std::vector<String> removed_columns;
 
     /// These will be initialized in the constructor if they exist or initialized lazily in the first effective replacement to avoid
     /// redundant or repetitions in the node list.
@@ -210,8 +209,8 @@ class FunctionReplacerDAG
 
     /// Attempt to add a new node with the replacement function.
     /// This adds also extra input columns if needed.
-    /// Returns a pointer to the new node if added or nullptr otherwise
-    const ActionsDAG::Node * tryAddReplacementIndexFunction(const ActionsDAG::Node &original_function_node)
+    /// Returns the number of columns (inputs) replaced with an index name in the new function.
+    int tryReplaceFunctionNodeInplace(ActionsDAG::Node &original_function_node)
     {
         chassert(isOptimizableFunction(original_function_node));
         const ContextPtr context = FunctionReplacerDAG::extractFunctionContext(original_function_node);
@@ -222,6 +221,8 @@ class FunctionReplacerDAG
         /// At the moment I assume that the substitution function receives the same arguments than the original, but:
         /// 1. Substituting the indexed column with the index name (string column)
         /// 2. Adding two extra arguments, the virtual columns: _part_index and _part_offset
+        /// TODO: If we can assume that the potential indexed column is always the first argument, or there will be only one,
+        /// this code could be a bit simpler.
         ActionsDAG::NodeRawConstPtrs new_children;
         size_t replaced = 0;
         for (const auto *const child : original_function_node.children)
@@ -235,109 +236,35 @@ class FunctionReplacerDAG
             new_children.push_back(child);
         }
 
-        /// When there was not replacement it means that none of the columns has a index associated in columns_to_index_name
+        /// When there was not replacement it means that none of the columns has a index associated in columns_to_index_name.
         /// In that case we don't perform any substitution
-        if (replaced == 0)
-            return nullptr;
-
-        /// The part_index_node and part_offset_node could be already inserted by some previous optimization or because the user query
-        /// explicitly uses them. i.e: select _part_index, _part_offset where ...,
-        /// or select ... where _part_index > X, or select ... where some_function(_part_offset)
-        if (part_index_node == nullptr)
-            part_index_node = &dag.addInput("_part_index", std::make_shared<DataTypeNumber<UInt64>>());
-        new_children.push_back(part_index_node);
-
-        if (part_offset_node == nullptr)
-            part_offset_node = &dag.addInput("_part_offset", std::make_shared<DataTypeNumber<UInt64>>());
-        new_children.push_back(part_offset_node);
-
-        return &dag.addFunction(
-            FunctionFactory::instance().get(replacement_function_name, context),
-            new_children,
-            original_function_node.result_name
-        );
-    }
-
-    size_t replaceFunctionNode(const ActionsDAG::Node &function_node, const ActionsDAG::Node &replacement_node)
-    {
-        chassert(function_node.type == ActionsDAG::ActionType::FUNCTION);
-
-        std::list<ActionsDAG::Node>::iterator function_it = dag.nodes.end();
-
-        /// Counter for the children nodes referenced by other nodes.
-        std::map<const ActionsDAG::Node *, size_t> column_references_map;
-        for (const ActionsDAG::Node * node : function_node.children)
+        if (replaced > 0)
         {
-            if (node->type != ActionsDAG::ActionType::INPUT) /// TODO: JAM This is too restrictive, but fine for development.
-                continue;
+            /// The part_index_node and part_offset_node could be already inserted by some previous optimization or because the user query
+            /// explicitly uses them. i.e: select _part_index, _part_offset where ...,
+            /// or select ... where _part_index > X, or select ... where some_function(_part_offset)
+            if (part_index_node == nullptr)
+                part_index_node = &dag.addInput("_part_index", std::make_shared<DataTypeNumber<UInt64>>());
+            new_children.push_back(part_index_node);
 
-            auto [_, inserted] = column_references_map.emplace(node, 0);
-            chassert(inserted);
+            if (part_offset_node == nullptr)
+                part_offset_node = &dag.addInput("_part_offset", std::make_shared<DataTypeNumber<UInt64>>());
+            new_children.push_back(part_offset_node);
+
+            // From ActionsDAG::addFunction
+            const ActionsDAG::Node & new_function_node = dag.addFunction(
+                FunctionFactory::instance().get(replacement_function_name, context),
+                new_children,
+                original_function_node.result_name);
+
+            original_function_node = new_function_node;
+
+            // We just added it so, we expect it to be at the end to remove it.
+            chassert(&new_function_node == &dag.nodes.back());
+            dag.nodes.pop_back();
         }
 
-        /// 3 things in one iteration
-        /// 1. Count the references to the function's children nodes
-        /// 2. get the iterator to the function node.
-        /// 3. Redirect parent references to function_node -> replacement_node
-        for (ActionsDAG::Nodes::iterator it = dag.nodes.begin(); it != dag.nodes.end(); ++it)
-        {
-            if (&*it == &function_node)
-            {
-                function_it = it;
-                continue;           // continue here to not count this references.
-            }
-
-            for (auto &child : it->children)
-            {
-                if (child->type == ActionsDAG::ActionType::INPUT)
-                {
-                    /// Check other references to my children
-                    auto map_it = column_references_map.find(child);
-                    if (map_it != column_references_map.end())
-                        map_it->second++;
-
-                }
-                else if (child->type == ActionsDAG::ActionType::FUNCTION)
-                {
-                    /// redirect references in other nodes function_node -> replacement_node;
-                    if (child == &function_node)
-                        child = &replacement_node;
-                }
-            }
-        }
-        chassert(function_it != dag.nodes.end());
-
-        /// Remove unused inputs
-        {
-            auto [it_end, last] = std::ranges::remove_if(
-                dag.inputs,
-                [&column_references_map](const ActionsDAG::Node *input) -> bool
-                {
-                    return column_references_map.contains(input) && column_references_map.at(input) == 0;
-                });
-            dag.inputs.erase(it_end, last);
-        }
-
-        // replace outputs
-        std::ranges::replace(dag.outputs, &function_node, &replacement_node);
-
-        /// Remove the old node
-        dag.nodes.erase(function_it);
-
-        // Now erase the non-referenced nodes
-        return dag.nodes.remove_if(
-            [&](const ActionsDAG::Node &node) -> bool
-            {
-                if (node.type == ActionsDAG::ActionType::INPUT
-                    && column_references_map.contains(&node)
-                    && column_references_map.at(&node) == 0)
-                {
-                    chassert(node.children.empty());
-                    removed_columns.push_back(node.result_name);
-                    return true;
-                }
-                return false;
-            });
+        return replaced;
     }
 
 public:
@@ -388,10 +315,12 @@ public:
     /// Such approach avoids the latter redirection step. However, the addFunctionImpl api is so complex that de-incentivated doing that
     /// We could modify that function to allow doing that, but at the moment I prefer not to touch any code in that side until this is
     /// accepted
-    size_t optimize()
+    std::vector<String> optimize()
     {
+        const std::vector<String> initial_inputs = dag.getRequiredColumnsNames();
+
         size_t replaced = 0;
-        for (const ActionsDAG::Node &subnode : dag.getNodes())
+        for (ActionsDAG::Node &subnode : dag.nodes)
         {
             if (!isOptimizableFunction(subnode))
                 continue;
@@ -399,18 +328,24 @@ public:
             if (!hasChildColumnNodeWithTextIndex(subnode))
                 continue;
 
-            const ActionsDAG::Node * replacement = tryAddReplacementIndexFunction(subnode);
-
-            if (replacement != nullptr)
-                replaced += replaceFunctionNode(subnode, *replacement);
+            replaced += tryReplaceFunctionNodeInplace(subnode);
         }
 
-        return replaced;
-    }
+        if (replaced > 0)
+        {
+            dag.removeUnusedActions(true);
 
-    const std::vector<String> &removedColumns() const
-    {
-        return removed_columns;
+            const std::vector<String> final_inputs = dag.getRequiredColumnsNames();
+
+            std::vector<String> removed_inputs;
+            std::ranges::set_difference(initial_inputs, final_inputs, std::back_inserter(removed_inputs));
+
+            chassert(removed_inputs.size() <= replaced);
+
+            return removed_inputs;
+        }
+
+        return {};
     }
 };
 
@@ -454,7 +389,7 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
         return updated_layers;
 
     const StorageMetadataPtr metadata = read_from_mergetree_step->getStorageMetadata();
-    if (!metadata)
+    if (!metadata || !metadata->hasSecondaryIndices())
         return updated_layers;
 
     /// Get the list of column: text_index we use latter
@@ -489,12 +424,12 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
     /// Ok, so far we can try to apply the optimization. Let's build a replaced.
     FunctionReplacerDAG replacer(filter_step->getExpression(), columns_to_index_name);
 
-    const size_t replaced = replacer.optimize();
-    if (replaced == 0)
-        return updated_layers;
+    const std::vector<String> removed_inputs = replacer.optimize();
+
+    replacer.printDag();
 
     read_from_mergetree_step->registerColumnsChanges(
-        replacer.removedColumns(),
+        removed_inputs,
         {"_part_index", "_part_offset"}
     );
 
