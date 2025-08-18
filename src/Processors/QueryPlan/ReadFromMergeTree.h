@@ -59,6 +59,7 @@ struct UsefulSkipIndexes
 
     std::vector<DataSkippingIndexAndCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
+    std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
 /// This step is created to read from MergeTree* table.
@@ -82,6 +83,7 @@ public:
     {
         IndexType type;
         std::string name = {};
+        std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};

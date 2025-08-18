@@ -2134,11 +2134,6 @@ CONV_FN(LocalFunc, local)
 {
     ret += LocalFunc_FName_Name(local.fname());
     ret += "(";
-    if (local.has_cluster())
-    {
-        ClusterToString(ret, false, local.cluster());
-        ret += ", ";
-    }
     ret += local.credential();
     for (int i = 0; i < local.params_size(); i++)
     {
