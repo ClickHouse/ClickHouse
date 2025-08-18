@@ -2726,8 +2726,10 @@ def test_writes_schema_evolution(started_cluster, format_version, storage_type):
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Int32)", format_version)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN x Int64;", settings={"allow_experimental_insert_into_iceberg": 1})
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
@@ -2741,8 +2743,18 @@ def test_writes_schema_evolution(started_cluster, format_version, storage_type):
     instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN x;", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4.5600000000000005\n\\N\n'
 
-    instance.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN y Int64;", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4\n\\N\n'
+    if storage_type != "local":
+        return
+
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 2
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
