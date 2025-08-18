@@ -18,6 +18,9 @@ public:
     static constexpr const char * positions_column_name = "pos";
     static constexpr const char * data_file_path_column_name = "file_path";
 
+    static constexpr Int64 positions_column_field_id = 2147483545;
+    static constexpr Int64 data_file_path_column_field_id = 2147483546;
+
     IcebergPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
