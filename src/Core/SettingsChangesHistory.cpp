@@ -54,11 +54,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", false, true, "New setting."},
             {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
             {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
             {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
@@ -826,6 +828,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
+            {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {

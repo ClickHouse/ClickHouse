@@ -19,6 +19,8 @@ import time
 import traceback
 import urllib.parse
 import uuid
+from glob import glob
+from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -3603,7 +3605,8 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
@@ -3812,13 +3815,16 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        entrypoint: {entrypoint_cmd}
+        entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -4729,15 +4735,7 @@ class ClickHouseInstance:
         return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(
-                    process_name
-                ),
-            ]
-        )
+        output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
         if output:
             try:
                 pid = int(output.split("\n")[0].strip())
@@ -5336,16 +5334,10 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
-        entrypoint_cmd = self.clickhouse_start_command
-
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
-            entrypoint_cmd = (
-                "["
-                + ", ".join(map(lambda x: '"' + x + '"', entrypoint_cmd.split()))
-                + "]"
-            )
+            entrypoint_cmd = self.clickhouse_start_command
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
