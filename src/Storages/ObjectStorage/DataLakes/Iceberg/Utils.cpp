@@ -33,11 +33,12 @@
 #include <IO/ReadHelpers.h>
 #include <filesystem>
 
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 using namespace DB;
 
@@ -71,7 +72,7 @@ namespace DB::Setting
     extern const SettingsUInt64 output_format_compression_level;
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 using namespace DB;
@@ -81,21 +82,30 @@ void writeMessageToFile(
     const String & filename,
     ObjectStoragePtr object_storage,
     ContextPtr context,
+    std::function<void()> cleanup,
     CompressionMethod compression_method)
 {
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-    if (compression_method != CompressionMethod::None)
+    try
     {
-        auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
-        compressed_buffer_metadata->write(data.data(), data.size());
-        compressed_buffer_metadata->finalize();
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+        if (compression_method != CompressionMethod::None)
+        {
+            auto settings = context->getSettingsRef();
+            auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+            compressed_buffer_metadata->write(data.data(), data.size());
+            compressed_buffer_metadata->finalize();
+        }
+        else
+        {
+            buffer_metadata->write(data.data(), data.size());
+            buffer_metadata->finalize();
+        }
     }
-    else
+    catch (...)
     {
-        buffer_metadata->write(data.data(), data.size());
-        buffer_metadata->finalize();
+        cleanup();
+        throw;
     }
 }
 
@@ -225,11 +235,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     }
 }
 
-}
-
-namespace DB
-{
-
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,
@@ -275,7 +280,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -315,7 +320,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;
