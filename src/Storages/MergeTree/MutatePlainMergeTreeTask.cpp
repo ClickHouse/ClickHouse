@@ -3,7 +3,6 @@
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
@@ -153,9 +152,6 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 {
     if (mutate_task)
         mutate_task->cancel();
-
-    if (new_part)
-        new_part->removeIfNeeded();
 }
 
 

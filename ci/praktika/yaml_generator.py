@@ -112,14 +112,6 @@ jobs:
         default: {DEFAULT_VALUE}\
 """
 
-        TEMPLATE_OPTIONS_INPUT = """
-      {NAME}:
-        description: {DESCRIPTION}
-        type: choice
-        options: {OPTIONS}
-        default: {DEFAULT_VALUE}\
-"""
-
         TEMPLATE_SECRET_CONFIG = """\
       {SECRET_NAME}:
         required: true
@@ -312,7 +304,7 @@ class PullRequestPushYamlGen:
 
             if_expression = ""
             if (
-                self.workflow_config.config.enable_cache
+                self.workflow_config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
@@ -341,7 +333,7 @@ class PullRequestPushYamlGen:
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
                     )
                 )
-            if self.workflow_config.config._enabled_workflow_config():
+            if self.workflow_config.enable_cache:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
                         WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
@@ -386,22 +378,12 @@ class PullRequestPushYamlGen:
         # for dispatch workflows only
         dispatch_inputs = ""
         for input_item in self.workflow_config.dispatch_inputs:
-            if not input_item.options:
-                dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
-                    NAME=input_item.name,
-                    DESCRIPTION=input_item.description,
-                    IS_REQUIRED="true" if input_item.is_required else "false",
-                    DEFAULT_VALUE=input_item.default_value or "''",
-                )
-            else:
-                dispatch_inputs += (
-                    YamlGenerator.Templates.TEMPLATE_OPTIONS_INPUT.format(
-                        NAME=input_item.name,
-                        DESCRIPTION=input_item.description,
-                        OPTIONS=input_item.options,
-                        DEFAULT_VALUE=input_item.default_value or "''",
-                    )
-                )
+            dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
+                NAME=input_item.name,
+                DESCRIPTION=input_item.description,
+                IS_REQUIRED="true" if input_item.is_required else "false",
+                DEFAULT_VALUE=input_item.default_value or "''",
+            )
 
         if self.workflow_config.event in (
             Workflow.Event.PULL_REQUEST,

@@ -121,12 +121,10 @@ private:
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context_,
-    MultiVersion<Macros>::Version macros_,
     const String & config_prefix)
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
     , log(getLogger("ClusterDiscovery"))
-    , macros(macros_)
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -348,7 +346,6 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
-        /* bind_host= */ "",
         /* priority= */ Priority{1},
         /* cluster_name= */ cluster_info.name,
         /* cluster_secret= */ cluster_info.cluster_secret};
@@ -483,7 +480,7 @@ void ClusterDiscovery::initialUpdate()
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
 
-        auto watch_callback = [path](auto) { path->need_update = true; };
+        auto watch_callback = [&path](auto) { path->need_update = true; };
         zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 
@@ -737,8 +734,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
 {
     std::lock_guard lock(mutex);
-    auto expanded_cluster_name = macros->expand(cluster_name);
-    auto it = cluster_impls.find(expanded_cluster_name);
+    auto it = cluster_impls.find(cluster_name);
     if (it == cluster_impls.end())
         return nullptr;
     return it->second;

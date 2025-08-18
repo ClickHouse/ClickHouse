@@ -6,7 +6,7 @@ slug: /engines/table-engines/integrations/rabbitmq
 title: 'RabbitMQ Engine'
 ---
 
-# RabbitMQ engine
+# RabbitMQ Engine
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
@@ -15,9 +15,9 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 - Publish or subscribe to data flows.
 - Process streams as they become available.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -80,7 +80,9 @@ Optional parameters:
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
 - `rabbitmq_empty_queue_backoff_start` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end` — An end backoff point to reschedule read if the rabbitmq queue is empty.
-- `rabbitmq_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
+- `rabbitmq_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+
+
 
   * [ ] SSL connection:
 
@@ -91,7 +93,7 @@ Also format settings can be added along with rabbitmq-related settings.
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -107,7 +109,7 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
 
 Required configuration:
 
-```xml
+``` xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
@@ -116,7 +118,7 @@ Required configuration:
 
 Additional configuration:
 
-```xml
+``` xml
  <rabbitmq>
     <vhost>clickhouse</vhost>
  </rabbitmq>
@@ -163,7 +165,7 @@ Do not use the same table for inserts and materialized views.
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -183,7 +185,7 @@ Example:
   SELECT key, value FROM daily ORDER BY key;
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_exchange_name` - RabbitMQ exchange name. Data type: `String`.
 - `_channel_id` - ChannelID, on which consumer, who received the message, was declared. Data type: `String`.
@@ -192,7 +194,7 @@ Example:
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
 
-Additional virtual columns when `rabbitmq_handle_error_mode='stream'`:
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

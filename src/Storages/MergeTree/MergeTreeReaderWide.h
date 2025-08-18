@@ -30,13 +30,8 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(
-        size_t from_mark,
-        size_t current_task_last_mark,
-        bool continue_reading,
-        size_t max_rows_to_read,
-        size_t offset,
-        Columns & res_columns) override;
+    size_t readRows(size_t from_mark, size_t current_task_last_mark,
+                    bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
 
@@ -79,7 +74,6 @@ private:
         bool continue_reading,
         size_t current_task_last_mark,
         size_t max_rows_to_read,
-        size_t rows_offset,
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 

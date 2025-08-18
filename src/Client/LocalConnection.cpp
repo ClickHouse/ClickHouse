@@ -1,9 +1,8 @@
-#include <Client/LocalConnection.h>
+#include "LocalConnection.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -32,7 +31,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -59,9 +58,7 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    ContextMutablePtr session_context = session->makeSessionContext();
-    /// Re-apply settings from the command line arguments
-    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
+    session->makeSessionContext();
 }
 
 LocalConnection::LocalConnection(
@@ -240,7 +237,7 @@ void LocalConnection::sendQuery(
         auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const SharedHeader & header)
+            pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
             });
@@ -262,7 +259,6 @@ void LocalConnection::sendQuery(
 
     try
     {
-        query_context->setSetting("serialize_query_plan", false);
         state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
@@ -338,14 +334,9 @@ void LocalConnection::sendQuery(
     }
 }
 
-void LocalConnection::sendQueryPlan(const QueryPlan &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-}
-
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     if (state->pushing_async_executor)
@@ -469,23 +460,6 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    // pushing executors have to be finished before the final stats are sent
-    if (state->is_finished)
-    {
-        if (state->executor)
-        {
-            // no op
-        }
-        else if (state->pushing_async_executor)
-        {
-            state->pushing_async_executor->finish();
-        }
-        else if (state->pushing_executor)
-        {
-            state->pushing_executor->finish();
-        }
-    }
-
     if (state->is_finished && !state->sent_totals)
     {
         state->sent_totals = true;
@@ -494,7 +468,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             totals = state->executor->getTotalsBlock();
 
-        if (!totals.empty())
+        if (totals)
         {
             next_packet_type = Protocol::Server::Totals;
             state->block.emplace(totals);
@@ -510,7 +484,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             extremes = state->executor->getExtremesBlock();
 
-        if (!extremes.empty())
+        if (extremes)
         {
             next_packet_type = Protocol::Server::Extremes;
             state->block.emplace(extremes);
@@ -534,7 +508,7 @@ bool LocalConnection::poll(size_t)
     {
         state->sent_profile_events = true;
 
-        if (send_profile_events && (state->executor || state->pushing_async_executor || state->pushing_executor))
+        if (send_profile_events && state->executor)
         {
             sendProfileEvents();
             return true;
@@ -550,7 +524,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && !state->block.value().empty())
+    if (state->block && state->block.value())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -618,11 +592,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block.empty() && next_read)
+    if (!block && next_read)
     {
         return true;
     }
-    if (!block.empty() && !state->io.null_format)
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -636,7 +610,7 @@ bool LocalConnection::pollImpl()
 
 UInt64 LocalConnection::receivePacketType()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType is not implemented for LocalConnection");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType() is not implemented for LocalConnection");
 }
 
 Packet LocalConnection::receivePacket()
@@ -666,7 +640,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && !state->block.value().empty())
+            if (state->block && state->block.value())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();

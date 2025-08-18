@@ -81,7 +81,7 @@ public:
     template <typename Iterator>
     NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
 
-    void readText(ReadBuffer & buf, bool check_eof = true);
+    void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
 
     String toString() const;
@@ -100,9 +100,6 @@ public:
     Names getNames() const;
     NameSet getNameSet() const;
     DataTypes getTypes() const;
-
-    /// Creates a mapping from name to the type
-    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
@@ -130,10 +127,6 @@ public:
     size_t getPosByName(const std::string & name) const noexcept;
 
     String toNamesAndTypesDescription() const;
-    /// Same as NamesAndTypesList::readText, but includes `type_in_storage`.
-    void readTextWithNamesInStorage(ReadBuffer & buf);
-    /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.
-    void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

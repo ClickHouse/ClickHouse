@@ -54,8 +54,8 @@ struct AggregationFunctionEstimateCompressionRatioData
     UInt64 merged_compressed_size = 0;
     UInt64 merged_uncompressed_size = 0;
 
-    std::unique_ptr<NullWriteBuffer> null_buf;
-    std::unique_ptr<CompressedWriteBuffer> compressed_buf;
+    std::shared_ptr<NullWriteBuffer> null_buf;
+    std::shared_ptr<CompressedWriteBuffer> compressed_buf;
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
@@ -78,10 +78,14 @@ private:
     void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
         if (!data(place).null_buf)
-            data(place).null_buf = std::make_unique<NullWriteBuffer>();
+        {
+            data(place).null_buf = std::make_shared<NullWriteBuffer>();
+        }
         if (!data(place).compressed_buf)
-            data(place).compressed_buf = std::make_unique<CompressedWriteBuffer>(
+        {
+            data(place).compressed_buf = std::make_shared<CompressedWriteBuffer>(
                 *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        }
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
@@ -172,9 +176,11 @@ public:
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
+        WriteBufferPtr compressed_buffer = data(place).compressed_buf;
+
         ISerialization::SerializeBinaryBulkSettings settings;
 
-        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).compressed_buf.get(); };
+        settings.getter = [compressed_buffer](ISerialization::SubstreamPath) -> WriteBuffer * { return compressed_buffer.get(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
         type_serialization_ptr->serializeBinaryBulkStatePrefix(*column, settings, state);
