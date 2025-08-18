@@ -1,4 +1,4 @@
--- Tags: long, no-msan, no-distributed-cache
+-- Tags: long
 
 DROP TABLE IF EXISTS t;
 

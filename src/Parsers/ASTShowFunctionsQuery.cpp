@@ -14,11 +14,19 @@ ASTPtr ASTShowFunctionsQuery::clone() const
     return res;
 }
 
-void ASTShowFunctionsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTShowFunctionsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << "SHOW FUNCTIONS";
+    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW FUNCTIONS" << (settings.hilite ? hilite_none : "");
+
     if (!like.empty())
-        ostr << (case_insensitive_like ? " ILIKE " : " LIKE ") << quoteString(like);
+    {
+        ostr << (settings.hilite ? hilite_keyword : "") << (case_insensitive_like ? " ILIKE " : " LIKE ")
+            << (settings.hilite ? hilite_none : "");
+        if (settings.hilite)
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
+        else
+            ostr << quoteString(like);
+    }
 }
 
 }

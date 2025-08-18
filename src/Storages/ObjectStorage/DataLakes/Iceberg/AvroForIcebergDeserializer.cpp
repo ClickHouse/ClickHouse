@@ -11,7 +11,7 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
-namespace DB::Iceberg
+namespace Iceberg
 {
 
 using namespace DB;
