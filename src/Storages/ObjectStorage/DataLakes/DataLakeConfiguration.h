@@ -247,9 +247,15 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapper() const override
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
     {
-        return current_metadata->getColumnMapper();
+        assertInitialized();
+        return current_metadata->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    {
+        assertInitialized();
+        return current_metadata->getColumnMapperForCurrentSchema();
     }
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override

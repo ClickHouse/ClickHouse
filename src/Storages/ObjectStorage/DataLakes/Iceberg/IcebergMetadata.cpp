@@ -272,26 +272,6 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                 }
             }
 
-#if USE_PARQUET
-            if (configuration_ptr->format == "Parquet")
-                column_mapper = std::make_shared<ColumnMapper>();
-
-            if (column_mapper)
-            {
-                Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
-                std::unordered_map<String, Int64> column_name_to_parquet_field_id;
-                for (UInt32 j = 0; j < schemas->size(); ++j)
-                {
-                    auto schema = schemas->getObject(j);
-                    if (schema->getValue<Int32>(f_schema_id) != schema_id)
-                        continue;
-
-                    column_name_to_parquet_field_id = IcebergSchemaProcessor::traverseSchema(schema->getArray(Iceberg::f_fields));
-                }
-                column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
-            }
-#endif
-
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
                 getManifestList(
                     object_storage,

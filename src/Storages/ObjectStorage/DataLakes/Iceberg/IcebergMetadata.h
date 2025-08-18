@@ -79,7 +79,8 @@ public:
 
     bool supportsSchemaEvolution() const override { return true; }
 
-    static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+    static Int32 parseTableSchema(
+        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -91,7 +92,27 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
+    {
+        IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+        if (!iceberg_object_info)
+            return nullptr;
+        SharedLockGuard lock(mutex);
+        auto configuration_ptr = configuration.lock();
+        if (configuration_ptr->format != "Parquet")
+            return nullptr;
+
+        return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+    }
+
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    {
+        auto configuration_ptr = configuration.lock();
+        if (configuration_ptr->format != "Parquet")
+            return nullptr;
+        SharedLockGuard lock(mutex);
+        return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
+    }
 
     CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
 
