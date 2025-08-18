@@ -18,8 +18,8 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import requests
 import yaml  # type: ignore[import-untyped]
+from tests.integration.integration_test_images import IMAGES
 
-from ci.jobs.scripts.integration_test_images import IMAGES
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -805,7 +805,7 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(4)))
+                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(7)))
                     AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
                     AND (test_name != '')
