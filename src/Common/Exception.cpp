@@ -58,8 +58,18 @@ void abortOnFailedAssertion(const String & description)
 }
 
 bool terminate_on_any_exception = false;
+std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
 std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+
+constexpr bool debug_or_sanitizer_build =
+#ifdef DEBUG_OR_SANITIZER_BUILD
+true
+#else
+false
+#endif
+;
+
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
@@ -68,12 +78,11 @@ static size_t handle_error_code(
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
+            abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
     }
-#endif
 
     if (Exception::callback)
     {
@@ -82,19 +91,21 @@ static size_t handle_error_code(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string format_string_)
     : msg(std::move(msg_))
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
@@ -109,6 +120,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -119,6 +131,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -554,20 +567,21 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        try
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            if (!with_stacktrace)
-                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
+            try
+            {
+                throw;
+            }
+            catch (const std::logic_error &)
+            {
+                if (!with_stacktrace)
+                    stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
 
-            abortOnFailedAssertion(stream.str());
+                abortOnFailedAssertion(stream.str());
+            }
+            catch (...) {} // NOLINT(bugprone-empty-catch)
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-#endif
     }
     catch (...)
     {

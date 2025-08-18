@@ -1,6 +1,9 @@
+#include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -26,10 +29,12 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -500,6 +505,19 @@ SinkToStoragePtr StorageObjectStorage::write(
         local_context);
 }
 
+bool StorageObjectStorage::optimize(
+    const ASTPtr & /*query*/,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /* deduplicate_by_columns */,
+    bool /*cleanup*/,
+    [[maybe_unused]] ContextPtr context)
+{
+    return configuration->optimize(metadata_snapshot, context, format_settings);
+}
+
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
@@ -525,9 +543,19 @@ void StorageObjectStorage::truncate(
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
+    {
         objects.emplace_back(key.path);
-
+    }
     object_storage->removeObjectsIfExist(objects);
+}
+
+void StorageObjectStorage::drop()
+{
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        catalog->dropTable(namespace_name, table_name);
+    }
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -602,9 +630,9 @@ void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 }
 
-SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
+SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
 {
-    if (storage_type_name == "s3")
+    if (storage_engine_name == "s3")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt(
@@ -612,25 +640,38 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "hdfs")
+    if (storage_engine_name == "hdfs")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "azure")
+    if (storage_engine_name == "azure")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    if (storage_type_name == "local")
+    if (storage_engine_name == "local")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
+
+void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+}
+
+void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    configuration->checkMutationIsPossible(commands);
+}
+
 
 }

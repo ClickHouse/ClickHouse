@@ -39,7 +39,7 @@ namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
     extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
-    extern DataLakeStorageSettingsString storage_storage_endpoint;
+    extern DataLakeStorageSettingsString object_storage_endpoint;
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
@@ -121,6 +121,29 @@ public:
         );
     }
 
+    bool supportsDelete() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsDelete();
+    }
+
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        current_metadata->mutate(commands, context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    void checkMutationIsPossible(const MutationCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkMutationIsPossible(commands);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -141,16 +164,34 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, data_path);
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, data_path);
+        return current_metadata->getSchemaTransformer(local_context, object_info);
+    }
+
+    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
+    {
+        if (!current_metadata)
+            return false;
+        return current_metadata->hasPositionDeleteTransformer(object_info);
+    }
+
+    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & object_info,
+        const SharedHeader & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
     }
 
     bool hasExternalDynamicMetadata() override
@@ -217,7 +258,7 @@ public:
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
             auto catalog_parameters = DataLake::CatalogSettings{
-                .storage_endpoint = (*settings)[DataLakeStorageSetting::storage_storage_endpoint].value,
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::object_storage_endpoint].value,
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,
@@ -247,6 +288,12 @@ public:
 
 #endif
         return nullptr;
+    }
+
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
 private:
