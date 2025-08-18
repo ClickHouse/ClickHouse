@@ -37,6 +37,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Columns/IColumn.h>
 #include <Common/FailPoint.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/TypeId.h>
 
 #include <memory>
 #include <sstream>
@@ -216,7 +218,10 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-void extendSchemaForPartitions(String & schema, const std::vector<String> & partition_columns, const std::vector<Field> & partition_values)
+void extendSchemaForPartitions(
+    String & schema,
+    const std::vector<String> & partition_columns,
+    const std::vector<DataTypePtr> & partition_types)
 {
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
@@ -224,13 +229,8 @@ void extendSchemaForPartitions(String & schema, const std::vector<String> & part
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
-            field->set(Iceberg::f_type, "long");
-        else if (partition_values[i].getType() == Field::Types::String)
-            field->set(Iceberg::f_type, "string");
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for partition {}", partition_values[i].getType());
-
+        Int32 iter = 1;
+        field->set(Iceberg::f_type, getIcebergType(partition_types[i], iter));
         partition_fields->add(field);
     }
 
@@ -251,6 +251,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
+    const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
@@ -268,7 +269,7 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
+    extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root();
@@ -673,7 +674,15 @@ ChunkPartitioner::ChunkPartitioner(
         if (!transform_and_argument)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
 
-        functions.push_back(factory.get(transform_and_argument->transform_name, context));
+        auto function = factory.get(transform_and_argument->transform_name, context);
+
+        ColumnsWithTypeAndName columns_for_function;
+        if (transform_and_argument->argument)
+            columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
+        columns_for_function.push_back(sample_block_->getByName(column_name));
+
+        result_data_types.push_back(function->getReturnType(columns_for_function));
+        functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
     }
@@ -972,7 +981,18 @@ bool IcebergStorageSink::initializeMetadata()
                 StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
-                generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, {data_filename}, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry, Iceberg::FileContentType::DATA);
+                generateManifestFile(
+                    metadata,
+                    partitioner ? partitioner->getColumns() : std::vector<String>{},
+                    partition_key,
+                    partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
+                    {data_filename},
+                    new_snapshot,
+                    configuration->format,
+                    partititon_spec,
+                    partition_spec_id,
+                    *buffer_manifest_entry,
+                    Iceberg::FileContentType::DATA);
                 buffer_manifest_entry->finalize();
                 manifest_lengths += buffer_manifest_entry->count();
             }

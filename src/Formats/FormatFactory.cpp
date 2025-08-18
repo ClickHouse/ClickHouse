@@ -203,6 +203,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
+    format_settings.parquet.output_date_as_uint16 = settings[Setting::output_format_parquet_date_as_uint16];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
@@ -576,7 +577,8 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteBuffer & buf,
     const Block & sample,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    FormatFilterInfoPtr format_filter_info) const
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
@@ -588,9 +590,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
         && !settings[Setting::output_format_json_array_of_rows])
     {
-        auto formatter_creator = [output_getter, sample, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        auto formatter_creator = [output_getter, sample, format_settings, format_filter_info] (WriteBuffer & output) -> OutputFormatPtr
         {
-            return output_getter(output, sample, format_settings);
+            return output_getter(output, sample, format_settings, format_filter_info);
         };
 
         ParallelFormattingOutputFormat::Params builder{buf, std::make_shared<const Block>(sample), formatter_creator, settings[Setting::max_threads]};
@@ -612,7 +614,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     WriteBuffer & buf,
     const Block & sample,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    FormatFilterInfoPtr format_filter_info) const
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
@@ -624,7 +627,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
 
-    auto format = output_getter(buf, sample, format_settings);
+    auto format = output_getter(buf, sample, format_settings, format_filter_info);
 
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
