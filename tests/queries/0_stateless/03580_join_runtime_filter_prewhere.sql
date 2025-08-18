@@ -5,6 +5,7 @@ INSERT INTO nation VALUES (5,'ETHIOPIA'),(6,'FRANCE'),(7,'GERMANY');
 
 INSERT INTO customer SELECT number, 5 FROM numbers(500);
 
+SET enable_parallel_replicas=0;
 
 SELECT '-- Check that filter on c_nationkey is moved to PREWHERE';
 SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
