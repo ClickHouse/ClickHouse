@@ -695,7 +695,6 @@ AES_set_encrypt_key:
     sd      x6,0(x12)
     sd      x8,8(x12)
 
-    # if bits == 128
     # jump into loop
     beq     x11,x28,1f
 
@@ -703,7 +702,6 @@ AES_set_encrypt_key:
     srli    x15,x14,32
     sd      x14,16(x12)
 
-    # if bits == 192
     # jump into loop
     beq     x11,x29,2f
 

@@ -1178,7 +1178,7 @@ elseif(ARCH_S390X)
 elseif(ARCH_RISCV64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-riscv64-zkn.S
-        asm/crypto/aes/aes-riscv64-zkned.S
+        asm/crypto/aes/aes-riscv64-zvkned.S
         asm/crypto/aes/aes-riscv64-zvbb-zvkg-zvkned.S
         asm/crypto/aes/aes-riscv64-zvkb-zvkned.S
         asm/crypto/aes/aes-riscv64.S
