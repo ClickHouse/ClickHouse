@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -42,10 +43,7 @@ public:
         const ActionsDAG * filter_dag_,
         IcebergTableStateSnapshotPtr table_snapshot_,
         IcebergDataSnapshotPtr data_snapshot_,
-        IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-        IcebergSchemaProcessorPtr schema_processor_,
-        Int32 format_version_,
-        String table_location_);
+        PersistentTableComponents persistent_components);
 
     std::optional<DB::Iceberg::ManifestFileEntry> next();
 
@@ -57,12 +55,9 @@ private:
     ContextPtr local_context;
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache;
-    IcebergSchemaProcessorPtr schema_processor;
     StorageObjectStorageConfigurationWeakPtr configuration;
     bool use_partition_pruning;
-    const Int32 format_version;
-    const String table_location;
+    PersistentTableComponents persistent_components;
     LoggerPtr log;
 
 
@@ -93,21 +88,12 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        IcebergMetadataFilesCachePtr iceberg_metadata_cache_,
-        IcebergSchemaProcessorPtr schema_processor_,
-        Int32 format_version_,
-        String table_location_);
+        Iceberg::PersistentTableComponents persistent_components);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override;
     ~IcebergIterator() override;
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override;
 
 private:
     std::unique_ptr<ActionsDAG> filter_dag;

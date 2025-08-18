@@ -79,6 +79,11 @@ public:
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,

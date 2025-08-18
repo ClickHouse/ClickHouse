@@ -554,8 +554,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (object_info->hasPositionDeleteTransformer())
         {
             builder.addSimpleTransform(
-                [file_iterator, &object_info, &context_, &format_settings](const SharedHeader & header)
-                { return file_iterator->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
+                [file_iterator, object_info, object_storage, &context_, &format_settings](const SharedHeader & header)
+                { return object_info->getPositionDeleteTransformer(object_storage, header, format_settings, context_); });
         }
 
         std::optional<ActionsDAG> transformer;

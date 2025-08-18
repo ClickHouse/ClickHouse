@@ -28,6 +28,11 @@ struct ObjectInfo
     virtual std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() = 0;
     virtual const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const = 0;
     virtual void setDataLakeMetadata(std::optional<DataLakeObjectMetadata> metadata) = 0;
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        ObjectStoragePtr object_storage,
+        const SharedHeader & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_);
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

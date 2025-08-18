@@ -21,17 +21,10 @@ struct ClusterFunctionReadTaskResponse
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
 
-    /// Is Iceberg object
-    UInt8 is_iceberg_object = 0;
-
-    /// Iceberg read schema ID
-    Int32 read_schema_id;
-
-    /// Iceberg positional deletes objects in case of Iceberg object.
-    std::pair<size_t, size_t> position_deletes_objects_range;
-
-    /// Full path in Storage to the Iceberg file.
+    bool is_iceberg_object = false;
     String data_object_file_path_key;
+    Int32 read_schema_id;
+    std::vector<ManifestFileEntry> position_deletes_objects_range;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;

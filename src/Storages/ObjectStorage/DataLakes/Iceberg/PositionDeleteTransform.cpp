@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/logger_useful.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -54,10 +55,11 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         auto delete_source_object = RelativePathWithMetadata(object_path, object_metadata);
 
+        String format = position_deletes_object.file_format;
         Block initial_header;
         {
             std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(delete_source_object, object_storage, context, log);
-            auto schema_reader = FormatFactory::instance().getSchemaReader(delete_object_format, *read_buf_schema, context);
+            auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
             for (const auto & elem : columns_with_names)
@@ -67,7 +69,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             initial_header = Block(initial_header_data);
         }
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_path, delete_object_compression_method);
+        CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
         delete_read_buffers.push_back(createReadBuffer(delete_source_object, object_storage, context, log));
 
@@ -82,7 +84,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         }();
 
         auto delete_format = FormatFactory::instance().getInput(
-            delete_object_format,
+            format,
             *delete_read_buffers.back(),
             initial_header,
             context,

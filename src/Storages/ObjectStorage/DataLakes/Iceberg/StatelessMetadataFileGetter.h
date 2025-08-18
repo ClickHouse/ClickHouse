@@ -18,7 +18,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
 namespace DB::Iceberg
 {
@@ -26,10 +26,7 @@ namespace DB::Iceberg
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache,
-    IcebergSchemaProcessorPtr schema_processor,
-    Int32 format_version,
-    String table_location,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
@@ -40,9 +37,7 @@ Iceberg::ManifestFilePtr getManifestFile(
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
-    Int32 format_version,
-    String table_location,
-    IcebergMetadataFilesCachePtr iceberg_metadata_cache,
+    const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const String & filename,
     LoggerPtr log);

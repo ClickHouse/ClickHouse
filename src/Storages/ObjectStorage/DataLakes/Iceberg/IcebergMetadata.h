@@ -23,8 +23,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
 namespace DB
@@ -45,7 +47,8 @@ public:
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        IcebergMetadataFilesCachePtr cache_ptr,
+        CompressionMethod metadata_compression_method_);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -90,6 +93,9 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
+    CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
+
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
     void mutate(const MutationCommands & commands,
         ContextPtr context,
@@ -107,34 +113,32 @@ protected:
 private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
-    mutable IcebergSchemaProcessorPtr schema_processor;
+
+    DB::Iceberg::PersistentTableComponents persistent_components;
+
     LoggerPtr log;
 
-    IcebergMetadataFilesCachePtr manifest_cache;
 
     std::tuple<Int64, Int32> getVersion() const;
 
     mutable SharedMutex mutex;
 
     Int32 last_metadata_version TSA_GUARDED_BY(mutex);
-    const Int32 format_version;
 
     Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
+    CompressionMethod metadata_compression_method;
 
-    const String table_location;
 
     ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
-    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
-    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
 };
-
 }
 
 #endif

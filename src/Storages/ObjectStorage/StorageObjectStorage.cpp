@@ -1,7 +1,9 @@
-#include <limits>
+#include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -501,6 +503,19 @@ SinkToStoragePtr StorageObjectStorage::write(
         format_settings,
         sample_block,
         local_context);
+}
+
+bool StorageObjectStorage::optimize(
+    const ASTPtr & /*query*/,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /* deduplicate_by_columns */,
+    bool /*cleanup*/,
+    [[maybe_unused]] ContextPtr context)
+{
+    return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(

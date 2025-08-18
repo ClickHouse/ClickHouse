@@ -1,10 +1,6 @@
-#include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
-#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -20,7 +16,7 @@ namespace ErrorCodes
 }
 namespace Setting
 {
-    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const Settings cluster_function_process_archive_on_multiple_nodes;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
@@ -36,7 +32,6 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         read_schema_id = iceberg_object_info->read_schema_id;
         position_deletes_objects_range = iceberg_object_info->position_deletes_objects_range;
     }
-
     auto * data_lake_object_info = dynamic_cast<ObjectInfoDataLake *>(object.get());
     if (data_lake_object_info && data_lake_object_info->getDataLakeMetadata().has_value())
     {
@@ -47,10 +42,6 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
 }
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
-    : path(path_)
-{
-}
 
 ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 {
@@ -89,17 +80,6 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
         else
             ActionsDAG().serialize(out, registry);
     }
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_ICEBERG_SPECIFIC)
-    {
-        writeVarUInt(is_iceberg_object, out);
-        if (is_iceberg_object)
-        {
-            writeVarInt(read_schema_id, out);
-            writeVarUInt(position_deletes_objects_range.first, out);
-            writeVarUInt(position_deletes_objects_range.second, out);
-            writeStringBinary(data_object_file_path_key, out);
-        }
-    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -124,17 +104,6 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         if (!path.empty() && !transform->getInputs().empty())
         {
             data_lake_metadata.transform = std::move(transform);
-        }
-    }
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_ICEBERG_SPECIFIC)
-    {
-        readVarUInt(is_iceberg_object, in);
-        if (is_iceberg_object)
-        {
-            readVarInt(read_schema_id, in);
-            readVarUInt(position_deletes_objects_range.first, in);
-            readVarUInt(position_deletes_objects_range.second, in);
-            readStringBinary(data_object_file_path_key, in);
         }
     }
 }
