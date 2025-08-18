@@ -352,6 +352,8 @@ public:
     /// Returns type that should be used as the result type in default implementation for Dynamic.
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+    
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
 protected:
 
@@ -413,8 +415,6 @@ protected:
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
 private:
-
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
