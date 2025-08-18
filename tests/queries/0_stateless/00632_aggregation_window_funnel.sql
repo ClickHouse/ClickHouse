@@ -221,3 +221,9 @@ CREATE TABLE conv_strict_dedup (ts UInt32, event String) ENGINE = Memory;
 INSERT INTO conv_strict_dedup VALUES (1, 'a'), (2, 'b'), (3, 'b'), (4, 'c');
 SELECT windowFunnel(10, 'strict_deduplication', 'conversion_time')(ts, event='a', event='b', event='c') FROM conv_strict_dedup;
 DROP TABLE conv_strict_dedup;
+
+DROP TABLE IF EXISTS funnel_test_large_dt;
+CREATE TABLE funnel_test_large_dt (ts DateTime, ev String) ENGINE = Memory;
+INSERT INTO funnel_test_large_dt VALUES ('2106-02-07 06:28:05', 'a'), ('2106-02-07 06:28:06', 'b'), ('2106-02-07 06:28:07', 'c');
+SELECT windowFunnel(100, 'conversion_time')(ts, ev='a', ev='b', ev='c') FROM funnel_test_large_dt;
+DROP TABLE funnel_test_large_dt;

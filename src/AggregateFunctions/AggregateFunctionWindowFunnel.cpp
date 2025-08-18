@@ -297,7 +297,7 @@ private:
     struct FunnelResult
     {
         UInt8 max_level = 0;
-        std::vector<T> conversion_times;
+        std::vector<UInt64> conversion_times;
     };
 
     /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
@@ -311,9 +311,9 @@ private:
         UInt8 overall_max_level = 0;
 
         // Helper lambda calculates based on stored winning_sequence_timestamps for the best sequence found
-        auto calculate_conversion_times = [&](UInt8 current_max_level) -> std::vector<T>
+        auto calculate_conversion_times = [&](UInt8 current_max_level) -> std::vector<UInt64>
         {
-            std::vector<T> times;
+            std::vector<UInt64> times;
             if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0);
@@ -323,7 +323,7 @@ private:
                     if (winning_sequence_timestamps[i].has_value() && winning_sequence_timestamps[i+1].has_value())
                     {
                          // Calculate difference from the consistent sequence timestamps
-                         times[i] = *winning_sequence_timestamps[i+1] - *winning_sequence_timestamps[i];
+                         times[i] = static_cast<UInt64>(*winning_sequence_timestamps[i+1]) - static_cast<UInt64>(*winning_sequence_timestamps[i]);
                     }
                 }
             }
@@ -383,8 +383,8 @@ private:
                 const T first_winning_ts = winning_sequence_timestamps[0].value();
                 const T prev_winning_ts = winning_sequence_timestamps[event_idx - 1].value();
 
-                bool time_check = timestamp <= first_winning_ts + window;
-                bool strict_check = (!strict_increase || timestamp > prev_winning_ts);
+                bool time_check = static_cast<UInt64>(timestamp) <= static_cast<UInt64>(first_winning_ts) + window;
+                bool strict_check = (!strict_increase || static_cast<UInt64>(timestamp) > static_cast<UInt64>(prev_winning_ts));
 
                 if (time_check && strict_check)
                 {
@@ -412,8 +412,8 @@ private:
                 const T first_candidate_ts = candidate_events_timestamp[event_idx - 1]->first;
                 const T prev_candidate_ts = candidate_events_timestamp[event_idx - 1]->second;
 
-                bool time_check = timestamp <= first_candidate_ts + window;
-                bool strict_check = (!strict_increase || timestamp > prev_candidate_ts);
+                bool time_check = static_cast<UInt64>(timestamp) <= static_cast<UInt64>(first_candidate_ts) + window;
+                bool strict_check = (!strict_increase || static_cast<UInt64>(timestamp) > static_cast<UInt64>(prev_candidate_ts));
 
                 if (time_check && strict_check)
                 {
@@ -493,9 +493,9 @@ private:
         std::vector<std::list<EventMatchTimeWindow>> event_sequences(events_size);
 
         // Helper lambda to calculate conversion times from a winning sequence
-        auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> std::vector<T>
+        auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> std::vector<UInt64>
         {
-            std::vector<T> times;
+            std::vector<UInt64> times;
             if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0); // Initialize all times to 0
@@ -504,7 +504,7 @@ private:
                     // Ensure both current and next step timestamps exist
                     if (winning_seq.step_timestamps[i].has_value() && winning_seq.step_timestamps[i+1].has_value())
                     {
-                         times[i] = *winning_seq.step_timestamps[i+1] - *winning_seq.step_timestamps[i];
+                         times[i] = static_cast<UInt64>(*winning_seq.step_timestamps[i+1]) - static_cast<UInt64>(*winning_seq.step_timestamps[i]);
                     }
                 }
             }
