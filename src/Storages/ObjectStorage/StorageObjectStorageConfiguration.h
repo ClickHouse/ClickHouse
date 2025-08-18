@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 namespace DB
 {
@@ -130,9 +131,9 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
@@ -186,6 +187,15 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/) {}
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
+
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
@@ -194,6 +204,11 @@ public:
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
 
     String format = "auto";
     String compression_method = "auto";

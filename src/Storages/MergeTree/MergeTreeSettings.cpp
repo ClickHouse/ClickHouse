@@ -599,6 +599,11 @@ namespace ErrorCodes
     If true patch parts are applied on merges
     )", 0) \
     \
+    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
+    The maximum uncompressed size of data in all patch parts in bytes.
+    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+    0 - unlimited.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1268,6 +1273,9 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
+    How often replica will try to reload it's flags according to background schedule.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1441,6 +1449,9 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
+    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
+    Allow ussage of '_part_offfset' column in projections select query.
+    )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
@@ -1581,8 +1592,7 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of
-    the table.
+    When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
