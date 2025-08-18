@@ -54,6 +54,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -87,6 +88,7 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -102,8 +104,10 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 }
+
 
 using namespace Iceberg;
 
@@ -861,6 +865,29 @@ void IcebergMetadata::addDeleteTransformers(ObjectInfoPtr object_info,  QueryPip
                 true);
         };
         builder.addSimpleTransform(simple_transform_adder);
+    }
+}
+
+SinkToStoragePtr IcebergMetadata::write(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
+    StorageObjectStorageConfigurationPtr /*configuration*/,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+    {
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration.lock(), format_settings, sample_block, context, catalog, table_id);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Insert into iceberg is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
     }
 }
 

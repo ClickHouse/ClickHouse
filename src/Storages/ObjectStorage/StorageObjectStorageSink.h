@@ -25,6 +25,8 @@ public:
 
     void onFinish() override;
 
+    const String & getPath() const { return path; }
+
 private:
     const String path;
     SharedHeader sample_block;

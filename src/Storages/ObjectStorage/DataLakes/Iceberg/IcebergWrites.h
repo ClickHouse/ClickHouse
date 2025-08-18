@@ -4,8 +4,10 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBuffer.h>
+#include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
 
@@ -84,6 +86,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
+    const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
@@ -157,12 +160,15 @@ public:
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
+    const std::vector<DataTypePtr> & getResultTypes() const { return result_data_types; }
+
 private:
     SharedHeader sample_block;
 
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
     std::vector<String> columns_to_apply;
+    std::vector<DataTypePtr> result_data_types;
 };
 
 class IcebergStorageSink : public SinkToStorage

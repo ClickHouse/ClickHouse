@@ -93,6 +93,15 @@ public:
 
     ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
 
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
+
     CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
