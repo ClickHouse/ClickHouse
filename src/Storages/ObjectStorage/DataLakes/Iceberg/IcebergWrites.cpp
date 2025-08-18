@@ -715,7 +715,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     current_schema = deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
-    
+
     auto new_type = getIcebergType(type, last_column_id);
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
     new_field->set(Iceberg::f_id, last_column_id + 1);
@@ -748,8 +748,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
     current_schema = deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
-    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
-    
+
     auto new_type = getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
@@ -757,7 +756,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         if (schema_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
         {
             schema_fields->getObject(i)->set(Iceberg::f_type, getIcebergType(type, last_column_id));
-            break; 
+            break;
         }
     }
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);

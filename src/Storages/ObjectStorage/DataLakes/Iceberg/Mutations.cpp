@@ -21,8 +21,7 @@
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include "Interpreters/Context_fwd.h"
-#include "Storages/AlterCommands.h"
+#include <Storages/AlterCommands.h>
 
 namespace DB::ErrorCodes
 {

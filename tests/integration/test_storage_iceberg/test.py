@@ -2734,21 +2734,16 @@ def test_writes_schema_evolution(started_cluster, format_version, storage_type):
 
     instance.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN y Float64;", settings={"allow_experimental_insert_into_iceberg": 1})
 
-    drop_iceberg_table(instance, TABLE_NAME)
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t\\N\n'
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (124, 4.56);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t\\N\n124\t4.5600000000000005\n'
 
     instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN x;", settings={"allow_experimental_insert_into_iceberg": 1})
-    drop_iceberg_table(instance, TABLE_NAME)
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4.5600000000000005\n\\N\n'
 
     instance.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN y Int64;", settings={"allow_experimental_insert_into_iceberg": 1})
-    drop_iceberg_table(instance, TABLE_NAME)
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4\n\\N\n'
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 @pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
