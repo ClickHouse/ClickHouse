@@ -376,6 +376,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
+        if (need_write_metadata)
+        {
+            /// Prevents from overwriting metadata of detached database
+            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
+            renamed = true;
+        }
+
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
@@ -386,14 +393,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-        }
-
-
-        if (need_write_metadata)
-        {
-            /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
-            renamed = true;
         }
     }
     catch (...)
