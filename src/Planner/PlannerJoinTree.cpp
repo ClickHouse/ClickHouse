@@ -1062,6 +1062,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
+                [[maybe_unused]] auto some_header = query_plan.getCurrentHeader();
+
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
                     if (!table->isMergeTree())
