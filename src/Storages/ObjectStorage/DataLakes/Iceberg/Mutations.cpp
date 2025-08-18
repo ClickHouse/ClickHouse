@@ -21,6 +21,8 @@
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include "Interpreters/Context_fwd.h"
+#include "Storages/AlterCommands.h"
 
 namespace DB::ErrorCodes
 {
@@ -412,10 +414,21 @@ void alter(
     auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
 
     auto metadata_json_generator = MetadataGenerator(metadata);
-    if (params[0].type == AlterCommand::Type::ADD_COLUMN)
-        metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
-    else
-        metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
+
+    switch (params[0].type)
+    {
+        case AlterCommand::Type::ADD_COLUMN:
+            metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
+            break;
+        case AlterCommand::Type::DROP_COLUMN:
+            metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
+            break;
+        case AlterCommand::Type::MODIFY_COLUMN:
+            metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
+    }
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(metadata, oss, 4);

@@ -689,7 +689,6 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
     current_schema->getArray(Iceberg::f_fields)->remove(index_to_drop);
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
-
 }
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
@@ -722,6 +721,42 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     new_field->set(Iceberg::f_type, new_type);
 
     current_schema->getArray(Iceberg::f_fields)->add(new_field);
+    current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
+    metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+}
+
+void MetadataGenerator::generateModifyColumnMetadata(const String & column_name, DataTypePtr type)
+{
+    auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
+    metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
+
+    Poco::JSON::Object::Ptr current_schema;
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(i);
+            break;
+        }
+    }
+
+    if (!current_schema)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
+    current_schema = deepCopy(current_schema);
+    auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
+    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
+    
+    auto new_type = getIcebergType(type, last_column_id);
+    auto schema_fields = current_schema->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < schema_fields->size(); ++i)
+    {
+        if (schema_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
+        {
+            schema_fields->getObject(i)->set(Iceberg::f_type, getIcebergType(type, last_column_id));
+            break; 
+        }
+    }
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }

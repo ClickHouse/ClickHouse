@@ -132,6 +132,7 @@ public:
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
+    void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;

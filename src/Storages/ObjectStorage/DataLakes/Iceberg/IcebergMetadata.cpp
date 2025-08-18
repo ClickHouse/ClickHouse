@@ -501,7 +501,7 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 {
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN)
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage",
                 command.type);
     }
