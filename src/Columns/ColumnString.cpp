@@ -263,7 +263,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
     StringRef res;
     res.size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(res.size, begin, sizeof(string_size));
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
     res.data = pos;
