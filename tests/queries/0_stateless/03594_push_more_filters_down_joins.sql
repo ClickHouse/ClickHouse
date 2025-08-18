@@ -33,12 +33,14 @@ FROM generateRandom(1, 2, 2) LIMIT 1000;
 INSERT INTO t3 SELECT * REPLACE('BACKLOG' as status, 2 as id) 
 FROM generateRandom(1, 2, 2) LIMIT 1000;
 
+SET enable_analyzer = 1;
+
 SELECT 1
 FROM t2
 LEFT JOIN t1 ON t2.id = t1.fid
 LEFT JOIN t3 ON t1.tid = t3.id
 WHERE true AND (t2.resource_id IS NOT NULL) AND (t2.status IN ('OPEN')) AND (t3.status IN ('BACKLOG'))
-SETTINGS enable_analyzer = 1, log_comment = '03594_push_more_filters_down_joins';
+SETTINGS log_comment = '03594_push_more_filters_down_joins';
 
 SYSTEM FLUSH LOGS;
 
@@ -46,3 +48,16 @@ SELECT throwIf(ProfileEvents['JoinResultRowCount'] != 0)
 FROM system.query_log
 WHERE log_comment = '03594_push_more_filters_down_joins' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE'
 FORMAT Null;
+
+SET optimize_functions_to_subcolumns=1; -- Changes filters a bit
+
+SELECT trimBoth(explain) AS step
+FROM (
+    EXPLAIN actions=1
+    SELECT 1
+    FROM t2
+    LEFT JOIN t1 ON t2.id = t1.fid
+    LEFT JOIN t3 ON t1.tid = t3.id
+    WHERE true AND (t2.resource_id IS NOT NULL) AND (t2.status IN ('OPEN')) AND (t3.status IN ('BACKLOG'))
+)
+WHERE step LIKE 'Join' OR step LIKE 'Filter column%';
