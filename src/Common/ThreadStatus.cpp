@@ -7,6 +7,7 @@
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
+#include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -325,7 +326,6 @@ void ThreadStatus::onFatalError()
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
-std::atomic_flag MainThreadStatus::is_initialized;
 
 MainThreadStatus & MainThreadStatus::getInstance()
 {
@@ -336,7 +336,6 @@ MainThreadStatus & MainThreadStatus::getInstance()
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
-    is_initialized.test_and_set(std::memory_order_relaxed);
 }
 
 MainThreadStatus::~MainThreadStatus()

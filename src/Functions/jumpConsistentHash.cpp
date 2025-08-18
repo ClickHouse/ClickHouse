@@ -42,30 +42,7 @@ using FunctionJumpConsistentHash = FunctionConsistentHashImpl<JumpConsistentHash
 
 REGISTER_FUNCTION(JumpConsistentHash)
 {
-    FunctionDocumentation::Description jumpConsistentHash_description = R"(
-Calculates [JumpConsistentHash](JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf) from a `UInt64` value.
-)";
-    FunctionDocumentation::Syntax jumpConsistentHash_syntax = "jumpConsistentHash(key, buckets)";
-    FunctionDocumentation::Arguments jumpConsistentHash_arguments = {
-        {"key", "The input key.", {"UInt64"}},
-        {"buckets", "The number of buckets.", {"Int32"}}
-    };
-    FunctionDocumentation::ReturnedValue jumpConsistentHash_returned_value = {"Returns the computed hash value.", {"Int32"}};
-    FunctionDocumentation::Examples jumpConsistentHash_examples = {
-    {
-        "Usage example",
-        "SELECT jumpConsistentHash(256, 4)",
-        R"(
-┌─jumpConsistentHash(256, 4)─┐
-│                          3 │
-└────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn jumpConsistentHash_introduced_in = {1, 1};
-    FunctionDocumentation::Category jumpConsistentHash_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation jumpConsistentHash_documentation = {jumpConsistentHash_description, jumpConsistentHash_syntax, jumpConsistentHash_arguments, jumpConsistentHash_returned_value, jumpConsistentHash_examples, jumpConsistentHash_introduced_in, jumpConsistentHash_category};
-    factory.registerFunction<FunctionJumpConsistentHash>(jumpConsistentHash_documentation);
+    factory.registerFunction<FunctionJumpConsistentHash>();
 }
 
 }

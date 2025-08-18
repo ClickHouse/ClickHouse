@@ -450,10 +450,8 @@ class ReleaseInfo:
                     verbose=True,
                 )
 
+        # TODO: move to new GH step?
         if self.release_type == "new":
-            release_type = (
-                version.get_stable_release_type()
-            )  # get release type before version is bumped
             print("Update version on master branch")
             branch_upd_version_contributors = self.get_version_bump_branch()
             with checkout(self.commit_sha):
@@ -510,7 +508,7 @@ class ReleaseInfo:
             print("Create Release PR")
             with checkout(self.release_branch):
                 pr_labels = f"--label {CI.Labels.RELEASE}"
-                if release_type == VersionType.LTS:
+                if version.get_stable_release_type() == VersionType.LTS:
                     pr_labels += f" --label {CI.Labels.RELEASE_LTS}"
                 Shell.check(
                     f"""gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Release pull request for branch {self.release_branch}' \

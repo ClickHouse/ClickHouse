@@ -104,7 +104,7 @@ struct FunctionDocumentation
         Map,
         Mathematical,
         NLP,
-        Null,
+        Nullable,
         NumericIndexedVector,
         Other,
         RandomNumber,

@@ -381,18 +381,9 @@ class GH:
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
-                info = Info()
                 for failed_result in self.failed_results:
-                    job_report_url = info.get_specific_report_url(
-                        info.pr_number,
-                        info.git_branch,
-                        info.sha,
+                    body += "|{}|{}|{}|{}|{}|\n".format(
                         failed_result.name,
-                        info.workflow_name,
-                    )
-                    body += "|[{}]({})|{}|{}|{}|{}|\n".format(
-                        failed_result.name,
-                        job_report_url,
                         "",
                         failed_result.status,
                         "",

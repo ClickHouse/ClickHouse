@@ -18,35 +18,6 @@ namespace BuzzHouse
 
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
-static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
-{
-    String client_hostname = "localhost";
-    String server_hostname = "localhost";
-    String endpoint = "test";
-    String region = default_region;
-    uint32_t port = default_port;
-
-    static const SettingEntries configEntries
-        = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
-           {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
-           {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
-           {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
-           {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
-
-    for (const auto [key, value] : jobj.getObject())
-    {
-        const String & nkey = String(key);
-
-        if (configEntries.find(nkey) == configEntries.end())
-        {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown catalog option: {}", nkey);
-        }
-        configEntries.at(nkey)(value);
-    }
-
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, endpoint, region, port));
-}
-
 static std::optional<ServerCredentials> loadServerCredentials(
     const JSONParserImpl::Element & jobj, const String & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
@@ -61,9 +32,6 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String database = "test";
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
-    std::optional<Catalog> glue_catalog;
-    std::optional<Catalog> hive_catalog;
-    std::optional<Catalog> rest_catalog;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
@@ -76,10 +44,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
            {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
-           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
-           {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
-           {"hive", [&](const JSONObjectType & value) { hive_catalog = loadCatalog(value, "", 9083); }},
-           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }}};
+           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
@@ -103,10 +68,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
         password,
         database,
         user_files_dir,
-        query_log_file,
-        glue_catalog,
-        hive_catalog,
-        rest_catalog));
+        query_log_file));
 }
 
 static PerformanceMetric
@@ -133,29 +95,6 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     }
 
     return PerformanceMetric(enabled, threshold, minimum);
-}
-
-static std::function<void(const JSONObjectType &)>
-parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_map<std::string_view, uint64_t> & entries)
-{
-    return [&](const JSONObjectType & value)
-    {
-        using std::operator""sv;
-        constexpr auto delim{","sv};
-        String input = String(value.getString());
-        std::transform(input.begin(), input.end(), input.begin(), ::tolower);
-
-        for (const auto word : std::views::split(input, delim))
-        {
-            const auto & entry = std::string_view(word);
-
-            if (entries.find(entry) == entries.end())
-            {
-                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
-            }
-            res &= (~entries.at(entry));
-        }
-    };
 }
 
 static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
@@ -206,82 +145,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
-
-    static const std::unordered_map<std::string_view, uint64_t> type_entries
-        = {{"bool", allow_bool},
-           {"uint", allow_unsigned_int},
-           {"int8", allow_int8},
-           {"int64", allow_int64},
-           {"int128", allow_int128},
-           {"float", allow_floating_points},
-           {"date", allow_dates},
-           {"date32", allow_date32},
-           {"time", allow_time},
-           {"time64", allow_time64},
-           {"datetime", allow_datetimes},
-           {"datetime64", allow_datetime64},
-           {"string", allow_strings},
-           {"decimal", allow_decimals},
-           {"uuid", allow_uuid},
-           {"enum", allow_enum},
-           {"dynamic", allow_dynamic},
-           {"json", allow_JSON},
-           {"nullable", allow_nullable},
-           {"lcard", allow_low_cardinality},
-           {"array", allow_array},
-           {"map", allow_map},
-           {"tuple", allow_tuple},
-           {"variant", allow_variant},
-           {"nested", allow_nested},
-           {"ipv4", allow_ipv4},
-           {"ipv6", allow_ipv6},
-           {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings}};
-
-    static const std::unordered_map<std::string_view, uint64_t> engine_entries
-        = {{"replacingmergetree", allow_replacing_mergetree},
-           {"coalescingmergetree", allow_coalescing_mergetree},
-           {"summingmergetree", allow_summing_mergetree},
-           {"aggregatingmergetree", allow_aggregating_mergetree},
-           {"collapsingmergetree", allow_collapsing_mergetree},
-           {"versionedcollapsingmergetree", allow_versioned_collapsing_mergetree},
-           {"file", allow_file},
-           {"null", allow_null},
-           {"set", allow_setengine},
-           {"join", allow_join},
-           {"memory", allow_memory},
-           {"stripelog", allow_stripelog},
-           {"log", allow_log},
-           {"tinylog", allow_tinylog},
-           {"embeddedrocksdb", allow_embedded_rocksdb},
-           {"buffer", allow_buffer},
-           {"mysql", allow_mysql},
-           {"postgresql", allow_postgresql},
-           {"sqlite", allow_sqlite},
-           {"mongodb", allow_mongodb},
-           {"redis", allow_redis},
-           {"s3", allow_S3},
-           {"s3queue", allow_S3queue},
-           {"hudi", allow_hudi},
-           {"deltalakes3", allow_deltalakeS3},
-           {"deltalakeazure", allow_deltalakeAzure},
-           {"deltalakelocal", allow_deltalakelocal},
-           {"icebergs3", allow_icebergS3},
-           {"icebergazure", allow_icebergAzure},
-           {"iceberglocal", allow_icebergLocal},
-           {"merge", allow_merge},
-           {"distributed", allow_distributed},
-           {"dictionary", allow_dictionary},
-           {"generaterandom", allow_generaterandom},
-           {"azureblobstorage", allow_AzureBlobStorage},
-           {"azurequeue", allow_AzureQueue},
-           {"url", allow_URL},
-           {"keepermap", allow_keepermap},
-           {"externaldistributed", allow_external_distributed},
-           {"materializedpostgresql", allow_materialized_postgresql},
-           {"replicated", allow_replicated},
-           {"shared", allow_shared},
-           {"datalakecatalog", allow_datalakecatalog}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -341,7 +204,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
-        {"disable_new_analyzer", [&](const JSONObjectType & value) { disable_new_analyzer = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -351,8 +213,56 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
-        {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
-        {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
+        {"disabled_types",
+         [&](const JSONObjectType & value)
+         {
+             using std::operator""sv;
+             constexpr auto delim{","sv};
+             String input = String(value.getString());
+             std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+
+             static const std::unordered_map<std::string_view, uint32_t> type_entries
+                 = {{"bool", allow_bool},
+                    {"uint", allow_unsigned_int},
+                    {"int8", allow_int8},
+                    {"int64", allow_int64},
+                    {"int128", allow_int128},
+                    {"float", allow_floating_points},
+                    {"date", allow_dates},
+                    {"date32", allow_date32},
+                    {"time", allow_time},
+                    {"time64", allow_time64},
+                    {"datetime", allow_datetimes},
+                    {"datetime64", allow_datetime64},
+                    {"string", allow_strings},
+                    {"decimal", allow_decimals},
+                    {"uuid", allow_uuid},
+                    {"enum", allow_enum},
+                    {"uuid", allow_uuid},
+                    {"dynamic", allow_dynamic},
+                    {"json", allow_JSON},
+                    {"nullable", allow_nullable},
+                    {"lcard", allow_low_cardinality},
+                    {"array", allow_array},
+                    {"map", allow_map},
+                    {"tuple", allow_tuple},
+                    {"variant", allow_variant},
+                    {"nested", allow_nested},
+                    {"ipv4", allow_ipv4},
+                    {"ipv6", allow_ipv6},
+                    {"geo", allow_geo}};
+
+             for (const auto word : std::views::split(input, delim))
+             {
+                 const auto & entry = std::string_view(word);
+
+                 if (type_entries.find(entry) == type_entries.end())
+                 {
+                     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for disabled_types: {}", String(entry));
+                 }
+                 type_mask &= (~type_entries.at(entry));
+             }
+         }},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
         {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
@@ -427,8 +337,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
-template <typename T>
-void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, const String & query)
+void FuzzConfig::loadServerSettings(DB::Strings & out, const String & desc, const String & query)
 {
     String buf;
     uint64_t found = 0;
@@ -440,15 +349,7 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            if constexpr (std::is_same_v<T, ServerEndpoint>)
-            {
-                const auto & tabchar = buf.find('\t');
-                out.push_back(ServerEndpoint(buf.substr(0, tabchar), static_cast<uint32_t>(std::stoul(buf.substr(tabchar + 1)))));
-            }
-            else
-            {
-                out.push_back(buf);
-            }
+            out.push_back(buf);
             buf.resize(0);
             found++;
         }
@@ -458,17 +359,14 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
-    loadServerSettings<String>(
-        this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
-    loadServerSettings<String>(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
-    loadServerSettings<String>(
+    loadServerSettings(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings(this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
+    loadServerSettings(this->disks, "disks", R"(SELECT DISTINCT "name" FROM "system"."disks")");
+    loadServerSettings(
         this->keeper_disks, "keeper disks", R"(SELECT DISTINCT "name" FROM "system"."disks" WHERE metadata_type = 'Keeper')");
-    loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
-    loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
-    loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    loadServerSettings<ServerEndpoint>(
-        this->server_endpoints, "servers", R"(SELECT DISTINCT "host_address", "port" FROM "system"."clusters")");
+    loadServerSettings(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
+    loadServerSettings(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
+    loadServerSettings(this->caches, "caches", "SHOW FILESYSTEM CACHES");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const

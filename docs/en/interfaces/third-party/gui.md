@@ -43,20 +43,6 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
-### DataPup {#datapup}
-
-[DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.
-
-Features:
-
-- AI-powered SQL query assistance with intelligent suggestions
-- Native ClickHouse connection support with secure credential handling
-- Beautiful, accessible interface with multiple themes (Light, Dark, and colorful variants)
-- Advanced query result filtering and exploration
-- Cross-platform support (macOS, Windows, Linux)
-- Fast and responsive performance
-- Open-source and MIT licensed
-
 ### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
 
 [ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is a powerful open-source web application for visualizing ClickHouse table relationships using Mermaid.js diagrams. Browse databases and tables with an intuitive interface, explore table metadata with optional row counts and size information, and export interactive schema diagrams.

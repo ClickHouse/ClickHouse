@@ -78,10 +78,11 @@ struct JoinExpressionActions
 
     JoinExpressionActions clone() const
     {
-        return JoinExpressionActions(
+        return  JoinExpressionActions(
             std::make_unique<ActionsDAG>(left_pre_join_actions->clone()),
             std::make_unique<ActionsDAG>(right_pre_join_actions->clone()),
-            std::make_unique<ActionsDAG>(post_join_actions->clone()));
+            std::make_unique<ActionsDAG>(post_join_actions->clone())
+        );
     }
 
     bool hasCorrelatedExpressions() const noexcept
@@ -221,7 +222,6 @@ struct JoinSettings
     UInt64 default_max_bytes_in_join;
 
     UInt64 max_joined_block_size_rows;
-    UInt64 max_joined_block_size_bytes;
     UInt64 min_joined_block_size_rows;
     UInt64 min_joined_block_size_bytes;
 

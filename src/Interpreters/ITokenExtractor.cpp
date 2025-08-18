@@ -36,9 +36,6 @@ std::vector<String> ITokenExtractor::getTokens(const char * data, size_t length)
 
 std::vector<String> NgramTokenExtractor::getTokens(const char * data, size_t length) const
 {
-    if (length == 0)
-        return {};
-
     if (length < n)
         return std::vector<String>{String(data, length)};
 
@@ -354,9 +351,6 @@ bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*lengt
 
 std::vector<String> NoOpTokenExtractor::getTokens(const char * data, size_t length) const
 {
-    if (length == 0)
-        return {};
-
     return {String(data, length)};
 }
 
