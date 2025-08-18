@@ -240,7 +240,7 @@ public:
                 range.begin / index_granularity,
                 (range.end + index_granularity - 1) / index_granularity);
 
-            for (size_t mark = range.begin; mark < range.end; ++mark)
+            for (size_t mark = range.begin; mark < range.end && idx < input_rows_count; ++mark)
             {
                 if (mark < first_mark)
                     continue;
@@ -251,9 +251,7 @@ public:
                 const size_t mark_size = part->index_granularity->getMarkRows(mark);
                 const size_t mark_end = mark_start + mark_size;
 
-                /// This mark is not consecutive with the last one because some intermediate ones were filtered/skipped
-                /// In that case we assume that there was not a match in that mark and go on
-                size_t offset = (idx < input_rows_count) ? col_part_offset_vector->getElement(idx) : last_row + 1;
+                size_t offset = col_part_offset_vector->getElement(idx);
                 while (offset < mark_start)
                     offset = col_part_offset_vector->getElement(++idx);
 
@@ -261,9 +259,20 @@ public:
                 if (offset > mark_end)
                     continue;
 
+                size_t end = offset;
+                for (size_t next_idx = idx; ++next_idx < input_rows_count;)
+                {
+                    size_t next_offset = col_part_offset_vector->getElement(next_idx);
+                    if (next_offset > mark_end)
+                        break;
+
+                    end = next_offset;
+                    idx = next_idx;
+                }
+
                 const size_t current_index_mark = mark / index_granularity;
 
-                ranges_map[current_index_mark].attachOrMergeLastRange(MarkRange(mark_start, mark_end));
+                ranges_map[current_index_mark].attachOrMergeLastRange(MarkRange(offset, end + 1));
             }
         }
 
