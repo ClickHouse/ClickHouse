@@ -238,25 +238,21 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
 
+    have_eq = s_eq.ignore(pos, expected);
+
     tryGetIdentifierNameInto(node, name);
-
-    if (!s_eq.check(pos, expected))
-    {
-        change.name = name;
-        change.value = Field(UInt64(1));
-
-        return true;
-    }
-
-    s_eq.ignore(pos);
 
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
     {
+        if (!have_eq)
+            return false;
+
         name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (name.empty())
@@ -272,7 +268,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
 
     /// Default
-    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+    if (have_eq && ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
     {
         default_settings = name;
         return true;
@@ -286,7 +282,9 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
         return true;
     }
-    if (!value_p.parse(pos, node, expected))
+    if (!have_eq)
+        node = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+    else if (!value_p.parse(pos, node, expected))
         return false;
 
     change.name = name;
