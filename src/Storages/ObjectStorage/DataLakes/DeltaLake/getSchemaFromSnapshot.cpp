@@ -1,9 +1,9 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include "getSchemaFromSnapshot.h"
+#include "KernelUtils.h"
+#include "KernelPointerWrapper.h"
 
 #include <base/scope_guard.h>
 #include <Core/TypeId.h>
@@ -137,6 +137,8 @@ private:
     const LoggerPtr log = getLogger("SchemaVisitor");
 
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+
 };
 
 /**
@@ -159,20 +161,10 @@ public:
     }
 
     static void visitReadSchema(
-        ffi::SharedScan * scan,
+        ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::scan_physical_schema(scan));
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-    }
-
-    static void visitWriteSchema(
-        ffi::SharedWriteContext * write_context,
-        SchemaVisitorData & data)
-    {
-        KernelSharedSchema schema(ffi::get_write_schema(write_context));
+        KernelSharedSchema schema(ffi::get_global_read_schema(scan_state));
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
@@ -416,14 +408,6 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 
             types.push_back(type);
         }
-        else if (field.type == DB::TypeIndex::DateTime64)
-        {
-            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
-            if (field.nullable)
-                type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
-        }
         else if (DB::isSimpleDataType(field.type))
         {
             auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
@@ -491,17 +475,10 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(f
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitReadSchema(scan, data);
-    return data.getSchemaResult().names_and_types;
-}
-
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
-{
-    SchemaVisitorData data;
-    SchemaVisitor::visitWriteSchema(write_context, data);
+    SchemaVisitor::visitReadSchema(scan_state, data);
     return data.getSchemaResult().names_and_types;
 }
 

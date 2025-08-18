@@ -559,6 +559,14 @@ namespace
     };
 }
 
+void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, bool active)
+{
+    if (active)
+        registerActive(storage_id);
+    else
+        registerNonActive(storage_id);
+}
+
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);
@@ -578,15 +586,14 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
     LOG_TRACE(log, "Added {} to active registry ({})", self.table_id, id);
 }
 
-void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id, bool & created_new_metadata)
+void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
     const auto drop_lock_path = zookeeper_path / "drop";
 
     Coordination::Error code;
-    const size_t max_tries = 1000;
-    for (size_t i = 0; i < max_tries; ++i)
+    for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Stat stat;
         std::string registry_str;
@@ -598,8 +605,6 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
         if (zk_client->tryGet(registry_path, registry_str, &stat))
         {
-            created_new_metadata = false;
-
             Strings registered;
             splitInto<','>(registered, registry_str);
 
@@ -621,8 +626,6 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         }
         else
         {
-            created_new_metadata = true;
-
             requests.push_back(zkutil::makeCreateRequest(
                 registry_path,
                 self.serialize(),
@@ -639,15 +642,12 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             return;
         }
 
-        if ((code == Coordination::Error::ZBADVERSION
+        if (code == Coordination::Error::ZBADVERSION
             || code == Coordination::Error::ZNODEEXISTS
-            || code == Coordination::Error::ZNONODE
-            || code == Coordination::Error::ZSESSIONEXPIRED) && (i < max_tries - 1))
-        {
+            || code == Coordination::Error::ZSESSIONEXPIRED)
             continue;
-        }
 
-        zkutil::KeeperMultiException::check(code, requests, responses);
+        throw zkutil::KeeperException(code);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register in keeper. Last error: {}", code);
 }
@@ -672,34 +672,42 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     return registered;
 }
 
-void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered)
+{
+    if (active)
+        return unregisterActive(storage_id);
+    else
+        return unregisterNonActive(storage_id, remove_metadata_if_no_registered);
+}
+
+size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
     const auto zk_client = getZooKeeper();
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
     auto code = zk_client->tryRemove(table_path);
+    const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
+    const auto self = Info::create(storage_id);
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TRACE(
-            log, "Table '{}' has been removed from the active registry "
-            "(table path: {})",
-            storage_id.getNameForLogs(), table_path);
+        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
     }
     else
     {
         LOG_DEBUG(
             log,
-            "Cannot remove table '{}' from the active registry, reason: {} "
-            "(table path: {})",
-            storage_id.getNameForLogs(),
+            "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
+            self.table_id,
             Coordination::errorMessage(code),
-            table_path);
+            remaining_nodes_num);
     }
+
+    return remaining_nodes_num;
 }
 
-void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto drop_lock_path = zookeeper_path / "drop";
@@ -728,7 +736,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             {
                 LOG_WARNING(log, "Cannot unregister: registry does not exist");
                 chassert(false);
-                return;
+                return 0;
             }
 
             Strings registered;
@@ -752,11 +760,8 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     count += 1;
                 }
             }
-
             if (!found)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
-
-            LOG_TRACE(log, "Registered count: {}, remove metadata: {}", count, remove_metadata_if_no_registered);
 
             if (remove_metadata_if_no_registered && count == 0)
             {
@@ -830,7 +835,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     throw;
                 }
             }
-            return;
+            return count;
         }
 
         if (Coordination::isHardwareError(code)

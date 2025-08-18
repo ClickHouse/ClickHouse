@@ -10,6 +10,7 @@
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
+    M(LatencyLogElement) \
 
 
 namespace DB

@@ -36,17 +36,20 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_DATABASE}.table_for_dict VA
 
 function check()
 {
-    local TIMELIMIT=$((SECONDS+10))
+
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_with_zero_min_lifetime', 'value', toUInt64(2))")
 
-    while [ "$query_result" != "2.2" ] && [ $SECONDS -lt "$TIMELIMIT" ]
+    while [ "$query_result" != "2.2" ]
     do
         sleep 0.2
         query_result=$($CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_with_zero_min_lifetime', 'value', toUInt64(2))")
     done
 }
 
-check
+
+export -f check;
+
+timeout 10 bash -c check
 
 $CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_with_zero_min_lifetime', 'value', toUInt64(1))"
 
