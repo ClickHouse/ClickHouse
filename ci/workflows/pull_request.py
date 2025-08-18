@@ -18,8 +18,8 @@ workflow = Workflow.Config(
         # JobConfigs.style_check, # NOTE (strtgbb): we don't run style check
         # JobConfigs.docs_job, # NOTE (strtgbb): we don't build docs
         # JobConfigs.fast_test, # NOTE (strtgbb): same fails as stateless tests, revisit later
-        *JobConfigs.tidy_build_jobs,
-        *JobConfigs.tidy_arm_build_jobs,
+        # *JobConfigs.tidy_build_jobs, # NOTE (strtgbb): we don't run tidy build jobs
+        # *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
@@ -49,7 +49,7 @@ workflow = Workflow.Config(
             [
                 # JobNames.STYLE_CHECK, # NOTE (strtgbb): we don't run style check
                 # JobNames.FAST_TEST, # NOTE (strtgbb): we don't run fast tests
-                JobConfigs.tidy_build_jobs[0].name,
+                # JobConfigs.tidy_build_jobs[0].name, # NOTE (strtgbb): we don't run tidy build jobs
             ]
         ),
         JobConfigs.bugfix_validation_ft_pr_job,
