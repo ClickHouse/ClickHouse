@@ -38,7 +38,6 @@
 #    include <Formats/FormatFactory.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #    include <Storages/ObjectStorage/Utils.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #    include <boost/graph/properties.hpp>
