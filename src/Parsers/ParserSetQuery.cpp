@@ -242,10 +242,17 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     if (!name_p.parse(pos, node, expected))
         return false;
 
-    if (!s_eq.ignore(pos, expected))
-        return false;
-
     tryGetIdentifierNameInto(node, name);
+
+    if (!s_eq.check(pos, expected))
+    {
+        change.name = name;
+        change.value = Field(UInt64(1));
+
+        return true;
+    }
+
+    s_eq.ignore(pos);
 
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
