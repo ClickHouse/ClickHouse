@@ -1535,8 +1535,14 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
 
 bool MinIOIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
+    String table_path = t.getTablePath(rg, fc, true);
+
+    if (!table_path.empty() && table_path[0] == '/')
+    {
+        table_path.erase(0, 1);
+    }
     chassert(t.catalog == CatalogTable::None);
-    return sendRequest(fmt::format("{}/{}", sc.database, t.getTablePath(rg, fc, true)));
+    return sendRequest(fmt::format("{}/{}", sc.database, table_path));
 }
 
 void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
@@ -1628,20 +1634,55 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
 }
 
-bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+extern void
+collectColumnPaths(const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+
+bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
     String buf;
+    String catalog;
+    bool first = true;
+    std::vector<ColumnPathChain> entries;
+
+    switch (t.catalog)
+    {
+        case CatalogTable::Glue:
+            catalog = "glue";
+            break;
+        case CatalogTable::Hive:
+            catalog = "hive";
+            break;
+        case CatalogTable::REST:
+            catalog = "rest";
+            break;
+        default:
+            catalog = "none";
+    }
+    for (const auto & [key, val] : t.cols)
+    {
+        ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
+
+        collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
+    }
 
     buf += fmt::format(
-        "{\"table_name\":\"{}\",\"table_path\",\"{}\",\"lake_type\":\"{}\",\"storage_type\":\"{}\"}",
+        "{{\"table_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"catalog\":\"{}\",\"columns\":[",
         t.getTableName(),
-        t.getTablePath(rg, fc, true),
+        t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
         t.isAnyDeltaLakeEngine() ? "delta" : "iceberg",
-        (t.isOnS3()          ? "s3"
-             : t.isOnAzure() ? "azure"
-                             : "local"));
+        catalog);
+    for (const auto & entry : entries)
+    {
+        buf += fmt::format(
+            "{}{{\"name\":\"{}\",\"type\":\"{}\"}}",
+            first ? "" : ", ",
+            entry.getBottomName(),
+            entry.getBottomType()->ToSparkTypeName(false));
+        first = false;
+    }
+    buf += "]}";
     Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPClientSession httpsession(ssc.server_hostname, ssc.port);
+    Poco::Net::HTTPClientSession httpsession(sc.server_hostname, sc.port);
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparktable", buf);
 
     request.set("Content-Type", "application/json");

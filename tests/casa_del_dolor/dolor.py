@@ -47,12 +47,7 @@ from properties import (
     modify_keeper_settings,
 )
 from httpserver import DolorHTTPServer
-from catalogs.datalakes import (
-    LosCatalogos,
-    get_spark,
-    execute_spark_query,
-    generate_random_create_query,
-)
+from catalogs.datalakes import get_spark, create_lake_table
 
 
 def ordered_pair(value):
@@ -421,10 +416,16 @@ servers[len(servers) - 1].wait_start(8)
 
 # Uploaders for object storage
 if args.with_spark:
-    cluster.spark_session = {
-        "iceberg": get_spark("iceberg"),
-        "delta": get_spark("delta"),
-    }
+    cluster.spark_session = get_spark(
+        cluster,
+        with_s3=args.with_minio,
+        with_azure=args.with_azurite,
+        with_glue=args.with_glue,
+        with_hadoop=False,
+        with_hive=args.with_hms,
+        with_rest=args.with_rest,
+        with_nessie=False,
+    )
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
@@ -439,7 +440,6 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
-cluster.catalog = LosCatalogos()
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -454,21 +454,14 @@ if args.with_postgresql:
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
     if path == "/sparktable":
-        execute_spark_query(
+        create_lake_table(
             cluster,
-            data["lake_type"],
-            data["storage_type"],
-            data["table_path"],
-            generate_random_create_query(
-                data["table_name"],
-                data["lake_type"],
-                data["columns"],
-            ),
+            data["table_name"],
+            data["storage"],
+            data["format"],
+            data["catalog"],
+            data["columns"],
         )
-        return True
-    if path == "/catalogdatabase":
-        return True
-    if path == "/catalogtable":
         return True
     return False
 

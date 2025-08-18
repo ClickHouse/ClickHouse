@@ -106,9 +106,9 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         /// Set catalog first if possible
         String next_bucket_path;
 
-        catalog = setNextCatalog(rg, fc, fc.dolor_server.has_value() && (isDeltaLakeS3Engine() || isIcebergS3Engine()), false);
+        catalog = setNextCatalog(rg, fc, fc.dolor_server.has_value() && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()), false);
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (catalog != CatalogTable::None || (isAnyIcebergEngine() || isAnyDeltaLakeEngine() && rg.nextBool()))
+        if (catalog != CatalogTable::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -124,7 +124,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         {
             next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
         }
-        else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || catalog != CatalogTable::None)
+        else if (catalog != CatalogTable::None)
         {
             const Catalog * cat = nullptr;
 
@@ -142,15 +142,15 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
                 default:
                     break;
             }
-            if (isAnyIcebergEngine() && catalog == CatalogTable::None && integration == IntegrationCall::Dolor)
-            {
-                /// On Spark, this is weird
-                next_bucket_path = fmt::format("/iceberg_data/default/t{}/", tname);
-            }
-            else
-            {
-                next_bucket_path = fmt::format("{}{}t{}/", cat ? cat->endpoint : "", cat ? "/" : "", tname);
-            }
+            next_bucket_path = fmt::format("{}/t{}/", cat->endpoint, tname);
+        }
+        else if (isIcebergLocalEngine() || isDeltaLakeLocalEngine())
+        {
+            next_bucket_path = fmt::format("/var/lib/clickhouse/user_files/lakehouse/default/t{}/", tname);
+        }
+        else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
+        {
+            next_bucket_path = fmt::format("t{}/", tname);
         }
         else
         {
@@ -243,7 +243,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
     {
         String res = bucket_path.value();
 
-        if (!isS3QueueEngine() && !isAzureQueueEngine() && catalog == CatalogTable::None && !no_change && rg.nextSmallNumber() < 8)
+        if ((isS3Engine() || isAzureEngine()) && !no_change && rg.nextSmallNumber() < 8)
         {
             /// Replace PARTITION BY str
             const size_t partition_pos = res.find(PARTITION_STR);

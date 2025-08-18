@@ -2,19 +2,96 @@
 
 import random
 from abc import abstractmethod
-from typing import Dict
+from enum import Enum
+
+from clickhousetospark import ClickHouseSparkTypeMapper
+
+
+class TableStorage(Enum):
+    Unkown = 0
+    Local = 1
+    S3 = 2
+    Azure = 3
+
+    @staticmethod
+    def storage_from_str(loc: str):
+        if loc.lower() == "local":
+            return TableStorage.Local
+        if loc.lower() == "s3":
+            return TableStorage.S3
+        if loc.lower() == "azure":
+            return TableStorage.Azure
+        return TableStorage.Unkown
+
+
+class TableFormat(Enum):
+    Unkown = 0
+    Iceberg = 1
+    DeltaLake = 2
+
+    @staticmethod
+    def format_from_str(loc: str):
+        if loc.lower() == "iceberg":
+            return TableFormat.Iceberg
+        if loc.lower() == "deltalake":
+            return TableFormat.DeltaLake
+        return TableFormat.Unkown
+
+
+class LakeCatalogs(Enum):
+    NoCatalog = 0
+    Hadoop = 1
+    Glue = 2
+    Hive = 3
+    REST = 4
+    Nessie = 5
+    Unity = 6
+
+    @staticmethod
+    def catalog_from_str(loc: str):
+        if loc.lower() == "hadoop":
+            return LakeCatalogs.Hadoop
+        if loc.lower() == "glue":
+            return LakeCatalogs.Glue
+        if loc.lower() == "hive":
+            return LakeCatalogs.Hive
+        if loc.lower() == "rest":
+            return LakeCatalogs.REST
+        if loc.lower() == "nessie":
+            return LakeCatalogs.Nessie
+        if loc.lower() == "unity":
+            return LakeCatalogs.Unity
+        return LakeCatalogs.NoCatalog
 
 
 class LakeTableGenerator:
-    def __init__(self):
+    def __init__(self, _bucket: str):
+        self.bucket = _bucket
+        self.type_mapper = ClickHouseSparkTypeMapper()
+        pass
+
+    @staticmethod
+    def get_next_generator(bucket: str, format: TableFormat):
+        return (
+            IcebergTableGenerator(bucket)
+            if format == TableFormat.Iceberg
+            else DeltaLakePropertiesGenerator(bucket)
+        )
+
+    @abstractmethod
+    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
         pass
 
     @abstractmethod
-    def generate_table_properties(self, include_all: bool = False) -> Dict[str, str]:
+    def get_format(self) -> str:
         pass
 
     def generate_create_table_ddl(
-        self, table_name: str, columns: list[str], lake_type: str
+        self,
+        table_name: str,
+        columns: list[dict[str, str]],
+        storage: TableStorage,
+        catalog: LakeCatalogs,
     ) -> str:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -23,11 +100,20 @@ class LakeTableGenerator:
             table_name: Name of the table
         """
         ddl = f"CREATE TABLE IF NOT EXISTS {table_name} ("
-        ddl += ",\n".join(columns)
+        columns_str = []
+        for val in columns:
+            # Convert columns
+            spark_type, nullable = self.type_mapper.clickhouse_to_spark(
+                False, val["type"]
+            )
+            columns_str.append(
+                f"{val["name"]} {spark_type}{"" if nullable else " NOT NULL"}"
+            )
+        ddl += ",\n".join(columns_str)
         ddl += ")"
 
         # Add USING clause
-        ddl += f" USING {lake_type}"
+        ddl += f" USING {self.get_format()}"
 
         # Add partitioning for Iceberg
         # if include_partitioning and 'timestamp' in str(selected_columns):
@@ -51,9 +137,30 @@ class LakeTableGenerator:
         #    elif 'category' in str(selected_columns):
         #        ddl.append("PARTITIONED BY (category)")
 
-        # Add location for Delta (optional)
-        # if random.random() > 0.5:
-        #    ddl.append(f"LOCATION '/path/to/{table_name}'")
+        # Build location string
+        location_str = "LOCATION '"
+        if storage == TableStorage.Local:
+            location_str += "file:///var/lib/clickhouse/user_files/lakehouse/"
+        elif storage == TableStorage.S3:
+            location_str += "s3a://"
+        else:
+            location_str += "wasbs://cont@devstoreaccount1.blob.core.windows.net/"
+
+        if catalog == LakeCatalogs.Glue:
+            location_str += "warehouse-glue"
+        elif catalog == LakeCatalogs.Hadoop:
+            location_str += "warehouse-hadoop"
+        elif catalog == LakeCatalogs.Hive:
+            location_str += "warehouse-hms"
+        elif catalog == LakeCatalogs.REST:
+            location_str += "warehouse-rest"
+        elif catalog == LakeCatalogs.Nessie:
+            location_str += "warehouse-nessie"
+        elif catalog == LakeCatalogs.Unity:
+            location_str += "warehouse-unity"
+        elif storage == TableStorage.S3:
+            location_str += f"{self.bucket}"
+        location_str += f"/{table_name}'"
 
         # Add table properties
         if random.randint(1, 2) == 1:
@@ -62,7 +169,7 @@ class LakeTableGenerator:
                 ddl += " TBLPROPERTIES ("
                 prop_lines = []
                 for key, value in properties.items():
-                    prop_lines.append(f" '{key}' = '{value}'")
+                    prop_lines.append(f"'{key}' = '{value}'")
                 ddl += ",\n".join(prop_lines)
                 ddl += ")"
         return ddl + ";"
@@ -83,10 +190,14 @@ class LakeTableGenerator:
 
 
 class IcebergTableGenerator(LakeTableGenerator):
-    def __init__(self):
-        pass
 
-    def generate_table_properties(self, include_all: bool = False) -> Dict[str, str]:
+    def __init__(self, _bucket):
+        super().__init__(_bucket)
+
+    def get_format(self) -> str:
+        return "iceberg"
+
+    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
         """
         Generate random Iceberg table properties
 
@@ -134,7 +245,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_format_properties(self) -> Dict[str, str]:
+    def _generate_format_properties(self) -> dict[str, str]:
         """Generate file format related properties"""
         properties = {}
 
@@ -187,7 +298,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_compaction_properties(self) -> Dict[str, str]:
+    def _generate_compaction_properties(self) -> dict[str, str]:
         """Generate compaction related properties"""
         properties = {}
 
@@ -216,7 +327,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_snapshot_properties(self) -> Dict[str, str]:
+    def _generate_snapshot_properties(self) -> dict[str, str]:
         """Generate snapshot management properties"""
         properties = {}
 
@@ -249,7 +360,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_commit_properties(self) -> Dict[str, str]:
+    def _generate_commit_properties(self) -> dict[str, str]:
         """Generate commit related properties"""
         properties = {}
 
@@ -275,7 +386,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_manifest_properties(self) -> Dict[str, str]:
+    def _generate_manifest_properties(self) -> dict[str, str]:
         """Generate manifest file properties"""
         properties = {}
 
@@ -298,7 +409,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_metadata_properties(self) -> Dict[str, str]:
+    def _generate_metadata_properties(self) -> dict[str, str]:
         """Generate metadata related properties"""
         properties = {}
 
@@ -322,7 +433,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_write_properties(self) -> Dict[str, str]:
+    def _generate_write_properties(self) -> dict[str, str]:
         """Generate write operation properties"""
         properties = {}
 
@@ -354,7 +465,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_read_properties(self) -> Dict[str, str]:
+    def _generate_read_properties(self) -> dict[str, str]:
         """Generate read operation properties"""
         properties = {}
 
@@ -392,7 +503,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_behavior_properties(self) -> Dict[str, str]:
+    def _generate_behavior_properties(self) -> dict[str, str]:
         """Generate table behavior properties"""
         properties = {}
 
@@ -436,10 +547,13 @@ class IcebergTableGenerator(LakeTableGenerator):
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
-    def __init__(self):
-        pass
+    def __init__(self, _bucket):
+        super().__init__(_bucket)
 
-    def generate_table_properties(self, include_all: bool = False) -> Dict[str, str]:
+    def get_format(self) -> str:
+        return "delta"
+
+    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
         """
         Generate random Delta Lake table properties
 
@@ -487,7 +601,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_retention_properties(self) -> Dict[str, str]:
+    def _generate_retention_properties(self) -> dict[str, str]:
         """Generate data retention and vacuum related properties"""
         properties = {}
 
@@ -519,7 +633,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_optimization_properties(self) -> Dict[str, str]:
+    def _generate_optimization_properties(self) -> dict[str, str]:
         """Generate optimization related properties"""
         properties = {}
 
@@ -557,7 +671,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_cache_properties(self) -> Dict[str, str]:
+    def _generate_cache_properties(self) -> dict[str, str]:
         """Generate Delta cache related properties"""
         properties = {}
 
@@ -581,7 +695,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_column_mapping_properties(self) -> Dict[str, str]:
+    def _generate_column_mapping_properties(self) -> dict[str, str]:
         """Generate column mapping properties"""
         properties = {}
 
@@ -605,7 +719,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_file_properties(self) -> Dict[str, str]:
+    def _generate_file_properties(self) -> dict[str, str]:
         """Generate file size and format properties"""
         properties = {}
 
@@ -631,7 +745,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_checkpoint_properties(self) -> Dict[str, str]:
+    def _generate_checkpoint_properties(self) -> dict[str, str]:
         """Generate checkpoint related properties"""
         properties = {}
 
@@ -650,7 +764,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_data_skipping_properties(self) -> Dict[str, str]:
+    def _generate_data_skipping_properties(self) -> dict[str, str]:
         """Generate data skipping and statistics properties"""
         properties = {}
 
@@ -675,7 +789,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_cdf_properties(self) -> Dict[str, str]:
+    def _generate_cdf_properties(self) -> dict[str, str]:
         """Generate Change Data Feed properties"""
         properties = {}
 
@@ -690,7 +804,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_table_features(self) -> Dict[str, str]:
+    def _generate_table_features(self) -> dict[str, str]:
         """Generate table feature properties (Delta 3.0+)"""
         properties = {}
 

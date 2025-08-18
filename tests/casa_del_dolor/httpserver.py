@@ -58,6 +58,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write("".encode("utf-8"))
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
+            self.logger.error(str(e))
             self.send_response(400)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -65,6 +66,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(error_response).encode("utf-8"))
         except Exception as e:
             # Handle other errors
+            self.logger.error(str(e))
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
