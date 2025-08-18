@@ -541,7 +541,7 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
     for (const auto & column : columns)
     {
         auto default_kind = column.default_desc.kind;
-        if (default_kind != ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
+        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
             continue;
 
         ColumnStatisticsDescription stats_desc;
