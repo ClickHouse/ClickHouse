@@ -37,6 +37,8 @@
 #    include <DataTypes/DataTypeTuple.h>
 #    include <Formats/FormatFactory.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#    include <Storages/ObjectStorage/Utils.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #    include <boost/graph/properties.hpp>
@@ -148,7 +150,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     const auto [max_schema_version, max_schema_path] = schema_meta_info;
     /// parse schema json
     ObjectInfo object_info(max_schema_path);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+    auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
@@ -170,7 +172,7 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
     /// read latest hint
     Int64 snapshot_version;
     ObjectInfo object_info(std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+    auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
     String hint_version_string;
     readStringUntilEOF(hint_version_string, *buf);
     {
@@ -237,7 +239,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
 
     /// read snapshot and parse
     ObjectInfo snapshot_object(latest_snapshot_path);
-    auto snapshot_buf = StorageObjectStorageSource::createReadBuffer(snapshot_object, object_storage, getContext(), log);
+    auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
@@ -255,7 +257,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
-    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
 
@@ -282,7 +284,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
-    auto manifest_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 
     // std::vector<PaimonManifest> manifest_vec;
