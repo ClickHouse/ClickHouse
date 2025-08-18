@@ -7,7 +7,7 @@
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
 
