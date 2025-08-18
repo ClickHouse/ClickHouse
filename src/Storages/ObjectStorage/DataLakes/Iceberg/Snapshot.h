@@ -7,10 +7,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
-struct IcebergSnapshot
+struct IcebergDataSnapshot
 {
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
@@ -26,6 +26,17 @@ struct IcebergSnapshot
     }
 };
 
+using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
+
+struct IcebergTableStateSnapshot
+{
+    Int32 metadata_version;
+    Int32 schema_id;
+    std::optional<Int64> snapshot_id;
+};
+
+using IcebergTableStateSnapshotPtr = std::shared_ptr<IcebergTableStateSnapshot>;
+
 struct IcebergHistoryRecord
 {
     Int64 snapshot_id;
@@ -39,6 +50,8 @@ struct IcebergHistoryRecord
     Int32 added_files_size;
     Int32 num_partitions;
 };
+
+using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 }
 
 #endif

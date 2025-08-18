@@ -70,7 +70,6 @@ private:
     static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
-    static constexpr String FASTPFOR_CODEC_NAME = "simdfastpfor128";
     /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
     static constexpr size_t FASTPFOR_THRESHOLD = 4;
 };

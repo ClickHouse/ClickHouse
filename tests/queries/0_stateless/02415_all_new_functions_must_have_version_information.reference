@@ -60,7 +60,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
 appendTrailingCharIfAbsent
 ascii
@@ -82,7 +81,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
 compareSubstrings
 concat
 concatAssumeInjective
@@ -199,9 +197,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 extractTextFromHTML
@@ -220,7 +215,6 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 flattenTuple
-floor
 format
 formatQuery
 formatQueryOrNull
@@ -357,7 +351,6 @@ ngramSearch
 ngramSearchCaseInsensitive
 ngramSearchCaseInsensitiveUTF8
 ngramSearchUTF8
-ngrams
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -489,12 +482,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -521,11 +508,6 @@ sparseGrams
 sparseGramsHashes
 sparseGramsHashesUTF8
 sparseGramsUTF8
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 startsWithUTF8
@@ -680,7 +662,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-tokens
 topLevelDomain
 topLevelDomainRFC
 transactionID
@@ -692,7 +673,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd

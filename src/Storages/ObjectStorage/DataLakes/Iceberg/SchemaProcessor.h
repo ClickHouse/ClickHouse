@@ -123,4 +123,5 @@ private:
     mutable SharedMutex mutex;
 };
 
+using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
 }

@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", false, true, "New setting."},
             {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
             {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
@@ -72,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"per_part_index_stats", false, false, "New setting."},
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
@@ -825,6 +827,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
+            {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {

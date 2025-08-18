@@ -59,6 +59,8 @@
 namespace DB
 {
 
+using namespace Iceberg;
+
 namespace Setting
 {
 extern const SettingsUInt64 output_format_compression_level;
@@ -469,7 +471,7 @@ void generateManifestList(
                 auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
 
                 StorageObjectStorage::ObjectInfo object_info(filename_generator.convertMetadataPathToStoragePath(manifest_list));
-                auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, getLogger("IcebergWrites"));
+                auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergWrites"));
 
                 auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
                 avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
@@ -555,6 +557,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     Int64 timestamp = user_defined_timestamp.value_or(ms.count());
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
+    metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;

@@ -397,7 +397,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)
@@ -690,7 +690,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         if not profiles:
             return []
 
-        profiles = profiles.split('\n')
+        profiles = profiles.split("\n")
 
         res = []
 
@@ -702,7 +702,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # group profiles by pid
         grouped_profiles = defaultdict(list)
         for profile in profiles:
-            parts = profile.split('.')
+            parts = profile.split(".")
             pid = int(parts[2])
             count = int(parts[3])
             grouped_profiles[pid].append((count, profile))
@@ -729,13 +729,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for pid, profile in latest_profiles.items():
                 Shell.check(
                     f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                    verbose=True
+                    verbose=True,
                 )
 
                 if has_flamegraph:
                     Shell.check(
                         f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                        verbose=True
+                        verbose=True,
                     )
 
         Shell.check(
