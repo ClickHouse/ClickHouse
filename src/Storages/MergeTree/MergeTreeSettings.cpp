@@ -247,7 +247,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
 
     Possible values:
@@ -257,7 +257,7 @@ namespace ErrorCodes
 
     Only version `v3` supports changing the shared data serialization version.
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
     Serialization version for shared data inside JSON data type.
 
     Possible values:
@@ -281,7 +281,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
     Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     )", 0) \
-    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
     Serialization version for Dynamic data type. Required for compatibility.
 
     Possible values:
