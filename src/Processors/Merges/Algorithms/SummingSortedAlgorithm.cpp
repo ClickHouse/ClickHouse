@@ -696,10 +696,11 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
         }
         else
         {
-            if (!def.arena)
+            if (!def.allocates_memory_in_arena)
             {
                 def.arena = std::make_unique<Arena>();
                 def.arena_size = def.arena->allocatedBytes();
+                def.allocates_memory_in_arena = true;
             }
 
             // Specialized case for unary functions
