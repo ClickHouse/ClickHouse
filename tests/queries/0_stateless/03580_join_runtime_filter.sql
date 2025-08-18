@@ -36,14 +36,29 @@ WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE';
 SELECT count()
 FROM customer, nation
 WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE'
-SETTINGS join_runtime_bloom_filter_bytes = 100500000; -- {serverError PARAMETER_OUT_OF_BOUND}
+SETTINGS enable_join_runtime_filters = 1, join_runtime_bloom_filter_bytes = 100500000; -- {serverError PARAMETER_OUT_OF_BOUND}
 
 SELECT count()
 FROM customer, nation
 WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE'
-SETTINGS join_runtime_bloom_filter_hash_functions = 20; -- {serverError PARAMETER_OUT_OF_BOUND}
+SETTINGS enable_join_runtime_filters = 1, join_runtime_bloom_filter_hash_functions = 20; -- {serverError PARAMETER_OUT_OF_BOUND}
 
 SELECT count()
 FROM customer, nation
 WHERE c_nationkey = n_nationkey AND n_name = 'FRANCE'
-SETTINGS join_runtime_bloom_filter_bytes = 4096, join_runtime_bloom_filter_hash_functions = 2;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_bloom_filter_bytes = 4096, join_runtime_bloom_filter_hash_functions = 2;
+
+-- Filters on multiple join predicates
+SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
+FROM (
+    EXPLAIN actions=1
+    SELECT count()
+    FROM customer, nation
+    WHERE c_nationkey = n_nationkey AND n_nationkey%10 = c_custkey%100
+    SETTINGS query_plan_join_swap_table=0
+)
+WHERE (explain ILIKE '%Filter column%') OR (explain LIKE '%BuildRuntimeFilter%');
+
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_nationkey%10 = c_custkey%100;
