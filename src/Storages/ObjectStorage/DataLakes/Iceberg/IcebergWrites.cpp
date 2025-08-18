@@ -674,9 +674,9 @@ ChunkPartitioner::ChunkPartitioner(
         auto function = factory.get(transform_and_argument->transform_name, context);
 
         ColumnsWithTypeAndName columns_for_function;
-        columns_for_function.push_back(sample_block_->getByName(column_name));
         if (transform_and_argument->argument)
-            columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeInt64>(), ""));
+            columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
+        columns_for_function.push_back(sample_block_->getByName(column_name));
 
         result_data_types.push_back(function->getReturnType(columns_for_function));
         functions.push_back(function);

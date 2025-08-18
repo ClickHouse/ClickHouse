@@ -69,8 +69,8 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 2 arguments");
 
         const auto & truncate_number = arguments[0];
-        if (!WhichDataType(truncate_number).isNativeUInt() && !WhichDataType(truncate_number).isNativeInt())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be UInt or Int data type");
+        if (!WhichDataType(truncate_number).isNativeUInt())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be UInt data type");
 
         const auto & truncate_type = arguments[1];
         WhichDataType which_truncate(truncate_type);
