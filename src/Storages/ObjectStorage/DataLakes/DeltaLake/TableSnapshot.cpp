@@ -93,12 +93,6 @@ public:
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
-        , thread([&, thread_group = DB::CurrentThread::getGroup()] {
-            /// Attach to current query thread group, to be able to
-            /// have query id in logs and metrics from scanDataFunc.
-            DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
-            scanDataFunc();
-        })
     {
         if (filter_dag_)
         {
@@ -124,14 +118,23 @@ public:
             for (auto & name : partition_columns)
                 name = getPhysicalName(name, physical_names_map_);
         }
+
+        thread = std::make_unique<ThreadFromGlobalPool>(
+            [&, thread_group = DB::CurrentThread::getGroup()]
+            {
+                /// Attach to current query thread group, to be able to
+                /// have query id in logs and metrics from scanDataFunc.
+                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                scanDataFunc();
+            });
     }
 
     ~Iterator() override
     {
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
-        if (thread.joinable())
-            thread.join();
+        if (thread && thread->joinable())
+            thread->join();
     }
 
     void initScanState()
@@ -337,7 +340,7 @@ private:
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
 
