@@ -674,7 +674,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperWithFaul
     return maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK);
 }
 
-void DatabaseReplicated::createEmptyLogEntry(const WithRetries & with_retries)
+void DatabaseReplicated::createEmptyLogEntry(const WithRetries & with_retries) const
 {
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};

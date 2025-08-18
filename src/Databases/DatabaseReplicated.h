@@ -154,7 +154,7 @@ private:
     ClusterPtr getClusterImpl(bool all_groups = false) const;
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
-    void createEmptyLogEntry(const WithRetries & with_retries);
+    void createEmptyLogEntry(const WithRetries & with_retries) const;
 
     bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
     {
