@@ -90,8 +90,6 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
-
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -123,5 +121,4 @@ private:
     mutable SharedMutex mutex;
 };
 
-using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
 }

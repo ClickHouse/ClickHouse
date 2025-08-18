@@ -19,7 +19,6 @@ public:
     Float64 estimateEqual(const Field & val) const override;
 
     void build(const ColumnPtr & column) override;
-    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;

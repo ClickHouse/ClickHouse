@@ -23,7 +23,13 @@
 
 using namespace DB;
 
-namespace DB::Iceberg
+namespace ProfileEvents
+{
+    extern const Event IcebergPartitionPrunedFiles;
+    extern const Event IcebergMinMaxIndexPrunedFiles;
+}
+
+namespace Iceberg
 {
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
@@ -146,7 +152,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
+bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 {
     if (partition_key_condition.has_value())
     {
@@ -164,7 +170,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
         if (!can_be_true)
         {
-            return PruningReturnStatus::PARTITION_PRUNED;
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+            return true;
         }
     }
 
@@ -188,12 +195,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
         auto hyperrectangle = it->second.hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
+            return true;
         }
     }
 
-    return PruningReturnStatus::NOT_PRUNED;
+    return false;
 }
+
+
 }
 
 #endif

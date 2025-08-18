@@ -552,12 +552,13 @@ bool Client::buzzHouse()
     {
         String full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
+        bool replica_setup = true;
         bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
-        std::vector<BuzzHouse::SQLQuery> intermediate_queries;
+        BuzzHouse::SQLQuery sq4;
         uint32_t nsuccessfull_create_database = 0;
         uint32_t total_create_database_tries = 0;
         const uint32_t max_initial_databases = std::min(UINT32_C(3), fuzz_config->max_databases);
@@ -570,8 +571,12 @@ bool Client::buzzHouse()
         has_cloud_features &= processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
         has_cloud_features &= processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
-        const auto u = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        replica_setup &= processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
+        std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
+        const auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
         UNUSED(u);
+        const auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        UNUSED(v);
 
         fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
         /// Load server configurations for the fuzzer
@@ -581,7 +586,7 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
-        BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
+        BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features, replica_setup);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
         {
@@ -690,57 +695,63 @@ bool Client::buzzHouse()
                     /// When testing content, we have to export and import to the same table
                     const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool()
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
-                    const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
+                    const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
-
-                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t dump_table = 50;
-                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + dump_table;
-                    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
-                    const uint32_t nopt2 = next_dist2(rg.generator);
-                    BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
-
-                    if (optimize_table && nopt2 < (optimize_table + 1))
-                    {
-                        strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE;
-                    }
-                    else if (reattach_table && nopt2 < (optimize_table + reattach_table + 1))
-                    {
-                        strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
-                    }
-                    else if (backup_restore_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + 1))
-                    {
-                        strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE;
-                    }
+                    const auto & t2 = test_content
+                        ? t1
+                        : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                    const bool use_optimize = test_content && t1.get().supportsOptimize() && rg.nextMediumNumber() < 21;
 
                     if (test_content)
                     {
                         /// Dump table content and read it later to look for correctness
-                        full_query.resize(0);
-                        qo.dumpTableContent(rg, gen, test_content, tbl, sq1);
-                        BuzzHouse::SQLQueryToString(full_query, sq1);
-                        fuzz_config->outf << full_query << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query);
+                        full_query2.resize(0);
+                        qo.dumpTableContent(rg, gen, t1, sq1);
+                        BuzzHouse::SQLQueryToString(full_query2, sq1);
+                        fuzz_config->outf << full_query2 << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query2);
                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
                     }
 
-                    qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
-                    for (const auto & entry : intermediate_queries)
+                    if (!use_optimize)
                     {
-                        /// Run each from the chosen strategy
-                        full_query2.resize(0);
-                        BuzzHouse::SQLQueryToString(full_query2, entry);
-                        fuzz_config->outf << full_query2 << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query2);
-                        qo.setIntermediateStepSuccess(!have_error);
+                        sq2.Clear();
+                        qo.generateExportQuery(rg, gen, test_content, t1, sq2);
+                        BuzzHouse::SQLQueryToString(full_query, sq2);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
                     }
 
                     if (test_content)
                     {
+                        /// The intermediate step could be either clearing or optimizing the table
+                        qo.setIntermediateStepSuccess(!have_error);
+
+                        sq3.Clear();
+                        full_query.resize(0);
+                        qo.dumpOracleIntermediateStep(rg, gen, t1, use_optimize, sq3);
+                        BuzzHouse::SQLQueryToString(full_query, sq3);
                         fuzz_config->outf << full_query << std::endl;
                         server_up &= processBuzzHouseQuery(full_query);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
+
+                    if (!use_optimize)
+                    {
+                        sq4.Clear();
+                        full_query.resize(0);
+                        qo.generateImportQuery(rg, gen, t2, sq2, sq4);
+                        BuzzHouse::SQLQueryToString(full_query, sq4);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                    }
+
+                    if (test_content)
+                    {
+                        qo.setIntermediateStepSuccess(!have_error);
+
+                        fuzz_config->outf << full_query2 << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query2);
                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
                     }
                 }

@@ -513,11 +513,7 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
-        return {};
-    else
-        return quota->getUsage();
+    return getQuota()->getUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
