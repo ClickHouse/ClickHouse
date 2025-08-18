@@ -1,3 +1,5 @@
+SYSTEM FLUSH LOGS;
+
 set log_comment = 'Please_Trace_ConvertingAggregatedToChunksTransform';
 
 SELECT CAST(toStartOfInterval(event_time, toIntervalSecond(_CAST(60, 'UInt32'))), 'INT') AS t, avg(metric) FROM (SELECT event_time, sum(CurrentMetric_FilesystemCacheSize) AS metric FROM clusterAllReplicas(test_shard_localhost, merge('system', '^metric_log$')) WHERE (event_date >= toDate(now() - _CAST(600, 'UInt32'))) AND (event_time >= (now() - _CAST(600, 'UInt32'))) GROUP BY event_time) GROUP BY t ORDER BY t ASC WITH FILL STEP _CAST(60, 'UInt32')
