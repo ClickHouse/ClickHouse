@@ -270,6 +270,7 @@ void writeMetadataFiles(
         if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
         {
             current_schema = schemas->getObject(static_cast<UInt32>(i));
+            break;
         }
     }
 
