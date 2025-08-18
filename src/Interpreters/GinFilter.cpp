@@ -228,54 +228,55 @@ std::vector<uint32_t> GinFilter::getIndices(
     if (filter->getTerms().empty())
         return {};
 
-    const size_t full_start = ranges.front().begin + 1;
-    const size_t full_end = ranges.back().end + 1;
-
-    GinIndexPostingsList range_bitset;
-    for (const MarkRange &range : ranges)
-        range_bitset.addRange(range.begin + 1, range.end + 2); // Yes, i know how it looks...
+    const UInt32 full_start = ranges.front().begin + 1;
+    const UInt32 full_end = ranges.back().end + 1;
 
     const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
-    GinIndexPostingsList posting_bitset;
+    if (postings_cache == nullptr || postings_cache->empty())
+        return {};
 
-    for (const GinSegmentWithRowIdRange &range : rowid_ranges)
+    std::vector<UInt32> indices;
+
+    for (const GinSegmentWithRowIdRange &rowid_range : rowid_ranges)
     {
-        if (range.range_end < full_start)
+        if (rowid_range.range_end < full_start)
             continue;
 
-        if (range.range_start > full_end)
+        if (rowid_range.range_start > full_end)
             break;
 
+        UInt32 start = std::max({rowid_range.range_start, full_start});
+        UInt32 end = std::min({rowid_range.range_end, full_end});
+        chassert(start <= end);
+
         GinIndexPostingsList range_matches;
-        range_matches.addRange(range.range_start, range.range_end + 1);
+        range_matches.addRangeClosed(start, end);
 
         for (const auto & term_postings : *postings_cache)
         {
             /// Check if it is in the same segment by searching for segment_id
             const GinSegmentedPostingsListContainer & container = term_postings.second;
-            auto container_it = container.find(range.segment_id);
+            auto container_it = container.find(rowid_range.segment_id);
 
             if (container_it == container.cend()
-                || container_it->second->maximum() < range.range_start
-                || container_it->second->minimum() > range.range_end)
+                || container_it->second->maximum() < rowid_range.range_start
+                || container_it->second->minimum() > rowid_range.range_end)
             {
-                range_matches.removeRange(range.range_start, range.range_end + 1);
+                range_matches.removeRangeClosed(rowid_range.range_start, rowid_range.range_end);
                 break;
             }
 
             range_matches &= *container_it->second;
         }
 
-        posting_bitset |= range_matches;
+        const size_t cardinality = range_matches.cardinality();
+        if (cardinality > 0)
+        {
+            const size_t last_size = indices.size();
+            indices.resize(last_size + cardinality);
+            range_matches.toUint32Array(&indices[last_size]);
+        }
     }
-
-    range_bitset &= posting_bitset;
-
-    const size_t cardinality = range_bitset.cardinality();
-    std::vector<uint32_t> indices(cardinality);
-
-    range_bitset.toUint32Array(indices.data());
-
     return indices;
 }
 
