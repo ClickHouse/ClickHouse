@@ -579,7 +579,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     fiu_do_on(FailPoints::database_replicated_delay_entry_execution,
     {
-        std::chrono::milliseconds sleep_time{thread_local_rng() % 2000};
+        std::chrono::milliseconds sleep_time{1000 + thread_local_rng() % 1000};
         std::this_thread::sleep_for(sleep_time);
     });
 
