@@ -204,7 +204,7 @@ def main():
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
-            "clickhouse-test --help",
+            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
