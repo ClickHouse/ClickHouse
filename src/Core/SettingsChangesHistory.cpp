@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
             {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
@@ -53,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", false, true, "New setting."},
             {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
             {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
@@ -74,6 +76,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
+            {"per_part_index_stats", false, false, "New setting."},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
@@ -823,8 +827,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
+            {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
