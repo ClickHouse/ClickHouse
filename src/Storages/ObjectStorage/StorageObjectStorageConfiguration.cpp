@@ -203,19 +203,13 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
-bool StorageObjectStorageConfiguration::hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
 {
-    return false;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "addDeleteTransformers is not supported");
 }
 
-
-std::shared_ptr<ISimpleTransform> StorageObjectStorageConfiguration::getPositionDeleteTransformer(
-    const ObjectInfoPtr & /*object_info*/,
-    const SharedHeader & /*header*/,
-    const std::optional<FormatSettings> & /*format_settings*/,
-    ContextPtr /*context_*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method getPositionDeleteTransformer() is not implemented for configuration type {}", getTypeName());
-}
 }

@@ -106,6 +106,8 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
+    void addDeleteTransformers(ObjectInfoPtr object_info,  QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
+
 protected:
     ObjectIterator
     iterate(const ActionsDAG * filter_dag, FileProgressCallback callback, size_t list_batch_size, ContextPtr local_context) const override;

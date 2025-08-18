@@ -81,11 +81,13 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_manifest_file_entry_,
     const std::vector<Iceberg::ManifestFileEntry> & all_position_delete_entries_,
+    const std::vector<Iceberg::ManifestFileEntry> & all_equality_delete_entries_,
     String format_)
     : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects(definePositionDeletesSpan(data_manifest_file_entry_, all_position_delete_entries_))
+    , equality_deletes_objects(definePositionDeletesSpan(data_manifest_file_entry_, all_equality_delete_entries_))
 {
     auto toupper = [](String & str)
     {

@@ -12,6 +12,7 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -51,16 +52,6 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /* object_info */,
-        const SharedHeader & /* header */,
-        const std::optional<FormatSettings> & /* format_settings */,
-        ContextPtr /*context*/) const
-    {
-        return {};
-    }
-
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
@@ -93,6 +84,11 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
+
+    virtual void addDeleteTransformers(ObjectInfoPtr,  QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const
+    {
+        throwNotImplemented("delete");
+    }
 protected:
     virtual ObjectIterator createKeysIterator(
         Strings && data_files_,

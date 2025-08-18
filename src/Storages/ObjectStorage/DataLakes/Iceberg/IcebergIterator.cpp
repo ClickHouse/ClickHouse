@@ -81,8 +81,9 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
     {
         if (!current_manifest_file_content)
         {
-            if (data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
+            if (persistent_components.format_version > 1 && data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
             {
+                LOG_DEBUG(log, "ignore manifest file {}", data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path);
                 ++manifest_file_index;
                 continue;
             }
@@ -97,9 +98,10 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
         }
-        while (internal_data_index < current_manifest_file_content->getFilesWithoutDeleted(content_type).size())
+        auto files = files_generator(current_manifest_file_content);
+        while (internal_data_index < files.size())
         {
-            const auto & manifest_file_entry = current_manifest_file_content->getFilesWithoutDeleted(content_type)[internal_data_index++];
+            const auto & manifest_file_entry = files[internal_data_index++];
             if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry.schema_id;
@@ -122,6 +124,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:
+                    LOG_DEBUG(log, "return file {}", manifest_file_entry.file_path);
                     return manifest_file_entry;
                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
                     ++min_max_index_pruned_files;
@@ -154,7 +157,8 @@ SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     ObjectStoragePtr object_storage_,
     ContextPtr local_context_,
-    Iceberg::FileContentType content_type_,
+    FilesGenerator files_generator_,
+    Iceberg::ManifestFileContentType manifest_file_content_type_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
@@ -179,11 +183,9 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
               return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
           }())
     , persistent_components(persistent_components_)
+    , files_generator(files_generator_)
     , log(getLogger("IcebergIterator"))
-    , content_type(content_type_)
-    , manifest_file_content_type(
-          content_type_ == Iceberg::FileContentType::DATA ? Iceberg::ManifestFileContentType::DATA
-                                                          : Iceberg::ManifestFileContentType::DELETE)
+    , manifest_file_content_type(manifest_file_content_type_)
 {
 }
 
@@ -201,16 +203,24 @@ IcebergIterator::IcebergIterator(
     , data_files_iterator(
           object_storage,
           local_context_,
-          Iceberg::FileContentType::DATA,
+          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
           persistent_components_)
-    , position_deletes_iterator(
+    , deletes_iterator(
           object_storage,
           local_context_,
-          Iceberg::FileContentType::POSITION_DELETE,
+          [](const Iceberg::ManifestFilePtr & manifest_file)
+          {
+              auto position_deletes = manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::POSITION_DELETE);
+              auto equality_deletes = manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::EQUALITY_DELETE);
+              position_deletes.insert(position_deletes.end(), equality_deletes.begin(), equality_deletes.end());
+              return position_deletes;
+          },
+          Iceberg::ManifestFileContentType::DELETE,
           configuration_,
           filter_dag.get(),
           table_snapshot_,
@@ -239,22 +249,24 @@ IcebergIterator::IcebergIterator(
     , callback(std::move(callback_))
     , format(configuration_.lock()->format)
     , compression_method(configuration_.lock()->compression_method)
-    , position_deletes_files(
-          [this]()
-          {
-              producer_task->activateAndSchedule();
-
-              std::vector<Iceberg::ManifestFileEntry> position_deletes_files_tmp;
-              auto position_delete = position_deletes_iterator.next();
-              while (position_delete.has_value())
-              {
-                  position_deletes_files_tmp.push_back(std::move(position_delete.value()));
-                  position_delete = position_deletes_iterator.next();
-              }
-              std::sort(position_deletes_files_tmp.begin(), position_deletes_files_tmp.end());
-              return position_deletes_files_tmp;
-          }())
 {
+    auto delete_file = deletes_iterator.next();
+    while (delete_file.has_value())
+    {
+        if (delete_file->equality_ids.has_value())
+        {
+            equality_deletes_files.emplace_back(std::move(delete_file.value()));
+        }
+        else
+        {
+            position_deletes_files.emplace_back(std::move(delete_file.value()));
+        }
+        delete_file = deletes_iterator.next();
+    }
+    std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
+    std::sort(position_deletes_files.begin(), position_deletes_files.end());
+
+    producer_task->activateAndSchedule();
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
@@ -262,7 +274,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files, manifest_file_entry.file_format);
+        return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files, equality_deletes_files, manifest_file_entry.file_format);
     }
     return nullptr;
 }

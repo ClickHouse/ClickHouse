@@ -22,6 +22,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     explicit IcebergDataObjectInfo(
         Iceberg::ManifestFileEntry data_manifest_file_entry_,
         const std::vector<Iceberg::ManifestFileEntry> & all_position_delete_entries_,
+        const std::vector<Iceberg::ManifestFileEntry> & all_equality_delete_entries_,
         String format);
 
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_);
@@ -29,6 +30,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     String data_object_file_path_key; // Full path to the data object file
     Int32 underlying_format_read_schema_id;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
+    std::vector<Iceberg::ManifestFileEntry> equality_deletes_objects;
     Int64 sequence_number;
 
     bool hasPositionDeleteTransformer() const override { return !position_deletes_objects.empty(); }
