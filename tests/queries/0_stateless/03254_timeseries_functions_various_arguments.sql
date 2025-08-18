@@ -55,6 +55,11 @@ SELECT timeSeriesRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89
 SELECT timeSeriesInstantRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantDeltaToGrid(100, 150, 15, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 
+-- Start timestamp equals to end timestamp
+SELECT timeSeriesRateToGrid(120, 120, 0, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
+SELECT timeSeriesInstantRateToGrid(120, 120, 0, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
+SELECT timeSeriesInstantDeltaToGrid(120, 120, 0, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
+
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesRateToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesInstantDeltaToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}

@@ -25,14 +25,18 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
 #endif
 
 namespace DB
@@ -459,9 +463,9 @@ When set to `true` than for all azure requests first two attempts are made with 
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
     DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
-When set to `true` than all threads executing s3 requests to the same endpoint get slow down for a while
-after one s3 request fails with a retryable network error.
-When set to `false` than each thread executing s3 request uses an independent set of backoffs on network errors.
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single s3 request encounters a retryable network error, such as socket timeout.
+When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
@@ -1493,6 +1497,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+)", 0) \
+    DECLARE(Bool, per_part_index_stats, false, R"(
+        Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
@@ -3322,6 +3329,20 @@ Approximate probability of failure for a keeper request during backup or restore
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
 )", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
+    Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
+)", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_max_backoff_ms, 5000, R"(
+    Maximum delay in milliseconds between retries during backup and restore operations.
+)", 0) \
+    DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
+    Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
+)", 0) \
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
+)", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
@@ -4984,6 +5005,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
+Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -5036,6 +5060,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
+)", 0) \
+    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
+Rewrite regular expression related functions into simpler and more efficient forms
 )", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
 If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
@@ -5244,9 +5271,9 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
-    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
-)", EXPERIMENTAL) \
+)", BETA) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -6012,6 +6039,12 @@ Only has an effect in ClickHouse Cloud. Set buffer size for write-through distri
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
 )", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
+Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
+Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6424,6 +6457,18 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
+Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
+Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
+)", 0) \
+    DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
+Enables delta-kernel internal data pruning.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6560,6 +6605,9 @@ Allow new query analyzer.
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
+Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
+    )", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -6636,7 +6684,7 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", BETA) \
-    DECLARE(Bool, vector_search_with_rescoring, true, R"(
+    DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
 With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
@@ -6649,9 +6697,9 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", BETA) \
-    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
-Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
-)", BETA) \
+    DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
+Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
+)", BETA, vector_search_postfilter_multiplier) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
@@ -6737,6 +6785,11 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
+Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
+It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
+The downside is potentially higher memory usage.
+)", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
@@ -6766,12 +6819,20 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
+    DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
+Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
+However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
+)", 0) \
     DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
 Allows to change the behaviour of the result type of `dateTrunc` function.
 
 Possible values:
+
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
+)", 0) \
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+Use roaring bitmap for iceberg positional deletes.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -6835,7 +6896,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental text index.
+If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
@@ -6907,6 +6968,15 @@ Allow experimental delta-kernel-rs implementation.
 )", BETA) \
     DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
+Write full paths (including s3://) into iceberg metadata files.
+)", EXPERIMENTAL) \
+    DECLARE(String, iceberg_metadata_compression_method, "", R"(
+Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
@@ -7133,7 +7203,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     {
         auto name = setting.getName();
         key_column.insertData(name.data(), name.size());
-        value_column.insert(setting.getValueString());
+        value_column.insertData(setting.getValueString());
         size++;
     }
 
