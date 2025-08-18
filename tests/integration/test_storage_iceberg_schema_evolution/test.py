@@ -75,11 +75,12 @@ def started_cluster():
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
 @pytest.mark.parametrize("is_table_function", [False, True])
 def test_evolved_schema_simple(
-    started_cluster, format_version, storage_type, is_table_function
+    started_cluster, format_version, storage_type_and_is_cluster, is_table_function
 ):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -125,6 +126,7 @@ def test_evolved_schema_simple(
         started_cluster,
         table_function=is_table_function,
         allow_dynamic_metadata_for_data_lakes=True,
+        is_cluster=is_cluster,
     )
 
     table_select_expression = (
@@ -486,10 +488,11 @@ def test_evolved_schema_simple(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
 def test_array_evolved_with_struct(
-    started_cluster, format_version, storage_type
+    started_cluster, format_version, storage_type_and_is_cluster
 ):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -538,7 +541,7 @@ def test_array_evolved_with_struct(
     )
 
     table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster, table_function=True, is_cluster=is_cluster
     )
     execute_spark_query(
         f"""
@@ -686,10 +689,11 @@ def test_array_evolved_with_struct(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
 def test_array_evolved_nested(
-    started_cluster, format_version, storage_type
+    started_cluster, format_version, storage_type_and_is_cluster
 ):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -746,7 +750,7 @@ def test_array_evolved_nested(
     )
 
     table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster, table_function=True, is_cluster=is_cluster
     )
     check_schema_and_data(
         instance,
@@ -1018,11 +1022,12 @@ def test_array_evolved_nested(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
 @pytest.mark.parametrize("is_table_function", [False, True])
 def test_tuple_evolved_nested(
-    started_cluster, format_version, storage_type, is_table_function
+    started_cluster, format_version, storage_type_and_is_cluster, is_table_function
 ):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1063,6 +1068,7 @@ def test_tuple_evolved_nested(
         started_cluster,
         table_function=is_table_function,
         allow_dynamic_metadata_for_data_lakes=True,
+        is_cluster=is_cluster
     )
 
     table_select_expression = (
@@ -1439,8 +1445,9 @@ def test_map_evolved_nested(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_not_evolved_schema(started_cluster, format_version, storage_type):
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
+def test_not_evolved_schema(started_cluster, format_version, storage_type_and_is_cluster):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1487,6 +1494,7 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
             started_cluster,
             table_function=False,
             allow_dynamic_metadata_for_data_lakes=False,
+            is_cluster=is_cluster
         )
     )
 
@@ -1757,8 +1765,9 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_evolved_schema_complex(started_cluster, format_version, storage_type):
+@pytest.mark.parametrize("storage_type_and_is_cluster", [("s3", False), ("azure", False), ("local", False), ("s3", True), ("azure", True)])
+def test_evolved_schema_complex(started_cluster, format_version, storage_type_and_is_cluster):
+    storage_type, is_cluster = storage_type_and_is_cluster
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1809,7 +1818,7 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     )
 
     table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster, table_function=True, is_cluster=is_cluster
     )
     execute_spark_query(
         f"""
@@ -1934,4 +1943,85 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
            ["(4,('Moscow',54321))", '[4,7]'],
         ]
     )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_schema_evolution_on_cluster_function(
+    started_cluster,
+    storage_type,
+    format_version
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_tuple_evolved_nested_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (
+            a int NOT NULL,
+            b int NOT NULL
+        )
+        USING iceberg
+        OPTIONS ('format-version'='{format_version}');
+        """
+    )
+
+    for i in range(500):
+        spark.sql(
+            f"""
+            INSERT INTO {TABLE_NAME} VALUES ({2 * i}, {2 * i + 1});
+            """
+        )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN b TO c;
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN a TO b;
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN c TO a;
+        """
+    )
+
+    table_function = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
+        is_cluster=True,
+    )
+
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    str = instance.query(
+        f"""
+        SELECT a, b FROM {table_function} ORDER BY a;
+        """
+    )
+
+    print(f"Got result from query: {str}")
+    assert False
 

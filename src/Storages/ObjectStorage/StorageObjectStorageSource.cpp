@@ -468,6 +468,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
 
+    LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSource"), "Reading file: {}", object_info->getPath());
+
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -571,11 +573,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!transformer)
         {
             if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
+            {
                 transformer = schema_transformer->clone();
+            }
         }
 
         if (transformer.has_value())
         {
+            LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSource"), "File {} has schema transformer", object_info->getPath());
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
