@@ -93,7 +93,7 @@ extern const int SUPPORT_IS_DISABLED;
 
 namespace Setting
 {
-extern const SettingsUInt64 max_block_size;
+extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
@@ -778,7 +778,7 @@ void IcebergMetadata::addDeleteTransformers(ObjectInfoPtr object_info,  QueryPip
         });
     }
     const auto & delete_files = iceberg_object_info->equality_deletes_objects;
-    LOG_DEBUG(log, "Constructing fileter transform for equality delete, there are {} delete files", delete_files.size());
+    LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
     for (const ManifestFileEntry & delete_file : delete_files)
     {
         auto simple_transform_adder = [&](const SharedHeader & header)
@@ -813,7 +813,7 @@ void IcebergMetadata::addDeleteTransformers(ObjectInfoPtr object_info,  QueryPip
             CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, "auto");
             auto delete_format = FormatFactory::instance().getInput(delete_file.file_format, *data_read_buffer, delete_file_header, local_context, local_context->getSettingsRef()[DB::Setting::max_block_size], format_settings, nullptr, nullptr, true, compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'
-            while(true)
+            while (true)
             {
                 Chunk delete_chunk = delete_format->read();
                 if (!delete_chunk)

@@ -104,7 +104,7 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr,  QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const
     {
         throwNotImplemented("delete");
     }
