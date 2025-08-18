@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/QualifiedTableName.h>
 
 namespace DB
 {
@@ -36,9 +37,9 @@ public:
     static String enqueueQueryImpl(
         const WithRetries & with_retries,
         DDLLogEntry & entry,
-        DatabaseReplicated * const database,
+        const DatabaseReplicated * database,
         bool committed = false,
-        Coordination::Requests additional_checks = {}); /// NOLINT
+        Coordination::Requests additional_checks = {});
 
     UInt32 getLogPointer() const;
 
@@ -59,6 +60,9 @@ private:
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
 
     bool checkParentTableExists(const UUID & uuid) const;
+
+    bool shouldSkipCreatingRMVTempTable(const ZooKeeperWithFaultInjectionPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime);
+    bool shouldSkipRenamingRMVTempTable(const ZooKeeperWithFaultInjectionPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table);
 
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
