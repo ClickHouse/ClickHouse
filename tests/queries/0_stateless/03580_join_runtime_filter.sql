@@ -10,6 +10,7 @@ INSERT INTO customer SELECT number, 7 FROM numbers(70000);
 
 INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(1000000);
 
+SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
 
