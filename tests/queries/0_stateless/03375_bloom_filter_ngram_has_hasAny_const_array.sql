@@ -1,3 +1,5 @@
+SET parallel_replicas_local_plan=1;
+
 DROP TABLE IF EXISTS bloom_filter_has_const_array;
 
 CREATE TABLE bloom_filter_has_const_array
@@ -13,8 +15,6 @@ SETTINGS index_granularity=1;
 
 INSERT INTO bloom_filter_has_const_array
 VALUES ('a', ['a','a']), ('b', ['b','b']), ('c', ['c','c']), ('d',['d','e']);
-
-SET parallel_replicas_local_plan=1;
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
