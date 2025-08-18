@@ -497,7 +497,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
 
             while (current_frame.next_child_to_visit < current_node->children.size())
             {
-                const auto & child = node.children[current_frame.next_child_to_visit];
+                const auto & child = current_node->children[current_frame.next_child_to_visit];
 
                 if (visited_nodes.contains(child))
                 {

@@ -32,6 +32,7 @@ class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
+extern std::atomic_bool abort_on_logical_error;
 
 class Exception : public Poco::Exception
 {

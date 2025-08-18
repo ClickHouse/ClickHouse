@@ -213,6 +213,21 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                         segment_id,
                         formatReadableSizeWithBinarySuffix(bloom_filter_read_buffer->getPosition() - segment_dict->bloom_filter_start_offset));
 
+                    /// Read posting list
+                    postings_read_buffer->seek(segment_dict->postings_start_offset, SEEK_SET);
+                    UInt8 serialization = 0;
+                    readBinary(serialization, *postings_read_buffer);
+
+                    if (serialization == 1)
+                    {
+                        fmt::println("[Segment {}]: posting list compression = Roaring + ZSTD", segment_id);
+                    }
+                    else if (serialization == 2)
+                    {
+                        fmt::println("[Segment {}]: posting list compression = Delta + PFOR", segment_id);
+                    }
+                    else
+                        fmt::println("[Segment {}]: posting list compression = UNKNOWN", segment_id);
 
                     /// Read FST size header
                     UInt64 fst_size_header = 0;
