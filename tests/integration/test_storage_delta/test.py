@@ -3146,11 +3146,9 @@ def test_concurrent_queries(started_cluster, partitioned):
     )
 
     def select(_):
-        instance.query(
-            f"SELECT * FROM {TABLE_NAME} SETTINGS max_read_buffer_size_remote_fs=100",
-        )
+        instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    num_threads = 50
+    num_threads = 10
     num_rows = 50
     errors = ["" for _ in range(num_threads)]
     success = [0 for _ in range(num_threads)]

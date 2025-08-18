@@ -178,6 +178,8 @@ void DeltaLakePartitionedSink::onFinish()
     for (auto & [_, data] : partition_id_to_sink)
         data->sink->onFinish();
 
+    LOG_TEST(log, "Written to {} sinks", partition_id_to_sink.size());
+
     try
     {
         std::vector<DeltaLake::WriteTransaction::CommitFile> files;
