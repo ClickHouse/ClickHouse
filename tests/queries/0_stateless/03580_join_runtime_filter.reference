@@ -8,3 +8,8 @@ Filter column: and(filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationke
 BuildRuntimeFilter (Build runtime join filter on modulo(__table2.n_nationkey, 10_UInt8) (_runtime_filter_UNIQ_ID_1))
 BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
 765
+Type: INNER
+Strictness: ANY
+Filter column: filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
+3
