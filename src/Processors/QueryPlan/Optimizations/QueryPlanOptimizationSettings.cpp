@@ -64,6 +64,8 @@ namespace Setting
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_join_runtime_filters;
+    extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
+    extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
 }
 
 namespace ServerSetting
@@ -116,7 +118,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     query_condition_cache_selectivity_threshold = from[Setting::query_condition_cache_selectivity_threshold];
-    enable_join_runtime_filters = from[Setting::enable_join_runtime_filters];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -160,6 +161,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
     actions_settings = std::move(actions_settings_);
+
+    enable_join_runtime_filters = from[Setting::enable_join_runtime_filters];
+    join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
+    join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
     max_threads = from[Setting::max_threads];
 }

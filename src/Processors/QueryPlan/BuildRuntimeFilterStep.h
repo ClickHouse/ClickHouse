@@ -14,7 +14,9 @@ public:
         const SharedHeader & input_header_,
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
-        String filter_name_);
+        String filter_name_,
+        UInt64 bloom_filter_bytes_,
+        UInt64 bloom_filter_hash_functions_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -25,8 +27,7 @@ public:
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
-    static bool canUseType(const DataTypePtr & type);
-
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -40,6 +41,9 @@ private:
     String filter_column_name;
     DataTypePtr filter_column_type;
     String filter_name;
+
+    UInt64 bloom_filter_bytes;
+    UInt64 bloom_filter_hash_functions;
 };
 
 }

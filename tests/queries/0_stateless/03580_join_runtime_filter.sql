@@ -32,3 +32,18 @@ WHERE c_nationkey+1 = n_nationkey AND n_name = 'FRANCE';
 SELECT count()
 FROM customer, nation
 WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE';
+
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE'
+SETTINGS join_runtime_bloom_filter_bytes = 100500000; -- {serverError PARAMETER_OUT_OF_BOUND}
+
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey+1 = n_nationkey+1 AND n_name = 'FRANCE'
+SETTINGS join_runtime_bloom_filter_hash_functions = 20; -- {serverError PARAMETER_OUT_OF_BOUND}
+
+SELECT count()
+FROM customer, nation
+WHERE c_nationkey = n_nationkey AND n_name = 'FRANCE'
+SETTINGS join_runtime_bloom_filter_bytes = 4096, join_runtime_bloom_filter_hash_functions = 2;

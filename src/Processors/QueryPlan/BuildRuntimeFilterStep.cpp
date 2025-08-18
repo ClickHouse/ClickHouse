@@ -1,20 +1,36 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_hash_functions;
+}
 
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
+
+/// Runtime bloom filter should be small and fast otherwise it is pointless
+static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
+static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
+static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
+static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
+
 
 static ITransformingStep::Traits getTraits()
 {
@@ -35,7 +51,9 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     const SharedHeader & input_header_,
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
-    String filter_name_)
+    String filter_name_,
+    UInt64 bloom_filter_bytes_,
+    UInt64 bloom_filter_hash_functions_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -43,20 +61,44 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
+    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
 {
+    if (!bloom_filter_bytes)
+        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
+    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Specified runtime bloom filter size {} is too big, maximum: {}",
+            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
+
+    if (!bloom_filter_hash_functions)
+        bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
+    if (bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
+            bloom_filter_hash_functions, MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
 }
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
     {
-        return std::make_shared<BuildRuntimeFilterTransform>(header, filter_column_name, filter_column_type, filter_name);
+        return std::make_shared<BuildRuntimeFilterTransform>(
+            header, filter_column_name, filter_column_type, filter_name, bloom_filter_bytes, bloom_filter_hash_functions);
     });
 }
 
 void BuildRuntimeFilterStep::updateOutputHeader()
 {
     output_header = input_headers.front();
+}
+
+void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions] = bloom_filter_hash_functions;
 }
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
@@ -79,7 +121,16 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
-    return std::make_unique<BuildRuntimeFilterStep>(ctx.input_headers.front(), std::move(filter_column_name), filter_column_type, std::move(filter_name));
+    const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
+    const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
+
+    return std::make_unique<BuildRuntimeFilterStep>(
+        ctx.input_headers.front(),
+        std::move(filter_column_name),
+        filter_column_type,
+        std::move(filter_name),
+        bloom_filter_bytes,
+        bloom_filter_hash_functions);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const

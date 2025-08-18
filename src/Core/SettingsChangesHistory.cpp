@@ -75,6 +75,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"enable_join_runtime_filters", false, false, "New setting"},
+            {"join_runtime_bloom_filter_bytes", 512 * 1024, 512 * 1024, "New setting"},
+            {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",

@@ -44,7 +44,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
     return condition;
 }
 
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -168,7 +168,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             {
                 QueryPlan::Node * new_build_filter_node = nullptr;
                 new_build_filter_node = &nodes.emplace_back();
-                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(build_filter_node->step->getOutputHeader(), join_key_build_side.name, common_type, filter_name);
+                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+                    build_filter_node->step->getOutputHeader(),
+                    join_key_build_side.name,
+                    common_type,
+                    filter_name,
+                    optimization_settings.join_runtime_bloom_filter_bytes,
+                    optimization_settings.join_runtime_bloom_filter_hash_functions);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name));
                 new_build_filter_node->children = {build_filter_node};
 

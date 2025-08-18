@@ -16,7 +16,13 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class BuildRuntimeFilterTransform : public ISimpleTransform
 {
 public:
-    BuildRuntimeFilterTransform(SharedHeader header_, String filter_column_name_, const DataTypePtr & filter_column_type_, String filter_name_);
+    BuildRuntimeFilterTransform(
+        SharedHeader header_,
+        String filter_column_name_,
+        const DataTypePtr & filter_column_type_,
+        String filter_name_,
+        UInt64 bloom_filter_bytes_,
+        UInt64 bloom_filter_hash_functions_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 

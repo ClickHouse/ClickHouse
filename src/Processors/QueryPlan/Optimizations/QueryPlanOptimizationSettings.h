@@ -72,7 +72,6 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
     double query_condition_cache_selectivity_threshold;
-    bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -119,6 +118,11 @@ struct QueryPlanOptimizationSettings
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
     ExpressionActionsSettings actions_settings;
+
+    /// JOIN runtime filter settings
+    bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
+    UInt64 join_runtime_bloom_filter_bytes = 512 * 1024;
+    UInt64 join_runtime_bloom_filter_hash_functions = 3;
 
     /// Please, avoid using this
     ///

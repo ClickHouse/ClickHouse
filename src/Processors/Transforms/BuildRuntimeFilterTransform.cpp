@@ -12,14 +12,22 @@
 namespace DB
 {
 
-BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(SharedHeader header_, String filter_column_name_, const DataTypePtr & filter_column_type_, String filter_name_)
+static constexpr UInt64 BLOOM_FILTER_SEED = 42;
+
+BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
+    SharedHeader header_,
+    String filter_column_name_,
+    const DataTypePtr & filter_column_type_,
+    String filter_name_,
+    UInt64 bloom_filter_bytes_,
+    UInt64 bloom_filter_hash_functions_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
     , filter_column_position(header_->getPositionByName(filter_column_name))
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , built_filter(std::make_unique<BloomFilter>(512*1024, 3, 845897321))
+    , built_filter(std::make_unique<BloomFilter>(bloom_filter_bytes_, bloom_filter_hash_functions_, BLOOM_FILTER_SEED))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
