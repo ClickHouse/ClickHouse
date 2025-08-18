@@ -131,9 +131,9 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
@@ -204,6 +204,11 @@ public:
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
 
     String format = "auto";
     String compression_method = "auto";

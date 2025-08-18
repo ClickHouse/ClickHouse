@@ -36,7 +36,7 @@ namespace DB::FailPoints
 extern const char iceberg_writes_cleanup[];
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 #if USE_AVRO
@@ -246,7 +246,7 @@ bool writeMetadataFiles(
                     metadata,
                     chunk_partitioner.getColumns(),
                     partition_key,
-                    delete_filename.path.path_in_metadata,
+                    {delete_filename.path.path_in_metadata},
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
