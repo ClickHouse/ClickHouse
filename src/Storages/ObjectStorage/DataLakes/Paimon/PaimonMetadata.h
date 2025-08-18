@@ -16,6 +16,7 @@
 #    include <Poco/JSON/Array.h>
 #    include <Poco/JSON/Object.h>
 #    include <Poco/JSON/Parser.h>
+#    include <Common/SharedMutex.h>
 
 
 namespace DB
@@ -70,17 +71,17 @@ public:
 private:
     bool updateState();
     void checkSupportCofiguration();
-    // String getBucketPath(String partition, Int32 bucket);
-    // String getPartitionString(Paimon::BinaryRow & partition);
-    std::optional<PaimonSnapshot> snapshot;
-    std::optional<PaimonTableSchema> table_schema;
-    std::vector<PaimonManifest> base_manifest;
-    std::vector<PaimonManifest> delta_manifest;
+
+    mutable SharedMutex mutex;
+    std::optional<PaimonSnapshot> snapshot TSA_GUARDED_BY(mutex);
+    std::optional<PaimonTableSchema> table_schema TSA_GUARDED_BY(mutex);
+    std::vector<PaimonManifest> base_manifest TSA_GUARDED_BY(mutex);
+    std::vector<PaimonManifest> delta_manifest TSA_GUARDED_BY(mutex);
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     PaimonTableClientPtr table_client_ptr;
-    Poco::JSON::Object::Ptr last_metadata_object;
+    Poco::JSON::Object::Ptr last_metadata_object TSA_GUARDED_BY(mutex);
 
 
     constexpr static String PARTITION_DEFAULT_NAME = "__DEFAULT_PARTITION__";

@@ -1,7 +1,4 @@
-#include <filesystem>
-#include <config.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include "config.h"
 
 #if USE_AVRO
 
@@ -23,6 +20,8 @@
 #    include <base/defines.h>
 #    include <Common/Exception.h>
 #    include <Common/assert_cast.h>
+#    include <Common/SharedLockGuard.h>
+#    include <Common/logger_useful.h>
 
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnTuple.h>
@@ -61,7 +60,13 @@ DataLakeMetadataPtr PaimonMetadata::create(
 
 bool PaimonMetadata::updateState()
 {
+    std::lock_guard lock(mutex);
     /// update schema
+    const auto schema_meta_info = table_client_ptr->getLastTableSchemaInfo();
+    if (!table_schema.has_value() || schema_meta_info.first != table_schema->version)
+    {
+        last_metadata_object = table_client_ptr->getTableSchemaJSON(schema_meta_info);
+    }
     if (!table_schema.has_value())
     {
         table_schema = PaimonTableSchema(last_metadata_object);
@@ -74,7 +79,11 @@ bool PaimonMetadata::updateState()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse paimon table schema");
     }
-    checkSupportCofiguration();
+    auto it = table_schema->options.find(PAIMON_SCAN_MODE);
+    if (it != table_schema->options.end() && (it->second != "latest" || it->second != "latest-full" || it->second != "default"))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "mode {} is unsupported.", it->second);
+    }
     /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastTableSnapshotInfo();
     if (snapshot.has_value() && snapshot_meta_info.first != snapshot->version)
@@ -96,16 +105,6 @@ bool PaimonMetadata::updateState()
     return true;
 }
 
-void PaimonMetadata::checkSupportCofiguration()
-{
-    chassert(table_schema.has_value());
-    auto it = table_schema->options.find(PAIMON_SCAN_MODE);
-    if (it != table_schema->options.end() && (it->second != "latest" || it->second != "latest-full" || it->second != "default"))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "mode {} is unsupported.", it->second);
-    }
-}
-
 PaimonMetadata::PaimonMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -124,6 +123,7 @@ PaimonMetadata::PaimonMetadata(
 
 NamesAndTypesList PaimonMetadata::getTableSchema() const
 {
+    SharedLockGuard shared_lock(mutex);
     NamesAndTypesList names_types_list;
     if (!table_schema.has_value())
         return names_types_list;
@@ -137,17 +137,13 @@ NamesAndTypesList PaimonMetadata::getTableSchema() const
 
 bool PaimonMetadata::update(const ContextPtr &)
 {
-    const auto schema_meta_info = table_client_ptr->getLastTableSchemaInfo();
-    if (!table_schema.has_value() || schema_meta_info.first != table_schema->version)
-    {
-        last_metadata_object = table_client_ptr->getTableSchemaJSON(schema_meta_info);
-    }
     return updateState();
 }
 
 ObjectIterator PaimonMetadata::iterate(
     const ActionsDAG * /* filter_dag */, FileProgressCallback callback, size_t /* list_batch_size */, ContextPtr /* context */) const
 {
+    SharedLockGuard shared_lock(mutex);
     auto configuration_ptr = configuration.lock();
     Strings data_files;
     for (const auto & entry : base_manifest)
