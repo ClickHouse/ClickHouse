@@ -17,6 +17,7 @@
 #    include <Poco/JSON/Object.h>
 #    include <Poco/JSON/Parser.h>
 #    include <Common/SharedMutex.h>
+#    include <Common/SharedLockGuard.h>
 
 
 namespace DB
@@ -55,6 +56,8 @@ public:
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * paimon_metadata = dynamic_cast<const PaimonMetadata *>(&other);
+        SharedLockGuard lock_shared(mutex);
+        SharedLockGuard lock_shared_other(paimon_metadata->mutex);
         return paimon_metadata && table_schema == paimon_metadata->table_schema && snapshot == paimon_metadata->snapshot;
     }
 
