@@ -231,7 +231,9 @@ StorageMaterializedView::StorageMaterializedView(
 
             /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
             /// To fix this, we don't check the permissions for the target table for the first time.
-            if (!is_restore_from_backup)
+            /// If the table is created later when adding a new replica to Replicated database,
+            /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
+            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
             {
                 auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
                 refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);

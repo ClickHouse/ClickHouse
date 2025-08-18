@@ -599,6 +599,11 @@ namespace ErrorCodes
     If true patch parts are applied on merges
     )", 0) \
     \
+    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
+    The maximum uncompressed size of data in all patch parts in bytes.
+    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+    0 - unlimited.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1268,6 +1273,9 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
+    How often replica will try to reload it's flags according to background schedule.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1441,6 +1449,9 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
+    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
+    Allow ussage of '_part_offfset' column in projections select query.
+    )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
@@ -1581,8 +1592,7 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of
-    the table.
+    When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1726,6 +1736,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    How many partition discoveries should be packed into batch
+    )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
@@ -1827,6 +1840,17 @@ namespace ErrorCodes
         2. Compression codec defined in `default_compression_codec` (this setting)
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
+    )", 0) \
+    DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
+    ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
+    in order to not allow to miss data parts at undefined (not included in policy) disks.
+    Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
+    This setting limits scope of disks to search by traits of the disks.
+
+    Possible values:
+    - any - scope is not limited.
+    - local - scope is limited by local disks .
+    - none - empty scope, do not search
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

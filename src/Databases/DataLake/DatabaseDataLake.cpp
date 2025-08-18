@@ -5,6 +5,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Common/Exception.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -166,6 +167,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
         }
+        case DB::DatabaseDataLakeCatalogType::NONE:
+        {
+            catalog_impl = nullptr;
+            break;
+        }
     }
     return catalog_impl;
 }
@@ -278,6 +284,8 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     type);
             }
         }
+        case DatabaseDataLakeCatalogType::NONE:
+            return nullptr;
     }
 }
 
@@ -442,6 +450,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* lazy_init */true);
 }
 
+void DatabaseDataLake::dropTable( /// NOLINT
+    ContextPtr context_,
+    const String & name,
+    bool /*sync*/)
+{
+    auto table = tryGetTable(name, context_);
+    if (table)
+        table->drop();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
+}
+
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
@@ -519,9 +539,14 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded) const
+    bool skip_not_loaded,
+    bool skip_data_lake_catalog) const
 {
     Tables tables;
+
+    if (skip_data_lake_catalog)
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
+
     auto catalog = getCatalog();
     DB::Names iceberg_tables;
 
@@ -778,6 +803,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 engine_func->name = "Iceberg";
                 break;
             }
+            case DatabaseDataLakeCatalogType::NONE:
+                break;
         }
 
         return std::make_shared<DatabaseDataLake>(
