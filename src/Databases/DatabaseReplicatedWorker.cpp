@@ -568,9 +568,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
             /// If the keeper transaction will have failed with a ZNONODE error, it might mean that the session has expired and the node
             /// deleted. In that case, we can throw to try again
             if (e.code == Coordination::Error::ZNONODE && zookeeper->expired() && e.message().contains(try_path))
-                throw Coordination::Exception::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Keeper session expired when enqueuing the task. Please try again");
-            LOG_WARNING(log, "Failed to process task {}: code {}: {}. Expired? {} Match? {}",
-                task->entry_name, e.code, e.message(), zookeeper->expired(), e.message().contains(try_path));
+                throw Coordination::Exception::fromMessage(
+                    Coordination::Error::ZSESSIONEXPIRED, "Keeper session expired when enqueuing the task. Please try again");
             throw;
         }
 

@@ -720,36 +720,31 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_
         replica_path + "/digest",
     };
 
-    bool nodes_exist = true;
-    String host_id;
-    zkutil::ZooKeeper::MultiTryGetResponse check_responses;
+    /// Write host name to replica_path, it will protect from multiple replicas with the same name
+    String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
 
     auto holder = with_retries.createRetriesControlHolderForOperations("createReplicaNodesInZooKeeper");
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(current_zookeeper);
+        bool nodes_exist = false;
 
         if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add new database replica: provided path {} "
                             "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
-        /// Write host name to replica_path, it will protect from multiple replicas with the same name
-        host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-
-        check_responses = current_zookeeper->tryGet(check_paths);
+        zkutil::ZooKeeper::MultiTryGetResponse check_responses = current_zookeeper->tryGet(check_paths);
+        LOG_DEBUG(log, "Check responses size {}", check_responses.size());
         for (size_t i = 0; i < check_responses.size(); ++i)
         {
-            const auto response = check_responses[i];
+            const auto & response = check_responses[i];
+            LOG_DEBUG(log, "Response {}. Path: {}. Result {}", i, check_paths[i], response.error);
 
-            if (response.error == Coordination::Error::ZNONODE)
-            {
-                nodes_exist = false;
-                break;
-            }
-            if (response.error != Coordination::Error::ZOK)
-            {
+            if (response.error == Coordination::Error::ZOK)
+                nodes_exist = true;
+
+            if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
-            }
         }
 
         if (nodes_exist)
@@ -772,10 +767,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_
 
             LOG_DEBUG(log, "Newly initialized replica nodes found in ZooKeeper, reusing them");
             createEmptyLogEntry(with_retries);
-            return;
         }
-
-        for (int attempts = 10; attempts > 0; --attempts)
+        else
         {
             Coordination::Stat stat;
 
@@ -793,20 +786,9 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_
                 zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
             };
 
-            Coordination::Responses ops_responses;
-            const auto code = current_zookeeper->tryMulti(ops, ops_responses);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
-                createEmptyLogEntry(with_retries);
-                return;
-            }
-
-            if (attempts == 1)
-            {
-                zkutil::KeeperMultiException::check(code, ops, ops_responses);
-            }
+            const auto code = current_zookeeper->multi(ops);
+            max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
+            createEmptyLogEntry(with_retries);
         }
     });
 }
@@ -1945,7 +1927,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
         settings[Setting::keeper_fault_injection_seed]
     );
 
-    auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
+    auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicated::drop");
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(current_zookeeper);
@@ -1959,8 +1941,8 @@ void DatabaseReplicated::drop(ContextPtr context_)
     {
         with_retries.renewZooKeeper(current_zookeeper);
         current_zookeeper->tryRemoveRecursive(replica_path);
-        /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
-        if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+        auto removed_replicas_code = current_zookeeper->tryRemove(zookeeper_path + "/replicas");
+        if (removed_replicas_code == Coordination::Error::ZOK || removed_replicas_code == Coordination::Error::ZNONODE)
         {
             /// It was the last replica, remove all metadata
             current_zookeeper->tryRemoveRecursive(zookeeper_path);
