@@ -22,5 +22,5 @@ select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by n
 -- since they don't need to wait until the aggregation will be finished,
 -- and so the query will not hit the memory limit error.
 create table data_01730 engine=MergeTree() order by key as select number key from numbers(1e6);
-select * from remote('127.{2..11}', currentDatabase(), data_01730) group by key order by key limit 1e6 settings distributed_group_by_no_merge=2, optimize_aggregation_in_order=1, max_memory_usage='160Mi' format Null;
+select * from remote('127.{2..11}', currentDatabase(), data_01730) group by key order by key limit 1e6 settings distributed_group_by_no_merge=2, max_memory_usage='160Mi', optimize_aggregation_in_order=1 format Null;
 drop table data_01730;
