@@ -29,6 +29,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
@@ -556,6 +557,7 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
+    std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
     std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -5499,6 +5501,22 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     return *shared->replicated_merge_tree_settings;
 }
 
+const DatabaseReplicatedSettings & Context::getDatabaseReplicatedSettings() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->database_replicated_settings)
+    {
+        const auto & config = shared->getConfigRefWithLock(lock);
+        DatabaseReplicatedSettings db_replicated_settings;
+
+        db_replicated_settings.loadFromConfig("database_replicated", config);
+        shared->database_replicated_settings.emplace(db_replicated_settings);
+    }
+
+    return *shared->database_replicated_settings;
+}
+
 const DistributedSettings & Context::getDistributedSettings() const
 {
     std::lock_guard lock(shared->mutex);
@@ -6466,12 +6484,18 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initialized, [&] {
-        const auto & config = getConfigRef();
-        shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
-        shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
-        shared->synchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, config);
-    });
+    callOnce(
+        shared->readers_initialized,
+        [&]
+        {
+            const auto & server_settings = getServerSettings();
+            shared->asynchronous_remote_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, server_settings);
+            shared->asynchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, server_settings);
+            shared->synchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, server_settings);
+        });
 
     switch (type)
     {

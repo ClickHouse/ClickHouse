@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
-from integration_test_images import IMAGES
 
 
 class Labels:
@@ -468,7 +467,6 @@ class CommonJobConfigs:
                 "./tests/integration/",
             ],
             exclude_files=[".md"],
-            docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,

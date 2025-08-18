@@ -27,17 +27,13 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
-JSONHas
 JSONKey
-JSONLength
-JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
 MACNumToString
 MACStringToNum
 MACStringToOUI
-URLHash
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -74,8 +70,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
-cityHash64
 concat
 concatAssumeInjective
 connectionId
@@ -134,8 +128,6 @@ extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
-farmFingerprint64
-farmHash64
 file
 filesystemAvailable
 filesystemCapacity
@@ -144,7 +136,6 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
-floor
 format
 formatReadableQuantity
 formatReadableSize
@@ -156,7 +147,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fuzzBits
 generateUUIDv4
 getMacro
 getOSKernelVersion
@@ -178,7 +168,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hiveHash
 hop
 hopEnd
 hopStart
@@ -201,10 +190,7 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidJSON
 isValidUTF8
-javaHash
-javaHashUTF16LE
 joinGet
 joinGetOrNull
 left
@@ -229,7 +215,6 @@ mapSubtract
 mapUpdate
 match
 materialize
-metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -338,13 +323,6 @@ queryID
 queryString
 queryStringAndFragment
 radians
-rand
-rand64
-randConstant
-randomFixedString
-randomPrintableASCII
-randomString
-randomStringUTF8
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -392,12 +370,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -411,10 +383,6 @@ showCertificate
 sigmoid
 sign
 sinh
-sipHash128
-sipHash128Keyed
-sipHash64
-sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime
@@ -577,7 +545,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd
@@ -606,8 +573,5 @@ version
 visibleWidth
 windowID
 wkt
-wyHash64
 xor
-xxHash32
-xxHash64
 zookeeperSessionUptime

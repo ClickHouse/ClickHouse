@@ -278,7 +278,7 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_custom_data("previous_commits_sha") or []
+    commits = info.get_kv_data("previous_commits_sha") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
@@ -289,7 +289,7 @@ def find_prev_build(info, build_type):
 
 
 def find_base_release_build(info, build_type):
-    commits = info.get_custom_data("release_branch_base_sha_with_predecessors") or []
+    commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
@@ -355,9 +355,7 @@ def main():
         print(
             "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
         )
-        reference_sha = info.get_custom_data(
-            "release_branch_base_sha_with_predecessors"
-        )[0]
+        reference_sha = info.get_kv_data("release_branch_base_sha_with_predecessors")[0]
         Shell.check(
             f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
             verbose=True,

@@ -358,6 +358,8 @@ public:
     static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
     static bool isMainThread() { return main_thread == current_thread; }
 
+    static void reset() { is_initialized.clear(std::memory_order_relaxed); }
+
     ~MainThreadStatus();
 
 private:

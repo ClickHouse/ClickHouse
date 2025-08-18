@@ -121,6 +121,29 @@ public:
         );
     }
 
+    bool supportsDelete() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsDelete();
+    }
+
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        current_metadata->mutate(commands, context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    void checkMutationIsPossible(const MutationCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkMutationIsPossible(commands);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -141,16 +164,16 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, data_path);
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, data_path);
+        return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
@@ -265,6 +288,12 @@ public:
 
 #endif
         return nullptr;
+    }
+
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
 private:

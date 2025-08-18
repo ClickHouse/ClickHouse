@@ -1,6 +1,9 @@
+#include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -26,10 +29,12 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -500,6 +505,19 @@ SinkToStoragePtr StorageObjectStorage::write(
         local_context);
 }
 
+bool StorageObjectStorage::optimize(
+    const ASTPtr & /*query*/,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /* deduplicate_by_columns */,
+    bool /*cleanup*/,
+    [[maybe_unused]] ContextPtr context)
+{
+    return configuration->optimize(metadata_snapshot, context, format_settings);
+}
+
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
@@ -525,9 +543,19 @@ void StorageObjectStorage::truncate(
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
+    {
         objects.emplace_back(key.path);
-
+    }
     object_storage->removeObjectsIfExist(objects);
+}
+
+void StorageObjectStorage::drop()
+{
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        catalog->dropTable(namespace_name, table_name);
+    }
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -632,5 +660,18 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
+
+void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+}
+
+void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    configuration->checkMutationIsPossible(commands);
+}
+
 
 }
