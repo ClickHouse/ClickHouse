@@ -830,8 +830,12 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     size_t offset = shared_data_offsets[ssize_t(row_num) - 1];
     size_t end = shared_data_offsets[ssize_t(row_num)];
 
+    /// Calculate number of non-null dynamic paths.
+    size_t non_null_dynamic_pats = 0;
+    for (const auto & [_, column] : dynamic_paths)
+        non_null_dynamic_pats += !column->isNullAt(row_num);
     /// Serialize number of paths and then pairs (path, value).
-    writeVarUInt(typed_paths.size() + dynamic_paths.size() + (end - offset), ostr);
+    writeVarUInt(typed_paths.size() + non_null_dynamic_pats + (end - offset), ostr);
 
     for (const auto & [path, column] : typed_paths)
     {
@@ -841,8 +845,11 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
     for (const auto & [path, column] : dynamic_paths)
     {
-        writeStringBinary(path, ostr);
-        dynamic_serialization->serializeBinary(*column, row_num, ostr, settings);
+        if (!column->isNullAt(row_num))
+        {
+            writeStringBinary(path, ostr);
+            dynamic_serialization->serializeBinary(*column, row_num, ostr, settings);
+        }
     }
 
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
