@@ -501,11 +501,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
-        auto column_name = read_from_format_info.requested_columns.front().name;
-        auto column_type = read_from_format_info.requested_columns.front().type;
-        ColumnWithTypeAndName count_column(column_type->createColumn(), column_type, column_name);
+
+        auto names_and_types = read_from_format_info.columns_description.getAllPhysical();
+        ColumnsWithTypeAndName columns;
+        for (const auto & [name, type] : names_and_types)
+            columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              std::make_shared<const Block>(ColumnsWithTypeAndName{count_column}), *num_rows_from_cache, max_block_size)));
+                              std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
     }
     else
     {
