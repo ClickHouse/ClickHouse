@@ -620,15 +620,12 @@ bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache,
 
 void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows)
 {
-    if (!num_read_rows)
-        return;
-
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
     /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
     /// constructing another column). In this case we need to insert data into resulting column from cached column.
     /// To determine what case we have we store number of read rows in last range in cache.
-    if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (!result_column->empty() && cached_column->size() == num_read_rows))
+    if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
         result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
     else
         result_column = cached_column;
