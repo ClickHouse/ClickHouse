@@ -395,7 +395,7 @@ void generateManifestFile(
                 data_file_record.selectBranch(1);
                 auto & lower_bounds = data_file_record.value<avro::GenericArray>();
                 auto schema_element = lower_bounds.schema()->leafAt(0);
-                for (const auto [field_id, lower_value] : lower_statistics)
+                for (const auto & [field_id, lower_value] : lower_statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
@@ -411,7 +411,7 @@ void generateManifestFile(
                 data_file_record.selectBranch(1);
                 auto & upper_bounds = data_file_record.value<avro::GenericArray>();
                 auto schema_element = upper_bounds.schema()->leafAt(0);
-                for (const auto [field_id, upper_value] : upper_statistics)
+                for (const auto & [field_id, upper_value] : upper_statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
