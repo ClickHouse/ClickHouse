@@ -19,6 +19,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <fmt/format.h>
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Logger.h>
@@ -42,6 +43,7 @@ struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
     std::shared_ptr<ManifestFilePlan> manifest_list;
+    DataFileStatistics statistics;
 
     FileNamesGenerator::Result patched_path;
     UInt64 new_records_count = 0;
@@ -60,6 +62,7 @@ struct Plan
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
+    Poco::JSON::Object::Ptr initial_metadata_object;
 
     class ParititonEncoder
     {
@@ -107,6 +110,25 @@ Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method);
 
+    const auto [metadata_version, metadata_file_path, _]
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
+
+    Poco::JSON::Object::Ptr initial_metadata_object
+        = getMetadataJSONObject(metadata_file_path, object_storage, configuration, nullptr, context, log, compression_method);
+
+    auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
+    Poco::JSON::Array::Ptr current_schema;
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i))->getArray(Iceberg::f_fields);
+            break;
+        }
+    }
+    plan.initial_metadata_object = initial_metadata_object;
+
     std::vector<ManifestFileEntry> all_positional_delete_files;
     std::unordered_map<String, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
@@ -153,6 +175,7 @@ Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
+                        .statistics = DataFileStatistics(current_schema),
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
                 }
@@ -259,8 +282,6 @@ void writeMetadataFiles(
     SharedHeader sample_block_)
 {
     auto log = getLogger("IcebergCompaction");
-    const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(configuration->getRawPath().path, columns_description, nullptr);
@@ -300,8 +321,7 @@ void writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, configuration, nullptr, context, log, compression_method);
+    Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<String, String> manifest_file_renamings;
     std::unordered_map<String, Int64> manifest_file_sizes;
 
