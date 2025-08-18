@@ -1,13 +1,16 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <Formats/NativeReader.h>
+#include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
+#include <Poco/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -25,6 +28,11 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsString log_comment;
 }
 
 /// Convert block to chunk.
@@ -376,6 +384,24 @@ public:
     }
 
 private:
+    static std::string describe(const Chunk & chunk)
+    {
+        const auto * info = getInfoFromChunk(chunk);
+        return fmt::format(
+            "getNumRows()={}, bucket_num={}, chunk_num={}, ooo_buckets=[{}]",
+            chunk.getNumRows(),
+            info->bucket_num,
+            info->chunk_num,
+            fmt::join(info->out_of_order_buckets, ", "));
+    }
+
+    static bool loggingEnabled()
+    {
+        if (auto context = CurrentThread::getQueryContext())
+            return context->getSettingsRef()[Setting::log_comment].value.contains("Please_Trace_ConvertingAggregatedToChunksTransform");
+        return false;
+    }
+
     IProcessor::Status preparePushToOutput()
     {
         if (single_level_chunks.empty())
@@ -384,6 +410,8 @@ private:
         auto & output = outputs.front();
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
+        if (loggingEnabled())
+            LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}, chunk={}", __PRETTY_FUNCTION__, __LINE__, describe(chunk));
         output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
@@ -406,6 +434,8 @@ private:
             {
                 auto chunk = input.pull();
                 auto bucket = getInfoFromChunk(chunk)->bucket_num;
+                if (loggingEnabled())
+                    LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}, chunk={}", __PRETTY_FUNCTION__, __LINE__, describe(chunk));
                 two_level_chunks[bucket] = std::move(chunk);
             }
         }
@@ -446,6 +476,13 @@ private:
                 if ((chunk = get_bucket_if_ready(current_bucket_num)))
                 {
                     ++current_bucket_num;
+                    if (loggingEnabled())
+                        LOG_DEBUG(
+                            log,
+                            "__PRETTY_FUNCTION__={}, __LINE__={}, current_bucket_num={}",
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            current_bucket_num);
                 }
                 else if (params->params.enable_producing_buckets_out_of_order_in_aggregation)
                 {
@@ -455,6 +492,13 @@ private:
                         out_of_order_buckets.push_back(current_bucket_num);
                         chassert(std::ranges::is_sorted(out_of_order_buckets));
                         ++current_bucket_num;
+                        if (loggingEnabled())
+                            LOG_DEBUG(
+                                log,
+                                "__PRETTY_FUNCTION__={}, __LINE__={}, current_bucket_num={}",
+                                __PRETTY_FUNCTION__,
+                                __LINE__,
+                                current_bucket_num);
                         continue;
                     }
                 }
@@ -462,12 +506,18 @@ private:
 
             // No ready buckets.
             if (!chunk)
+            {
+                if (loggingEnabled())
+                    LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 return Status::NeedData;
+            }
 
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
                 chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                if (loggingEnabled())
+                    LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}, chunk={}", __PRETTY_FUNCTION__, __LINE__, describe(chunk));
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -476,12 +526,18 @@ private:
         if (auto chunk = get_ready_out_of_order_bucket(); chunk.hasRows())
         {
             chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+            if (loggingEnabled())
+                LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}, chunk={}", __PRETTY_FUNCTION__, __LINE__, describe(chunk));
             output.push(std::move(chunk));
             return Status::PortFull;
         }
 
         if (!out_of_order_buckets.empty())
+        {
+            if (loggingEnabled())
+                LOG_DEBUG(log, "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             return Status::NeedData;
+        }
 
         output.finish();
         /// Do not close inputs, they must be finished.
@@ -513,6 +569,8 @@ private:
     std::vector<Int32> out_of_order_buckets;
 
     Processors processors;
+
+    LoggerPtr log = getLogger(getUniqID());
 
     void initialize()
     {
