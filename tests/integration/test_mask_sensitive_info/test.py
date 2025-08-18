@@ -771,7 +771,7 @@ def test_iceberg_cluster_function():
     check_logs(
         must_contain=[
             f"SELECT * FROM icebergS3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"SELECT * FROM icebergAzureCluster('test_shard_localhost', 'http://azurite1:30000/devstoreaccount1', 'cont', 'test_simple_6.csv', 'devstoreaccount1', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            f"SELECT * FROM icebergAzureCluster('test_shard_localhost', '{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password, azure_account_key],
     )
