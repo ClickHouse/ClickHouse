@@ -1810,6 +1810,31 @@ CONV_FN(JoinClause, jc)
     }
 }
 
+CONV_FN(KeyValuePair, kvp)
+{
+    ret += kvp.key();
+    ret += " = '";
+    ret += kvp.value();
+    ret += "'";
+}
+
+CONV_FN(SetValue, setv)
+{
+    ret += setv.property();
+    ret += " = ";
+    ret += setv.value();
+}
+
+CONV_FN(SettingValues, setv)
+{
+    SetValueToString(ret, setv.set_value());
+    for (int i = 0; i < setv.other_values_size(); i++)
+    {
+        ret += ", ";
+        SetValueToString(ret, setv.other_values(i));
+    }
+}
+
 CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
@@ -1821,20 +1846,25 @@ CONV_FN(FileFunc, ff)
     }
     ret += "'";
     ret += ff.path();
-    ret += "', '";
+    ret += "'";
     if (ff.has_informat())
     {
+        ret += ", '";
         ret += InFormat_Name(ff.informat()).substr(3);
+        ret += "'";
     }
     else if (ff.has_outformat())
     {
+        ret += ", '";
         ret += OutFormat_Name(ff.outformat()).substr(4);
+        ret += "'";
     }
-    else
+    else if (ff.has_inoutformat())
     {
-        ret += "CSV";
+        ret += ", '";
+        ret += InOutFormat_Name(ff.inoutformat()).substr(6);
+        ret += "'";
     }
-    ret += "'";
     if (ff.has_structure())
     {
         ret += ", ";
@@ -1843,7 +1873,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_fcomp())
     {
         ret += ", '";
-        ret += FileCompression_Name(ff.fcomp()).substr(4);
+        ret += ff.fcomp();
         ret += "'";
     }
     ret += ")";
@@ -1937,20 +1967,22 @@ CONV_FN(RemoteFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est())
+    if (rfunc.has_user())
     {
-        if (rfunc.has_user() && !rfunc.user().empty())
-        {
-            ret += ", '";
-            ret += rfunc.user();
-            ret += "'";
-        }
-        if (rfunc.has_password())
-        {
-            ret += ", '";
-            ret += rfunc.password();
-            ret += "'";
-        }
+        ret += ", '";
+        ret += rfunc.user();
+        ret += "'";
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
+    }
+    if (rfunc.has_sharding_key())
+    {
+        ret += ", ";
+        ExprToString(ret, rfunc.sharding_key());
     }
     ret += ")";
 }
@@ -2001,30 +2033,76 @@ CONV_FN(SQLiteFunc, sfunc)
     ret += "')";
 }
 
+CONV_FN(RedisFunc, rfunc)
+{
+    ret += "redis('";
+    ret += rfunc.address();
+    ret += "', ";
+    ExprToString(ret, rfunc.key());
+    if (rfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, rfunc.structure());
+    }
+    if (rfunc.has_db_index())
+    {
+        ret += ", ";
+        ret += std::to_string(rfunc.db_index());
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
+    }
+    if (rfunc.has_pool_size())
+    {
+        ret += ", ";
+        ret += std::to_string(rfunc.pool_size());
+    }
+    ret += ")";
+}
+
+CONV_FN(MongoDBFunc, mfunc)
+{
+    ret += "mongodb('";
+    ret += mfunc.address();
+    ret += "', '";
+    ret += mfunc.database();
+    ret += "', '";
+    ret += mfunc.collection();
+    ret += "', '";
+    ret += mfunc.user();
+    ret += "', '";
+    ret += mfunc.password();
+    ret += "'";
+    if (mfunc.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.structure());
+    }
+    ret += ")";
+}
+
 CONV_FN(S3Func, sfunc)
 {
     ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
+    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
         ClusterToString(ret, false, sfunc.cluster());
         ret += ", ";
     }
-    ret += "'";
-    ret += sfunc.resource();
-    ret += "', '";
-    ret += sfunc.user();
-    ret += "', '";
-    ret += sfunc.password();
-    ret += "', '";
-    ret += InOutFormat_Name(sfunc.format()).substr(6);
-    ret += "', ";
-    ExprToString(ret, sfunc.structure());
-    if (sfunc.has_fcomp())
+    ret += sfunc.credential();
+    for (int i = 0; i < sfunc.params_size(); i++)
     {
-        ret += ", '";
-        ret += sfunc.fcomp();
-        ret += "'";
+        ret += ", ";
+        KeyValuePairToString(ret, sfunc.params(i));
+    }
+    if (sfunc.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, sfunc.setting_values());
     }
     ret += ")";
 }
@@ -2033,46 +2111,39 @@ CONV_FN(AzureBlobStorageFunc, azure)
 {
     ret += AzureBlobStorageFunc_FName_Name(azure.fname());
     ret += "(";
-    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
+    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
     {
         ClusterToString(ret, false, azure.cluster());
         ret += ", ";
     }
-    ret += "'";
-    ret += azure.connection_string();
-    ret += "', '";
-    ret += azure.container();
-    ret += "', '";
-    ret += azure.blobpath();
-    ret += "'";
-    if (azure.has_user())
-    {
-        ret += ", '";
-        ret += azure.user();
-        ret += "'";
-    }
-    if (azure.has_password())
-    {
-        ret += ", '";
-        ret += azure.password();
-        ret += "'";
-    }
-    if (azure.has_format())
-    {
-        ret += ", '";
-        ret += InOutFormat_Name(azure.format()).substr(6);
-        ret += "'";
-    }
-    if (azure.has_fcomp())
-    {
-        ret += ", '";
-        ret += azure.fcomp();
-        ret += "'";
-    }
-    if (azure.has_structure())
+    ret += azure.credential();
+    for (int i = 0; i < azure.params_size(); i++)
     {
         ret += ", ";
-        ExprToString(ret, azure.structure());
+        KeyValuePairToString(ret, azure.params(i));
+    }
+    if (azure.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, azure.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(LocalFunc, local)
+{
+    ret += LocalFunc_FName_Name(local.fname());
+    ret += "(";
+    ret += local.credential();
+    for (int i = 0; i < local.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, local.params(i));
+    }
+    if (local.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, local.setting_values());
     }
     ret += ")";
 }
@@ -2170,11 +2241,10 @@ CONV_FN(ClusterFunc, cluster)
     ClusterToString(ret, false, cluster.cluster());
     ret += ", ";
     TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est() && cluster.has_sharding_key())
+    if (cluster.has_sharding_key())
     {
-        ret += ", '";
-        ret += cluster.sharding_key();
-        ret += "'";
+        ret += ", ";
+        ExprToString(ret, cluster.sharding_key());
     }
     ret += ")";
 }
@@ -2188,7 +2258,21 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
         ret += ", with_marks = ";
         ret += mfunc.with_marks() ? "true" : "false";
     }
+    if (mfunc.has_with_minmax())
+    {
+        ret += ", with_minmax = ";
+        ret += mfunc.with_minmax() ? "true" : "false";
+    }
     ret += ")";
+}
+
+CONV_FN(MergeTreeProjectionFunc, mfunc)
+{
+    ret += "mergeTreeProjection(";
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    ret += ", '";
+    ProjectionToString(ret, mfunc.proj());
+    ret += "')";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2227,6 +2311,15 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
         ret += ")";
     }
     ret += tudf ? ")" : "";
+}
+
+CONV_FN(ArrowFlightFunc, afunc)
+{
+    ret += "arrowflight('";
+    ret += afunc.address();
+    ret += "', '";
+    ret += afunc.dataset();
+    ret += "')";
 }
 
 CONV_FN(TableFunction, tf)
@@ -2289,8 +2382,28 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kAzure:
             AzureBlobStorageFuncToString(ret, tf.azure());
             break;
+        case TableFunctionType::kLocal:
+            LocalFuncToString(ret, tf.local());
+            break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
+            break;
+        case TableFunctionType::kRedis:
+            RedisFuncToString(ret, tf.redis());
+            break;
+        case TableFunctionType::kMongodb:
+            MongoDBFuncToString(ret, tf.mongodb());
+            break;
+        case TableFunctionType::kMtproj:
+            MergeTreeProjectionFuncToString(ret, tf.mtproj());
+            break;
+        case TableFunctionType::kNullf:
+            ret += "`null`(";
+            ExprToString(ret, tf.nullf());
+            ret += ")";
+            break;
+        case TableFunctionType::kFlight:
+            ArrowFlightFuncToString(ret, tf.flight());
             break;
         default:
             ret += "numbers(10)";
@@ -2622,6 +2735,10 @@ CONV_FN(SetQuery, setq)
 
 CONV_FN(CTEquery, cteq)
 {
+    if (cteq.recursive())
+    {
+        ret += "RECURSIVE ";
+    }
     TableToString(ret, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());
@@ -2662,23 +2779,6 @@ CONV_FN(CTEs, cteq)
         SingleCTEToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
-}
-
-CONV_FN(SetValue, setv)
-{
-    ret += setv.property();
-    ret += " = ";
-    ret += setv.value();
-}
-
-CONV_FN(SettingValues, setv)
-{
-    SetValueToString(ret, setv.set_value());
-    for (int i = 0; i < setv.other_values_size(); i++)
-    {
-        ret += ", ";
-        SetValueToString(ret, setv.other_values(i));
-    }
 }
 
 CONV_FN(Select, select)
@@ -2817,15 +2917,15 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_comment())
-    {
-        ret += " COMMENT ";
-        ret += create_database.comment();
-    }
     if (create_database.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, create_database.setting_values());
+    }
+    if (create_database.has_comment())
+    {
+        ret += " COMMENT ";
+        ret += create_database.comment();
     }
 }
 
@@ -3074,6 +3174,12 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
+            break;
+        case TableEngineParamType::kKvalue:
+            KeyValuePairToString(ret, tep.kvalue());
+            break;
+        case TableEngineParamType::kRvalue:
+            ret += tep.rvalue();
             break;
         default:
             ret += "c0";
@@ -3414,7 +3520,7 @@ CONV_FN(Insert, insert)
         if (insert_file.has_fcomp())
         {
             ret += " COMPRESSION '";
-            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
+            ret += insert_file.fcomp();
             ret += "'";
         }
         if (insert.has_setting_values())
@@ -3602,8 +3708,8 @@ CONV_FN(DescribeStatement, ds)
     using DescType = DescribeStatement::DescOneofCase;
     switch (ds.desc_oneof_case())
     {
-        case DescType::kEst:
-            ExprSchemaTableToString(ret, ds.est());
+        case DescType::kTof:
+            TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
             ret += "(";
@@ -4464,7 +4570,7 @@ CONV_FN(SelectIntoFile, intofile)
     if (intofile.has_compression())
     {
         ret += " COMPRESSION '";
-        ret += FileCompression_Name(intofile.compression()).substr(4);
+        ret += intofile.compression();
         ret += "'";
         if (intofile.has_level())
         {
@@ -4836,6 +4942,38 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupParams, bparams)
+{
+    ret += "(";
+    for (int i = 0; i < bparams.out_params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        BackupParamToString(ret, bparams.out_params(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
@@ -4859,18 +4997,7 @@ CONV_FN(BackupRestore, backup)
     ret += BackupRestore_BackupOutput_Name(output);
     if (output != BackupRestore_BackupOutput_Null)
     {
-        ret += "(";
-        for (int i = 0; i < backup.out_params_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ret += "'";
-            ret += backup.out_params(i);
-            ret += "'";
-        }
-        ret += ")";
+        BackupParamsToString(ret, backup.params());
     }
     if (backup.has_setting_values())
     {

@@ -871,7 +871,7 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
         return;
     }
 
-    if (args->children.size() != 2)
+    if (args->children.size() < 2)
         return;
 
     auto * literal = args->children[1]->as<ASTLiteral>();

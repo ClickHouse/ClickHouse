@@ -29,6 +29,10 @@ void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
 
+#if USE_ARROWFLIGHT
+void registerStorageArrowFlight(StorageFactory & factory);
+#endif
+
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -130,6 +134,10 @@ void registerStorages()
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
+
+#if USE_ARROWFLIGHT
+    registerStorageArrowFlight(factory);
+#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);

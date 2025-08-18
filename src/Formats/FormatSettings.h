@@ -249,6 +249,7 @@ struct FormatSettings
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
+        bool infer_array_of_dynamic_from_array_of_different_values = true;
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
     } json{};
@@ -457,6 +458,7 @@ struct FormatSettings
         bool dictionary_as_low_cardinality = true;
         String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
+        UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
     /// For capnProto format we should determine how to
