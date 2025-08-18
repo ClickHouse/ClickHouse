@@ -87,7 +87,7 @@ namespace
 
 Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
 {
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     obj->stringify(oss);
 
     Poco::JSON::Parser parser;

@@ -424,7 +424,7 @@ void alter(
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     auto cleanup = [] {};
     Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
-    
+
     if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = filename_generator.generateVersionHint();
