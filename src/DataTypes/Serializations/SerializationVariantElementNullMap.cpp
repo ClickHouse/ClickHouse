@@ -107,8 +107,11 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
         if (rows_offset)
         {
-            if (!variant_element_null_map_state->discriminators)
+            if (!variant_element_null_map_state->discriminators || result_column->empty())
+            {
                 variant_element_null_map_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+                variant_element_null_map_state->num_rows_read = 0;
+            }
 
             variant_element_null_map_state->discriminators->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
         }
