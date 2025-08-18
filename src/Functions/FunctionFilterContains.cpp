@@ -44,7 +44,11 @@ public:
                             "Number of arguments for function {} can't be {}, should be 2",
                             getName(), arguments.size());
 
-        /// TODO: check that 1st argument is const string
+        if (!WhichDataType(arguments[0]).isString())
+            throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function '{}' must be a String filter name",
+                    getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -58,18 +62,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto filter_name_column = arguments[0].column;
-        if (/*!filter_name_column->isConst() || */filter_name_column->getDataType() != TypeIndex::String)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument of function '{}' must be a String filter name",
-                            getName());
+        const auto * filter_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!filter_name_column)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function '{}' must be a String filter name",
+                    getName());
 
-        const auto filter_name = filter_name_column->getDataAt(0);
+        String filter_name = filter_name_column->getValue<String>();
+
         /// Query context contains filter lookup where per-query filters are stored
-        /// TODO: Is this the right way to get query context?
         auto query_context = CurrentThread::get().getQueryContext();
         auto filter_lookup = query_context->getRuntimeFilterLookup();
-        auto filter = filter_lookup->find(filter_name.toString());
+        auto filter = filter_lookup->find(filter_name);
 
         /// If filter is not present all rows pass
         if (!filter)
@@ -83,7 +88,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            /// TODO: implement efficiently
+            /// TODO: optimize: consider replacing hash calculation with vectorized version
             const auto & value = data_column->getDataAt(row);
             dst_data[row] = filter->find(value.data, value.size);
         }

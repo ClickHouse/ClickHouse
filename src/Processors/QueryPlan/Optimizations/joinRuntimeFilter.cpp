@@ -196,8 +196,6 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             filter_column_name = combined_filter_condition.result_name;
         }
 
-//        std::cerr << filter_dag.dumpDAG() << "\n+++++++++++++++++++++++++++\n\n\n";
-
         QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
         new_apply_filter_node->step = std::make_unique<FilterStep>(apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
         new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
