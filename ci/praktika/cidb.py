@@ -155,6 +155,9 @@ class CIDB:
         }
         assert Settings.CI_DB_TABLE_NAME
 
+        for i, json in enumerate(jsons):
+            print(f"INFO: Inserting row {i}: {json}")
+
         for key, value in params.items():
             print(f"Parameter key: {key}")
             print(f"Parameter value: {value}")
