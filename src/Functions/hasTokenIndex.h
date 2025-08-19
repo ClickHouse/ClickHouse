@@ -111,35 +111,29 @@ class FunctionSearchTextIndex : public FunctionsStringSearchBase
         chassert(!matching_rows.empty());
         const PaddedPODArray<UInt64> & offsets = col_part_offset_vector->getData();
 
+        // We selected the ranges below to end in an offset position. So the first match (if any) cannot be after offsets.end()
         const UInt64 * it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
         chassert(it != offsets.end());
 
-        const UInt64 * end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
+        const UInt64 * const end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
+        const UInt64 last_offset = (end_it == offsets.end()) ? offsets.back() + 1 : *end_it;
 
         for (UInt32 row : matching_rows)
         {
             const size_t match_offset = row - 1;
 
-            if (*it > match_offset)
-                continue;
+            if (match_offset >= last_offset)
+                return;
 
-            if (*it < match_offset)
-                it = std::lower_bound(it, end_it, match_offset);
-
-            if (it == end_it)
-                break;
-
-            if (*it == match_offset)
-            {
-                const size_t idx = std::distance(offsets.begin(), it);
-                chassert(result[idx] == 0);
-                result[idx] = 1;
+            while (*it < match_offset)
                 std::advance(it, 1);
 
-                if (it == end_it)
-                    break;
+            chassert(*it <= match_offset);
+            chassert(it != end_it);
 
-            }
+            const size_t idx = std::distance(offsets.begin(), it);
+            chassert(result[idx] == 0);
+            result[idx] = 1;
         }
     }
 
