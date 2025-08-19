@@ -707,6 +707,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"output_format_parquet_datetime_as_uint32", CHSetting(trueOrFalse, {}, false)},
+    {"output_format_parquet_date_as_uint16", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_parallel_encoding", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_string_as_string", CHSetting(trueOrFalse, {}, false)},
