@@ -185,17 +185,17 @@ def get_creation_expression(
     format_version=2,
     partition_by="",
     if_not_exists=False,
+    compression_method=None,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=False,
+    allow_dynamic_metadata_for_data_lakes=True,
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
     **kwargs,
 ):
     settings_array = []
-    if allow_dynamic_metadata_for_data_lakes:
-        settings_array.append("allow_dynamic_metadata_for_data_lakes = 1")
+    settings_array.append(f"allow_dynamic_metadata_for_data_lakes = {1 if allow_dynamic_metadata_for_data_lakes else 0}")
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
@@ -206,6 +206,9 @@ def get_creation_expression(
     if partition_by:
         partition_by = "PARTITION BY " + partition_by
     settings_array.append(f"iceberg_format_version = {format_version}")
+
+    if compression_method:
+        settings_array.append(f"iceberg_metadata_compression_method = '{compression_method}'")
 
     if settings_array:
         settings_expression = " SETTINGS " + ",".join(settings_array)
@@ -318,12 +321,30 @@ def create_iceberg_table(
     format_version=2,
     partition_by="",
     if_not_exists=False,
+    compression_method=None,
     format="Parquet",
     **kwargs,
 ):
-    node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, format, **kwargs)
-    )
+    if 'output_format_parquet_use_custom_encoder' in kwargs:
+        node.query(
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
+        )
+    else:
+        node.query(
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+        )
+
+
+def drop_iceberg_table(
+    node,
+    table_name,
+    if_exists=False,
+):
+    if if_exists:
+        node.query(f"DROP TABLE IF EXISTS {table_name};")
+    else:
+        node.query(f"DROP TABLE {table_name};")
 
 
 def create_initial_data_file(

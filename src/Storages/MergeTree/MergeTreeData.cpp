@@ -149,6 +149,7 @@ namespace ProfileEvents
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
+    extern const Event RejectedLightweightUpdates;
     extern const Event PartsLockWaitMicroseconds;
     extern const Event PartsLockHoldMicroseconds;
     extern const Event LoadedDataParts;
@@ -265,6 +266,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
+    extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
+    extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
 }
 
 namespace ServerSetting
@@ -313,6 +316,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -361,6 +365,17 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
             sampling_column_type->getName());
+}
+
+static bool hasColumnsWithDynamicSubcolumns(const Block & block)
+{
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
+        if (column.type->hasDynamicSubcolumns())
+            return true;
+    }
+
+    return false;
 }
 
 
@@ -1044,6 +1059,16 @@ void MergeTreeData::checkProperties(
                 local_context);
             projections_names.insert(projection.name);
         }
+    }
+
+    for (const auto & projection : new_metadata.projections)
+    {
+        if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
+                "This projection cannot be used in this table",
+                projection.name);
     }
 
     String projection_with_parent_part_offset;
@@ -1958,7 +1983,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
 
     if (to_state == DataPartState::Active)
+    {
         addPartContributionToDataVolume(res.part);
+        addPartContributionToUncompressedBytesInPatches(res.part);
+    }
 
     if (res.part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
@@ -2335,9 +2363,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    are_columns_and_secondary_indices_sizes_calculated = false;
+
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -4895,6 +4923,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         if (part->getState() == MergeTreeDataPartState::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
+            removePartContributionToUncompressedBytesInPatches(part);
             removePartContributionToDataVolume(part);
             removed_active_part = true;
         }
@@ -5112,7 +5141,9 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
     if (part->getState() == DataPartState::Active)
         return;
+
     addPartContributionToColumnAndSecondaryIndexSizes(part);
+    addPartContributionToUncompressedBytesInPatches(part);
     addPartContributionToDataVolume(part);
     modifyPartState(part, DataPartState::Active);
 }
@@ -5154,6 +5185,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     {
         removePartContributionToDataVolume(part);
         removePartContributionToColumnAndSecondaryIndexSizes(part);
+        removePartContributionToUncompressedBytesInPatches(part);
         removed_active_part = true;
     }
 
@@ -5233,6 +5265,10 @@ size_t MergeTreeData::getTotalActiveSizeInRows() const
     return total_active_size_rows.load();
 }
 
+size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
+{
+    return total_uncompressed_bytes_in_patches.load();
+}
 
 size_t MergeTreeData::getActivePartsCount() const
 {
@@ -5480,6 +5516,27 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
     }
 }
 
+void MergeTreeData::throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const
+{
+    size_t max_uncompressed_bytes_in_patches = (*getSettings())[MergeTreeSetting::max_uncompressed_bytes_in_patches];
+    if (max_uncompressed_bytes_in_patches == 0)
+        return;
+
+    size_t new_bytes_in_patches = getTotalUncompressedBytesInPatches() + added_uncompressed_bytes;
+    if (new_bytes_in_patches >= max_uncompressed_bytes_in_patches)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedLightweightUpdates);
+
+        throw Exception(ErrorCodes::TOO_LARGE_LIGHTWEIGHT_UPDATES,
+            "Too many uncompressed bytes in patch parts: {} (max: {})."
+            " Lightweight updates have rewritten too much data, which can lead to a significant slowdown of SELECT queries."
+            " The threshold can be modified with 'max_uncompressed_bytes_in_patches' setting in <merge_tree> element in config.xml or with per-table setting."
+            " Also you can materialize current patches by 'ALTER TABLE ... APPLY PATCHES' mutation or consider using an 'ALTER TABLE ... UPDATE' mutation for updating the data",
+            formatReadableSizeWithBinarySuffix(new_bytes_in_patches),
+            formatReadableSizeWithBinarySuffix(max_uncompressed_bytes_in_patches));
+    }
+}
+
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
@@ -5695,13 +5752,12 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (are_columns_and_secondary_indices_sizes_calculated)
-        return;
 
     column_sizes.clear();
+    secondary_index_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -5709,6 +5765,36 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
     are_columns_and_secondary_indices_sizes_calculated = true;
+}
+
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const
+{
+    if (are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    column_sizes.clear();
+    secondary_index_sizes.clear();
+
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+
+    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
+    /// can read a column sample from each part, it can be slow and we don't want to
+    /// do it under parts lock, so we create a copy of the data parts and release parts lock
+    /// before calculation.
+    if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
+    {
+        DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
+        parts_lock.lock.unlock();
+        for (const auto & part : data_parts)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+    else
+    {
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+
+    are_columns_and_secondary_indices_sizes_calculated= true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -6260,8 +6346,13 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        if (backup_settings.check_projection_parts)
-            part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
+        if (backup_settings.check_parts)
+        {
+            if (backup_settings.check_projection_parts)
+                part->checkConsistencyWithProjections(/*require_part_metadata=*/true);
+            else
+                part->checkConsistency(/*require_part_metadata=*/true);
+        }
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
@@ -7806,6 +7897,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
                         data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
+                        data.removePartContributionToUncompressedBytesInPatches(covered_part);
                     }
 
                     reduce_parts += covered_parts.size();
@@ -7816,6 +7908,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
                     data.modifyPartState(part, DataPartState::Active);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
+                    data.addPartContributionToUncompressedBytesInPatches(part);
                 }
             }
 
@@ -9303,6 +9396,24 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_bytes.store(bytes);
     total_active_size_rows.store(rows);
     total_active_size_parts.store(parts);
+}
+
+void MergeTreeData::addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part)
+{
+    if (part->info.isPatch())
+    {
+        Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
+        total_uncompressed_bytes_in_patches.fetch_add(uncompressed_bytes);
+    }
+}
+
+void MergeTreeData::removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part)
+{
+    if (part->info.isPatch())
+    {
+        Int64 uncompressed_bytes = part->getBytesUncompressedOnDisk();
+        total_uncompressed_bytes_in_patches.fetch_add(-uncompressed_bytes);
+    }
 }
 
 bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const

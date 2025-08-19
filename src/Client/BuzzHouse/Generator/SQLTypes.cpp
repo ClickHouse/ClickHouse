@@ -1201,7 +1201,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         {
             this->ids.emplace_back(1);
         }
-        this->ids.emplace_back(2);
+        if ((allowed_types & allow_int16))
+        {
+            this->ids.emplace_back(2);
+        }
         this->ids.emplace_back(3);
         if ((allowed_types & allow_int64))
         {
@@ -1217,7 +1220,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     {
         this->ids.emplace_back(7);
     }
-    this->ids.emplace_back(8);
+    if ((allowed_types & allow_int16))
+    {
+        this->ids.emplace_back(8);
+    }
     this->ids.emplace_back(9);
     if ((allowed_types & allow_int64))
     {
@@ -2181,11 +2187,11 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
     return ret;
 }
 
-String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, SQLType * tp)
+String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, const bool allow_cast, SQLType * tp)
 {
     String ret = tp->appendRandomRawValue(rg, *this);
 
-    if (rg.nextSmallNumber() < 7)
+    if (allow_cast && rg.nextSmallNumber() < 7)
     {
         ret += "::";
         ret += tp->typeName(false);
