@@ -88,8 +88,8 @@ Table function `paimon` is an alias to `paimonS3` now.
 |CHAR     |FixedString(1)      |
 |BINARY(n)     |FixedString(n)      |
 |DECIMAL(P,S)     |Decimal(P,S)      |
-|ARRAY<t>     |Array      |
-|MAP<kt,vt>     |Map    |
+|ARRAY     |Array      |
+|MAP     |Map    |
 
 ## Partition supported {#partition-supported}
 Data types supported in Paimon partition keys:
