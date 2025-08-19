@@ -184,7 +184,7 @@ Normalizes a UTF-8 string according to the NFC normalization form.
         "Usage example",
         R"(
 SELECT
-'é' AS original,  -- e + combining acute accent (U+0065 + U+0301)
+'é' AS original, -- e + combining acute accent (U+0065 + U+0301)
 length(original),
 normalizeUTF8NFC('é') AS nfc_normalized, -- é (U+00E9)
 length(nfc_normalized);
