@@ -199,7 +199,7 @@ struct DecorrelationContext
 namespace
 {
 
-[[maybe_unused]] void projectCorrelatedColumns(
+void projectCorrelatedColumns(
     QueryPlan & lhs_plan,
     const ColumnIdentifiers & correlated_column_identifiers)
 {

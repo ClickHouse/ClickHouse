@@ -81,7 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"correlated_subqueries_default_join_kind", DecorrelationJoinKind::RIGHT, DecorrelationJoinKind::RIGHT, "New setting. Default join kind for decorrelated query plan."},
-            {"correlated_subqueries_use_input_buffer", true, true, "New setting."}
+            {"correlated_subqueries_use_input_buffer", true, true, "New setting."},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
