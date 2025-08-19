@@ -117,11 +117,9 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
-    const auto * patch_merge_data = typeid_cast<const PatchMergeReadResult *>(&patch_result);
-    if (!patch_merge_data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchMergeReadResult is expected");
+    const auto & patch_merge_data = typeid_cast<const PatchMergeReadResult &>(&patch_result);
 
-    return {applyPatchMerge(result_block, patch_merge_data->block, patch_part)};
+    return {applyPatchMerge(result_block, patch_merge_data.block, patch_part)};
 }
 
 bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const

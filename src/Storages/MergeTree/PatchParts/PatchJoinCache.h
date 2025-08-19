@@ -67,7 +67,7 @@ struct PatchJoinCache
 
     /// Initializes the cache, creates a mapping from the ranges to buckets.
     /// Cache entries should be get for the same ranges later.
-    void init(const RangesInPatchParts & ranges_in_pathces);
+    void init(const RangesInPatchParts & ranges_in_patches);
 
     PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part);
     Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);

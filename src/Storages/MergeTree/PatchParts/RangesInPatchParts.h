@@ -24,7 +24,7 @@ private:
     std::unordered_map<String, MarkRanges> ranges_by_name;
 };
 
-struct MinMaxStats
+struct MinMaxStat
 {
     UInt64 min = 0;
     UInt64 max = 0;
