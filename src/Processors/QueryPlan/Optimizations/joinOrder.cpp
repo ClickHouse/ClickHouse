@@ -82,7 +82,7 @@ private:
     std::shared_ptr<DPJoinEntry> solveDP();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    std::optional<JoinKind> isValidJoinOrder(const BitSet & lhs, const BitSet & rhs) const;
+    std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);

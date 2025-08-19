@@ -14,11 +14,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
 
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Core/Settings.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
