@@ -335,7 +335,7 @@ using FunctionSparseGramsUTF8 = FunctionTokens<SparseGramsImpl<true>>;
 REGISTER_FUNCTION(SparseGrams)
 {
     FunctionDocumentation::Description description_sparse = R"(
-Finds all substrings of a given string that have a length of at least `n`, 
+Finds all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
 Uses `CRC32` as a hash function.

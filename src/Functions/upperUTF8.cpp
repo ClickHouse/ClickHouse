@@ -37,9 +37,17 @@ If the length of the UTF-8 byte sequence is different for upper and lower case o
     };
     FunctionDocumentation::ReturnedValue returned_value = {"A String data type value.", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT upperUTF8('München') AS Upperutf8", "┌─Upperutf8─┐\n│ MÜNCHEN   │\n└───────────┘"}
+    {
+        "Usage example",
+        "SELECT upperUTF8('München') AS Upperutf8",
+        R"(
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
