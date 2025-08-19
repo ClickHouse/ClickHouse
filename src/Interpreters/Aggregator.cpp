@@ -1072,6 +1072,10 @@ static size_t roundUpToPow2(size_t a)
     return pow2;
 }
 
+bool couldOrderByOptimizationBeApplied(const Aggregator::Params& params) {
+    return params.optimization_indexes != std::nullopt;
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1262,7 +1266,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     /// For all rows.
-    bool is_order_by_optimization_applied = params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2;
+    bool is_order_by_optimization_applied = couldOrderByOptimizationBeApplied(params) && params.limit_plus_offset_length < (key_end - key_start) / 2;
     if (!no_more_keys)
     {
         auto no_order_by_optimization_impl = [&]()
@@ -1376,7 +1380,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                     if (!emplace_result.has_value())
                     {
-                        places[i] = nullptr;
+                        places[i] = overflow_row;
                         continue;
                     }
 
@@ -1841,7 +1845,16 @@ bool Aggregator::executeOnBlock(Columns columns,
     else
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
-        AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+        AggregateDataPtr overflow_row_ptr;
+        // TODO add setting params.overflow_row=true in creation of params if optimization is applied
+        if (couldOrderByOptimizationBeApplied(params) && result.without_key == nullptr) {
+            AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(place);
+            result.without_key = place;
+            overflow_row_ptr = result.without_key;
+        } else {
+            overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+        }
         executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
