@@ -17,10 +17,10 @@ If this assumption is violated, no exception is thrown and the result is undefin
 )";
     FunctionDocumentation::Syntax syntax = "startsWithUTF8(str, prefix)";
     FunctionDocumentation::Arguments arguments = {
-        {"str", "String to check.", {"String"}},
+        {"s", "String to check.", {"String"}},
         {"prefix", "Prefix to check for.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `str` starts with `prefix`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `s` starts with `prefix`, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

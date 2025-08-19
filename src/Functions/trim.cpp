@@ -250,9 +250,9 @@ By default, removes common whitespace (ASCII) characters.
 Removes the specified characters from the end of a string.
 By default, removes common whitespace (ASCII) characters.
 )";
-    FunctionDocumentation::Syntax syntax_right = "trimRight(input[, trim_characters])";
+    FunctionDocumentation::Syntax syntax_right = "trimRight(s[, trim_characters])";
     FunctionDocumentation::Arguments arguments_right = {
-        {"input", "String to trim.", {"String"}},
+        {"s", "String to trim.", {"String"}},
         {"trim_characters", "Optional characters to trim. If not specified, common whitespace characters are removed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_right = {"Returns the string with specified characters trimmed from the right.", {"String"}};
@@ -273,9 +273,9 @@ By default, removes common whitespace (ASCII) characters.
 Removes the specified characters from the start and end of a string.
 By default, removes common whitespace (ASCII) characters.
 )";
-    FunctionDocumentation::Syntax syntax_both = "trimBoth(input[, trim_characters])";
+    FunctionDocumentation::Syntax syntax_both = "trimBoth(s[, trim_characters])";
     FunctionDocumentation::Arguments arguments_both = {
-        {"input", "String to trim.", {"String"}},
+        {"s", "String to trim.", {"String"}},
         {"trim_characters", "Optional. Characters to trim. If not specified, common whitespace characters are removed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_both = {"Returns the string with specified characters trimmed from both ends.", {"String"}};

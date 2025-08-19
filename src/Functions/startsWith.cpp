@@ -13,12 +13,12 @@ REGISTER_FUNCTION(StartsWith)
     FunctionDocumentation::Description description = R"(
 Checks whether a string begins with the provided string.
 )";
-    FunctionDocumentation::Syntax syntax = "startsWith(str, prefix)";
+    FunctionDocumentation::Syntax syntax = "startsWith(s, prefix)";
     FunctionDocumentation::Arguments arguments = {
-        {"str", "String to check.", {"String"}},
+        {"s", "String to check.", {"String"}},
         {"prefix", "Prefix to check for.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `str` starts with `prefix`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `s` starts with `prefix`, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
