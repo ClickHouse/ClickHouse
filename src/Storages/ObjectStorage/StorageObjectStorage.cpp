@@ -324,7 +324,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* check_consistent_with_previous_metadata */false);
     }
 
-    auto columns = configuration->tryGetTableStructureFromMetadata(query_context);
+    auto columns = configuration->tryGetTableStructureFromMetadata();
     if (!columns.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
 
