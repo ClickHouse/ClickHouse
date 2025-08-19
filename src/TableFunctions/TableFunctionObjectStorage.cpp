@@ -173,6 +173,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
+    const auto & client_info = context->getClientInfo();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
@@ -208,10 +209,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
-        /* catalog*/nullptr,
-        /* if_not_exists*/false,
+        /* catalog*/ nullptr,
+        /* if_not_exists*/ false,
         /* is_datalake_query*/ false,
-        /* distributed_processing */ is_secondary_query,
+        /* distributed_processing */ client_info.collaborate_with_initiator,
         /* partition_by */ partition_by,
         /* is_table_function */true);
 
