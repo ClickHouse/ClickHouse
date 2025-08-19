@@ -89,8 +89,9 @@ elseif (ARCH_AARCH64)
         # [8]  https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
         # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
+        option (ENABLE_SVE "Use SVE instructions on ARM" 0)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
-        if (USE_SVE)
+        if (ENABLE_SVE)
             string (APPEND COMPILER_FLAGS "+sve")
         endif ()
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable

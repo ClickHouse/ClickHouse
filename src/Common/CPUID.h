@@ -313,10 +313,10 @@ inline bool haveSVE() noexcept
 {
 #if defined(__aarch64__)
     /// https://www.kernel.org/doc/Documentation/arm64/sve.txt
-    unsigned long hwcap = getauxval(AT_HWCAP);
+    const UInt64 hwcap = getauxval(AT_HWCAP);
     return (hwcap & HWCAP_SVE) != 0;
 #else
-    return false
+    return false;
 #endif
 }
 
