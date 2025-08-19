@@ -29,8 +29,8 @@ Also keep in mind that string literals require extra escaping.
     FunctionDocumentation::Syntax syntax = "replaceRegexpOne(haystack, pattern, replacement)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "The input string to search in.", {"String"}},
-        {"pattern", "The regular expression pattern to find.", {"String"}},
-        {"replacement", "The string to replace the pattern with, may contain substitutions.", {"String"}}
+        {"pattern", "The regular expression pattern to find.", {"const String"}},
+        {"replacement", "The string to replace the pattern with, may contain substitutions.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with the first regex match replaced.", {"String"}};
     FunctionDocumentation::Examples examples = {

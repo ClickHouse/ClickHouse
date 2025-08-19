@@ -354,7 +354,7 @@ Literal `%` character can be escaped by `%%`.
     FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
     FunctionDocumentation::Arguments arguments = {
         {"format", "The format string with `%` specifiers.", {"String"}},
-        {"sub1, sub2, ...", "Optional. 0 or more values to substitute into the format string.", {"Any"}}
+        {"sub1, sub2, ...", "Optional. Zero or more values to substitute into the format string.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a formatted string.", {"String"}};
     FunctionDocumentation::Examples examples = {

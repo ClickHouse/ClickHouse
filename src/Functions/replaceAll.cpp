@@ -21,13 +21,12 @@ REGISTER_FUNCTION(ReplaceAll)
 {
     FunctionDocumentation::Description description = R"(
 Replaces all occurrences of the substring `pattern` in `haystack` by the `replacement` string.
-Alias: `replace`.
 )";
     FunctionDocumentation::Syntax syntax = "replaceAll(haystack, pattern, replacement)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "The input string to search in.", {"String"}},
-        {"pattern", "The substring to find and replace.", {"String"}},
-        {"replacement", "The string to replace the pattern with.", {"String"}}
+        {"pattern", "The substring to find and replace.", {"const String"}},
+        {"replacement", "The string to replace the pattern with.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with all occurrences of pattern replaced.", {"String"}};
     FunctionDocumentation::Examples examples = {

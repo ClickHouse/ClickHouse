@@ -426,8 +426,8 @@ Non-ASCII characters in `s` are not modified by the function.
     FunctionDocumentation::Syntax translate_syntax = "translate(s, from, to)";
     FunctionDocumentation::Arguments translate_arguments = {
         {"s", "The input string to translate.", {"String"}},
-        {"from", "A constant ASCII string containing characters to replace.", {"String"}},
-        {"to", "A constant ASCII string containing replacement characters.", {"String"}}
+        {"from", "A constant ASCII string containing characters to replace.", {"const String"}},
+        {"to", "A constant ASCII string containing replacement characters.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue translate_returned_value = {"Returns a string with character translations applied.", {"String"}};
     FunctionDocumentation::Examples translate_examples = {
@@ -457,13 +457,13 @@ Non-ASCII characters in `s` are not modified by the function.
     factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
 
     FunctionDocumentation::Description utf8_description = R"(
-Like `translate` but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
 )";
     FunctionDocumentation::Syntax utf8_syntax = "translateUTF8(s, from, to)";
     FunctionDocumentation::Arguments utf8_arguments = {
-        {"s", "A string type `String`.", {"String"}},
-        {"from", "A string type `String`.", {"String"}},
-        {"to", "A string type `String`.", {"String"}}
+        {"s", "UTF-8 input string to translate.", {"String"}},
+        {"from", "A constant UTF-8 string containing characters to replace.", {"const String"}},
+        {"to", "A constant UTF-8 string containing replacement characters.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue utf8_returned_value = {"Returns a `String` data type value.", {"String"}};
     FunctionDocumentation::Examples utf8_examples = {

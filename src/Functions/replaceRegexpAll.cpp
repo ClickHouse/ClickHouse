@@ -26,8 +26,8 @@ As an exception, if a regular expression worked on an empty substring, the repla
     FunctionDocumentation::Syntax syntax = "replaceRegexpAll(haystack, pattern, replacement)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "The input string to search in.", {"String"}},
-        {"pattern", "The regular expression pattern to find.", {"String"}},
-        {"replacement", "The string to replace the pattern with, may contain substitutions.", {"String"}}
+        {"pattern", "The regular expression pattern to find.", {"const String"}},
+        {"replacement", "The string to replace the pattern with, may contain substitutions.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with all regex matches replaced.", {"String"}};
     FunctionDocumentation::Examples examples = {
