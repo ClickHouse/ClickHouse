@@ -6,11 +6,11 @@ SET query_plan_optimize_join_order = 0;
 EXPLAIN PIPELINE
 SELECT * FROM
 (
-    SELECT * FROM system.numbers LIMIT 10
+    SELECT * FROM system.numbers LIMIT 100000
 ) t1
 ALL LEFT JOIN
 (
-    SELECT * FROM system.numbers LIMIT 10
+    SELECT * FROM system.numbers LIMIT 100000
 ) t2
 USING number
 SETTINGS max_threads=16;

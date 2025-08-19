@@ -12,11 +12,11 @@ SELECT
     *
 FROM
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t1
     JOIN
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
 SETTINGS max_threads=16;
@@ -32,11 +32,11 @@ SELECT
     *
 FROM
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t1
     JOIN
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
 SETTINGS max_threads=16;
@@ -52,11 +52,11 @@ SELECT
     *
 FROM
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t1
     JOIN
     (
-        SELECT * FROM system.numbers LIMIT 10
+        SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
 SETTINGS max_threads=16;
