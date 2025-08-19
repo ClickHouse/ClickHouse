@@ -126,7 +126,7 @@ void ReadFromFormatInfo::serialize(WriteBuffer & out) const
     writeStringBinary(columns_description.toString(), out);
     requested_columns.writeTextWithNamesInStorage(out);
     requested_virtual_columns.writeTextWithNamesInStorage(out);
-    serialization_hints.writeJSON(out);
+    serialization_hints.writeJSONWithStats(out, {});
     out << "\n";
 }
 
@@ -157,7 +157,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(ReadBuffer & in)
     result.requested_virtual_columns.readTextWithNamesInStorage(in);
     std::string json;
     readString(json, in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+    result.serialization_hints = loadSerializationInfosFromString(json, SerializationInfoSettings{}).infos;
     in >> "\n";
 
     return result;

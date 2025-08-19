@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>

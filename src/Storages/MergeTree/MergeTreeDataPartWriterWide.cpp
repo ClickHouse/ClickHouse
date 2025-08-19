@@ -1,4 +1,4 @@
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -99,7 +99,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -108,7 +107,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
             columns_list_, metadata_snapshot_, virtual_columns_,
-            indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
+            indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_))
 {
     if (settings.save_marks_in_cache)
@@ -182,7 +181,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         query_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size());
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<Stream<false>>(
+        column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part_storage,
             stream_name, DATA_FILE_EXTENSION,
@@ -309,30 +308,34 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
+
     if (settings.rewrite_primary_key)
+    {
         primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+        calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
+    }
 
     Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
+    calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (getSerialization(it->name)->getKind() != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-
         if (permutation)
         {
             if (primary_key_block.has(it->name))
             {
-                const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(*it, primary_column, offset_columns, granules_to_write);
+                auto primary_column = primary_key_block.getByName(it->name).column;
+                primary_column = convertToSerialization(primary_column, *it->type, getSerialization(it->name)->getKind());
+                writeColumn(*it, *primary_column, offset_columns, granules_to_write);
             }
             else if (skip_indexes_block.has(it->name))
             {
-                const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                writeColumn(*it, index_column, offset_columns, granules_to_write);
+                auto index_column = skip_indexes_block.getByName(it->name).column;
+                index_column = convertToSerialization(index_column, *it->type, getSerialization(it->name)->getKind());
+                writeColumn(*it, *index_column, offset_columns, granules_to_write);
             }
             else
             {
@@ -346,12 +349,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             writeColumn(*it, *column.column, offset_columns, granules_to_write);
         }
     }
-
-    if (settings.rewrite_primary_key)
-        calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
-
-    calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
-    calculateAndSerializeStatistics(block);
 
     shiftCurrentMark(granules_to_write);
 }
@@ -762,7 +759,6 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -775,7 +771,6 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::cancel() noexcept

@@ -88,13 +88,14 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type);
 /// Remove LowCardinality recursively from all nested types.
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 
-/// Remove LowCardinality recursively from all nested columns.
-ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
-
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 /// Removes LowCardinality and Nullable in a correct order and returns T
 /// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
 DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
+
+/// TODO: comment
+MutableColumnPtr createEmptyLowCardinalityColumn(const IDataType & type, bool is_native);
+
 }

@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Port.h>
 #include <Common/logger_useful.h>
 

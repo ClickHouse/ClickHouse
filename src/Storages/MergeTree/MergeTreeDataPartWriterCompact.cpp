@@ -1,3 +1,4 @@
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -25,7 +26,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -34,7 +34,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_, virtual_columns_,
-        indices_to_recalc_, stats_to_recalc, marks_file_extension_,
+        indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_))
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
@@ -219,7 +219,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
-        calculateAndSerializeStatistics(flushed_block);
     }
 }
 
@@ -381,7 +380,8 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
             return &buf;
         };
 
-        const auto & column = sample.getByName(name_and_type.name);
+        auto column = sample.getByName(name_and_type.name);
+        column.column = convertToSerialization(column.column, *column.type, getSerialization(name_and_type.name)->getKind());
         writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, column.column->size(), 0, settings);
     }
 }
@@ -510,7 +510,6 @@ void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & 
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterCompact::finish(bool sync)
@@ -523,7 +522,6 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterCompact::cancel() noexcept

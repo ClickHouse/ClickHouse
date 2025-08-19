@@ -119,6 +119,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
 }
 
 namespace ErrorCodes
@@ -146,7 +147,7 @@ ColumnsStatistics getStatisticsForColumns(
         if (desc && !desc->statistics.empty())
         {
             auto statistics = MergeTreeStatisticsFactory::instance().get(*desc);
-            all_statistics.push_back(std::move(statistics));
+            all_statistics.emplace(column.name, std::move(statistics));
         }
     }
     return all_statistics;
@@ -231,31 +232,45 @@ private:
     size_t final_size = 0;
 };
 
-static void addMissedColumnsToSerializationInfos(
-    size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
-    const SerializationInfo::Settings & info_settings,
-    SerializationInfoByName & new_infos)
+static std::pair<ColumnsStatistics, bool> getMergedStatistics(const MergeTreeData::DataPartsVector & parts)
 {
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+    ColumnsStatistics merged_statistics;
 
-    for (const auto & column : storage_columns)
+    for (const auto & part : parts)
     {
-        if (part_columns_set.contains(column.name))
-            continue;
-
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
-
-        if (column.default_desc.expression)
-            continue;
-
-        auto new_info = column.type->createSerializationInfo(info_settings);
-        new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
+        auto part_statistics = part->loadStatistics();
+        merged_statistics.merge(part_statistics);
     }
+
+    return {merged_statistics, true};
 }
+
+// static void addMissedColumnsToSerializationInfos(
+//     size_t num_rows_in_parts,
+//     const Names & part_columns,
+//     const ColumnsDescription & storage_columns,
+//     const SerializationInfo::Settings & info_settings,
+//     SerializationInfoByName & new_infos)
+// {
+//     NameSet part_columns_set(part_columns.begin(), part_columns.end());
+//     UNUSED(num_rows_in_parts);
+
+//     for (const auto & column : storage_columns)
+//     {
+//         if (part_columns_set.contains(column.name))
+//             continue;
+
+//         if (column.default_desc.kind != ColumnDefaultKind::Default)
+//             continue;
+
+//         if (column.default_desc.expression)
+//             continue;
+
+//         auto new_info = column.type->createSerializationInfo(info_settings);
+//         // new_info->addDefaults(num_rows_in_parts);
+//         new_infos.emplace(column.name, std::move(new_info));
+//     }
+// }
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
@@ -574,32 +589,39 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
+    auto [source_statistics, need_rebuild_statistics] = getMergedStatistics(global_ctx->future_part->parts);
+    need_rebuild_statistics |= global_ctx->merge_may_reduce_rows;
+
     SerializationInfo::Settings info_settings =
     {
         .ratio_of_defaults_for_sparse = (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = true,
+        .number_of_uniq_for_low_cardinality = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality],
     };
 
-    SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    SerializationInfoByName infos = loadSerializationInfosFromStatistics(source_statistics, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
-    {
-        if (!info_settings.isAlwaysDefault())
-        {
-            auto part_infos = part->getSerializationInfos();
-
-            addMissedColumnsToSerializationInfos(
-                part->rows_count,
-                part->getColumns().getNames(),
-                global_ctx->metadata_snapshot->getColumns(),
-                info_settings,
-                part_infos);
-
-            infos.add(part_infos);
-        }
-
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    if (!global_ctx->new_data_part->isProjectionPart())
+    {
+        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+    }
+
+    if (minmax_idx && !global_ctx->merge_may_reduce_rows)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            /// Skip empty parts,
+            /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
+            /// since they can incorrectly set min,
+            /// that will be changed after one more merge/OPTIMIZE.
+            if (!part->isEmpty())
+                minmax_idx->merge(*part->minmax_idx);
+        }
     }
 
     if (global_ctx->new_data_part->info.isPatch())
@@ -675,6 +697,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Merged stream will be created and available as merged_stream variable
     createMergedStream();
 
+    NameSet merged_columns_set = global_ctx->merging_columns.getNameSet();
+
+    for (const auto & [column_name, statistics] : source_statistics)
+    {
+        if (merged_columns_set.contains(column_name))
+            global_ctx->merging_statistics.emplace(column_name, statistics);
+        else
+            global_ctx->gathering_statistics.emplace(column_name, statistics);
+    }
+
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         ctx->sum_uncompressed_bytes_upper_bound,
@@ -682,18 +714,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addExplicitStats(global_ctx->merging_statistics, need_rebuild_statistics);
+    part_level_statistics.addMinMaxIndex(std::move(minmax_idx), global_ctx->merge_may_reduce_rows);
+
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
-        /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
+        part_level_statistics,
         ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        /*reset_columns=*/ true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings());
 
@@ -978,13 +1012,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
-
-        if (global_ctx->merge_may_reduce_rows)
-        {
-            global_ctx->new_data_part->minmax_idx->update(
-                block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
-        }
-
         calculateProjections(block);
 
         UInt64 result_rows = 0;
@@ -1076,12 +1103,12 @@ public:
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
-        bool is_result_sparse_)
+        ISerialization::Kind result_serialization_kind_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
-        , is_result_sparse(is_result_sparse_)
+        , result_serialization_kind(result_serialization_kind_)
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -1102,7 +1129,7 @@ public:
             std::move(rows_sources_read_buf),
             merge_block_size_rows,
             merge_block_size_bytes,
-            is_result_sparse);
+            result_serialization_kind);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -1132,7 +1159,7 @@ private:
     const String rows_sources_temporary_file_name;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
-    const bool is_result_sparse;
+    const ISerialization::Kind result_serialization_kind;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
@@ -1180,14 +1207,14 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add column gatherer step
     {
-        bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
         const auto merge_tree_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentHeader(),
+        merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            is_result_sparse);
+            global_ctx->new_data_part->getSerialization(column_name)->getKind());
+
         merge_step->setStepDescription("Gather column");
         merge_column_query_plan.addStep(std::move(merge_step));
     }
@@ -1256,14 +1283,19 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
+    auto statistics_for_columns = getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot);
+
+    PartLevelStatistics part_level_statistics;
+    part_level_statistics.addExplicitStats(std::move(statistics_for_columns), true);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
+        part_level_statistics,
         ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
@@ -1299,12 +1331,13 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
     global_ctx->checkOperationIsNotCanceled();
-
     ctx->executor.reset();
-    auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
-    global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
+
+    auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->gathered_data);
+    global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
-    global_ctx->gathered_columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
+    global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
 
     auto cached_marks = ctx->column_to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
@@ -1350,19 +1383,6 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 
 bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
 {
-    if (!global_ctx->merge_may_reduce_rows)
-    {
-        for (const auto & part : global_ctx->future_part->parts)
-        {
-            /// Skip empty parts,
-            /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
-            /// since they can incorrectly set min,
-            /// that will be changed after one more merge/OPTIMIZE.
-            if (!part->isEmpty())
-                global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
-        }
-    }
-
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
@@ -1481,7 +1501,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns, &global_ctx->gathered_columns_substreams);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->gathered_data);
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)

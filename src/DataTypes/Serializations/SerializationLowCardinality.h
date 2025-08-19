@@ -13,9 +13,11 @@ class SerializationLowCardinality : public ISerialization
 private:
     DataTypePtr dictionary_type;
     SerializationPtr dict_inner_serialization;
+    bool is_native_low_cardinality;
 
 public:
-    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+    SerializationLowCardinality(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_);
+    ISerialization::Kind getKind() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

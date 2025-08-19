@@ -35,10 +35,16 @@ namespace
     }
 }
 
-SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_)
+SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
      : dictionary_type(dictionary_type_)
      , dict_inner_serialization(removeNullable(dictionary_type_)->getDefaultSerialization())
+     , is_native_low_cardinality(is_native_low_cardinality_)
 {
+}
+
+ISerialization::Kind SerializationLowCardinality::getKind() const
+{
+    return is_native_low_cardinality ? ISerialization::Kind::DEFAULT : ISerialization::Kind::LOW_CARDINALITY;
 }
 
 void SerializationLowCardinality::enumerateStreams(
@@ -46,7 +52,7 @@ void SerializationLowCardinality::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+    const auto * column_lc = data.column ? typeid_cast<const ColumnLowCardinality *>(data.column.get()) : nullptr;
 
     if (settings.use_specialized_prefixes_substreams)
     {

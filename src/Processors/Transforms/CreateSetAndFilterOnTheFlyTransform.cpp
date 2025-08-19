@@ -8,7 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
 
@@ -41,7 +41,7 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
     {
-        auto col = recursiveRemoveSparse(all_cols.at(index));
+        auto col = materializeColumn(all_cols.at(index));
         columns.push_back(std::move(col));
     }
 

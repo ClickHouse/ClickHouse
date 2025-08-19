@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <base/range.h>
 #include <Common/Stopwatch.h>

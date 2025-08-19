@@ -83,6 +83,7 @@ private:
     SortDescriptionWithPositions description;
     size_t max_block_size_rows;
     size_t max_block_size_bytes;
+    SharedHeader header;
 
     Inputs current_inputs;
 

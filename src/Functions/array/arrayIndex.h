@@ -21,6 +21,7 @@
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Interpreters/castColumn.h>
 
 

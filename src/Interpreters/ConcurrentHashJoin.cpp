@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -444,13 +445,15 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_columns_names.size());
+
     for (const auto & key_name : key_columns_names)
     {
-        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_column_holders.push_back(key_col_no_lc);
-        key_columns.push_back(key_col_no_lc.get());
+        auto key_materialized = materializeColumn(from_block.getByName(key_name).column);
+        key_materialized = recursiveRemoveLowCardinality(key_materialized);
+        key_column_holders.push_back(key_materialized);
+        key_columns.push_back(key_materialized.get());
     }
+
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 

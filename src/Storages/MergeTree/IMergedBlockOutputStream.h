@@ -13,6 +13,24 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
+struct PartLevelStatistics
+{
+    ColumnsStatistics explicit_stats;
+    bool build_explicit_stats = false;
+
+    ColumnsStatistics stats_for_serialization;
+    bool build_stats_for_serialization = false;
+
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    bool build_minmax_idx = false;
+
+    void addExplicitStats(ColumnsStatistics stats, bool need_build);
+    void addStatsForSerialization(ColumnsStatistics stats, bool need_build);
+    void addMinMaxIndex(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build);
+
+    void update(const Block & block, const StorageMetadataPtr & metadata_snapshot);
+};
+
 class IMergedBlockOutputStream
 {
 public:
@@ -20,12 +38,18 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list,
-        bool reset_columns_);
+        const PartLevelStatistics & part_level_statistics_);
 
     virtual ~IMergedBlockOutputStream() = default;
 
     using WrittenOffsetColumns = std::set<std::string>;
+
+    struct GatheredData
+    {
+        MergeTreeData::DataPart::Checksums checksums;
+        ColumnsSubstreams columns_substreams;
+        PartLevelStatistics part_level_statistics;
+    };
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
@@ -61,9 +85,7 @@ protected:
 
     MutableDataPartStoragePtr data_part_storage;
     MergeTreeDataPartWriterPtr writer;
-
-    bool reset_columns = false;
-    SerializationInfoByName new_serialization_infos;
+    PartLevelStatistics part_level_statistics;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

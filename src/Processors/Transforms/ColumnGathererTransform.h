@@ -2,6 +2,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
 
@@ -61,7 +62,8 @@ public:
         ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+        ISerialization::Kind result_serialization_kind_,
+        DataTypePtr data_type_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
@@ -94,7 +96,8 @@ private:
 
     const size_t block_preferred_size_rows;
     const size_t block_preferred_size_bytes;
-    const bool is_result_sparse;
+    const ISerialization::Kind result_serialization_kind;
+    const DataTypePtr data_type;
 
     Source * source_to_fully_copy = nullptr;
 
@@ -113,7 +116,7 @@ public:
         std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+        ISerialization::Kind result_serialization_kind_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 

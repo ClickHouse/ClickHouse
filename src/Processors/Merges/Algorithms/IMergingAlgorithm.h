@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/ProfileEvents.h>
@@ -51,8 +52,7 @@ public:
 
     static void removeConstAndSparse(Input & input)
     {
-        convertToFullIfConst(input.chunk);
-        convertToFullIfSparse(input.chunk);
+        materializeChunk(input.chunk);
     }
 
     static void removeConstAndSparse(Inputs & inputs)

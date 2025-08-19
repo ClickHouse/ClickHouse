@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -438,7 +439,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
+            key_columns[0] = materializeColumn(key_columns[0]);
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -599,7 +600,7 @@ Block mergeBlockWithPipe(
 
     while (executor.pull(block))
     {
-        convertToFullIfSparse(block);
+        materializeBlockInplace(block);
         block.checkNumberOfRows();
 
         Columns block_key_columns;
@@ -665,7 +666,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+    auto full_column = materializeColumn(column);
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)

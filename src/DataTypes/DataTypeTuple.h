@@ -36,7 +36,7 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
-    bool supportsSparseSerialization() const override { return true; }
+    bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
@@ -57,9 +57,9 @@ public:
     size_t getSizeOfValueInMemory() const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
-    SerializationPtr getSerialization(const SerializationInfo & info) const override;
-    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
+    // SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    // MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    // SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }

@@ -206,12 +206,6 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, std::st
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
-void convertToFullIfSparse(Block & block);
-
-/// Converts columns-constants to full columns ("materializes" them).
-Block materializeBlock(const Block & block);
-void materializeBlockInplace(Block & block);
-
 Block concatenateBlocks(const std::vector<Block> & blocks);
 
 }
