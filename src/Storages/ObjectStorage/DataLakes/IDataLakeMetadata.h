@@ -13,6 +13,8 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+
 
 namespace DataLake
 {
@@ -105,6 +107,8 @@ public:
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const {}
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
 
 protected:
     virtual ObjectIterator createKeysIterator(

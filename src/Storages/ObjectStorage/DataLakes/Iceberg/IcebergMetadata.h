@@ -116,6 +116,8 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands) override;
+    void alter(const AlterCommands & params, ContextPtr context) override;
 
 protected:
     ObjectIterator

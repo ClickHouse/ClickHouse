@@ -142,6 +142,19 @@ public:
         current_metadata->checkMutationIsPossible(commands);
     }
 
+    void checkAlterIsPossible(const AlterCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkAlterIsPossible(commands);
+    }
+
+    void alter(const AlterCommands & params, ContextPtr context) override
+    {
+        assertInitialized();
+        current_metadata->alter(params, context);
+
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
