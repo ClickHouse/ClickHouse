@@ -31,6 +31,7 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
 
 void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
 {
+    std::lock_guard lock(mutex);
     const auto & all_ranges = ranges_in_patches.getRanges();
 
     /// Spread ranges among buckets.

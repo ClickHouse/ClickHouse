@@ -80,8 +80,9 @@ private:
     size_t num_buckets;
     mutable std::mutex mutex;
 
-    absl::node_hash_map<String, Entries> cache;
-    absl::node_hash_map<String, PatchStatsEntryPtr> stats_cache;
+    absl::node_hash_map<String, Entries> cache TSA_GUARDED_BY(mutex);
+    absl::node_hash_map<String, PatchStatsEntryPtr> stats_cache TSA_GUARDED_BY(mutex);
+    /// Ranges are filled on initialization and then are read-only and don't require a lock.
     absl::node_hash_map<String, absl::node_hash_map<MarkRange, size_t, MarkRangeHash>> ranges_to_buckets;
 };
 
