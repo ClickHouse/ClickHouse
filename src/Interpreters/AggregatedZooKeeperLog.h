@@ -3,11 +3,9 @@
 #include <filesystem>
 #include <memory>
 #include <Interpreters/PeriodicLog.h>
-#include <Common/SipHash.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Storages/ColumnsDescription.h>
-#include <DataTypes/DataTypeEnum.h>
 
 namespace DB
 {
