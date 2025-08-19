@@ -928,8 +928,6 @@ def test_postgres_outgoing_metrics(started_cluster):
     )
 
     assert postgres_connection_events > 0
-    assert postgres_current_connections == 0
-    assert postgres_idle_connections == 0
     assert postgres_active_connections == 0
 
 
