@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./replication.lib
 . "$CURDIR"/replication.lib
 
-export MAX_S3_RETRIES=20
+export MAX_S3_RETRIES=40
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS alter_table0;
