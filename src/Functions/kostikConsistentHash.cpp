@@ -27,20 +27,17 @@ using FunctionKostikConsistentHash = FunctionConsistentHashImpl<KostikConsistent
 
 REGISTER_FUNCTION(KostikConsistentHash)
 {
-    FunctionDocumentation::Description kostikConsistentHash_description = R"(
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
-
-:::note
-It is efficient only if n <= 32768.
-:::
+    FunctionDocumentation::Description description = R"(
+An O(1) time and space consistent hash algorithm by Konstantin 'Kostik' Oblakov.
+Only efficient with n <= 32768.
 )";
-    FunctionDocumentation::Syntax kostikConsistentHash_syntax = "kostikConsistentHash(input, n)";
-    FunctionDocumentation::Arguments kostikConsistentHash_arguments = {
-        {"input", "A UInt64-type key.", {"UInt64"}},
-        {"n", "Number of buckets.", {"UInt16"}}
+    FunctionDocumentation::Syntax syntax = "kostikConsistentHash(input, n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "An integer key.", {"UInt64"}},
+        {"n", "The number of buckets.", {"UInt16"}}
     };
-    FunctionDocumentation::ReturnedValue kostikConsistentHash_returned_value = {"Returns the computed hash value.", {"UInt16"}};
-    FunctionDocumentation::Examples kostikConsistentHash_examples = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the computed hash value.", {"UInt16"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         "SELECT kostikConsistentHash(16045690984833335023, 2);",
@@ -51,10 +48,10 @@ It is efficient only if n <= 32768.
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn kostikConsistentHash_introduced_in = {22, 6};
-    FunctionDocumentation::Category kostikConsistentHash_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation kostikConsistentHash_documentation = {kostikConsistentHash_description, kostikConsistentHash_syntax, kostikConsistentHash_arguments, kostikConsistentHash_returned_value, kostikConsistentHash_examples, kostikConsistentHash_introduced_in, kostikConsistentHash_category};
-    factory.registerFunction<FunctionKostikConsistentHash>(kostikConsistentHash_documentation);
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionKostikConsistentHash>(documentation);
     factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");
 }
 
