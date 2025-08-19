@@ -209,7 +209,6 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     const std::optional<FormatSettings> &,
     ContextPtr) const
 {
-    return;
 }
 
 }
