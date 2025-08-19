@@ -215,7 +215,6 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 flattenTuple
-format
 formatQuery
 formatQueryOrNull
 formatQuerySingleLine
@@ -365,8 +364,6 @@ notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
 or
-overlay
-overlayUTF8
 parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
@@ -425,7 +422,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID
@@ -439,7 +435,6 @@ readWKTPoint
 readWKTPolygon
 readWKTRing
 regexpExtract
-regexpQuoteMeta
 regionHierarchy
 regionIn
 regionToArea
@@ -471,10 +466,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 repeat
-replaceAll
-replaceOne
-replaceRegexpAll
-replaceRegexpOne
 replicate
 reverseUTF8
 revision
@@ -668,8 +659,6 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-translate
-translateUTF8
 trimBoth
 trimLeft
 trimRight
