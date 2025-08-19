@@ -5,6 +5,12 @@ use strict;
 # Find double whitespace such as "a,  b, c" that looks very ugly and annoying.
 # But skip double whitespaces if they are used as an alignment - by comparing to surrounding lines.
 
+# Exception patterns - lines matching below will be skipped
+
+my @exceptions = (
+  qr/^\s*"SELECT splitByWhitespace\('.*?'\);",$/
+);
+
 my $ret = 0;
 
 foreach my $file (@ARGV)
@@ -21,6 +27,16 @@ foreach my $file (@ARGV)
     {
         if ($array[$i] =~ ',( {2,3})[^ /]')
         {
+
+	    my $skip = 0;
+            foreach my $pattern (@exceptions) {
+	        if ($array[$i] =~ $pattern) {
+	            $skip = 1;
+                    last;
+                }
+            }
+            next if $skip;
+	    
             # https://stackoverflow.com/questions/87380/how-can-i-find-the-location-of-a-regex-match-in-perl
 
             if ((substr($array[$i - 1], $+[1] - 1, 2) !~ /^[ -][^ ]$/) # whitespaces are not part of alignment

@@ -1,17 +1,18 @@
+#include <Core/Settings.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Core/Settings.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <Core/Joins.h>
@@ -383,7 +385,16 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     const auto & join_info = join_step->getJoinInfo();
-    if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
+    /// At the time of writing, we're not able to swap inputs for ANY partial merge join, because it only supports ANY inner or left joins, but not right.
+    const bool partial_merge_join_can_be_selected = std::ranges::any_of(
+        join_step->getJoinSettings().join_algorithms,
+        [](JoinAlgorithm alg)
+        { return alg == JoinAlgorithm::PARTIAL_MERGE || alg == JoinAlgorithm::PREFER_PARTIAL_MERGE || alg == JoinAlgorithm::AUTO; });
+    const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
+        && (!MergeJoin::isSupported(join_info.kind, join_info.strictness)
+            || !MergeJoin::isSupported(reverseJoinKind(join_info.kind), join_info.strictness));
+    const bool suitable_any_join = join_info.strictness == JoinStrictness::Any && !should_worry_about_partial_merge_join;
+    if (join_info.expression.is_using || (join_info.strictness != JoinStrictness::All && !suitable_any_join))
         return rhs_estimation;
 
     join_step->setSwapInputs();
