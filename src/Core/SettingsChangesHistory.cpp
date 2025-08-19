@@ -69,6 +69,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "New setting, replaces the obsolete 'vector_search_postfilter_multiplier' setting"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"correlated_subqueries_default_join_kind", DecorrelationJoinKind::RIGHT, DecorrelationJoinKind::RIGHT, "New setting. Default join kind for decorrelated query plan."},
+            {"correlated_subqueries_use_input_buffer", true, true, "New setting."}
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
