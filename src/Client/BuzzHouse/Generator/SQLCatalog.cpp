@@ -4,32 +4,6 @@
 namespace BuzzHouse
 {
 
-static CatalogTable setNextCatalog(RandomGenerator & rg, const FuzzConfig & fc, const bool canUseCatalog, const bool mustUseCatalog)
-{
-    /// Set catalog first if possible
-    const uint32_t glue_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().glue_catalog.has_value());
-    const uint32_t hive_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().hive_catalog.has_value());
-    const uint32_t rest_cat = 5 * static_cast<uint32_t>(canUseCatalog && fc.dolor_server.value().rest_catalog.has_value());
-    const uint32_t no_cat = 15 * static_cast<uint32_t>(!mustUseCatalog);
-    const uint32_t prob_space = glue_cat + hive_cat + rest_cat + no_cat;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
-
-    if (glue_cat && (nopt < glue_cat + 1))
-    {
-        return CatalogTable::Glue;
-    }
-    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-    {
-        return CatalogTable::Hive;
-    }
-    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-    {
-        return CatalogTable::REST;
-    }
-    return CatalogTable::None;
-}
-
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
 {
     if (isReplicatedDatabase())
@@ -45,8 +19,29 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
     if (isDataLakeCatalogDatabase())
     {
-        catalog = setNextCatalog(rg, fc, true, true);
         integration = IntegrationCall::Dolor;
+        format = rg.nextBool() ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        storage = LakeStorage::S3; /// What ClickHouse supports now
+
+        const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
+        const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
+        const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
+        const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (glue_cat && (nopt < glue_cat + 1))
+        {
+            catalog = LakeCatalog::Glue;
+        }
+        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
+        {
+            catalog = LakeCatalog::Hive;
+        }
+        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
+        {
+            catalog = LakeCatalog::REST;
+        }
     }
 }
 
@@ -93,11 +88,11 @@ String SQLBase::getDatabaseName() const
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
 
-void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
+void SQLBase::setTablePath(RandomGenerator & rg)
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
-        && !partition_columns_in_data_file.has_value() && catalog == CatalogTable::None);
+        && !partition_columns_in_data_file.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 5;
@@ -105,10 +100,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
     {
         /// Set catalog first if possible
         String next_bucket_path;
+        const LakeCatalog catalog = getLakeCatalog();
 
-        catalog = setNextCatalog(rg, fc, fc.dolor_server.has_value() && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()), false);
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (catalog != CatalogTable::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
+        if (catalog != LakeCatalog::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -124,25 +119,9 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc)
         {
             next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
         }
-        else if (catalog != CatalogTable::None)
+        else if (catalog != LakeCatalog::None)
         {
-            const Catalog * cat = nullptr;
-
-            switch (catalog)
-            {
-                case CatalogTable::Glue:
-                    cat = &fc.dolor_server.value().glue_catalog.value();
-                    break;
-                case CatalogTable::Hive:
-                    cat = &fc.dolor_server.value().hive_catalog.value();
-                    break;
-                case CatalogTable::REST:
-                    cat = &fc.dolor_server.value().rest_catalog.value();
-                    break;
-                default:
-                    break;
-            }
-            next_bucket_path = fmt::format("{}/t{}/", cat->endpoint, tname);
+            next_bucket_path = fmt::format("{}/t{}/", getDatabaseName(), tname);
         }
         else if (isIcebergLocalEngine() || isDeltaLakeLocalEngine())
         {
@@ -303,7 +282,15 @@ size_t SQLTable::numberOfInsertableColumns() const
 
 String SQLTable::getTableName() const
 {
-    return "t" + std::to_string(tname);
+    String res;
+    const LakeCatalog catalog = getLakeCatalog();
+
+    if (catalog != LakeCatalog::None)
+    {
+        res += "test.";
+    }
+    res += "t" + std::to_string(tname);
+    return res;
 }
 
 String SQLTable::getFullName(const bool setdbname) const

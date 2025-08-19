@@ -1039,7 +1039,7 @@ void StatementGenerator::generateEngineDetails(
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
     /// Set what the filename is going to be first
-    b.setTablePath(rg, fc);
+    b.setTablePath(rg);
     if (b.isMergeTreeFamily())
     {
         if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)
@@ -1788,6 +1788,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
 {
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
+    const LakeStorage storage = b.getPossibleLakeStorage();
+    const LakeFormat format = b.getPossibleLakeFormat();
 
     if (noption < 3)
     {
@@ -1865,13 +1867,16 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(EmbeddedRocksDB);
     }
-    if ((fc.engine_mask & allow_icebergLocal) != 0)
+    if (storage == LakeStorage::All || storage == LakeStorage::Local)
     {
-        this->ids.emplace_back(IcebergLocal);
-    }
-    if ((fc.engine_mask & allow_deltalakelocal) != 0)
-    {
-        this->ids.emplace_back(DeltaLakeLocal);
+        if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergLocal) != 0)
+        {
+            this->ids.emplace_back(IcebergLocal);
+        }
+        if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakelocal) != 0)
+        {
+            this->ids.emplace_back(DeltaLakeLocal);
+        }
     }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
     {
@@ -1950,13 +1955,16 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(S3Queue);
             }
-            if ((fc.engine_mask & allow_icebergS3) != 0)
+            if (storage == LakeStorage::All || storage == LakeStorage::S3)
             {
-                this->ids.emplace_back(IcebergS3);
-            }
-            if ((fc.engine_mask & allow_deltalakeS3) != 0)
-            {
-                this->ids.emplace_back(DeltaLakeS3);
+                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergS3) != 0)
+                {
+                    this->ids.emplace_back(IcebergS3);
+                }
+                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeS3) != 0)
+                {
+                    this->ids.emplace_back(DeltaLakeS3);
+                }
             }
         }
         if (connections.hasAzuriteConnection())
@@ -1969,13 +1977,16 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(AzureQueue);
             }
-            if ((fc.engine_mask & allow_icebergAzure) != 0)
+            if (storage == LakeStorage::All || storage == LakeStorage::Azure)
             {
-                this->ids.emplace_back(IcebergAzure);
-            }
-            if ((fc.engine_mask & allow_deltalakeAzure) != 0)
-            {
-                this->ids.emplace_back(DeltaLakeAzure);
+                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergAzure) != 0)
+                {
+                    this->ids.emplace_back(IcebergAzure);
+                }
+                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeAzure) != 0)
+                {
+                    this->ids.emplace_back(DeltaLakeAzure);
+                }
             }
         }
         if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)

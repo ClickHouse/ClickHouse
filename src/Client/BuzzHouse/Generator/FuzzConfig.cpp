@@ -25,14 +25,12 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
 {
     String client_hostname = "localhost";
     String server_hostname = "localhost";
-    String endpoint = "test";
     String region = default_region;
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
-           {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
@@ -47,7 +45,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, endpoint, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, region, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(

@@ -47,7 +47,11 @@ from properties import (
     modify_keeper_settings,
 )
 from httpserver import DolorHTTPServer
-from catalogs.datalakes import get_spark, create_lake_table
+from catalogs.datalakes import (
+    get_local_base_path,
+    create_lake_database,
+    create_lake_table,
+)
 
 
 def ordered_pair(value):
@@ -416,16 +420,8 @@ servers[len(servers) - 1].wait_start(8)
 
 # Uploaders for object storage
 if args.with_spark:
-    cluster.spark_session = get_spark(
-        cluster,
-        with_s3=args.with_minio,
-        with_azure=args.with_azurite,
-        with_glue=args.with_glue,
-        with_hadoop=False,
-        with_hive=args.with_hms,
-        with_rest=args.with_rest,
-        with_nessie=False,
-    )
+    os.makedirs(get_local_base_path("default"), exist_ok=True)
+    cluster.catalogs = {}
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
@@ -453,13 +449,22 @@ if args.with_postgresql:
 
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
-    if path == "/sparktable":
-        create_lake_table(
+    if path == "/sparkdatabase":
+        create_lake_database(
             cluster,
-            data["table_name"],
+            data["database_name"],
             data["storage"],
             data["format"],
             data["catalog"],
+        )
+        return True
+    if path == "/sparktable":
+        create_lake_table(
+            cluster,
+            data["database_name"],
+            data["table_name"],
+            data["storage"],
+            data["format"],
             data["columns"],
         )
         return True

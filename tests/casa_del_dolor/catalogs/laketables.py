@@ -87,11 +87,7 @@ class LakeTableGenerator:
         pass
 
     def generate_create_table_ddl(
-        self,
-        table_name: str,
-        columns: list[dict[str, str]],
-        storage: TableStorage,
-        catalog: LakeCatalogs,
+        self, database_name: str, table_name: str, columns: list[dict[str, str]]
     ) -> str:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -99,7 +95,11 @@ class LakeTableGenerator:
         Args:
             table_name: Name of the table
         """
-        ddl = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+        ddl = "CREATE TABLE IF NOT EXISTS "
+        ddl += f"{database_name}"
+        if database_name != "default":
+            ddl += ".test"
+        ddl += f".{table_name} ("
         columns_str = []
         for val in columns:
             # Convert columns
@@ -109,7 +109,7 @@ class LakeTableGenerator:
             columns_str.append(
                 f"{val["name"]} {spark_type}{"" if nullable else " NOT NULL"}"
             )
-        ddl += ",\n".join(columns_str)
+        ddl += ",".join(columns_str)
         ddl += ")"
 
         # Add USING clause
@@ -138,29 +138,15 @@ class LakeTableGenerator:
         #        ddl.append("PARTITIONED BY (category)")
 
         # Build location string
-        location_str = "LOCATION '"
-        if storage == TableStorage.Local:
-            location_str += "file:///var/lib/clickhouse/user_files/lakehouse/"
-        elif storage == TableStorage.S3:
-            location_str += "s3a://"
-        else:
-            location_str += "wasbs://cont@devstoreaccount1.blob.core.windows.net/"
-
-        if catalog == LakeCatalogs.Glue:
-            location_str += "warehouse-glue"
-        elif catalog == LakeCatalogs.Hadoop:
-            location_str += "warehouse-hadoop"
-        elif catalog == LakeCatalogs.Hive:
-            location_str += "warehouse-hms"
-        elif catalog == LakeCatalogs.REST:
-            location_str += "warehouse-rest"
-        elif catalog == LakeCatalogs.Nessie:
-            location_str += "warehouse-nessie"
-        elif catalog == LakeCatalogs.Unity:
-            location_str += "warehouse-unity"
-        elif storage == TableStorage.S3:
-            location_str += f"{self.bucket}"
-        location_str += f"/{table_name}'"
+        # location_str = "LOCATION '"
+        # if storage == TableStorage.Local:
+        #    location_str += "file:///var/lib/clickhouse/user_files/lakehouse/default/"
+        # elif storage == TableStorage.S3:
+        #    location_str += f"s3a://{self.bucket}"
+        # else:
+        #    location_str += "wasbs://cont@devstoreaccount1.blob.core.windows.net/"
+        # location_str += f"/{table_name}'"
+        # ddl += location_str
 
         # Add table properties
         if random.randint(1, 2) == 1:
@@ -170,7 +156,7 @@ class LakeTableGenerator:
                 prop_lines = []
                 for key, value in properties.items():
                     prop_lines.append(f"'{key}' = '{value}'")
-                ddl += ",\n".join(prop_lines)
+                ddl += ",".join(prop_lines)
                 ddl += ")"
         return ddl + ";"
 

@@ -145,20 +145,17 @@ class BuzzHouseGenerator(Generator):
             if args.with_glue:
                 buzz_config["dolor"]["glue"] = {
                     "server_hostname": "glue",
-                    "endpoint": "warehouse-glue",
                     "region": "us-east-1",
                     "port": 3000,
                 }
             if args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
-                    "endpoint": "warehouse-hms",
                     "port": 9083,
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
-                    "endpoint": "warehouse-rest",
                     "port": 8181,
                 }
 

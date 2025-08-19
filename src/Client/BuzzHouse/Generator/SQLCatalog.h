@@ -52,7 +52,22 @@ enum class PeerQuery
     AllPeers = 2
 };
 
-enum class CatalogTable
+enum class LakeFormat
+{
+    All = 0,
+    Iceberg = 1,
+    DeltaLake = 2
+};
+
+enum class LakeStorage
+{
+    All = 0,
+    S3 = 1,
+    Azure = 2,
+    Local = 3
+};
+
+enum class LakeCatalog
 {
     None = 0,
     Glue = 1,
@@ -133,8 +148,11 @@ public:
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
-    CatalogTable catalog = CatalogTable::None;
     IntegrationCall integration = IntegrationCall::None;
+    /// For DataLakeCatalog
+    LakeCatalog catalog = LakeCatalog::None;
+    LakeStorage storage = LakeStorage::All;
+    LakeFormat format = LakeFormat::All;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -182,7 +200,6 @@ public:
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
     IntegrationCall integration = IntegrationCall::None;
-    CatalogTable catalog = CatalogTable::None;
 
     SQLBase() = default;
     virtual ~SQLBase() = default;
@@ -322,11 +339,17 @@ public:
 
     String getDatabaseName() const;
 
-    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc);
+    void setTablePath(RandomGenerator & rg);
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
 
     String getMetadataPath(const FuzzConfig & fc) const;
+
+    LakeCatalog getLakeCatalog() const { return db ? db->catalog : LakeCatalog::None; }
+
+    LakeStorage getPossibleLakeStorage() const { return db ? db->storage : LakeStorage::All; }
+
+    LakeFormat getPossibleLakeFormat() const { return db ? db->format : LakeFormat::All; }
 };
 
 struct SQLTable : SQLBase
@@ -354,11 +377,18 @@ public:
 
     static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
+        String res;
+
         if (database || setdbname)
         {
             est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
-        est->mutable_table()->set_table("t" + std::to_string(name));
+        if (database && database->catalog != LakeCatalog::None)
+        {
+            res += "test.";
+        }
+        res += "t" + std::to_string(name);
+        est->mutable_table()->set_table(std::move(res));
     }
 
     String getTableName() const;

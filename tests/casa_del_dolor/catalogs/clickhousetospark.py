@@ -9,10 +9,10 @@ class ClickHouseSparkTypeMapper:
         # Basic type mappings from ClickHouse to Spark SQL strings
         self.clickhouse_to_spark_map: Dict[str, str] = {
             # Numeric types
-            #"UInt8": "SMALLINT",  # or 'SHORT'
-            #"UInt16": "INT",  # or 'INTEGER'
-            #"UInt32": "BIGINT",  # or 'LONG'
-            #"UInt64": "BIGINT",  # May overflow - consider DECIMAL(20,0)
+            # "UInt8": "SMALLINT",  # or 'SHORT'
+            # "UInt16": "INT",  # or 'INTEGER'
+            # "UInt32": "BIGINT",  # or 'LONG'
+            # "UInt64": "BIGINT",  # May overflow - consider DECIMAL(20,0)
             "Int8": "TINYINT",  # or 'BYTE'
             "Int16": "SMALLINT",  # or 'SHORT'
             "Int32": "INT",  # or 'INTEGER'

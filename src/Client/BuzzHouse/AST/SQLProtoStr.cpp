@@ -77,9 +77,11 @@ CONV_FN(Database, db)
     ret += db.database();
 }
 
-CONV_FN(Table, tab)
+void TableToString(String & ret, const bool quote, const Table & tab)
 {
+    ret += quote ? "`" : "";
     ret += tab.table();
+    ret += quote ? "`" : "";
 }
 
 CONV_FN(Function, func)
@@ -193,7 +195,7 @@ CONV_FN(ExprSchemaTable, st)
         DatabaseToString(ret, st.database());
         ret += ".";
     }
-    TableToString(ret, st.table());
+    TableToString(ret, true, st.table());
 }
 
 CONV_FN_QUOTE(TypeName, top);
@@ -294,7 +296,7 @@ CONV_FN(ExprSchemaTableColumn, stc)
     }
     if (stc.has_table())
     {
-        TableToString(ret, stc.table());
+        TableToString(ret, true, stc.table());
         ret += ".";
     }
     ExprColumnToString(ret, stc.col());
@@ -1670,7 +1672,7 @@ CONV_FN(ComplicatedExpr, expr)
             ret += ")";
             break;
         case ExprType::kTable:
-            TableToString(ret, expr.table());
+            TableToString(ret, true, expr.table());
             ret += ".*";
             break;
         case ExprType::kLambda:
@@ -1923,7 +1925,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
         ret += "default";
     }
     ret += separator;
-    TableToString(ret, est.table());
+    TableToString(ret, true, est.table());
     ret += "'";
 }
 
@@ -2418,7 +2420,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
     if (jtf.has_table_alias())
     {
         ret += " AS ";
-        TableToString(ret, jtf.table_alias());
+        TableToString(ret, false, jtf.table_alias());
     }
     if (jtf.col_aliases_size())
     {
@@ -2739,7 +2741,7 @@ CONV_FN(CTEquery, cteq)
     {
         ret += "RECURSIVE ";
     }
-    TableToString(ret, cteq.table());
+    TableToString(ret, false, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());
     ret += ")";
@@ -3149,7 +3151,7 @@ CONV_FN(TableEngineParam, tep)
             DatabaseToString(ret, tep.database());
             break;
         case TableEngineParamType::kTable:
-            TableToString(ret, tep.table());
+            TableToString(ret, true, tep.table());
             break;
         case TableEngineParamType::kNum:
             ret += std::to_string(tep.num());

@@ -1541,7 +1541,6 @@ bool MinIOIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     {
         table_path.erase(0, 1);
     }
-    chassert(t.catalog == CatalogTable::None);
     return sendRequest(fmt::format("{}/{}", sc.database, table_path));
 }
 
@@ -1556,9 +1555,8 @@ void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
-    chassert(t.catalog == CatalogTable::None);
     return true;
 }
 
@@ -1572,9 +1570,40 @@ bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, con
     return true;
 }
 
-bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase &)
+bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase & d)
 {
-    return true;
+    String buf;
+    String catalog = "none";
+
+    switch (d.catalog)
+    {
+        case LakeCatalog::Glue:
+            catalog = "glue";
+            break;
+        case LakeCatalog::Hive:
+            catalog = "hive";
+            break;
+        case LakeCatalog::REST:
+            catalog = "rest";
+            break;
+        default:
+            chassert(0);
+    }
+    buf += fmt::format(
+        "{{\"database_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"catalog\":\"{}\"}}",
+        d.getName(),
+        d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
+        d.format == LakeFormat::DeltaLake ? "delta" : "iceberg",
+        catalog);
+    Poco::Net::HTTPResponse response;
+    Poco::Net::HTTPClientSession httpsession(sc.server_hostname, sc.port);
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparkdatabase", buf);
+
+    request.set("Content-Type", "application/json");
+    httpsession.sendRequest(request);
+    const auto & u = httpsession.receiveResponse(response);
+    UNUSED(u);
+    return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
 }
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
@@ -1585,30 +1614,26 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     SetValue * sv3 = svs->add_other_values();
 
     sv1->set_property("catalog_type");
-    sv2->set_property("warehouse");
-    if (d.catalog == CatalogTable::Glue)
+    if (d.catalog == LakeCatalog::Glue)
     {
         cat = &sc.glue_catalog.value();
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
         sv1->set_value("'glue'");
-        sv2->set_value("'gtest'");
     }
-    else if (d.catalog == CatalogTable::Hive)
+    else if (d.catalog == LakeCatalog::Hive)
     {
         cat = &sc.hive_catalog.value();
 
         de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
         sv1->set_value("'hive'");
-        sv2->set_value("'htest'");
     }
-    else if (d.catalog == CatalogTable::REST)
+    else if (d.catalog == LakeCatalog::REST)
     {
         cat = &sc.rest_catalog.value();
 
         de->add_params()->set_svalue(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
         sv1->set_value("'rest'");
-        sv2->set_value("'rtest'");
     }
     else
     {
@@ -1616,8 +1641,10 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
     de->add_params()->set_svalue(sc.user);
     de->add_params()->set_svalue(sc.password);
+    sv2->set_property("warehouse");
+    sv2->set_value("'" + d.getName() + "'");
     sv3->set_property("storage_endpoint");
-    sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
+    sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, d.getName()));
     if (!cat->region.empty())
     {
         SetValue * sv4 = svs->add_other_values();
@@ -1640,24 +1667,9 @@ collectColumnPaths(const String cname, SQLType * tp, const uint32_t flags, Colum
 bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
     String buf;
-    String catalog;
     bool first = true;
     std::vector<ColumnPathChain> entries;
 
-    switch (t.catalog)
-    {
-        case CatalogTable::Glue:
-            catalog = "glue";
-            break;
-        case CatalogTable::Hive:
-            catalog = "hive";
-            break;
-        case CatalogTable::REST:
-            catalog = "rest";
-            break;
-        default:
-            catalog = "none";
-    }
     for (const auto & [key, val] : t.cols)
     {
         ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
@@ -1665,17 +1677,18 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
 
+    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        "{{\"table_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"catalog\":\"{}\",\"columns\":[",
+        "{{\"database_name\":\"{}\",\"table_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"columns\":[",
+        t.getLakeCatalog() == LakeCatalog::None ? "default" : t.getDatabaseName(),
         t.getTableName(),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
-        t.isAnyDeltaLakeEngine() ? "delta" : "iceberg",
-        catalog);
+        t.isAnyDeltaLakeEngine() ? "delta" : "iceberg");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
             "{}{{\"name\":\"{}\",\"type\":\"{}\"}}",
-            first ? "" : ", ",
+            first ? "" : ",",
             entry.getBottomName(),
             entry.getBottomType()->ToSparkTypeName(false));
         first = false;
@@ -1697,17 +1710,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     const Catalog * cat = nullptr;
 
     te->add_params()->set_rvalue(
-        (t.catalog != CatalogTable::None || t.isOnS3()) ? fc.minio_server.value().named_collection
-                                                        : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
-    switch (t.catalog)
+        t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
+    switch (t.getLakeCatalog())
     {
-        case CatalogTable::Glue:
+        case LakeCatalog::Glue:
             cat = &sc.glue_catalog.value();
             break;
-        case CatalogTable::Hive:
+        case LakeCatalog::Hive:
             cat = &sc.hive_catalog.value();
             break;
-        case CatalogTable::REST:
+        case LakeCatalog::REST:
             cat = &sc.rest_catalog.value();
             break;
         default:
@@ -1725,22 +1737,20 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
         sv2->set_property("storage_warehouse");
         sv3->set_property("object_storage_endpoint");
         sv4->set_property("storage_catalog_url");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
-        switch (t.catalog)
+        sv2->set_value("'" + t.getDatabaseName() + "'");
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, t.getDatabaseName()));
+        switch (t.getLakeCatalog())
         {
-            case CatalogTable::Glue:
+            case LakeCatalog::Glue:
                 sv1->set_value("'glue'");
-                sv2->set_value("'gtest'");
                 sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
                 break;
-            case CatalogTable::Hive:
+            case LakeCatalog::Hive:
                 sv1->set_value("'hive'");
-                sv2->set_value("'htest'");
                 sv4->set_value(fmt::format("'thrift://{}:{}'", cat->server_hostname, cat->port));
                 break;
-            case CatalogTable::REST:
+            case LakeCatalog::REST:
                 sv1->set_value("'rest'");
-                sv2->set_value("'rtest'");
                 sv4->set_value(fmt::format("'http://{}:{}/v1'", cat->server_hostname, cat->port));
                 break;
             default:
