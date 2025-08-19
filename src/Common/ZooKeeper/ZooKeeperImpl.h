@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -90,6 +89,7 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+    class AggregatedZooKeeperLog;
 }
 
 namespace Coordination
