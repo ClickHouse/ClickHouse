@@ -459,7 +459,13 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         if (rows_count != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
+            && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT
+            /// Skip columns that are declared in metadata but not actually persisted in this part.
+            /// This can legitimately happen for persisted virtual/system columns (e.g. _block_offset)
+            /// on parts produced by operations like ATTACH, or when formats/settings differ.
+            && hasColumnFiles(column)
+            /// Skip columns with zero uncompressed size (no data written), same as in loadRowsCount().
+            && size.data_uncompressed != 0)
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)
