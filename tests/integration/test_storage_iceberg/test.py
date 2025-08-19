@@ -2690,6 +2690,17 @@ def test_optimize(started_cluster, storage_type):
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
         "SELECT number FROM numbers(20, 80)"
     )
+    if storage_type != "local":
+        return
+
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 90
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -2727,12 +2738,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
-
-    with pytest.raises(Exception):
-        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, "", True)    
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type, output_format_parquet_use_custom_encoder=0)
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
@@ -2769,3 +2775,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     )
 
     assert len(initial_files) == len(files)
+
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 1
+
