@@ -177,7 +177,24 @@ public:
 
 REGISTER_FUNCTION(Space)
 {
-    factory.registerFunction<FunctionSpace>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Concatenates a space (` `) as many times with itself as specified.
+
+Alias: `SPACE`.
+)";
+    FunctionDocumentation::Syntax syntax = "space(n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"n", "The number of times to repeat the space.", {"UInt*", "Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT space(3)", "┌─space(3) ────┐\n│              │\n└──────────────┘"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSpace>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }
