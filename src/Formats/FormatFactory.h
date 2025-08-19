@@ -107,7 +107,8 @@ private:
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)>;
+            const FormatSettings & settings,
+            FormatFilterInfoPtr format_filter_info)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
     /// so in some cases there is no possibility to use parallel parsing.
@@ -188,14 +189,16 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        FormatFilterInfoPtr format_filter_info = nullptr) const;
 
     OutputFormatPtr getOutputFormat(
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
-        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & _format_settings = std::nullopt,
+        FormatFilterInfoPtr format_filter_info = nullptr) const;
 
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;

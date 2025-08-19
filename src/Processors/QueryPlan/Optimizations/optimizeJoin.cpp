@@ -1,13 +1,19 @@
+#include <Core/Settings.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
+
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Core/Settings.h>
@@ -21,6 +27,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>

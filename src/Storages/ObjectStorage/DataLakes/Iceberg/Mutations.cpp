@@ -126,8 +126,14 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
                         context->getWriteSettings());
 
                     Block delete_file_sample_block(delete_file_columns_desc);
+                    ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
+                    std::unordered_map<String, Int64> field_ids;
+                    field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
+                    field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
+                    column_mapper->setStorageColumnEncoding(std::move(field_ids));
+                    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper);
                     auto output_format = FormatFactory::instance().getOutputFormat(
-                        configuration->format, *write_buffer, delete_file_sample_block, context, format_settings);
+                        configuration->format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
                     write_buffers[partition_key] = std::move(write_buffer);
                     writers[partition_key] = std::move(output_format);
@@ -246,6 +252,7 @@ bool writeMetadataFiles(
                     metadata,
                     chunk_partitioner.getColumns(),
                     partition_key,
+                    chunk_partitioner.getResultTypes(),
                     {delete_filename.path.path_in_metadata},
                     new_snapshot,
                     configuration->format,

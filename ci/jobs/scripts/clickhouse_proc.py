@@ -384,8 +384,23 @@ profiles:
             strict=True,
         )
 
+        replicas=3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb=Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+
+        env = os.environ.copy()
+        env["TSAN_OPTIONS"] = " ".join(filter(lambda x: x is not None, [
+            env.get("TSAN_OPTIONS", None),
+            f"memory_limit_mb={tsan_memory_limit_mb}",
+        ]))
+        tsan_options = env["TSAN_OPTIONS"]
+        print(f"TSAN_OPTIONS = {tsan_options}")
+
         proc = subprocess.Popen(
-            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+            command,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            cwd=run_path,
+            env=env,
         )
         if replica_num == 1:
             self.proc_1 = proc
