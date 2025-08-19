@@ -300,7 +300,7 @@ Alias: `REPEAT`
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT repeat('abc', 10)", "┌─repeat('abc', 10)──────────────┐\n│ abcabcabcabcabcabcabcabcabcabc │\n└────────────────────────────────┘"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

@@ -89,9 +89,17 @@ Aliases:
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Length of the string `s` in Unicode code points.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT lengthUTF8('Здравствуй, мир!')", "┌─lengthUTF8('Здравствуй, мир!')─┐\n│                             16 │\n└────────────────────────────────┘"}
+    {
+        "Usage example",
+        "SELECT lengthUTF8('Здравствуй, мир!')",
+        R"(
+┌─lengthUTF8('Здравствуй, мир!')─┐
+│                             16 │
+└────────────────────────────────┘
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

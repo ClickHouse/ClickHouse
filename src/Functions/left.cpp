@@ -14,7 +14,7 @@ Returns a substring of string `s` with a specified `offset` starting from the le
         {"s", "The string to calculate a substring from.", {"String", "FixedString"}},
         {"offset", "The number of bytes of the offset.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns:
 - For positive `offset`, a substring of `s` with `offset` many bytes, starting from the left of the string.
 - For negative `offset`, a substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
@@ -38,7 +38,7 @@ Returns a substring of a UTF-8 encoded string `s` with a specified `offset` star
         {"s", "The UTF-8 encoded string to calculate a substring from.", {"String", "FixedString"}},
         {"offset", "The number of bytes of the offset.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_utf8 = R"(
+    FunctionDocumentation::ReturnedValue returned_value_utf8 = {R"(
 Returns:
 - For positive `offset`, a substring of `s` with `offset` many bytes, starting from the left of the string.\n"
 - For negative `offset`, a substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.\n"
