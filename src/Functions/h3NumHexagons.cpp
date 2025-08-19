@@ -96,7 +96,32 @@ public:
 
 REGISTER_FUNCTION(H3NumHexagons)
 {
-    factory.registerFunction<FunctionH3NumHexagons>();
+    FunctionDocumentation::Description description = R"(
+Returns the number of unique [H3](#h3-index) indices at the given resolution.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3NumHexagons(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the number of unique H3 indices at the specified resolution.",
+        {"Int64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get number of hexagons at resolution 3",
+            "SELECT h3NumHexagons(3) AS numHexagons",
+            R"(
+┌─numHexagons─┐
+│       41162 │
+└─────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3NumHexagons>(documentation);
 }
 
 }
