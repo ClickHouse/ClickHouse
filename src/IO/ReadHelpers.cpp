@@ -2353,7 +2353,7 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
 
 String escapeDotInJSONKey(const String & key)
 {
-   return boost::replace_all_copy(key, ".", "%2E");
+    return boost::replace_all_copy(key, ".", "%2E");
 }
 
 String unescapeDotInJSONKey(const String & key)
