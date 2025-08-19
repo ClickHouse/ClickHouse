@@ -24,6 +24,8 @@ Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:
 
 Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
 
+The number of digits after the decimal point depends on the precision parameter.
+
 Note: The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is `2262-04-11 23:47:16` in UTC.
 
 ## Examples {#examples}

@@ -63,7 +63,7 @@ String NpyOutputFormat::shapeStr() const
     return shape.str();
 }
 
-NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, const Block & header_) : IOutputFormat(header_, out_)
+NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, SharedHeader header_) : IOutputFormat(header_, out_)
 {
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();
@@ -259,9 +259,10 @@ void registerOutputFormatNpy(FormatFactory & factory)
     factory.registerOutputFormat("Npy",[](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<NpyOutputFormat>(buf, sample);
+        return std::make_shared<NpyOutputFormat>(buf, std::make_shared<const Block>(sample));
     });
     factory.markFormatHasNoAppendSupport("Npy");
     factory.markOutputFormatNotTTYFriendly("Npy");

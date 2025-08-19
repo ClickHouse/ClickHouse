@@ -576,8 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            1,
-            std::nullopt,
+            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+            nullptr,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);

@@ -45,9 +45,9 @@ First, we try to match the input value to the ENUM name.
 If we fail and the input value is a number, we try to match this number to the ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](/operations/settings/settings-formats.md/#input_format_csv_enum_as_number) to optimize `ENUM` parsing.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 | Setting                                                                                                                                                            | Description                                                                                                        | Default | Notes                                                                                                                                                                                        |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

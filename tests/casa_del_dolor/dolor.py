@@ -7,6 +7,7 @@ import pathlib
 import random
 import tempfile
 import time
+import signal
 import sys
 
 sys.path.append("..")
@@ -33,7 +34,11 @@ from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import Generator, BuzzHouseGenerator
 from oracles import ElOraculoDeTablas
-from properties import modify_server_settings, modify_user_settings
+from properties import (
+    modify_server_settings,
+    modify_user_settings,
+    modify_keeper_settings,
+)
 
 
 def ordered_pair(value):
@@ -218,9 +223,6 @@ parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
 parser.add_argument(
-    "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
-)
-parser.add_argument(
     "--without-keeper-map-prefix",
     action="store_false",
     dest="add_keeper_map_prefix",
@@ -265,6 +267,26 @@ parser.add_argument(
     choices=range(0, 101),
     help="Probability to send a random timezone to all instances in a cluster",
 )
+parser.add_argument(
+    "--keeper-settings-prob",
+    type=int,
+    default=80,
+    choices=range(0, 101),
+    help="Probability to set keeper server properties",
+)
+parser.add_argument(
+    "--with-glue", action="store_true", help="With AWS Glue catalog for MinIO"
+)
+parser.add_argument(
+    "--with-rest", action="store_true", help="With Iceberg REST catalog for MinIO"
+)
+parser.add_argument(
+    "--with-hms", action="store_true", help="With Hive catalog for MinIO"
+)
+parser.add_argument(
+    "--with-arrowflight", action="store_true", help="With Arrow flight support"
+)
+
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -291,7 +313,8 @@ random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
 # Start the cluster, by using one the server binaries
-server_path = os.path.join(tempfile.gettempdir(), "clickhouse")
+server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
+new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
 try:
     os.unlink(server_path)
 except FileNotFoundError:
@@ -304,11 +327,12 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"s3_with_keeper") > -1
+    is_private_binary = mm.find(b"LRU_OVERCOMMIT") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
-cluster = ClickHouseCluster(__file__)
+keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
+cluster = ClickHouseCluster(__file__, custom_keeper_configs=keeper_configs)
 
 # Set environment variables such as locales and timezones
 test_env_variables = set_environment_variables(logger, args, "cluster")
@@ -338,23 +362,6 @@ dolor_main_configs = [
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
 
-keeper_features = []
-if args.with_zookeeper:
-    if is_private_binary or random.randint(1, 2) == 1:
-        keeper_features.append("multi_read")
-    if random.randint(1, 2) == 1:
-        other_keeper_features = [
-            "filtered_list",
-            "check_not_exists",
-            "create_if_not_exists",
-            "remove_recursive",
-        ]
-        random.shuffle(other_keeper_features)
-        for i in range(0, random.randint(1, len(other_keeper_features))):
-            keeper_features.append(other_keeper_features[i])
-logger.info(
-    f"Using {", ".join(keeper_features) if len(keeper_features) > 0 else "none"} keeper flags"
-)
 
 servers: list[ClickHouseInstance] = []
 for i in range(0, len(args.replica_values)):
@@ -365,7 +372,6 @@ for i in range(0, len(args.replica_values)):
             stay_alive=True,
             copy_common_configs=False,
             with_zookeeper=args.with_zookeeper,
-            keeper_required_feature_flags=keeper_features,
             with_minio=args.with_minio,
             with_nginx=args.with_nginx,
             with_azurite=args.with_azurite,
@@ -373,8 +379,11 @@ for i in range(0, len(args.replica_values)):
             with_mysql8=args.with_mysql,
             with_mongo=args.with_mongodb,
             with_redis=args.with_redis,
+            with_iceberg_catalog=args.with_rest,
+            with_glue_catalog=args.with_glue,
+            with_hms_catalog=args.with_hms,
+            with_arrowflight=args.with_arrowflight,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
-            storage_opt=None if args.storage_limit == "" else args.storage_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
             env_variables=test_env_variables,
@@ -386,7 +395,9 @@ logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
 )
 for i in range(0, len(args.replica_values)):
-    logger.info(f"Server node{i} running on host {servers[i].ip_address}, port 9000")
+    logger.info(
+        f"Server node{i} running on host {servers[i].hostname}, with IPv4 {servers[i].ip_address}, port 9000"
+    )
 servers[len(servers) - 1].wait_start(8)
 
 if args.with_postgresql:
@@ -411,7 +422,7 @@ def dolor_cleanup():
         client.process.kill()
         client.process.wait()
     try:
-        cluster.shutdown()
+        cluster.shutdown(kill=True, ignore_fatal=False)
     except:
         pass
     if modified_server_settings:
@@ -429,11 +440,26 @@ def dolor_cleanup():
     except FileNotFoundError:
         pass
     try:
+        os.unlink(new_temp_server_path)
+    except FileNotFoundError:
+        pass
+    try:
         os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
+    for entry in keeper_configs:
+        try:
+            os.unlink(entry)
+        except FileNotFoundError:
+            pass
 
 
+def my_signal_handler(sig, frame):
+    dolor_cleanup()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, my_signal_handler)
 atexit.register(dolor_cleanup)
 time.sleep(3)
 
@@ -512,7 +538,6 @@ while all_running:
             else:
                 current_server = random.choice(args.server_binaries)
             logger.info(f"Using the server binary {current_server} after restart")
-            new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
             try:
                 os.unlink(new_temp_server_path)
             except FileNotFoundError:

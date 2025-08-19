@@ -20,13 +20,17 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Common/Exception.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+}
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -36,8 +40,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
-    storage_metadata.setColumns(ColumnsDescription(
-    {
+    auto description = ColumnsDescription({
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."},
@@ -65,7 +68,13 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-    }));
+    });
+
+    description.setAliases({
+        {"column", std::make_shared<DataTypeString>(), "name"}
+    });
+
+    storage_metadata.setColumns(description);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -81,7 +90,7 @@ class ColumnsSource : public ISource
 public:
     ColumnsSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -143,7 +152,19 @@ protected:
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                    column_sizes = storage->getColumnSizes();
+                {
+                    /// Can throw UNKNOWN_DATABASE in case of Merge table
+                    try
+                    {
+                        column_sizes = storage->getColumnSizes();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                            throw;
+                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    }
+                }
 
                 if (columns_mask[11])
                     cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
@@ -347,7 +368,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

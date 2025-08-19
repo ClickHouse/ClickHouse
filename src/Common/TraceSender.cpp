@@ -68,9 +68,9 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
         thread_id = CurrentThread::get().thread_id;
     }
-    else
+    else if (const auto * main_thread = MainThreadStatus::get())
     {
-        thread_id = MainThreadStatus::get()->thread_id;
+        thread_id = main_thread->thread_id;
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.

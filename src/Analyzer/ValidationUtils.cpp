@@ -1,13 +1,14 @@
 #include <Analyzer/ValidationUtils.h>
 
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -197,7 +198,7 @@ public:
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-            "Column {} is not under aggregate function and not in GROUP BY keys. In query {}",
+            "Column '{}' is not under aggregate function and not in GROUP BY keys. In query {}",
             column_node->formatConvertedASTForErrorMessage(),
             query_node->formatASTForErrorMessage());
     }
@@ -478,6 +479,66 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query tree is too big. Maximum: {}",
             max_size);
+}
+
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
+{
+    bool has_remote = false;
+    bool has_correlated_subquery = false;
+    QueryTreeNodes nodes_to_process = { node };
+
+    while (!nodes_to_process.empty())
+    {
+        auto current_node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        switch (current_node->getNodeType())
+        {
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node = current_node->as<QueryNode &>();
+                if (query_node.isCorrelated())
+                    has_correlated_subquery = true;
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto & union_node = current_node->as<UnionNode &>();
+                if (union_node.isCorrelated())
+                    has_correlated_subquery = true;
+                break;
+            }
+            case QueryTreeNodeType::TABLE:
+            {
+                auto & table_node = current_node->as<TableNode &>();
+                const auto & storage = table_node.getStorage();
+                if (storage && storage->isRemote())
+                    has_remote = true;
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                auto & table_function_node = current_node->as<TableFunctionNode &>();
+                const auto & storage = table_function_node.getStorage();
+                if (storage && storage->isRemote())
+                    has_remote = true;
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (has_remote && has_correlated_subquery)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported with remote tables. In query {}",
+                node->formatASTForErrorMessage());
+
+        for (const auto & child : current_node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child);
+        }
+    }
 }
 
 }

@@ -326,7 +326,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     auto metadata_file = metadata_dir_path / (database_name_escaped + ".sql");
     auto metadata_file_tmp = metadata_dir_path / (database_name_escaped + ".sql" + ".tmp");
     default_db_disk->removeFileIfExists(metadata_file_tmp);
-    LOG_DEBUG(
+    LOG_TEST(
         getLogger("loadSystemDatabase"),
         "metadata_file_path {}, existsFile {}",
         metadata_file,
