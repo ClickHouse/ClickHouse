@@ -439,6 +439,14 @@ void IcebergMetadata::mutate(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const std::optional<FormatSettings> & format_settings)
 {
+    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg mutations is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+    }
+
     auto configuration_ptr = configuration.lock();
 
     DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
@@ -449,6 +457,31 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
+void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage",
+                command.type);
+    }
+}
+
+void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Alter iceberg is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+    }
+
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::alter(params, context, object_storage, configuration_ptr);
 }
 
 void IcebergMetadata::createInitial(
