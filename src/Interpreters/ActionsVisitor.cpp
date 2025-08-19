@@ -829,7 +829,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
-        auto func = makeASTFunction("tupleElement", tuple_ast, literal);
+        auto func = makeASTOperator("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
             auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);
