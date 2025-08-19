@@ -11,74 +11,13 @@
 #include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnMap.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/SipHash.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ZooKeeper/SystemTablesDataTypes.h>
+
 
 namespace DB
 {
-
-DataTypePtr getOperationEnumType()
-{
-    return std::make_shared<DataTypeEnum16>(
-        DataTypeEnum16::Values
-        {
-            {"Watch",               0},
-            {"Close",               static_cast<Int16>(Coordination::OpNum::Close)},
-            {"Error",               static_cast<Int16>(Coordination::OpNum::Error)},
-            {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
-            {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
-            {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
-            {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
-            {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
-            {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
-            {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},
-            {"SetACL",              static_cast<Int16>(Coordination::OpNum::SetACL)},
-            {"SimpleList",          static_cast<Int16>(Coordination::OpNum::SimpleList)},
-            {"Sync",                static_cast<Int16>(Coordination::OpNum::Sync)},
-            {"Heartbeat",           static_cast<Int16>(Coordination::OpNum::Heartbeat)},
-            {"List",                static_cast<Int16>(Coordination::OpNum::List)},
-            {"Check",               static_cast<Int16>(Coordination::OpNum::Check)},
-            {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
-            {"MultiRead",           static_cast<Int16>(Coordination::OpNum::MultiRead)},
-            {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
-            {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
-            {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
-            {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
-            {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
-            {"RemoveRecursive",     static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
-        });
-}
-
-DataTypePtr getErrorEnumType()
-{
-    return std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"ZOK",                         static_cast<Int8>(Coordination::Error::ZOK)},
-            {"ZSYSTEMERROR",                static_cast<Int8>(Coordination::Error::ZSYSTEMERROR)},
-            {"ZRUNTIMEINCONSISTENCY",       static_cast<Int8>(Coordination::Error::ZRUNTIMEINCONSISTENCY)},
-            {"ZDATAINCONSISTENCY",          static_cast<Int8>(Coordination::Error::ZDATAINCONSISTENCY)},
-            {"ZCONNECTIONLOSS",             static_cast<Int8>(Coordination::Error::ZCONNECTIONLOSS)},
-            {"ZMARSHALLINGERROR",           static_cast<Int8>(Coordination::Error::ZMARSHALLINGERROR)},
-            {"ZUNIMPLEMENTED",              static_cast<Int8>(Coordination::Error::ZUNIMPLEMENTED)},
-            {"ZOPERATIONTIMEOUT",           static_cast<Int8>(Coordination::Error::ZOPERATIONTIMEOUT)},
-            {"ZBADARGUMENTS",               static_cast<Int8>(Coordination::Error::ZBADARGUMENTS)},
-            {"ZINVALIDSTATE",               static_cast<Int8>(Coordination::Error::ZINVALIDSTATE)},
-            {"ZAPIERROR",                   static_cast<Int8>(Coordination::Error::ZAPIERROR)},
-            {"ZNONODE",                     static_cast<Int8>(Coordination::Error::ZNONODE)},
-            {"ZNOAUTH",                     static_cast<Int8>(Coordination::Error::ZNOAUTH)},
-            {"ZBADVERSION",                 static_cast<Int8>(Coordination::Error::ZBADVERSION)},
-            {"ZNOCHILDRENFOREPHEMERALS",    static_cast<Int8>(Coordination::Error::ZNOCHILDRENFOREPHEMERALS)},
-            {"ZNODEEXISTS",                 static_cast<Int8>(Coordination::Error::ZNODEEXISTS)},
-            {"ZNOTEMPTY",                   static_cast<Int8>(Coordination::Error::ZNOTEMPTY)},
-            {"ZSESSIONEXPIRED",             static_cast<Int8>(Coordination::Error::ZSESSIONEXPIRED)},
-            {"ZINVALIDCALLBACK",            static_cast<Int8>(Coordination::Error::ZINVALIDCALLBACK)},
-            {"ZINVALIDACL",                 static_cast<Int8>(Coordination::Error::ZINVALIDACL)},
-            {"ZAUTHFAILED",                 static_cast<Int8>(Coordination::Error::ZAUTHFAILED)},
-            {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
-            {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
-            {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
-            {"ZNOTREADONLY",                static_cast<Int8>(Coordination::Error::ZNOTREADONLY)},
-        });
-}
 
 ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
 {
@@ -111,7 +50,7 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
                 "Prefix of the path."});
 
     result.add({"operation",
-                getOperationEnumType(),
+                Coordination::SystemTablesDataTypes::operationEnum(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Type of ZooKeeper operation."});
 
@@ -121,7 +60,7 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
                 "Number of operations in the (session_id, parent_path, operation) group."});
 
     result.add({"errors",
-                std::make_shared<DataTypeMap>(getErrorEnumType(), std::make_shared<DataTypeUInt32>()),
+                std::make_shared<DataTypeMap>(Coordination::SystemTablesDataTypes::errorCodeEnum(), std::make_shared<DataTypeUInt32>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Errors in the (session_id, parent_path, operation) group."});
 
