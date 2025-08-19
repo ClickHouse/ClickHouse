@@ -218,7 +218,7 @@ def create_clickhouse_glue_table(
 
     node.query(
         f"""
-SET allow_database_glue_catalog=true;
+SET allow_experimental_database_glue_catalog=true;
 SET write_full_path_in_iceberg_metadata=true;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}

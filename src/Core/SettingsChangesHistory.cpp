@@ -62,9 +62,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
-            {"allow_database_iceberg", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"},
-            {"allow_database_unity_catalog", false, false, "Added an alias for setting `allow_experimental_database_unity_catalog`"},
-            {"allow_database_glue_catalog", false, false, "Added an alias for setting `allow_experimental_database_glue_catalog`"},
+            {"allow_database_iceberg", true, true, "Added an alias for setting `allow_experimental_database_iceberg`"},
+            {"allow_database_unity_catalog", true, true, "Added an alias for setting `allow_experimental_database_unity_catalog`"},
+            {"allow_database_glue_catalog", true, true, "Added an alias for setting `allow_experimental_database_glue_catalog`"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
