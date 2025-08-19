@@ -25,6 +25,11 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
