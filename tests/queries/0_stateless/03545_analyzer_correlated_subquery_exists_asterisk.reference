@@ -7,8 +7,8 @@ Positions: 0
            INPUT :: 1 -> __table1.i1 Int64 : 1
   Positions: 0
     Expression
-    Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
-             INPUT :: 1 -> exists(__table2) UInt8 : 1
+    Actions: INPUT :: 0 -> exists(__table2) UInt8 : 0
+             INPUT :: 1 -> __table1.i1 Int64 : 1
     Positions: 0 1
       Join (JOIN to generate result stream)
       Type: LEFT
