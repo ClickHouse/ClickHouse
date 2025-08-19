@@ -117,33 +117,28 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
-    const auto & patch_merge_data = typeid_cast<const PatchMergeReadResult &>(&patch_result);
-
+    const auto & patch_merge_data = typeid_cast<const PatchMergeReadResult &>(patch_result);
     return {applyPatchMerge(result_block, patch_merge_data.block, patch_part)};
 }
 
 bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const
 {
-    const auto * old_patch_result = typeid_cast<const PatchMergeReadResult *>(&old_patch);
-    if (!old_patch_result)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchMergeReadResult is expected");
+    const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
 
     if (!main_result.max_part_offset.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
 
-    return *main_result.max_part_offset > old_patch_result->max_part_offset;
+    return *main_result.max_part_offset > old_patch_result.max_part_offset;
 }
 
 bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const
 {
-    const auto * old_patch_result = typeid_cast<const PatchMergeReadResult *>(&old_patch);
-    if (!old_patch_result)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchMergeReadResult is expected");
+    const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
 
     if (!main_result.min_part_offset.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
 
-    return *main_result.min_part_offset <= old_patch_result->max_part_offset;
+    return *main_result.min_part_offset <= old_patch_result.max_part_offset;
 }
 
 MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_)
@@ -154,7 +149,7 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
 }
 
-static MinMaxStats getResultBlockStats(const Block & result_block, const String & column_name)
+static MinMaxStat getResultBlockStat(const Block & result_block, const String & column_name)
 {
     const auto & column = result_block.getByName(column_name).column;
 
@@ -214,8 +209,8 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     if (!stats_entry->stats.empty())
     {
         PatchStats result_stats;
-        result_stats.block_number_stats = getResultBlockStats(result_block, BlockNumberColumn::name);
-        result_stats.block_offset_stats = getResultBlockStats(result_block, BlockOffsetColumn::name);
+        result_stats.block_number_stat = getResultBlockStat(result_block, BlockNumberColumn::name);
+        result_stats.block_offset_stat = getResultBlockStat(result_block, BlockOffsetColumn::name);
         ranges_to_read = filterPatchRanges(ranges_to_read, stats_entry->stats, result_stats);
     }
 
@@ -236,13 +231,10 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
-    const auto * patch_join_result = typeid_cast<const PatchJoinReadResult *>(&patch_result);
-    if (!patch_join_result)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinReadResult is expected");
-
+    const auto & patch_join_result = typeid_cast<const PatchJoinReadResult &>(patch_result);
     std::vector<PatchToApplyPtr> patches;
 
-    for (const auto & entry : patch_join_result->entries)
+    for (const auto & entry : patch_join_result.entries)
         patches.push_back(applyPatchJoin(result_block, *entry));
 
     return patches;

@@ -84,31 +84,37 @@ private:
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    UInt64 getPatchColIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
-        return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_col_indices[row_idx];
+        return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
 
     PatchesToApply patches;
+    /// Flattened blocks from all patches.
     std::vector<Block> all_patch_blocks;
-
-    IColumn::Offsets src_col_indices;
+    /// Index of block in the flattened patch blocks.
+    IColumn::Offsets src_block_indices;
+    /// Index of row in the patch block.
     IColumn::Offsets src_row_indices;
+    /// Index of row in the result block.
     IColumn::Offsets dst_row_indices;
 };
 
 void CombinedPatchBuilder::build()
 {
-    std::vector<std::vector<size_t>> patch_to_block_idx(patches.size());
+    /// A mapping (patch_idx, patch_block_idx) -> flattened_block_idx.
+    std::vector<std::vector<size_t>> flattened_block_indices(patches.size());
 
+    /// Each patch may have multiple blocks.
+    /// Here we flatten all blocks into one vector.
     for (size_t i = 0; i < patches.size(); ++i)
     {
         size_t num_sources = patches[i]->getNumSources();
-        patch_to_block_idx[i].resize(num_sources);
+        flattened_block_indices[i].resize(num_sources);
 
         for (size_t j = 0; j < num_sources; ++j)
         {
-            patch_to_block_idx[i][j] = all_patch_blocks.size();
+            flattened_block_indices[i][j] = all_patch_blocks.size();
             all_patch_blocks.push_back(patches[i]->patch_blocks[j]);
         }
     }
@@ -135,7 +141,7 @@ void CombinedPatchBuilder::build()
 
     auto get_row_op = [&](UInt64 patch_idx, UInt64 row_idx)
     {
-        chassert(src_col_indices.size() == dst_row_indices.size());
+        chassert(src_block_indices.size() == dst_row_indices.size());
         chassert(src_row_indices.size() == dst_row_indices.size());
 
         if (dst_row_indices.empty())
@@ -144,20 +150,25 @@ void CombinedPatchBuilder::build()
         UInt64 last_result_row = dst_row_indices.back();
         UInt64 current_result_row = getResultRowIndex(patch_idx, row_idx);
 
+        /// Patches must be sorted by row index in the result block.
         chassert(current_result_row >= last_result_row);
 
+        /// We found a new updated row in the result block.
         if (current_result_row != last_result_row)
             return RowOp::Add;
 
-        UInt64 last_patch_col = src_col_indices.back();
+        /// The updated row in result block is the same.
+        /// Keep the row with the highest version in patch.
+
+        UInt64 last_flattened_block = src_block_indices.back();
         UInt64 last_patch_row = src_row_indices.back();
 
-        UInt64 current_patch_col = getPatchColIndex(patch_idx, row_idx);
+        UInt64 current_patch_block = getPatchBlockIndex(patch_idx, row_idx);
         UInt64 current_patch_row = getPatchRowIndex(patch_idx, row_idx);
-        UInt64 current_block_idx = patch_to_block_idx[patch_idx][current_patch_col];
+        UInt64 current_flattened_block = flattened_block_indices[patch_idx][current_patch_block];
 
-        UInt64 last_version = (*versions[last_patch_col])[last_patch_row];
-        UInt64 current_version = (*versions[current_block_idx])[current_patch_row];
+        UInt64 last_version = (*versions[last_flattened_block])[last_patch_row];
+        UInt64 current_version = (*versions[current_flattened_block])[current_patch_row];
 
         return current_version > last_version ? RowOp::Update : RowOp::Skip;
     };
@@ -168,6 +179,10 @@ void CombinedPatchBuilder::build()
     };
 
     std::make_heap(heap.begin(), heap.end(), greater);
+
+    /// Here we merge all patches into one patch.
+    /// We use a simple merging sorted algorithm with heap,
+    /// using the fact that patches are sorted by row index in the result block.
 
     while (!heap.empty())
     {
@@ -181,22 +196,22 @@ void CombinedPatchBuilder::build()
 
         if (row_op != RowOp::Skip)
         {
-            UInt64 patch_col = getPatchColIndex(patch_idx, row_idx);
-            UInt64 patch_row = getPatchRowIndex(patch_idx, row_idx);
-            UInt64 result_row = getResultRowIndex(patch_idx, row_idx);
-            UInt64 block_idx = patch_to_block_idx[patch_idx][patch_col];
+            UInt64 patch_block_idx = getPatchBlockIndex(patch_idx, row_idx);
+            UInt64 patch_row_idx = getPatchRowIndex(patch_idx, row_idx);
+            UInt64 result_row_idx = getResultRowIndex(patch_idx, row_idx);
+            UInt64 flattened_block_idx = flattened_block_indices[patch_idx][patch_block_idx];
 
             if (row_op == RowOp::Update)
             {
-                src_col_indices.back() = block_idx;
-                src_row_indices.back() = patch_row;
-                dst_row_indices.back() = result_row;
+                src_block_indices.back() = flattened_block_idx;
+                src_row_indices.back() = patch_row_idx;
+                dst_row_indices.back() = result_row_idx;
             }
             else
             {
-                src_col_indices.push_back(block_idx);
-                src_row_indices.push_back(patch_row);
-                dst_row_indices.push_back(result_row);
+                src_block_indices.push_back(flattened_block_idx);
+                src_row_indices.push_back(patch_row_idx);
+                dst_row_indices.push_back(result_row_idx);
             }
         }
 
@@ -227,7 +242,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     return IColumn::Patch
     {
         .sources = std::move(sources),
-        .src_col_indices = &src_col_indices,
+        .src_col_indices = &src_block_indices,
         .src_row_indices = src_row_indices,
         .dst_row_indices = dst_row_indices,
         .dst_versions = dst_versions,
@@ -467,7 +482,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
     size_t size_to_reserve = std::min(num_rows, join_entry.hash_map.size());
     patch_to_apply->result_row_indices.reserve(size_to_reserve);
-    patch_to_apply->patch_col_indices.reserve(size_to_reserve);
+    patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
@@ -494,7 +509,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
             if (offset_it != offsets_hash_map->end())
             {
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_col_indices.push_back(offset_it->second.first);
+                patch_to_apply->patch_block_indices.push_back(offset_it->second.first);
                 patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
             }
         }

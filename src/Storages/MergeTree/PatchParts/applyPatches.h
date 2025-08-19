@@ -15,7 +15,7 @@ struct PatchToApply
     /// Index of row to update in the result block.
     PaddedPODArray<UInt64> result_row_indices;
     /// Index of patch block to take the updated row from.
-    PaddedPODArray<UInt64> patch_col_indices;
+    PaddedPODArray<UInt64> patch_block_indices;
     /// Index of row in patch block to take the updated row from.
     PaddedPODArray<UInt64> patch_row_indices;
 

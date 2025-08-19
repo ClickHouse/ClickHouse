@@ -29,9 +29,9 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-void PatchJoinCache::init(const RangesInPatchParts & ranges_in_pathces)
+void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
 {
-    const auto & all_ranges = ranges_in_pathces.getRanges();
+    const auto & all_ranges = ranges_in_patches.getRanges();
 
     /// Spread ranges among buckets.
     /// We assume that ranges are already sorted
@@ -80,8 +80,8 @@ PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartP
     for (const auto & [range, _] : it->second)
         all_patch_ranges.push_back(range);
 
-    auto block_number_stats = getPatchRangesStats(patch_part, all_patch_ranges, BlockNumberColumn::name);
-    auto block_offset_stats = getPatchRangesStats(patch_part, all_patch_ranges, BlockOffsetColumn::name);
+    auto block_number_stats = getMinMaxStats(patch_part, all_patch_ranges, BlockNumberColumn::name);
+    auto block_offset_stats = getMinMaxStats(patch_part, all_patch_ranges, BlockOffsetColumn::name);
 
     if (block_number_stats && block_offset_stats)
     {
@@ -91,8 +91,8 @@ PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartP
         for (size_t i = 0; i < all_patch_ranges.size(); ++i)
         {
             auto & range_stats = stats_entry->stats[all_patch_ranges[i]];
-            range_stats.block_number_stats = (*block_number_stats)[i];
-            range_stats.block_offset_stats = (*block_offset_stats)[i];
+            range_stats.block_number_stat = (*block_number_stats)[i];
+            range_stats.block_offset_stat = (*block_offset_stats)[i];
         }
     }
 

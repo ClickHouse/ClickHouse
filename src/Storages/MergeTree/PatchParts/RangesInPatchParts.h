@@ -29,16 +29,17 @@ struct MinMaxStat
     UInt64 min = 0;
     UInt64 max = 0;
 };
+
 struct PatchStats
 {
-    MinMaxStats block_number_stats;
-    MinMaxStats block_offset_stats;
+    MinMaxStat block_number_stat;
+    MinMaxStat block_offset_stat;
 };
 
-using PatchRangesStats = std::vector<MinMaxStats>;
-using MaybePatchRangesStats = std::optional<PatchRangesStats>;
+using MinMaxStats = std::vector<MinMaxStat>;
+using MaybeMinMaxStats = std::optional<MinMaxStats>;
 
-MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name);
+MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name);
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats);
 
 }

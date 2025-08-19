@@ -249,7 +249,7 @@ static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & 
     return {min, max};
 }
 
-MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
+MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
 
@@ -262,12 +262,13 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
     });
 
     if (it == secondary_indices.end())
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);
 
     if (it->type != "minmax")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", BlockNumberColumn::name, it->type);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
 
     auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    /// Check that index exists in data part. It may be absent for parts created in earlier versions.
     if (!index_ptr->getDeserializedFormat(patch_part->getDataPartStorage(), index_ptr->getFileName()))
         return {};
 
@@ -285,7 +286,7 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
         /*settings_=*/ {});
 
     MergeTreeIndexGranulePtr granule = nullptr;
-    PatchRangesStats result(ranges.size());
+    MinMaxStats result(ranges.size());
 
     for (size_t i = 0; i < ranges.size(); ++i)
     {
@@ -311,7 +312,7 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
     return result;
 }
 
-bool intersects(const MinMaxStats & lhs, const MinMaxStats & rhs)
+bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
 {
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }
@@ -326,8 +327,8 @@ MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange
         auto it = patch_stats.find(range);
 
         if (it != patch_stats.end()
-            && intersects(result_stats.block_number_stats, it->second.block_number_stats)
-            && intersects(result_stats.block_offset_stats, it->second.block_offset_stats))
+            && intersects(result_stats.block_number_stat, it->second.block_number_stat)
+            && intersects(result_stats.block_offset_stat, it->second.block_offset_stat))
         {
             result.push_back(range);
         }
