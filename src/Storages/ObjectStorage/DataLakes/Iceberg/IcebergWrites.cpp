@@ -36,6 +36,7 @@
 #include <Common/randomSeed.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Columns/IColumn.h>
+#include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
 
 #include <memory>
@@ -95,6 +96,38 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     Poco::JSON::Parser parser;
     auto result = parser.parse(oss.str());
     return result.extract<Poco::JSON::Object::Ptr>();
+}
+
+bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
+{
+    if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
+        return true;
+
+    if (new_type.isString() && new_type.extract<String>() == "long" &&
+        old_type.isString() && (old_type.extract<String>() == "long" ||  old_type.extract<String>() == "int"))
+    {
+        return true;
+    }
+
+    if (new_type.isString() && new_type.extract<String>() == "double" &&
+        old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
+    {
+        return true;
+    }
+
+    {
+        auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
+        auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
+
+        if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
+            (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
+             old_complex_type->getValue<Int32>("scale") <= new_complex_type->getValue<Int32>("scale")))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }
@@ -696,6 +729,8 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
 {
+    if (!type->isNullable())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow to add non-nullable columns");
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
 
@@ -720,7 +755,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
     new_field->set(Iceberg::f_id, last_column_id + 1);
     new_field->set(Iceberg::f_name, column_name);
-    new_field->set(Iceberg::f_required, false);
+    new_field->set(Iceberg::f_required, !type->isNullable());
     new_field->set(Iceberg::f_type, new_type);
 
     current_schema->getArray(Iceberg::f_fields)->add(new_field);
@@ -751,11 +786,21 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
     auto new_type = getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
+
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
     {
-        if (schema_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
+        auto current_field = schema_fields->getObject(i);
+        if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
-            schema_fields->getObject(i)->set(Iceberg::f_type, getIcebergType(type, last_column_id));
+            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
+
+            auto old_type = deepCopy(current_field);
+            current_field->set(Iceberg::f_type, new_type);
+            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
+
+            current_field->set(Iceberg::f_required, !type->isNullable());
             break;
         }
     }

@@ -11,6 +11,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -323,7 +324,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* check_consistent_with_previous_metadata */false);
     }
 
-    auto columns = configuration->tryGetTableStructureFromMetadata();
+    auto columns = configuration->tryGetTableStructureFromMetadata(query_context);
     if (!columns.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
 
@@ -653,7 +654,13 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    params.apply(new_metadata, context);
+
     configuration->alter(params, context);
+
+    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
