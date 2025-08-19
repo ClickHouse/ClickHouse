@@ -764,7 +764,7 @@ std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
     return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id);
 }
 
-void IcebergMetadata::addDeleteTransformers(ObjectInfoPtr object_info,  QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const
+void IcebergMetadata::addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
