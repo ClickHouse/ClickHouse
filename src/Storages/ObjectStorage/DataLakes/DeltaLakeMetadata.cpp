@@ -1,7 +1,8 @@
+#include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <base/JSON.h>
 #include "config.h"
-#include <set>
 
 #if USE_PARQUET
 
@@ -239,7 +240,7 @@ struct DeltaLakeMetadataImpl
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
         while (!buf->eof())
@@ -409,7 +410,7 @@ struct DeltaLakeMetadataImpl
         String json_str;
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(last_checkpoint_file);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
         const JSON json(json_str);
@@ -479,7 +480,7 @@ struct DeltaLakeMetadataImpl
 
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(checkpoint_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
@@ -506,6 +507,7 @@ struct DeltaLakeMetadataImpl
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings,
+            std::nullopt,
             std::nullopt,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
