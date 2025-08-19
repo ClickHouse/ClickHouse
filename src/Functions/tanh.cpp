@@ -57,7 +57,7 @@ Returns the hyperbolic tangent.
 )";
     FunctionDocumentation::Syntax syntax = "tanh(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The angle, in radians. Values from the interval: -∞ < x < +∞.", {"(U)Int*", "Float*", "Decimal*"}}
+        {"x", "The angle in radians. Values from the interval: -∞ < x < +∞.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns values from the interval: -1 < tanh(x) < 1", {"Float*"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT tanh(0)", "0"}};
