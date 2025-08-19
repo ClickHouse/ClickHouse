@@ -296,7 +296,7 @@ public:
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
     {
-        return current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
 private:
