@@ -289,12 +289,11 @@ REGISTER_FUNCTION(Repeat)
     FunctionDocumentation::Description description = R"(
 Concatenates a string as many times with itself as specified.
 
-Alias: `REPEAT`
 )";
     FunctionDocumentation::Syntax syntax = "repeat(s, n)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The string to repeat.", {"String"}},
-        {"n", "The number of times to repeat the string.", {"UInt*", "Int*"}}
+        {"n", "The number of times to repeat the string.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.", {"String"}};
     FunctionDocumentation::Examples examples = {

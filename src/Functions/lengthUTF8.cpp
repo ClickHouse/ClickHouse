@@ -79,9 +79,6 @@ Returns the length of a string in Unicode code points rather than in bytes or ch
 It assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
-Aliases:
-- `CHAR_LENGTH`
-- `CHARACTER_LENGTH`
 )";
     FunctionDocumentation::Syntax syntax = "lengthUTF8(s)";
     FunctionDocumentation::Arguments arguments = {

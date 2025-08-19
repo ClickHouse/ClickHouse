@@ -152,7 +152,7 @@ No percent decoding or trimming of tabs, spaces or control characters is perform
     FunctionDocumentation::Arguments arguments_encode = {
         {"s", "Input string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_encode = {"Returns an ASCII representation according to the IDNA mechanism of the input value.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_encode = {"Returns an ASCII representation of the input string according to the IDNA mechanism of the input value.", {"String"}};
     FunctionDocumentation::Examples examples_encode = {
     {
         "Usage example",
@@ -176,7 +176,7 @@ In case of an error it returns an empty string instead of throwing an exception.
     FunctionDocumentation::Arguments arguments_try_encode = {
         {"s", "Input string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_try_encode = {"Returns an ASCII representation according to the IDNA mechanism of the input value, or empty string if input is invalid.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_try_encode = {"Returns an ASCII representation of the input string according to the IDNA mechanism of the input value, or empty string if input is invalid.", {"String"}};
     FunctionDocumentation::Examples examples_try_encode = {
     {
         "Usage example",
@@ -199,7 +199,7 @@ Note that repeated application of `idnaEncode()` and `idnaDecode()` does not nec
     FunctionDocumentation::Arguments arguments_decode = {
         {"s", "Input string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_decode = {"Returns a Unicode (UTF-8) representation according to the IDNA mechanism of the input value.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_decode = {"Returns a Unicode (UTF-8) representation of the input string according to the IDNA mechanism of the input value.", {"String"}};
     FunctionDocumentation::Examples examples_decode = {
     {
         "Usage example",

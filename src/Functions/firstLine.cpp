@@ -40,7 +40,7 @@ Returns the first line from a multi-line string.
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT firstLine('foo\\nbar\\nbaz')",
+        R"(SELECT firstLine('foo\\nbar\\nbaz'))",
         R"(
 ┌─firstLine('foo\nbar\nbaz')─┐
 │ foo                        │

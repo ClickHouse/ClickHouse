@@ -68,7 +68,7 @@ Words are sequences of alphanumeric characters separated by non-alphanumeric cha
 
 :::note
 Because `initcap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters.
-This is known behaviour and there are no plans to fix it currently.
+This is a known behaviour and there are no plans to fix it currently.
 :::
 )";
     FunctionDocumentation::Syntax syntax = "initcap(s)";
