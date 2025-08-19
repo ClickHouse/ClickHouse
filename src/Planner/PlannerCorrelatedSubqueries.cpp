@@ -236,6 +236,7 @@ QueryPlan decorrelateQueryPlan(
 {
     if (!context.correlated_plan_steps[node])
     {
+        /// The rest of the query plan doesn't use any correlated columns.
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
 
         if (settings[Setting::correlated_subqueries_substitute_equivalent_expressions])
@@ -248,6 +249,7 @@ QueryPlan decorrelateQueryPlan(
             for (const auto * output : outputs)
                 decorrelated_nodes_names[output->result_name] = output;
 
+            /// Find possible renamings for all correlated columns
             std::vector<std::pair<const ActionsDAG::Node *, const String &>> expression_renamings;
             for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
             {
@@ -266,6 +268,8 @@ QueryPlan decorrelateQueryPlan(
                 }
             }
 
+            /// If all columns from outer query have equivalent expressions in the current subplan,
+            /// we can safely replace them and avoid introduction of CROSS JOIN.
             if (context.correlated_subquery.correlated_column_identifiers.size() == expression_renamings.size())
             {
                 for (const auto & [from, to] : expression_renamings)
@@ -281,8 +285,9 @@ QueryPlan decorrelateQueryPlan(
 
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
-        /// The rest of the query plan doesn't use any correlated columns.
-        if (settings[Setting::correlated_subqueries_use_input_buffer])
+
+        auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
+        if (settings[Setting::correlated_subqueries_use_input_buffer] && default_join_kind == DecorrelationJoinKind::RIGHT)
         {
             ColumnsDescription columns_description;
             for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
@@ -315,7 +320,7 @@ QueryPlan decorrelateQueryPlan(
             projectCorrelatedColumns(rhs_plan, context.correlated_subquery.correlated_column_identifiers);
         }
 
-        if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+        if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);
 
         auto lhs_plan_header = lhs_plan.getCurrentHeader();
