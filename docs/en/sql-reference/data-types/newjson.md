@@ -36,7 +36,6 @@ SET enable_json_type = 1
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
 :::
 
-
 To declare a column of `JSON` type, you can use the following syntax:
 
 ```sql
@@ -338,6 +337,7 @@ and is controlled by the same settings:
 - [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
 - [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
 - [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/operations/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
@@ -730,7 +730,6 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json))
 FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
-
 
 ```text
 ┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐

@@ -9,6 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
+set -e
+
 function wait_for_mutation_to_start()
 {
     local table=$1
@@ -56,6 +58,19 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE t_lwu_renames RENAME COLUMN b TO c;
 "
 
+function wait_for_rename()
+{
+    for i in {1..100}; do
+        sleep 0.3
+        ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_lwu_renames" | grep -q "\`c\` UInt64" && break;
+
+        if [[ $i -eq 100 ]]; then
+            echo "Timed out while waiting for rename to execute"
+        fi
+    done
+}
+
+wait_for_rename
 wait_for_mutation_to_start "t_lwu_renames" "0000000000"
 
 $CLICKHOUSE_CLIENT --query "

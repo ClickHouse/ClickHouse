@@ -268,7 +268,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        ostr << name;
+        if (!name.empty())
+            ostr << backQuoteIfNeed(name);
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -655,7 +656,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    ostr << name;
+    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
+    if (!name.empty())
+        ostr << backQuoteIfNeed(name);
 
     if (parameters)
     {

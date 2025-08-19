@@ -97,7 +97,6 @@ SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
    └───────────────┴───────────┘
 ```
 
-
 **See Also**
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)

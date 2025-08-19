@@ -173,27 +173,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::shared_ptr<Connection> connection_ptr,
-    const String & query_,
-    SharedHeader header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
-{
-    create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
-    {
-        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context, throttler);
-        if (extension_ && extension_->replica_info)
-            res->setReplicaInfo(*extension_->replica_info);
-        return res;
-    };
-}
-
-RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_,
     SharedHeader header_,
@@ -403,7 +382,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         return;
 
     connections = create_connections(async_callback);
-    AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
+    AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -428,6 +407,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
+
+    if (extension)
+        modified_client_info.collaborate_with_initiator = true;
 
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);

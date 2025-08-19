@@ -570,6 +570,7 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);
+    options.setCompressionBlockSize(format_settings.orc.output_compression_block_size);
     options.setTimezoneName(format_settings.orc.writer_time_zone_name);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
@@ -582,7 +583,8 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
