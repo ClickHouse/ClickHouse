@@ -1811,8 +1811,6 @@ std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 
     return nullptr;
 }
-
-
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
     if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
