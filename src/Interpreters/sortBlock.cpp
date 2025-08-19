@@ -200,7 +200,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
 bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
 {
-    static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
+    static_assert(sizeof(permutation[0]) == sizeof(UInt32), "Invalid permutation value size");
 
     size_t permutation_size = permutation.size();
     size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
@@ -212,36 +212,36 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 
     size_t i = 0;
 
-#if defined(__SSE2__)
-    if (size >= 8)
-    {
-        static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
+// #if defined(__SSE2__)
+//     if (size >= 8)
+//     {
+//         static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
 
-        __m128i permutation_add_vector = { 8, 8 };
-        __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
+//         __m128i permutation_add_vector = { 8, 8 };
+//         __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
 
-        const size_t * permutation_data = permutation.data();
+//         const size_t * permutation_data = permutation.data();
 
-        static constexpr size_t unroll_count = 8;
-        size_t size_unrolled = (size / unroll_count) * unroll_count;
+//         static constexpr size_t unroll_count = 8;
+//         size_t size_unrolled = (size / unroll_count) * unroll_count;
 
-        for (; i < size_unrolled; i += 8)
-        {
-            UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
+//         for (; i < size_unrolled; i += 8)
+//         {
+//             UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
 
-            for (size_t j = 0; j < 4; ++j)
-            {
-                __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
-                __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
-                permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
-                permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
-            }
+//             for (size_t j = 0; j < 4; ++j)
+//             {
+//                 __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
+//                 __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
+//                 permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
+//                 permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
+//             }
 
-            if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
-                return false;
-        }
-    }
-#endif
+//             if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
+//                 return false;
+//         }
+//     }
+// #endif
 
     i = std::max(i, static_cast<size_t>(1));
     for (; i < size; ++i)
