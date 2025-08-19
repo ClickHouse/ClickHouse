@@ -14,9 +14,9 @@ In this format, a single JSON object is interpreted as a single [JSON](/sql-refe
 
 This format can only be parsed for a table with a single field of type [JSON](/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view).
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Basic example {#basic-example}
+### Basic Example {#basic-example}
 
 ```sql title="Query"
 SET enable_json_type = 1;
@@ -62,4 +62,5 @@ SELECT time, json FROM json_as_object FORMAT JSONEachRow
 {"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
+

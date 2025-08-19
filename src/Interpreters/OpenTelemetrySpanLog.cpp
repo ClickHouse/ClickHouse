@@ -1,7 +1,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

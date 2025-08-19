@@ -105,7 +105,7 @@ public:
         String series_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
 
         if (series_name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of function {} (the series name) cannot be empty", name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name cannot be empty");
         series_name = escapeForFileName(series_name);
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
@@ -173,7 +173,7 @@ The series are stored in Keeper nodes under the path, which can be configured in
         .arguments{
             {"series_identifier", "Series identifier, (a short constant String)"}
         },
-        .returned_value = {"Returns sequential numbers starting from the previous counter value."},
+        .returned_value = "Sequential numbers starting from the previous counter value",
         .examples{
             {"first call", "SELECT generateSerialID('id1')", R"(
 ┌─generateSerialID('id1')──┐
@@ -192,7 +192,7 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
-        .category = FunctionDocumentation::Category::Other
+        .category{"Other"}
     });
 }
 

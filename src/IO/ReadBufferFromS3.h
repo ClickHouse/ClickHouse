@@ -8,6 +8,7 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>

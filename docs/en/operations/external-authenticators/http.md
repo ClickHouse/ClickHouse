@@ -55,7 +55,7 @@ Retry parameters:
 
 Forward headers:
 
-The part defines which headers will be forwarded from client request headers to external HTTP authenticator. Note that headers will be matched against config ones in case-insensitive way, but forwarded as-is i.e. unmodified.
+The part defines which headers will be forwarded from client request headers to external HTTP authenticator
 
 ### Enabling HTTP authentication in `users.xml` {#enabling-http-auth-in-users-xml}
 

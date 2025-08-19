@@ -1,17 +1,18 @@
-#include <Storages/Kafka/KafkaConsumer.h>
-
-#include <algorithm>
-#include <IO/ReadBufferFromMemory.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
-#include <base/defines.h>
-#include <boost/algorithm/string/join.hpp>
-#include <cppkafka/cppkafka.h>
 #include <fmt/ranges.h>
-#include <Common/CurrentMetrics.h>
+#include <Storages/Kafka/KafkaConsumer.h>
+#include <IO/ReadBufferFromMemory.h>
+
 #include <Common/DateLUT.h>
-#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+
+#include <cppkafka/cppkafka.h>
+#include <boost/algorithm/string/join.hpp>
+#include <algorithm>
+
+#include <Common/CurrentMetrics.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
+#include <Common/ProfileEvents.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -75,7 +76,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
             setRDKafkaStat(stat_json);
         });
     }
-    consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
+    consumer = std::make_shared<cppkafka::Consumer>(consumer_config);
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // called (synchronously, during poll) when we enter the consumer group
@@ -101,6 +102,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     // called (synchronously, during poll) when we leave the consumer group
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
+        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
 
         // Rebalance is happening now, and now we have a chance to finish the work
@@ -124,8 +126,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        assert(!assignment.has_value() || topic_partitions.size() == assignment->size());
-        cleanAssignment();
+        assignment.reset();
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -144,7 +145,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-        IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true);
+        setExceptionInfo(err);
     });
 }
 
@@ -152,13 +153,9 @@ ConsumerPtr && KafkaConsumer::moveConsumer()
 {
     // messages & assignment should be destroyed before consumer
     cleanUnprocessed();
-    cleanAssignment();
+    assignment.reset();
 
-    StorageKafkaUtils::consumerGracefulStop(
-        *consumer,
-        DRAIN_TIMEOUT_MS,
-        log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 
     return std::move(consumer);
 }
@@ -169,13 +166,9 @@ KafkaConsumer::~KafkaConsumer()
         return;
 
     cleanUnprocessed();
-    cleanAssignment();
+    assignment.reset();
 
-    StorageKafkaUtils::consumerGracefulStop(
-        *consumer,
-        DRAIN_TIMEOUT_MS,
-        log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
 
 
@@ -248,7 +241,7 @@ void KafkaConsumer::commit()
                 else
                 {
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
-                    setExceptionInfo(e.what(), /* with_stacktrace = */ true);
+                    setExceptionInfo(e.what());
                 }
             }
             --max_retries;
@@ -321,7 +314,7 @@ void KafkaConsumer::subscribe()
             if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
 
-            setExceptionInfo(e.what(), /* with_stacktrace = */ true);
+            setExceptionInfo(e.what());
             throw;
         }
 
@@ -357,17 +350,6 @@ void KafkaConsumer::cleanUnprocessed()
     messages.clear();
     current = messages.end();
     offsets_stored = 0;
-}
-
-void KafkaConsumer::cleanAssignment()
-{
-    if (assignment.has_value())
-    {
-        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, assignment->size());
-        if (!assignment->empty())
-            CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-        assignment.reset();
-    }
 }
 
 void KafkaConsumer::markDirty()
@@ -416,10 +398,7 @@ void KafkaConsumer::doPoll()
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
         // Remove messages with errors and log any exceptions.
-        auto num_errors = StorageKafkaUtils::eraseMessageErrors(
-            new_messages,
-            log,
-            [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+        auto num_errors = StorageKafkaUtils::eraseMessageErrors(new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
         num_messages_read += new_messages.size();
 
         resetIfStopped();
@@ -548,19 +527,22 @@ void KafkaConsumer::storeLastReadMessageOffset()
     }
 }
 
+void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
+{
+    setExceptionInfo(err.to_string(), with_stacktrace);
+}
+
 void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
 {
     std::string enriched_text = text;
 
     if (with_stacktrace)
     {
-        if (!enriched_text.ends_with('\n'))
-            enriched_text.append(1, '\n');
         enriched_text.append(StackTrace().toString());
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({std::move(enriched_text), timeInSeconds(std::chrono::system_clock::now())});
+    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
 }
 
 std::string KafkaConsumer::getMemberId() const
@@ -589,7 +571,6 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
             cpp_assignments[num].get_topic(),
             cpp_assignments[num].get_partition(),
             cpp_offsets[num].get_offset(),
-            std::nullopt,
         });
     }
 

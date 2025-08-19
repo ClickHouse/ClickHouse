@@ -313,7 +313,6 @@ void SerializationObjectDeprecated<Parser>::serializeBinaryBulkWithMultipleStrea
 template <typename Parser>
 void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -330,9 +329,9 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkWithMultipleStr
 
     settings.path.push_back(Substream::DeprecatedObjectData);
     if (state_object->kind == BinarySerializationKind::STRING)
-        deserializeBinaryBulkFromString(column_object, rows_offset, limit, settings, *state_object, cache);
+        deserializeBinaryBulkFromString(column_object, limit, settings, *state_object, cache);
     else
-        deserializeBinaryBulkFromTuple(column_object, rows_offset, limit, settings, *state_object, cache);
+        deserializeBinaryBulkFromTuple(column_object, limit, settings, *state_object, cache);
 
     settings.path.pop_back();
     column_object.checkConsistency();
@@ -343,7 +342,6 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkWithMultipleStr
 template <typename Parser>
 void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromString(
     ColumnObjectDeprecated & column_object,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeStateObject & state,
@@ -351,7 +349,7 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromString(
 {
     ColumnPtr column_string = state.nested_type->createColumn();
     state.nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-        column_string, rows_offset, limit, settings, state.nested_state, cache);
+        column_string, limit, settings, state.nested_state, cache);
 
     size_t input_rows_count = column_string->size();
     column_object.reserve(input_rows_count);
@@ -372,7 +370,6 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromString(
 template <typename Parser>
 void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromTuple(
     ColumnObjectDeprecated & column_object,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeStateObject & state,
@@ -380,7 +377,7 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromTuple(
 {
     ColumnPtr column_tuple = state.nested_type->createColumn();
     state.nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-        column_tuple, rows_offset, limit, settings, state.nested_state, cache);
+        column_tuple, limit, settings, state.nested_state, cache);
 
     auto [tuple_paths, tuple_types] = flattenTuple(state.nested_type);
     auto flattened_tuple = flattenTuple(column_tuple);

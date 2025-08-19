@@ -277,9 +277,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+    void prepareVariantsForSquashing(const Columns & source_columns);
 
     void ensureOwnership() override
     {
@@ -306,7 +306,10 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override;
+    ColumnCheckpointPtr getCheckpoint() const override
+    {
+        return variant_column_ptr->getCheckpoint();
+    }
 
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
@@ -497,16 +500,6 @@ private:
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
     std::unordered_map<String, SerializationPtr> serialization_cache;
 };
-
-struct DynamicColumnCheckpoint : public ColumnCheckpoint
-{
-    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
-    {
-    }
-
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
-};
-
 
 void extendVariantColumn(
     IColumn & variant_column,

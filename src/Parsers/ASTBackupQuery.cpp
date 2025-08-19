@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -16,7 +17,8 @@ namespace
 
     void formatPartitions(const ASTs & partitions, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << " " << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " ";
+        ostr << " " << (format.hilite ? IAST::hilite_keyword : "") << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " "
+                    << (format.hilite ? IAST::hilite_none : "");
         bool need_comma = false;
         for (const auto & partition : partitions)
         {
@@ -27,12 +29,13 @@ namespace
         }
     }
 
-    void formatExceptDatabases(const std::set<String> & except_databases, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatExceptDatabases(const std::set<String> & except_databases, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
         if (except_databases.empty())
             return;
 
-        ostr << " EXCEPT " << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " ";
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
+                    << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " " << (format.hilite ? IAST::hilite_none : "");
 
         bool need_comma = false;
         for (const auto & database_name : except_databases)
@@ -43,12 +46,13 @@ namespace
         }
     }
 
-    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, WriteBuffer & ostr, const IAST::FormatSettings & format, bool only_table_names=false)
     {
         if (except_tables.empty())
             return;
 
-        ostr << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " ";
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " "
+                    << (format.hilite ? IAST::hilite_none : "");
 
         bool need_comma = false;
         for (const auto & table_name : except_tables)
@@ -68,7 +72,7 @@ namespace
         {
             case ElementType::TABLE:
             {
-                ostr << "TABLE ";
+                ostr << (format.hilite ? IAST::hilite_keyword : "") << "TABLE " << (format.hilite ? IAST::hilite_none : "");
 
                 if (!element.database_name.empty())
                     ostr << backQuoteIfNeed(element.database_name) << ".";
@@ -76,7 +80,7 @@ namespace
 
                 if ((element.new_table_name != element.table_name) || (element.new_database_name != element.database_name))
                 {
-                    ostr << " AS ";
+                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
                     if (!element.new_database_name.empty())
                         ostr << backQuoteIfNeed(element.new_database_name) << ".";
                     ostr << backQuoteIfNeed(element.new_table_name);
@@ -89,12 +93,12 @@ namespace
 
             case ElementType::TEMPORARY_TABLE:
             {
-                ostr << "TEMPORARY TABLE ";
+                ostr << (format.hilite ? IAST::hilite_keyword : "") << "TEMPORARY TABLE " << (format.hilite ? IAST::hilite_none : "");
                 ostr << backQuoteIfNeed(element.table_name);
 
                 if (element.new_table_name != element.table_name)
                 {
-                    ostr << " AS ";
+                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
                     ostr << backQuoteIfNeed(element.new_table_name);
                 }
                 break;
@@ -102,12 +106,14 @@ namespace
 
             case ElementType::DATABASE:
             {
+                ostr << (format.hilite ? IAST::hilite_keyword : "");
                 ostr << "DATABASE ";
+                ostr << (format.hilite ? IAST::hilite_none : "");
                 ostr << backQuoteIfNeed(element.database_name);
 
                 if (element.new_database_name != element.database_name)
                 {
-                    ostr << " AS ";
+                    ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
                     ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
@@ -117,7 +123,7 @@ namespace
 
             case ElementType::ALL:
             {
-                ostr << "ALL";
+                ostr << (format.hilite ? IAST::hilite_keyword : "") << "ALL" << (format.hilite ? IAST::hilite_none : "");
                 formatExceptDatabases(element.except_databases, ostr, format);
                 formatExceptTables(element.except_tables, ostr, format);
                 break;
@@ -141,7 +147,7 @@ namespace
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
 
-        ostr << " SETTINGS ";
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         bool empty = true;
 
         if (base_backup_name)
@@ -263,12 +269,12 @@ ASTPtr ASTBackupQuery::clone() const
 
 void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & fs, FormatState &, FormatStateStacked) const
 {
-    ostr << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
+    ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ") << (fs.hilite ? hilite_none : "");
 
     formatElements(elements, ostr, fs);
     formatOnCluster(ostr, fs);
 
-    ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
+    ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (fs.hilite ? hilite_none : "");
     backup_name->format(ostr, fs);
 
     if (settings || base_backup_name)
