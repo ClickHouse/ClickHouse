@@ -6,11 +6,6 @@
 
 #include <cstddef>
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
 

@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
-#include "QueryPipeline/Pipe.h"
-#include "QueryPipeline/QueryPipelineBuilder.h"
+
 #include <Processors/Sources/ReadFromCommonBufferSource.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
