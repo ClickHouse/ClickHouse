@@ -1,6 +1,4 @@
-#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/RawBLOBRowOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 
@@ -10,7 +8,7 @@ namespace DB
 
 RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_)
+    const Block & header_)
     : IRowOutputFormat(header_, out_)
 {
 }
@@ -31,10 +29,9 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
     factory.registerOutputFormat("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings &)
     {
-        return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
+        return std::make_shared<RawBLOBRowOutputFormat>(buf, sample);
     });
 }
 

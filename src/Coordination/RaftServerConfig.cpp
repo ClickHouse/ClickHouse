@@ -1,5 +1,4 @@
-#include <Coordination/RaftServerConfig.h>
-
+#include "RaftServerConfig.h"
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
@@ -27,16 +26,12 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     if (!with_id_endpoint && !with_server_type && !with_priority)
         return std::nullopt;
 
-    std::string_view id_str = parts[0];
+    const std::string_view id_str = parts[0];
     if (!id_str.starts_with("server."))
         return std::nullopt;
 
-    id_str = id_str.substr(7);
-    if (auto eq_pos = id_str.find('='); std::string_view::npos != eq_pos)
-        id_str = id_str.substr(0, eq_pos);
-
     Int32 id;
-    if (!tryParse(id, id_str))
+    if (!tryParse(id, std::next(id_str.begin(), 7)))
         return std::nullopt;
     if (id <= 0)
         return std::nullopt;

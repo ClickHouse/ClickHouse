@@ -1,10 +1,9 @@
-import datetime
 import random
 import time
 from multiprocessing.dummy import Pool
+import datetime
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -293,9 +292,6 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
 
 
 def test_rename_parallel_same_node(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_parallel_same_node"
     drop_table(nodes, table_name)
     try:
@@ -334,9 +330,6 @@ def test_rename_parallel_same_node(started_cluster):
 
 
 def test_rename_parallel(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_parallel"
     drop_table(nodes, table_name)
     try:
@@ -376,9 +369,6 @@ def test_rename_parallel(started_cluster):
 
 def test_rename_with_parallel_select(started_cluster):
     table_name = "test_rename_with_parallel_select"
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     drop_table(nodes, table_name)
     try:
         create_table(nodes, table_name)
@@ -429,9 +419,6 @@ def test_rename_with_parallel_select(started_cluster):
 
 
 def test_rename_with_parallel_insert(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_with_parallel_insert"
     drop_table(nodes, table_name)
     try:
@@ -485,9 +472,6 @@ def test_rename_with_parallel_insert(started_cluster):
 
 
 def test_rename_with_parallel_merges(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_with_parallel_merges"
     drop_table(nodes, table_name)
     try:
@@ -551,9 +535,6 @@ def test_rename_with_parallel_merges(started_cluster):
 
 
 def test_rename_with_parallel_slow_insert(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_with_parallel_slow_insert"
     drop_table(nodes, table_name)
     try:
@@ -592,9 +573,6 @@ def test_rename_with_parallel_slow_insert(started_cluster):
 
 
 def test_rename_with_parallel_ttl_move(started_cluster):
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     table_name = "test_rename_with_parallel_ttl_move"
     try:
         create_table(
@@ -666,9 +644,6 @@ def test_rename_with_parallel_ttl_move(started_cluster):
 
 def test_rename_with_parallel_ttl_delete(started_cluster):
     table_name = "test_rename_with_parallel_ttl_delete"
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Consume tons of memory with sanitizer")
-
     try:
         create_table(nodes, table_name, with_time_column=True, with_ttl_delete=True)
         rename_column(node1, table_name, "time", "time2", 1, False)

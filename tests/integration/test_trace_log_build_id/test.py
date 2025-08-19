@@ -1,6 +1,5 @@
 import pytest
-
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 TEST_QUERY_ID = "test_trace_log_build_id_query_{}"
 OLD_TEST_QUERY_ID = TEST_QUERY_ID.format("0")

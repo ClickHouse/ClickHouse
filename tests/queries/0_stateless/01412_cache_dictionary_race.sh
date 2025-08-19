@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ordinary_db"
 
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ordinary_db"
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT -n -q "
 
 CREATE DICTIONARY ordinary_db.dict1
 (
@@ -26,9 +26,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 3));
 
 function dict_get_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT --query "SELECT dictGetString('ordinary_db.dict1', 'third_column', toUInt64(rand() % 1000)) from numbers(2)" &>/dev/null
     done
 }
@@ -36,10 +34,8 @@ function dict_get_thread()
 
 function drop_create_table_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
-        $CLICKHOUSE_CLIENT --query "CREATE TABLE ordinary_db.table_for_dict_real (
+    while true; do
+        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ordinary_db.table_for_dict_real (
             key_column UInt64,
             second_column UInt8,
             third_column String
@@ -55,17 +51,20 @@ function drop_create_table_thread()
     done
 }
 
+export -f dict_get_thread;
+export -f drop_create_table_thread;
+
 TIMEOUT=20
 
-dict_get_thread 2> /dev/null &
-dict_get_thread 2> /dev/null &
-dict_get_thread 2> /dev/null &
-dict_get_thread 2> /dev/null &
-dict_get_thread 2> /dev/null &
-dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
 
 
-drop_create_table_thread 2> /dev/null &
+timeout $TIMEOUT bash -c drop_create_table_thread 2> /dev/null &
 
 wait
 

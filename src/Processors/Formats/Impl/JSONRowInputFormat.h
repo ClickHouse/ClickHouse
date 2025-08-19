@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Processors/Formats/ISchemaReader.h>
+#include <Core/Block.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -15,7 +17,7 @@ class JSONRowInputFormat final : public JSONEachRowRowInputFormat
 public:
     JSONRowInputFormat(
         ReadBuffer & in_,
-        SharedHeader header_,
+        const Block & header_,
         Params params_,
         const FormatSettings & format_settings_);
 
@@ -27,7 +29,7 @@ public:
 private:
     JSONRowInputFormat(
         std::unique_ptr<PeekableReadBuffer> buf,
-        SharedHeader header_,
+        const Block & header_,
         Params params_,
         const FormatSettings & format_settings_);
 

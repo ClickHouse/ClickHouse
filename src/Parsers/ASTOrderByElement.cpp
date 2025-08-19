@@ -15,65 +15,46 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    children.front()->format(ostr, settings, state, frame);
-    ostr
+    children.front()->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
         << (direction == -1 ? " DESC" : " ASC")
-       ;
+        << (settings.hilite ? hilite_none : "");
 
     if (nulls_direction_was_explicitly_specified)
     {
-        ostr
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
             << " NULLS "
             << (nulls_direction == direction ? "LAST" : "FIRST")
-           ;
+            << (settings.hilite ? hilite_none : "");
     }
 
     if (auto collation = getCollation())
     {
-        ostr << " COLLATE ";
-        collation->format(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
+        collation->formatImpl(settings, state, frame);
     }
 
     if (with_fill)
     {
-        ostr << " WITH FILL";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
         if (auto fill_from = getFillFrom())
         {
-            ostr << " FROM ";
-            fill_from->format(ostr, settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            fill_from->formatImpl(settings, state, frame);
         }
         if (auto fill_to = getFillTo())
         {
-            ostr << " TO ";
-            fill_to->format(ostr, settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            fill_to->formatImpl(settings, state, frame);
         }
         if (auto fill_step = getFillStep())
         {
-            ostr << " STEP ";
-            fill_step->format(ostr, settings, state, frame);
-        }
-        if (auto fill_staleness = getFillStaleness())
-        {
-            ostr << " STALENESS ";
-            fill_staleness->format(ostr, settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
+            fill_step->formatImpl(settings, state, frame);
         }
     }
-}
-
-void ASTStorageOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    hash_state.update(direction);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
-}
-
-void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    children.front()->format(ostr, settings, state, frame);
-
-    if (direction == -1)
-        ostr << " DESC";
 }
 
 }

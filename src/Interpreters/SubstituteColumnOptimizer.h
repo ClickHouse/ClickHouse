@@ -1,5 +1,10 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/Aliases.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
 

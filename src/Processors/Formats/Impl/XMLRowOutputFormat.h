@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-#include <Formats/FormatSettings.h>
+#include <Core/Block.h>
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
+#include <Common/Stopwatch.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 
@@ -16,7 +17,7 @@ namespace DB
 class XMLRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
 
@@ -53,6 +54,10 @@ private:
         statistics.rows_before_aggregation = rows_before_aggregation_;
     }
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
+
+    void onProgress(const Progress & value) override;
+
+    String getContentType() const override { return "application/xml; charset=UTF-8"; }
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();

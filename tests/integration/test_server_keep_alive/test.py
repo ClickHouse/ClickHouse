@@ -1,7 +1,6 @@
 import logging
-import random
-
 import pytest
+import random
 import requests
 
 from helpers.cluster import ClickHouseCluster

@@ -144,7 +144,7 @@ public:
 
             return col_to;
         }
-        if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
+        else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
             const auto col_in_rows = col_in_fixed->size();
@@ -163,16 +163,20 @@ public:
             if (col_in_rows >= input_rows_count)
                 fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
             else if (col_in_rows != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
             else
                 for (size_t i = 0; i < input_rows_count; ++i)
                     fuzzBits(ptr_in, ptr_to + i * n, n, inverse_probability);
 
             return col_to;
         }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
+        }
     }
 };
 
@@ -180,35 +184,6 @@ public:
 
 REGISTER_FUNCTION(FuzzBits)
 {
-    FunctionDocumentation::Description description = R"(
-Flips the bits of the input string `s`, with probability `p` for each bit.
-    )";
-    FunctionDocumentation::Syntax syntax = "fuzzBits(s, p)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "String or FixedString to perform bit fuzzing on", {"String", "FixedString"}},
-        {"p", "Probability of flipping each bit as a number between `0.0` and `1.0`", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a Fuzzed string with same type as `s`.", {"String", "FixedString"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT fuzzBits(materialize('abacaba'), 0.1)
-FROM numbers(3)
-        )",
-        R"(
-┌─fuzzBits(materialize('abacaba'), 0.1)─┐
-│ abaaaja                               │
-│ a*cjab+                               │
-│ aeca2A                                │
-└───────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionFuzzBits>(documentation);
+    factory.registerFunction<FunctionFuzzBits>();
 }
 }

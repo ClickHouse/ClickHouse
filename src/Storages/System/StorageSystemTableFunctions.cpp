@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>

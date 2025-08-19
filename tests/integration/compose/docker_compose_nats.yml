@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   nats1:
     image: nats
@@ -8,4 +9,3 @@ services:
       - type: bind
         source: "${NATS_CERT_DIR:-}/nats"
         target: /etc/certs
-    stop_grace_period: 5s

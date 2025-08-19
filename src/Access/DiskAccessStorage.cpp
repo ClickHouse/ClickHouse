@@ -14,6 +14,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <base/range.h>
 #include <filesystem>
 #include <fstream>
@@ -477,7 +478,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id, getStorageName());
+            throwNotFound(id);
         else
             return nullptr;
     }
@@ -496,7 +497,7 @@ std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWi
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id, getStorageName());
+            throwNotFound(id);
         else
             return std::nullopt;
     }
@@ -531,7 +532,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     {
         if (throw_if_exists)
         {
-            throwNameCollisionCannotInsert(type, name, getStorageName());
+            throwNameCollisionCannotInsert(type, name);
         }
         else
         {
@@ -548,7 +549,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         if (throw_if_exists)
         {
             const auto & existing_entry = it_by_id->second;
-            throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name, getStorageName());
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name);
         }
         else
         {
@@ -622,7 +623,7 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id, getStorageName());
+            throwNotFound(id);
         else
             return false;
     }
@@ -663,7 +664,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id, getStorageName());
+            throwNotFound(id);
         else
             return false;
     }
@@ -675,7 +676,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (!entry.entity)
         entry.entity = readAccessEntityFromDisk(id);
     auto old_entity = entry.entity;
-    auto new_entity = update_func(old_entity, id);
+    auto new_entity = update_func(old_entity);
 
     if (!new_entity->isTypeOf(old_entity->getType()))
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
@@ -692,7 +693,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (name_changed)
     {
         if (entries_by_name.contains(new_name))
-            throwNameCollisionCannotRename(type, old_name, new_name, getStorageName());
+            throwNameCollisionCannotRename(type, old_name, new_name);
         if (write_on_disk)
             scheduleWriteLists(type);
     }

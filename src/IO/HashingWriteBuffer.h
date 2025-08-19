@@ -5,7 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <city.h>
 
-constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
+#define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 
 
 namespace DB
@@ -26,7 +26,8 @@ public:
     {
         if (block_pos)
             return CityHash_v1_0_2::CityHash128WithSeed(BufferWithOwnMemory<Buffer>::memory.data(), block_pos, state);
-        return state;
+        else
+            return state;
     }
 
     void append(DB::BufferBase::Position data)

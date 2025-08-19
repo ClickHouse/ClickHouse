@@ -1,8 +1,0 @@
-FIX ISSUE #69143
-a
-b
-EXPLAIN SYNTAX OF UDF
-SELECT test_03274(4 + 2)
-FROM system.one
-SELECT test_03274(4 + 2)
-FROM system.one

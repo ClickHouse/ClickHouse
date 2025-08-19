@@ -4,12 +4,12 @@
 namespace DB
 {
 
-class NullWriteBuffer;
+class WriteBufferFromPointer;
 
 class NullOutputFormat final : public IOutputFormat
 {
 public:
-    explicit NullOutputFormat(SharedHeader header);
+    explicit NullOutputFormat(const Block & header);
 
     String getName() const override { return "Null"; }
 
@@ -17,7 +17,7 @@ protected:
     void consume(Chunk) override {}
 
 private:
-    static NullWriteBuffer empty_buffer;
+    static WriteBufferFromPointer empty_buffer;
 };
 
 }

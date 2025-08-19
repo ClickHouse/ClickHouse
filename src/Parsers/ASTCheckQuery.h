@@ -36,37 +36,30 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "CHECK TABLE ";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
         if (table)
         {
             if (database)
             {
-                database->format(ostr, settings, state, frame);
-                ostr << '.';
+                database->formatImpl(settings, state, frame);
+                settings.ostr << '.';
             }
 
             chassert(table);
-            table->format(ostr, settings, state, frame);
+            table->formatImpl(settings, state, frame);
         }
 
         if (partition)
         {
-            ostr << indent_str << " PARTITION ";
-            partition->format(ostr, settings, state, frame);
-        }
-
-        if (!part_name.empty())
-        {
-            ostr << indent_str << " PART "
-                << quoteString(part_name);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
         }
     }
 };
-
 
 struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 {
@@ -84,10 +77,10 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "CHECK ALL TABLES";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
     }
 };
 

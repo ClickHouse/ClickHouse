@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/TTLDescription.h>
 
 #include <base/JSON.h>
 

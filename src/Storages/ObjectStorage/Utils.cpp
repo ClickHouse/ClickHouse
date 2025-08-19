@@ -1,14 +1,6 @@
-#include <Core/Settings.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -16,13 +8,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
-    const StorageObjectStorageQuerySettings & settings,
+    const StorageObjectStorage::Configuration & configuration,
+    const StorageObjectStorage::QuerySettings & settings,
     const String & key,
     size_t sequence_number)
 {
@@ -56,71 +47,31 @@ void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorage::ConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (format == "auto")
-    {
-        if (configuration->isDataLakeConfiguration())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Format must be already specified for {} storage.",
-                configuration->getTypeName());
-        }
-    }
-
     if (columns.empty())
     {
-        if (configuration->isDataLakeConfiguration())
-        {
-            auto table_structure = configuration->tryGetTableStructureFromMetadata();
-            if (table_structure)
-                columns = table_structure.value();
-        }
-
-        if (columns.empty())
-        {
-            if (format == "auto")
-            {
-                std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
-                    object_storage, configuration, format_settings, sample_path, context);
-            }
-            else
-            {
-                chassert(!format.empty());
-                columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
-            }
-        }
+        if (format == "auto")
+            std::tie(columns, format) =
+                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, sample_path, context);
+        else
+            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
     }
     else if (format == "auto")
     {
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
-    validateSupportedColumns(columns, *configuration);
-}
-
-void validateSupportedColumns(
-    ColumnsDescription & columns,
-    const StorageObjectStorageConfiguration & configuration)
-{
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration.getTypeName());
+                        "Special columns are not supported for {} storage"
+                        "like MATERIALIZED, ALIAS or EPHEMERAL", configuration->getTypeName());
     }
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 max_download_buffer_size;
-extern const SettingsBool use_cache_for_count_from_files;
-extern const SettingsString filesystem_cache_name;
-extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-}
 }

@@ -1,3 +1,4 @@
+version: '2.2'
 services:
   psql:
     image: postgres:12.2-alpine
@@ -11,4 +12,3 @@ services:
       - "5433:5433"
     environment:
       POSTGRES_HOST_AUTH_METHOD: "trust"
-    stop_grace_period: 5s

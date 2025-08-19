@@ -164,7 +164,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 writeChar('\n', ostr);
                 for (size_t i = 0; i != objects_to_close; ++i)
                 {
-                    writeChar(settings.json.pretty_print_indent, (indent + prefix_size + objects_to_close - i) * settings.json.pretty_print_indent_multiplier, ostr);
+                    writeChar(' ', (indent + prefix_size + objects_to_close - i) * 4, ostr);
                     if (i != objects_to_close - 1)
                         writeCString("}\n", ostr);
                     else
@@ -201,7 +201,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 
                 if (pretty)
                 {
-                    writeChar(settings.json.pretty_print_indent, (indent + i + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+                    writeChar(' ', (indent + i + 1) * 4, ostr);
                     writeJSONString(path_elements.elements[i], ostr, settings);
                     writeCString(" : {\n", ostr);
                 }
@@ -231,7 +231,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 
         if (pretty)
         {
-            writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + current_prefix.size() + 1) * 4, ostr);
             writeJSONString(path_elements.elements.back(), ostr, settings);
             writeCString(" : ", ostr);
         }
@@ -261,7 +261,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
             /// To serialize value stored in shared data we should first deserialize it from binary format.
             auto tmp_dynamic_column = ColumnDynamic::create();
             tmp_dynamic_column->reserve(1);
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
+            column_object.deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
 
             if (pretty)
                 dynamic_serialization->serializeTextJSONPretty(*tmp_dynamic_column, 0, ostr, settings, indent + current_prefix.size() + 1);
@@ -276,10 +276,10 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         writeChar('\n', ostr);
         for (size_t i = 0; i != current_prefix.elements.size(); ++i)
         {
-            writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() - i) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + current_prefix.size() - i) * 4, ostr);
             writeCString("}\n", ostr);
         }
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', indent * 4, ostr);
         writeChar('}', ostr);
     }
     else
@@ -291,7 +291,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 }
 
 template <typename Parser>
-void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
+void SerializationJSON<Parser>::deserializeTextImpl(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
@@ -314,7 +314,7 @@ void SerializationJSON<Parser>::deserializeWholeText(IColumn & column, ReadBuffe
 {
     String object;
     readStringUntilEOF(object, istr);
-    deserializeObject(column, object, settings);
+    deserializeTextImpl(column, object, settings);
 }
 
 template <typename Parser>
@@ -330,7 +330,7 @@ void SerializationJSON<Parser>::deserializeTextEscaped(IColumn & column, ReadBuf
 {
     String object;
     readEscapedString(object, istr);
-    deserializeObject(column, object, settings);
+    deserializeTextImpl(column, object, settings);
 }
 
 template <typename Parser>
@@ -346,7 +346,7 @@ void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuff
 {
     String object;
     readQuotedString(object, istr);
-    deserializeObject(column, object, settings);
+    deserializeTextImpl(column, object, settings);
 }
 
 template <typename Parser>
@@ -362,7 +362,7 @@ void SerializationJSON<Parser>::deserializeTextCSV(IColumn & column, ReadBuffer 
 {
     String object;
     readCSVString(object, istr, settings.csv);
-    deserializeObject(column, object, settings);
+    deserializeTextImpl(column, object, settings);
 }
 
 template <typename Parser>
@@ -390,7 +390,7 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
 {
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
-    deserializeObject(column, object_view, settings);
+    deserializeTextImpl(column, object_view, settings);
 }
 
 #if USE_SIMDJSON

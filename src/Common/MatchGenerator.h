@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <functional>
 #include <memory>
 
 namespace re2

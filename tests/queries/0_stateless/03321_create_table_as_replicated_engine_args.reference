@@ -1,3 +1,0 @@
-shard1	replica1	OK	0	0
-shard1	replica1	OK	0	0
-CREATE TABLE default.t2\n(\n    `x` UInt8,\n    `y` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nORDER BY x\nSETTINGS index_granularity = 8192

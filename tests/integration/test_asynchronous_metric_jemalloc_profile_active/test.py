@@ -1,13 +1,11 @@
 import time
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    env_variables={"MALLOC_CONF": ""},
     main_configs=["configs/asynchronous_metrics_update_period_s.xml"],
 )
 

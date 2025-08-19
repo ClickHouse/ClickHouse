@@ -21,6 +21,7 @@ echo '
     }
 }' > 02482_object_data.jsonl
 
-$CLICKHOUSE_LOCAL --enable_json_type=1 -q "select * from file(02482_object_data.jsonl, auto, 'obj JSON')"
+$CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select * from file(02482_object_data.jsonl, auto, 'obj JSON')"
 
 rm 02482_object_data.jsonl
+

@@ -1,1 +1,0 @@
-CREATE DATABASE x; USE x; CREATE TABLE table1 (column UInt32) ENGINE = Memory; INSERT INTO table1 VALUES (0), (1), (5); CREATE TABLE table2 (column UInt32) ENGINE = Memory; INSERT INTO table2 SELECT * FROM table1; DROP DATABASE x;

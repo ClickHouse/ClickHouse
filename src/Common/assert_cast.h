@@ -1,6 +1,5 @@
 #pragma once
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
 #include <type_traits>
 #include <typeinfo>
 #include <typeindex>
@@ -9,6 +8,7 @@
 #include <Common/Exception.h>
 #include <base/demangle.h>
 
+
 namespace DB
 {
     namespace ErrorCodes
@@ -16,7 +16,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
     }
 }
-#endif
 
 
 /** Perform static_cast in release build.

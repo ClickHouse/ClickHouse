@@ -27,11 +27,11 @@ private:
 
     std::atomic<bool> is_trace_log_initialized = false;
     std::shared_ptr<TraceLog> trace_log_ptr;
-    bool symbolize = false;
 
     ThreadFromGlobalPool thread;
 
     void tryClosePipe();
+
     void run();
 };
 

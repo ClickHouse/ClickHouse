@@ -7,8 +7,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Common/intExp.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/callOnTypeIndex.h>
 
 
 namespace DB
@@ -64,11 +62,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
@@ -107,7 +100,7 @@ public:
                 result_column->getData().resize_fill(input_rows_count, res_value);
                 return true;
             }
-            if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
+            else if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
                 execute<Type>(*col_vec, *result_column, input_rows_count, precision);
                 return true;

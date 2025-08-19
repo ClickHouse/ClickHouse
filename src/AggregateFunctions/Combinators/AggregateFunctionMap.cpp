@@ -1,6 +1,5 @@
 #include <unordered_map>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -15,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include "AggregateFunctionCombinatorFactory.h"
 
 
 namespace DB
@@ -450,8 +450,9 @@ public:
                 auto action = NullsAction::EMPTY;
                 return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
             }
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays", nested_func_name);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",
+                                 nested_func_name);
         }
     }
 };

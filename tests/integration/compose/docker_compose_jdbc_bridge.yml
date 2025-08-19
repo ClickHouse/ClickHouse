@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   bridge1:
     image: clickhouse/jdbc-bridge
@@ -24,4 +25,3 @@ services:
       - type: ${JDBC_BRIDGE_FS:-tmpfs}
         source: ${JDBC_BRIDGE_LOGS:-}
         target: /app/logs
-    stop_grace_period: 5s

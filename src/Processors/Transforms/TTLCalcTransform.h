@@ -1,23 +1,22 @@
 #pragma once
-
-#include <Interpreters/PreparedSets.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/TTL/ITTLAlgorithm.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Core/Block.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
+
+#include <Common/DateLUT.h>
 
 namespace DB
 {
-
-class Block;
 
 class TTLCalcTransform : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
         const ContextPtr & context,
-        SharedHeader header_,
+        const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,

@@ -13,8 +13,9 @@ struct VersionNumber
 {
     explicit VersionNumber() = default;
 
-    constexpr VersionNumber(const std::initializer_list<Int64> & init) : components(init) {}
-    explicit VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0) : components{major, minor, patch} { }
+    VersionNumber(const std::initializer_list<Int64> & init) : components(init) {}
+    explicit VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0) : components{major, minor, patch} {}
+    explicit VersionNumber(const std::vector<Int64> & components_) : components(components_) {}
 
     /// Parse version number from string.
     explicit VersionNumber(std::string version);

@@ -8,7 +8,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -102,17 +102,17 @@ public:
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
-            auto from_header = query_plan.getCurrentHeader();
+            auto from_header = query_plan.getCurrentDataStream().header;
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header->getColumnsWithTypeAndName(),
-                    to_header->getColumnsWithTypeAndName(),
+                    from_header.getColumnsWithTypeAndName(),
+                    to_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Name);
 
             auto step = std::make_unique<ExpressionStep>(
-                query_plan.getCurrentHeader(),
+                query_plan.getCurrentDataStream(),
                 std::move(convert_actions_dag));
 
             step->setStepDescription("Converting columns");

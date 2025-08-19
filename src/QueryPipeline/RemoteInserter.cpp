@@ -5,7 +5,6 @@
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
-#include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -13,11 +12,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsLogsLevel send_logs_level;
-}
 
 namespace ErrorCodes
 {
@@ -27,24 +21,18 @@ namespace ErrorCodes
 
 RemoteInserter::RemoteInserter(
     Connection & connection_,
-    const ConnectionTimeouts & timeouts_,
+    const ConnectionTimeouts & timeouts,
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_)
-    : insert_settings(settings_)
-    , client_info(client_info_)
-    , timeouts(timeouts_)
-    , connection(connection_)
+    : connection(connection_)
     , query(query_)
     , server_revision(connection.getServerRevision(timeouts))
-{}
-
-void RemoteInserter::initialize()
 {
-    ClientInfo modified_client_info = client_info;
+    ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    Settings settings = insert_settings;
+    Settings settings = settings_;
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,
@@ -59,13 +47,12 @@ void RemoteInserter::initialize()
     /// and will not consume Log packets.
     ///
     /// So that is why send_logs_level had been disabled here.
-    settings[Setting::send_logs_level] = "none";
+    settings.send_logs_level = "none";
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    /// TODO (vnemkov): figure out should we pass additional roles in this case or not.
     connection.sendQuery(
-        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, /* external_roles */ {}, {});
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
 
     while (true)
     {
@@ -76,12 +63,12 @@ void RemoteInserter::initialize()
             header = packet.block;
             break;
         }
-        if (Protocol::Server::Exception == packet.type)
+        else if (Protocol::Server::Exception == packet.type)
         {
             packet.exception->rethrow();
             break;
         }
-        if (Protocol::Server::Log == packet.type)
+        else if (Protocol::Server::Log == packet.type)
         {
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
@@ -141,7 +128,7 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
-        if (Protocol::Server::Exception == packet.type)
+        else if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
         else if (Protocol::Server::Log == packet.type || Protocol::Server::TimezoneUpdate == packet.type)
         {

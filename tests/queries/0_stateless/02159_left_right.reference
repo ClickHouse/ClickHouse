@@ -22,16 +22,10 @@ SELECT LEFT('Привет', -4);
 Прив
 SELECT left(toNullable('Привет'), 12);
 Привет
-SELECT left(toNullable('Привет'), -12);
-
 SELECT lEFT('Привет', -12);
 
 SELECT left(materialize(toNullable('Привет')), 13);
 Привет
-SELECT left(materialize(toNullable('Привет')), -13);
-
-SELECT left(materialize(toNullable('Привет')), -4);
-Прив
 SELECT left('Привет', -13);
 
 SELECT Left('Привет', 0);
@@ -136,38 +130,16 @@ SELECT right('Hello', 0);
 
 SELECT right('Hello', NULL);
 \N
-SELECT right(materialize('Hello'), -3);
-lo
-SELECT left(materialize('Hello'), -3);
-He
-SELECT right(materialize('Hello'), -5);
-
-SELECT left(materialize('Hello'), -5);
-
-SELECT rightUTF8(materialize('Hello'), -3);
-lo
-SELECT leftUTF8(materialize('Hello'), -3);
-He
-SELECT rightUTF8(materialize('Hello'), -5);
-
-SELECT leftUTF8(materialize('Hello'), -5);
-
 SELECT RIGHT(materialize('Привет'), 4);
 ет
-SELECT RIGHT(materialize('Привет'), -4);
-ивет
 SELECT right('Привет', -4);
 ивет
 SELECT Right(toNullable('Привет'), 12);
 Привет
-SELECT Right(toNullable('Привет'), -12);
-
 SELECT right('Привет', -12);
 
 SELECT rIGHT(materialize(toNullable('Привет')), 13);
 Привет
-SELECT rIGHT(materialize(toNullable('Привет')), -13);
-
 SELECT right('Привет', -13);
 
 SELECT rIgHt('Привет', 0);

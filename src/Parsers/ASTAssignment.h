@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTWithAlias.h>
 
 namespace DB
 {
@@ -27,17 +26,16 @@ public:
     }
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.writeIdentifier(ostr, column_name, /*ambiguous=*/false);
-        ostr << " = ";
 
-        if (auto ast = std::dynamic_pointer_cast<ASTWithAlias>(expression()); ast && !ast->alias.empty())
-        {
-            frame.need_parens = true;
-        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "");
+        settings.writeIdentifier(column_name);
+        settings.ostr << (settings.hilite ? hilite_none : "");
 
-        expression()->format(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
+
+        expression()->formatImpl(settings, state, frame);
     }
 };
 

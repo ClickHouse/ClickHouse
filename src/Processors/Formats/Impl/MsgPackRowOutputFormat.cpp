@@ -2,9 +2,8 @@
 
 #if USE_MSGPACK
 
+#include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
-
-#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -25,10 +24,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/MsgPackExtensionTypes.h>
-
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -38,7 +34,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), packer(out_), format_settings(format_settings_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
@@ -304,14 +300,11 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
-    factory.markOutputFormatNotTTYFriendly("MsgPack");
-    factory.setContentType("MsgPack", "application/octet-stream");
 }
 
 }

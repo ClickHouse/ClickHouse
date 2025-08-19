@@ -4,8 +4,10 @@
 #include <Client/LocalConnection.h>
 
 #include <Core/ServerSettings.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Loggers/Loggers.h>
+#include <Common/InterruptListener.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
@@ -33,13 +35,13 @@ protected:
 
     void connect() override;
 
-    void processError(std::string_view query) const override;
+    void processError(const String & query) const override;
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
-    void addExtraOptions(OptionsDescription & options_description) override;
+    void addOptions(OptionsDescription & options_description) override;
 
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
@@ -52,10 +54,9 @@ protected:
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
-      * Returns a pair of the table name and the corresponding create table statement.
-      * Returns empty strings if it cannot compose that query.
+      * Returns empty string if it cannot compose that query.
       */
-    std::pair<std::string, std::string> getInitialCreateTableQuery();
+    std::string getInitialCreateTableQuery();
 
     void tryInitPath();
     void setupUsers();

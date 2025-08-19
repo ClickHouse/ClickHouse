@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Common/Exception.h>
+#include <Core/Block.h>
+#include "IDictionarySource.h"
 
 namespace DB
 {
@@ -15,7 +14,7 @@ namespace ErrorCodes
 class NullDictionarySource final : public IDictionarySource
 {
 public:
-    explicit NullDictionarySource(SharedHeader sample_block_);
+    explicit NullDictionarySource(Block & sample_block_);
 
     NullDictionarySource(const NullDictionarySource & other);
 
@@ -48,7 +47,7 @@ public:
     std::string toString() const override;
 
 private:
-    SharedHeader sample_block;
+    Block sample_block;
 };
 
 }

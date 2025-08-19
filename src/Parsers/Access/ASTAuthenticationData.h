@@ -41,10 +41,9 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
-    ASTPtr valid_until;
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

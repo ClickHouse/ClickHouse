@@ -1,12 +1,11 @@
-#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include "AsynchronousReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include "ReadBufferFromHDFS.h"
 #include <mutex>
 #include <Common/logger_useful.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
-#include <IO/ReadSettings.h>
 
 
 namespace CurrentMetrics
@@ -204,7 +203,7 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
             assert(pos <= working_buffer.end());
             return new_pos;
         }
-        if (prefetch_future.valid())
+        else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             /// TODO we can judge quickly without waiting for prefetch

@@ -377,17 +377,18 @@ bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
 
     if (k_add.ignore(pos, expected))
         return parseAddCommand(pos, node, expected);
-    if (k_drop.ignore(pos, expected))
+    else if (k_drop.ignore(pos, expected))
         return parseDropCommand(pos, node, expected);
-    if (k_alter.ignore(pos, expected))
+    else if (k_alter.ignore(pos, expected))
         return parseAlterCommand(pos, node, expected);
-    if (k_rename.ignore(pos, expected))
+    else if (k_rename.ignore(pos, expected))
         return parseRenameCommand(pos, node, expected);
-    if (k_modify.ignore(pos, expected))
+    else if (k_modify.ignore(pos, expected))
         return parseModifyCommand(pos, node, expected);
-    if (k_change.ignore(pos, expected))
+    else if (k_change.ignore(pos, expected))
         return parseModifyCommand(pos, node, expected, true);
-    return parseOtherCommand(pos, node, expected);
+    else
+        return parseOtherCommand(pos, node, expected);
 }
 }
 

@@ -1,6 +1,5 @@
--- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tags: long, zookeeper, no-replicated-database
 -- Tag no-replicated-database: Fails due to additional replicas or shards
--- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
 
 SET send_logs_level = 'fatal';
 

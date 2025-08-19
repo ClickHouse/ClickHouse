@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
 #include <base/hex.h>
 #include <IO/ReadHelpers.h>
@@ -7,12 +7,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
-
-#include <fmt/ranges.h>
 
 
 namespace DB
@@ -64,16 +61,16 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Skip text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
+    /// Skip full-text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
     if (isGinFile(name))
         return;
 
-    // This is a projection, no need to check its size.
-    if (storage.existsDirectory(name))
-        return;
-
-    if (!storage.existsFile(name))
+    if (!storage.exists(name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+
+    // This is a projection, no need to check its size.
+    if (storage.isDirectory(name))
+        return;
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
@@ -91,8 +88,8 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
     for (const auto & [name, checksum] : files)
     {
-        /// Exclude files written by text index from check. No correct checksums are available for them currently.
-        if (isGinFile(name))
+        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
             continue;
 
         auto it = rhs.files.find(name);

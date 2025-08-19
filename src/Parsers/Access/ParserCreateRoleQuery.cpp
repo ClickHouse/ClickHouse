@@ -25,31 +25,20 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            ASTPtr ast;
+            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
+                return false;
+
+            ASTPtr new_settings_ast;
             ParserSettingsProfileElements elements_p;
             elements_p.useIDMode(id_mode);
-            if (!elements_p.parse(pos, ast, expected))
+            if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
-            return true;
-        });
-    }
-
-    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            ASTPtr ast;
-            ParserAlterSettingsProfileElements elements_p;
-            if (!elements_p.parse(pos, ast, expected))
-                return false;
-
-            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
+            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -102,7 +91,6 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     String new_name;
     std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
     String storage_name;
 
@@ -111,27 +99,14 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
-        if (alter)
+        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
+        if (parseSettings(pos, expected, attach_mode, new_settings))
         {
-            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
-            if (parseAlterSettings(pos, expected, new_alter_settings))
-            {
-                if (!alter_settings)
-                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
-                alter_settings->add(std::move(*new_alter_settings));
-                continue;
-            }
-        }
-        else
-        {
-            std::shared_ptr<ASTSettingsProfileElements> new_settings;
-            if (parseSettings(pos, expected, attach_mode, new_settings))
-            {
-                if (!settings)
-                    settings = std::make_shared<ASTSettingsProfileElements>();
-                settings->add(std::move(*new_settings));
-                continue;
-            }
+            if (!settings)
+                settings = std::make_shared<ASTSettingsProfileElements>();
+
+            insertAtEnd(settings->elements, std::move(new_settings));
+            continue;
         }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
@@ -155,7 +130,6 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
-    query->alter_settings = std::move(alter_settings);
     query->storage_name = std::move(storage_name);
 
     return true;

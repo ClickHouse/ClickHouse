@@ -1,7 +1,5 @@
 -- Tags: no-parallel, no-fasttest
 
-SET output_format_pretty_single_large_number_tip_threshold = 0;
-
 {# this test checks backward compatibility of aggregate functions States against IPv4, IPv6 types #}
 
 {% set ip4_generator = "select num::UInt32::IPv4 ip from (select arrayJoin(range(999999999, number)) as num from numbers(999999999,50)) order by ip" %}

@@ -36,10 +36,7 @@ try
     });
 
     copyData(command->out, out);
-    out.finalize();
-
     copyData(command->err, err);
-    err.finalize();
 
     thread.join();
     return 0;

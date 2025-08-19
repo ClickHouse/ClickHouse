@@ -29,7 +29,7 @@ do
     create_query=$($CLICKHOUSE_CLIENT --query "$show_query")
 done
 
-# checking type is LowCardinality
+# checking type is LowCardinalty
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE alter_table"
 
 # checking no mutations happened

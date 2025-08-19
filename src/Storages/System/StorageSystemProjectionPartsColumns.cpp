@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include "StorageSystemProjectionPartsColumns.h"
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -94,7 +95,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (column.default_desc.expression)
             {
                 column_info.default_kind = toString(column.default_desc.kind);
-                column_info.default_expression = column.default_desc.expression->formatForLogging();
+                column_info.default_expression = queryToString(column.default_desc.expression);
             }
 
             columns_info[column.name] = column_info;
@@ -130,10 +131,13 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0;
-            size_t res_index = 0;
+            size_t src_index = 0, res_index = 0;
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+            {
+                WriteBufferFromOwnString out;
+                parent_part->partition.serializeText(*info.data, out, format_settings);
+                columns[res_index++]->insert(out.str());
+            }
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -188,7 +192,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.getPartitionId());
+                columns[res_index++]->insert(parent_part->info.partition_id);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->info.min_block);
             if (columns_mask[src_index++])

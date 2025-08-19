@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Columns/IColumn.h>
 #include <Common/WeakHash.h>
 
 
@@ -59,11 +60,15 @@ public:
     void appendArguments(const ColumnsWithTypeAndName & columns);
     ColumnWithTypeAndName reduce() const;
 
-    Field operator[](size_t n) const override;
+    Field operator[](size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
+    }
 
-    void get(size_t n, Field & res) const override;
-
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    void get(size_t, Field &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
+    }
 
     StringRef getDataAt(size_t) const override
     {
@@ -198,9 +203,6 @@ public:
 
     /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
-
-    const FunctionBasePtr & getFunction() const { return function; }
-    const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
     size_t elements_size;

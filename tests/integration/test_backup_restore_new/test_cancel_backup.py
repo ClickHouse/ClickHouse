@@ -1,15 +1,9 @@
-import re
-import uuid
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
+import uuid
+import re
 
-# We expect backup/restore query cancellation to be fast enough,
-# though in CI cancellation may occasionally take slightly more
-# then 2 seconds (2000 - 2500 ms).
-kill_duration_ms_threshold = 4000
 
 cluster = ClickHouseCluster(__file__)
 
@@ -77,7 +71,7 @@ def wait_backup(backup_id):
         sleep_time=5,
     )
 
-    backup_duration = float(
+    backup_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{backup_id}'"
         )
@@ -110,7 +104,7 @@ def cancel_backup(backup_id):
             f"SELECT query_duration_ms FROM system.query_log WHERE query_kind='KillQuery' AND query LIKE '%{backup_id}%' AND type='QueryFinish'"
         )
     )
-    assert kill_duration_ms < kill_duration_ms_threshold
+    assert kill_duration_ms < 2000  # Query must be cancelled quickly
 
 
 # Start restoring from a backup.
@@ -141,7 +135,7 @@ def wait_restore(restore_id):
         sleep_time=5,
     )
 
-    restore_duration = float(
+    restore_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{restore_id}'"
         )
@@ -176,7 +170,7 @@ def cancel_restore(restore_id):
             f"SELECT query_duration_ms FROM system.query_log WHERE query_kind='KillQuery' AND query LIKE '%{restore_id}%' AND type='QueryFinish'"
         )
     )
-    assert kill_duration_ms < kill_duration_ms_threshold
+    assert kill_duration_ms < 2000  # Query must be cancelled quickly
 
 
 # Test that BACKUP and RESTORE operations can be cancelled with KILL QUERY.

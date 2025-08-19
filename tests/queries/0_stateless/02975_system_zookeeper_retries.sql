@@ -12,7 +12,7 @@ SETTINGS
   log_comment='02975_system_zookeeper_retries';
 
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 -- Check that there where zk session failures
 SELECT ProfileEvents['ZooKeeperHardwareExceptions'] > 0

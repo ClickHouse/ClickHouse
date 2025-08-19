@@ -6,30 +6,28 @@
 # pylint: disable=broad-except
 
 import contextlib
-import logging
-import os
-import sys
-import time
-from pathlib import Path
-
 import grpc
 import psycopg2
 import pymysql.connections
 import pymysql.err
 import pytest
+import sys
+import os
+import time
+import logging
+from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.client import Client, QueryRuntimeException
 from kazoo.exceptions import NodeExistsError
+from pathlib import Path
 from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
-
-from helpers.client import Client, QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-import clickhouse_grpc_pb2_grpc
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -158,7 +156,7 @@ def configure_from_zk(zk, querier=None):
 @contextlib.contextmanager
 def sync_loaded_config(querier):
     # Depending on whether we test a change on tcp or http
-    # we monitor changes using the other, untouched, protocol
+    # we monitor canges using the other, untouched, protocol
     loads_before = querier(LOADS_QUERY)
     yield
     wait_loaded_config_changed(loads_before, querier)
@@ -346,14 +344,13 @@ def test_reload_via_client(cluster, zk):
         instance.docker_id,
     ] + localhost_client.command
 
-    listen_config = "/etc/clickhouse-server/config.d/99-listen.yaml"
-    # NOTE: this test cannot use ZooKeeper since it uses watches to subscribe to changes and they are very fast
-    for i in range(0, 10):
+    # NOTE: reload via zookeeper is too fast, but 100 iterations was enough, even for debug build.
+    for i in range(0, 100):
         try:
-            instance.replace_config(listen_config, "listen_host: 127.0.0.1")
-
+            client = get_client(cluster, port=9000)
+            zk.set("/clickhouse/listen_hosts", b"<listen_host>127.0.0.1</listen_host>")
             query_id = f"reload_config_{i}"
-            instance.query("SYSTEM RELOAD CONFIG", query_id=query_id)
+            client.query("SYSTEM RELOAD CONFIG", query_id=query_id)
             assert int(localhost_client.query("SELECT 1")) == 1
             localhost_client.query("SYSTEM FLUSH LOGS")
             MainConfigLoads = int(
@@ -373,21 +370,14 @@ def test_reload_via_client(cluster, zk):
             logging.exception("Retry %s", i)
             exception = e
         finally:
-            instance.replace_config(listen_config, "")
-
-            reset_config_exception = None
-            for i in range(1, 10):
+            while True:
                 try:
-                    instance.query("SYSTEM RELOAD CONFIG")
-                    reset_config_exception = None
+                    with sync_loaded_config(localhost_client.query):
+                        configure_from_zk(zk)
                     break
-                except QueryRuntimeException as e:
-                    logging.exception("The new socket is not bound yet")
+                except QueryRuntimeException:
+                    logging.exception("The new socket is not binded yet")
                     time.sleep(0.1)
-                    reset_config_exception = e
-
-            if reset_config_exception is not None:
-                raise reset_config_exception
 
     if exception:
         raise exception

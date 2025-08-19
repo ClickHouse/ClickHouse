@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -15,6 +15,7 @@ namespace DB
 
 struct Settings;
 class Cluster;
+class Throttler;
 struct SelectQueryInfo;
 
 class Pipe;
@@ -27,10 +28,6 @@ struct StorageID;
 
 class PreparedSets;
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-
-class PlannerContext;
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
-
 namespace ClusterProxy
 {
 
@@ -55,13 +52,10 @@ public:
         /// Query and header may be changed depending on shard.
         ASTPtr query;
         QueryTreeNodePtr query_tree;
-        PlannerContextPtr planner_context;
-
-        std::shared_ptr<QueryPlan> query_plan;
 
         /// Used to check the table existence on remote node
         StorageID main_table;
-        SharedHeader header;
+        Block header;
 
         bool has_missing_objects = false;
 
@@ -70,13 +64,14 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
+        time_t local_delay = 0;
         AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        SharedHeader header_,
+        const Block & header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
@@ -105,7 +100,7 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
-    SharedHeader header;
+    const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
@@ -123,7 +118,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false) const;
+        bool has_missing_objects = false);
 };
 
 }

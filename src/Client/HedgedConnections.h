@@ -90,12 +90,9 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data,
-        const std::vector<String> & external_roles) override;
+        bool with_pending_data) override;
 
-    void sendQueryPlan(const QueryPlan & query_plan) override;
-
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
+    void sendReadTaskResponse(const String &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
@@ -108,8 +105,6 @@ public:
     Packet receivePacket() override;
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
-
-    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 

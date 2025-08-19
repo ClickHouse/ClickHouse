@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Common/Exception.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>

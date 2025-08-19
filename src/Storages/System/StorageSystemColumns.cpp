@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -20,27 +21,18 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/Exception.h>
+
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
-}
+
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-
-    /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
-    /// when they are referenced by their numeric positions.
-    auto description = ColumnsDescription({
+    storage_metadata.setColumns(ColumnsDescription(
+    {
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."},
@@ -67,14 +59,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
             "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-    });
 
-    description.setAliases({
-        {"column", std::make_shared<DataTypeString>(), "name"}
-    });
-
-    storage_metadata.setColumns(description);
+    }));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -90,23 +76,18 @@ class ColumnsSource : public ISource
 public:
     ColumnsSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header_,
+        Block header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context)
         : ISource(header_)
-        , columns_mask(std::move(columns_mask_))
-        , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
-        , tables(std::move(tables_))
-        , storages(std::move(storages_))
+        , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
+        , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , client_info_interface(context->getClientInfo().interface)
-        , total_tables(tables->size())
-        , access(context->getAccess())
-        , query_id(context->getCurrentQueryId())
-        , lock_acquire_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout])
+        , total_tables(tables->size()), access(context->getAccess())
+        , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
         need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
@@ -134,11 +115,12 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
-            SerializationInfoByName serialization_hints;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableLockHolder table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+                TableLockHolder table_lock;
+
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
 
                 if (table_lock == nullptr)
                 {
@@ -148,32 +130,12 @@ protected:
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 columns = metadata_snapshot->getColumns();
-                serialization_hints = storage->getSerializationHints();
 
-                /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                {
-                    /// Can throw UNKNOWN_DATABASE in case of Merge table
-                    try
-                    {
-                        column_sizes = storage->getColumnSizes();
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
-                            throw;
-                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
-                    }
-                }
-
-                if (columns_mask[11])
-                    cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
-                if (columns_mask[12])
-                    cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
-                if (columns_mask[13])
-                    cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-                if (columns_mask[14])
-                    cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+                cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
+                cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+                cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+                cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+                column_sizes = storage->getColumnSizes();
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
@@ -208,7 +170,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(column.default_desc.expression->formatForLogging());
+                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
                 }
                 else
                 {
@@ -262,7 +224,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(column.codec->formatForLogging());
+                        res_columns[res_index++]->insert(queryToString(column.codec));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -321,15 +283,6 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                /// serialization_hint
-                if (columns_mask[src_index++])
-                {
-                    if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
-                        res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
                 ++rows_count;
             }
         }
@@ -368,7 +321,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -435,7 +388,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     Block block_to_filter;
     Storages storages;
     Pipes pipes;
-    auto header = getOutputHeader();
+    auto header = getOutputStream().header;
 
     {
         /// Add `database` column.
@@ -496,7 +449,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

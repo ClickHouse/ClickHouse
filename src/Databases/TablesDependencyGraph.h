@@ -5,16 +5,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace Poco
-{
-class Logger;
-}
-
 
 namespace DB
 {
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /// Represents dependencies of some tables on other tables or dictionaries.
 ///
@@ -61,7 +55,7 @@ public:
     /// Removes a single dependency of "table_id" on "dependency".
     /// If "remove_isolated_tables" is set the function will also remove tables with no dependencies and no dependents
     /// from the graph.
-    bool removeDependency(const StorageID & table_id, const StorageID & dependency, bool remove_isolated_tables = true);
+    bool removeDependency(const StorageID & table_id, const StorageID & dependency, bool remove_isolated_tables = false);
 
     /// Removes all dependencies of "table_id", returns those dependencies.
     std::vector<StorageID> removeDependencies(const StorageID & table_id, bool remove_isolated_tables = false);

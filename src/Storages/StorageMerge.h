@@ -50,10 +50,8 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsPrewhere() const override;
+    bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
-
-    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -81,8 +79,8 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
@@ -167,7 +165,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader common_header_,
+        Block common_header_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -179,7 +177,6 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-    const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -190,7 +187,7 @@ public:
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
-    SharedHeader common_header;
+    Block common_header;
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
@@ -218,7 +215,6 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,
         Names & column_names_as_aliases,
-        bool & is_smallest_column_requested,
         Aliases & aliases) const;
 
     /// An object of this helper class is created
@@ -276,8 +272,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        const Names & real_column_names_read_from_the_source_table,
-        bool & is_smallest_column_requested,
+        Names && real_column_names,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;
@@ -299,8 +294,7 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        ChildPlan & child,
-        bool is_smallest_column_requested);
+        ChildPlan & child);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,

@@ -1,6 +1,6 @@
 SET log_queries = 1;
 SELECT '01461_query_log_query_start_time_milliseconds_test';
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 -- assumes that the query_start_time field is already accurate.
 WITH (
       (
@@ -25,7 +25,7 @@ SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) 
 
 SET log_query_threads = 1;
 SELECT '01461_query_thread_log_query_start_time_milliseconds_test';
-SYSTEM FLUSH LOGS query_thread_log;
+SYSTEM FLUSH LOGS;
 -- assumes that the query_start_time field is already accurate.
 WITH (
       (

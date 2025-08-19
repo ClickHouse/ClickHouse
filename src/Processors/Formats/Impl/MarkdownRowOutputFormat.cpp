@@ -1,13 +1,11 @@
 #include <Processors/Formats/Impl/MarkdownRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
 
-MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_) {}
 
 void MarkdownRowOutputFormat::writePrefix()
@@ -62,10 +60,9 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     factory.registerOutputFormat("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");

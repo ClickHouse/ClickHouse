@@ -11,7 +11,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
-#include <Common/SipHash.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,11 +42,6 @@ String DataTypeDynamic::doGetName() const
     if (max_dynamic_types == DEFAULT_MAX_DYNAMIC_TYPES)
         return "Dynamic";
     return "Dynamic(max_types=" + toString(max_dynamic_types) + ")";
-}
-
-void DataTypeDynamic::updateHashImpl(SipHash & hash) const
-{
-    hash.update(max_dynamic_types);
 }
 
 Field DataTypeDynamic::getDefault() const
@@ -134,7 +128,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
     if (pos == end)
         return {subcolumn_name, {}};
 
-    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};
 }
 
 }

@@ -1,4 +1,0 @@
-BEFORE	a	x	String		
-BEFORE	a	y	String	MATERIALIZED	\'str\'
-AFTER	a	x	String		
-AFTER	a	y	String		
