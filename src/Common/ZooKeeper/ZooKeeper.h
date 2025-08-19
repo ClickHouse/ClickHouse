@@ -8,7 +8,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Coordination/KeeperConstants.h>
 
 #include <future>
@@ -36,6 +35,7 @@ namespace CurrentMetrics
 namespace DB
 {
 class ZooKeeperLog;
+class AggregatedZooKeeperLog;
 class ZooKeeperWithFaultInjection;
 class BackgroundSchedulePoolTaskHolder;
 
