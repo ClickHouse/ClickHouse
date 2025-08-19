@@ -140,8 +140,6 @@ def get_spark(
             f"spark.sql.catalog.{catalog_name}.catalog-impl",
             "org.apache.iceberg.aws.glue.GlueCatalog",
         )
-    elif catalog == LakeCatalogs.Hadoop:
-        builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
         builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
@@ -196,11 +194,8 @@ def get_spark(
         )
         # builder.config(f"spark.sql.catalog.{catalog_name}.uri", "uri")
         # builder.config(f"spark.sql.catalog.{catalog_name}.ref", "ref")
-    else:
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}",
-            "org.apache.spark.sql.connector.catalog.InMemoryCatalog",
-        )
+    elif catalog == LakeCatalogs.Hadoop or format == TableFormat.Iceberg:
+        builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
 
     builder.config(f"spark.sql.catalog.{catalog_name}.write.format.default", "parquet")
     builder.config(
@@ -235,7 +230,8 @@ def get_spark(
             "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         )
         if catalog == LakeCatalogs.Glue:
-            builder.config("spark.databricks.delta.catalog.glue.enabled", "true")
+            if format == TableFormat.DeltaLake:
+                builder.config("spark.databricks.delta.catalog.glue.enabled", "true")
             builder.config(f"spark.sql.catalog.{catalog_name}.region", "us-east-1")
         elif catalog == LakeCatalogs.Hive:
             builder.config("spark.hadoop.aws.region", "us-east-1")
@@ -247,13 +243,18 @@ def get_spark(
         # builder.config("spark.hadoop.fs.s3a.multipart.threshold", "2147483647")
 
         builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            "spark.sql.warehouse.dir", f"s3a://{cluster.minio_bucket}/{catalog_name}"
         )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.io-impl",
-            "org.apache.iceberg.aws.s3.S3FileIO",
-        )
+        if catalog != LakeCatalogs.NoCatalog:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            )
+            if format == TableFormat.Iceberg:
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.io-impl",
+                    "org.apache.iceberg.aws.s3.S3FileIO",
+                )
     elif storage == TableStorage.Azure:
         builder.config(
             f"spark.hadoop.fs.azure.account.key.{azure_account_name}.blob.core.windows.net",
@@ -272,54 +273,48 @@ def get_spark(
             f"spark.hadoop.fs.azure.account.blob.endpoint.{azure_account_name}.blob.core.windows.net",
             f"http://azurite1:{cluster.azurite_port}/{azure_account_name}",
         )
-        # WASB implementation
+        # WASB implementation, ABFS is not compatible with Azurite?
         builder.config(
             "spark.hadoop.fs.wasb.impl",
             "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
         )
-        builder.config(
-            "spark.hadoop.fs.wasbs.impl",
-            "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
-        )
-        # ABFS implementation (for newer Azure SDK)
-        builder.config(
-            "spark.hadoop.fs.abfs.impl",
-            "org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem",
-        )
-        builder.config(
-            "spark.hadoop.fs.abfss.impl",
-            "org.apache.hadoop.fs.azurebfs.SecureAzureBlobFileSystem",
-        )
-        # Enable Delta Lake for Azure
-        builder.config("spark.databricks.delta.storage.azure.enabled", "true")
-        # Azure-specific optimizations
-        builder.config("spark.hadoop.fs.azure.account.auth.type", "SharedKey")
+        if format == TableFormat.DeltaLake:
+            # Enable Delta Lake for Azure
+            builder.config("spark.databricks.delta.storage.azure.enabled", "true")
 
         builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"wasbs://{azure_container}@{azure_account_name}.blob.core.windows.net/{catalog_name}",
+            "spark.sql.warehouse.dir",
+            f"wasb://{azure_container}@{azure_account_name}.blob.core.windows.net/{catalog_name}",
         )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.io-impl",
-            f"org.apache.iceberg.{"hadoop.HadoopFileIO" if catalog in (LakeCatalogs.REST, LakeCatalogs.Nessie) else "azure.AzureFileIO"}",
-        )
+        if catalog != LakeCatalogs.NoCatalog:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"wasb://{azure_container}@{azure_account_name}.blob.core.windows.net/{catalog_name}",
+            )
+            if format == TableFormat.Iceberg:
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.io-impl",
+                    f"org.apache.iceberg.hadoop.HadoopFileIO",
+                )
     elif storage == TableStorage.Local:
         os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
-        builder.config(
-            "spark.sql.warehouse.dir", f"file://{get_local_base_path(catalog_name)}"
-        )
+
         builder.config(
             "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
         )
-
         builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"file://{get_local_base_path(catalog_name)}",
+            "spark.sql.warehouse.dir", f"file://{get_local_base_path(catalog_name)}"
         )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.io-impl",
-            "org.apache.iceberg.hadoop.HadoopFileIO",
-        )
+        if catalog != LakeCatalogs.NoCatalog:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"file://{get_local_base_path(catalog_name)}",
+            )
+            if format == TableFormat.Iceberg:
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.io-impl",
+                    "org.apache.iceberg.hadoop.HadoopFileIO",
+                )
 
     # Random properties
     if random.randint(1, 100) <= 70:
@@ -395,13 +390,13 @@ def create_lake_database(
         elif next_storage == TableStorage.Azure:
             kwargs.update(
                 {
-                    "adls.account-name": azure_account_name,
-                    "adls.account-key": azure_account_key,
+                    "wasb.account-name": azure_account_name,
+                    "wasb.account-key": azure_account_key,
                     "azure.blob-endpoint": f"http://azurite1:{cluster.azurite_port}/{azure_account_name}",
                 }
             )
             next_warehouse = (
-                f"wasbs://{azure_container}@{azure_account_name}.blob.core.windows.net/"
+                f"wasb://{azure_container}@{azure_account_name}.blob.core.windows.net/"
             )
         elif next_storage == TableStorage.Local:
             next_warehouse = f"file://{get_local_base_path(catalog_name)}"
@@ -477,9 +472,9 @@ def create_lake_table(
         next_session = get_spark(
             cluster, catalog_name, next_storage, next_format, LakeCatalogs.NoCatalog
         )
+        next_session.sql("CREATE DATABASE IF NOT EXISTS default")
     else:
         next_session = cluster.catalogs[catalog_name].session
-        next_session.sql(f"CREATE NAMESPACE IF NOT EXISTS {catalog_name}.test")
     next_session.sql(next_query)
     # if next_catalog == LakeCatalogs.NoCatalog:
     #    default_upload_directory(cluster, storage_type, "", "")

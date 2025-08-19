@@ -164,7 +164,7 @@ void SQLBase::setTablePath(RandomGenerator & rg)
         }
         bucket_path = next_bucket_path;
     }
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
+    if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
     {
         /// Set other parameters
         if (isFileEngine() || rg.nextMediumNumber() < 91)
@@ -280,12 +280,12 @@ size_t SQLTable::numberOfInsertableColumns() const
     return res;
 }
 
-String SQLTable::getTableName() const
+String SQLTable::getTableName(const bool full) const
 {
     String res;
     const LakeCatalog catalog = getLakeCatalog();
 
-    if (catalog != LakeCatalog::None)
+    if (full && catalog != LakeCatalog::None)
     {
         res += "test.";
     }

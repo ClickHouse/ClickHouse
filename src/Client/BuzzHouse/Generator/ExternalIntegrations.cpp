@@ -1669,6 +1669,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     String buf;
     bool first = true;
     std::vector<ColumnPathChain> entries;
+    const LakeCatalog catalog = t.getLakeCatalog();
 
     for (const auto & [key, val] : t.cols)
     {
@@ -1677,11 +1678,11 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
 
-    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
+    chassert((t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine()) && (catalog == LakeCatalog::None || t.db));
     buf += fmt::format(
         "{{\"database_name\":\"{}\",\"table_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"columns\":[",
-        t.getLakeCatalog() == LakeCatalog::None ? "default" : t.getDatabaseName(),
-        t.getTableName(),
+        catalog == LakeCatalog::None ? "default" : t.getDatabaseName(),
+        t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
         t.isAnyDeltaLakeEngine() ? "delta" : "iceberg");
     for (const auto & entry : entries)

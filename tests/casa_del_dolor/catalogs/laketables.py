@@ -508,21 +508,6 @@ class IcebergTableGenerator(LakeTableGenerator):
         else:
             del properties["schema.name-mapping.default"]
 
-        # Table location
-        properties["write.object-storage.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
-
-        if properties["write.object-storage.enabled"] == "true":
-            properties["write.object-storage.path"] = random.choice(
-                [
-                    "s3://bucket/path",
-                    "gs://bucket/path",
-                    "abfs://container@account.dfs.core.windows.net/path",
-                    "hdfs://namenode:9000/path",
-                ]
-            )
-
         # Data locality
         properties["write.data.locality.enabled"] = str(
             random.choice(["true", "false"])

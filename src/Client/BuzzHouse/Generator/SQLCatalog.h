@@ -391,7 +391,7 @@ public:
         est->mutable_table()->set_table(std::move(res));
     }
 
-    String getTableName() const;
+    String getTableName(bool full = true) const;
 
     String getFullName(bool setdbname) const;
 

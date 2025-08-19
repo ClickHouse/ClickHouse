@@ -48,7 +48,6 @@ from properties import (
 )
 from httpserver import DolorHTTPServer
 from catalogs.datalakes import (
-    get_local_base_path,
     create_lake_database,
     create_lake_table,
 )
@@ -420,7 +419,6 @@ servers[len(servers) - 1].wait_start(8)
 
 # Uploaders for object storage
 if args.with_spark:
-    os.makedirs(get_local_base_path("default"), exist_ok=True)
     cluster.catalogs = {}
 if args.with_minio:
     prepare_s3_bucket(cluster)
