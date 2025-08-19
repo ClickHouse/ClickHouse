@@ -894,10 +894,14 @@ def test_postgres_datetime(started_cluster):
 
 def test_postgres_outgoing_metrics(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
+    table_name = "test_many"
+    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"""
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer)")
 
     # Run a query to make sure at least one postgres connection is created
-    check = "SELECT 123 FROM postgresql(`postgres5`)"
-    assert (node1.query(check)).rstrip() == "123"
+    node1.query(f"INSERT INTO TABLE FUNCTION {table} SELECT 123")
+    assert (node1.query(f"SELECT a FROM {table}")).rstrip() == "123"
 
     postgres_connection_events = int(
         node1.query(
