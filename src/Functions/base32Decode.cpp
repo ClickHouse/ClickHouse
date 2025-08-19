@@ -16,19 +16,22 @@ using FunctionBase32Decode = FunctionBaseXXConversion<Base32DecodeImpl>;
 
 REGISTER_FUNCTION(Base32Decode)
 {
-    factory.registerFunction<FunctionBase32Decode>(FunctionDocumentation{
-        .description = R"(
-Decode a [Base32](https://datatracker.ietf.org/doc/html/rfc4648) encoded string. The input string must be a valid Base32 encoded string, otherwise an exception will be thrown.)",
-        .arguments = {
-            {"arg", "A Base32 (rfc4648) encoded string"},
-        },
-        .examples = {
-            {"simple_decoding1", "SELECT base32Decode('ME======')", "a"},
-            {"simple_decoding2", "SELECT base32Decode('JBSWY3DP')", "Hello"},
-            {"empty_string", "SELECT base32Decode('')", ""},
-            {"non_ascii", "SELECT hex(base32Decode('4W2HIXV4'))", "E5B4745EBC"},
-        },
-        .introduced_in = {25, 5},
-        .category = FunctionDocumentation::Category::String});
+    FunctionDocumentation::Description description = R"(
+Decodes a string from [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6), according to RFC 4648.
+Throws an exception in case of error.
+)";
+    FunctionDocumentation::Syntax syntax = "base32Decode(encoded)";
+    FunctionDocumentation::Arguments arguments = {
+        {"encoded", "[String](../data-types/string.md) column or constant. If the string is not valid Base32-encoded, an exception is thrown.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage", "SELECT base32Decode('IVXGG33EMVSA====');", "┌─base32Decode('IVXGG33EMVSA====')─┐\n│ Encoded                          │\n└──────────────────────────────────┘"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBase32Decode>(documentation);
 }
 }
