@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./replication.lib
 . "$CURDIR"/replication.lib
 
-export MAX_S3_RETRIES=40
+export S3_MAX_RETRIES=40
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS alter_table0;
@@ -90,8 +90,8 @@ wait_for_queries_to_finish 600
 
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $MAX_S3_RETRIES"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $MAX_S3_RETRIES"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $S3_MAX_RETRIES"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $S3_MAX_RETRIES"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
