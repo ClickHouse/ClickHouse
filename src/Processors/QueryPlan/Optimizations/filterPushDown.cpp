@@ -95,7 +95,6 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
-    LOG_TRACE(getLogger("DEBUGGING!"), "splitFilter");
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
 
@@ -472,7 +471,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
-    LOG_TRACE(getLogger("DEBUGGING!"), "tryPushDownFilter, children size: {}", parent_node->children.size());
     if (parent_node->children.size() != 1)
         return 0;
 

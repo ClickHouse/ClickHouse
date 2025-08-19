@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -48,7 +47,6 @@ ActionsDAG splitAndFillPrewhereInfo(
     const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
     const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
-    LOG_DEBUG(getLogger("DEBUGGING!"), "splitAndFillPrewhereInfo");
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = remove_prewhere_column;
 
@@ -119,7 +117,6 @@ ActionsDAG splitAndFillPrewhereInfo(
 
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 {
-    LOG_DEBUG(getLogger("DEBUGGING!"), "optimizePrewhere");
     if (stack.size() < 2)
         return;
 

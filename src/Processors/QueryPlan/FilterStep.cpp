@@ -195,8 +195,6 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    StackTrace stack_trace;
-    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: stack trace: {}", stack_trace.toString());
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,
@@ -212,8 +210,6 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// This is needed to support short-circuit properly.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
-
-    LOG_DEBUG(getLogger("FilterStep"), "FilterStep: and_atoms size: {}", and_atoms.size());
 
     for (auto & and_atom : and_atoms)
     {
@@ -267,7 +263,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
-void FilterStep::describeActions(FormatSettings & settings) const /// HERE?
+void FilterStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, settings.indent_char);
 
@@ -276,8 +272,6 @@ void FilterStep::describeActions(FormatSettings & settings) const /// HERE?
     std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
-
-    LOG_DEBUG(getLogger("FilterStep"), "describeActions: and_atoms size: {}", and_atoms.size());
 
     for (auto & and_atom : and_atoms)
     {
@@ -289,8 +283,6 @@ void FilterStep::describeActions(FormatSettings & settings) const /// HERE?
     std::vector<ActionsAndName> or_atoms;
     if (!actions_dag.hasStatefulFunctions())
         or_atoms = splitORChainIntoMultipleFilters(cloned_dag, filter_column_name);
-
-    LOG_DEBUG(getLogger("FilterStep"), "describeActions: or_atoms size: {}", or_atoms.size());
 
     for (auto & or_atom : or_atoms)
     {
