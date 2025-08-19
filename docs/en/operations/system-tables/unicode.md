@@ -19,12 +19,11 @@ The property names of unicode code points in ICU documents are converted to snak
 - `code_point_value` ([Int32](../../sql-reference/data-types/int-uint.md)) — The numeric value of the code point.
 - `notation` ([String](../../sql-reference/data-types/string.md)) — The Unicode notation of the code point.
 - Binary Properties ([UInt8](../../sql-reference/data-types/int-uint.md)) - The binary properties of the code point.
-    - `alphabetic`, `ascii_hex_digit`, `case_ignorable`...
+  - `alphabetic`, `ascii_hex_digit`, `case_ignorable`...
 - Enumerated Properties ([Int32](../../sql-reference/data-types/int-uint.md)) - The enumerated properties of the code point.
-    - `bidi_class`, `bidi_paired_bracket_type`, `block`...
+  - `bidi_class`, `bidi_paired_bracket_type`, `block`...
 - String Properties ([String](../../sql-reference/data-types/string.md)) - The string properties(ASCII String or Unicode String or code point) of the code point
-    - `case_folding`, `decomposition_mapping`, `name`...
-
+  - `case_folding`, `decomposition_mapping`, `name`...
 
 :::note
 Mapping is somewhat special, see the icu documentation. For example, simple_uppercase_mapping and uppercase_mapping are not exactly the same. But no language-specific mappings are implemented (e.g. Turkish the upper case of i is "İ" (U+0130))
@@ -34,7 +33,6 @@ Mapping is somewhat special, see the icu documentation. For example, simple_uppe
 - `script_extensions` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) - The script extensions of the code point.
 - `identifier_type` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) - The identifier type of the code point.
 - `general_category_mask` ([Int32](../../sql-reference/data-types/int-uint.md)) - The general category mask of the code point.
-
 
 **Example**
 ```sql
