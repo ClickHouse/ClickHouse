@@ -665,7 +665,7 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
     return node;
 }
 
-QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes)
+QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
@@ -778,6 +778,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             nodeStack.pop();
 
             auto join_operator = std::move(entry->join_operator);
+            join_operator.strictness = join_strictness;
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
@@ -793,6 +794,20 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                     && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
+
+            /// fixme: USING clause handled specially in join algorithm, so swap breaks it
+            /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
+            /// At the time of writing, we're not able to swap inputs for ANY partial merge join, because it only supports ANY inner or left joins, but not right.
+            const bool partial_merge_join_can_be_selected = std::ranges::any_of(
+                join_settings.join_algorithms,
+                [](JoinAlgorithm alg)
+                { return alg == JoinAlgorithm::PARTIAL_MERGE || alg == JoinAlgorithm::PREFER_PARTIAL_MERGE || alg == JoinAlgorithm::AUTO; });
+            const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
+                && (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness)
+                    || !MergeJoin::isSupported(reverseJoinKind(join_operator.kind), join_operator.strictness));
+            const bool suitable_any_join = join_operator.strictness == JoinStrictness::Any && !should_worry_about_partial_merge_join;
+            if (join_operator.strictness != JoinStrictness::All && !suitable_any_join)
+                flip_join = false;
 
             if (flip_join)
             {
@@ -1001,10 +1016,12 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             lookup_step->optimize(optimization_settings);
     }
 
+    auto strictness = join_step->getJoinOperator().strictness;
+    auto kind = join_step->getJoinOperator().kind;
     if (!optimization_settings.optimize_joins ||
-        join_step->getJoinOperator().strictness != JoinStrictness::All ||
-        join_step->getJoinOperator().kind == JoinKind::Paste ||
-        join_step->getJoinOperator().kind == JoinKind::Full)
+        (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
+        kind == JoinKind::Paste ||
+        kind == JoinKind::Full)
     {
         join_step->setOptimized();
         return;
@@ -1013,8 +1030,12 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
 
     int query_graph_size_limit = optimization_settings.optimize_join_order ? 64 : 1;
+    if (strictness == JoinStrictness::Any)
+        /// Do not reorder ANY joins, only allow swap
+        query_graph_size_limit = 1;
+
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes);
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 
 }
