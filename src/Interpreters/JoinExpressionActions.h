@@ -55,6 +55,13 @@ public:
     bool none() const { return bitset.none(); }
     bool test(size_t pos) const { return pos < bitset.size() && bitset.test(pos); }
 
+    BitSet & operator|=(const BitSet & rhs)
+    {
+        adjustSize(*this, rhs);
+        bitset |= rhs.bitset;
+        return *this;
+    }
+
     friend bool operator ==(const BitSet & lhs, const BitSet & rhs)
     {
         adjustSize(lhs, rhs);

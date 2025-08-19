@@ -107,7 +107,7 @@ static void addToNullableIfNeeded(
     bool to_null_right = use_nulls && isLeftOrFull(join_kind);
     for (const auto * node : actions_dag->getInputs())
     {
-        if (!required_output_columns.contains(node->result_name))
+        if (!required_output_columns.contains(node->result_name) && node->result_name != "__join_result_dummy")
             continue;
 
         String original_name = node->result_name;

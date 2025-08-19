@@ -82,7 +82,7 @@ private:
     std::shared_ptr<DPJoinEntry> solveDP();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    std::optional<JoinKind> getJoinKind(const BitSet & lhs, const BitSet & rhs) const;
+    std::optional<JoinKind> isValidJoinOrder(const BitSet & lhs, const BitSet & rhs) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
@@ -271,7 +271,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto left = components[i];
                 auto right = components[j];
 
-                auto join_kind = getJoinKind(left->relations, right->relations);
+                auto join_kind = isValidJoinOrder(left->relations, right->relations);
                 if (!join_kind)
                     continue;
 
@@ -321,7 +321,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
             if (best_i == best_j)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
-            if (!getJoinKind(components[best_i]->relations, components[best_j]->relations))
+            if (!isValidJoinOrder(components[best_i]->relations, components[best_j]->relations))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join restriction violated");
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
@@ -350,7 +350,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     auto non_applied_edges = std::views::filter(query_graph.edges, [](auto & edge) { return bool(edge); });
     if (!non_applied_edges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Some expressions was not applied: [{}]",
-            fmt::join(non_applied_edges | std::views::transform([](const auto & e) { return e.dump(); }), ", "));
+            fmt::join(non_applied_edges | std::views::take(5) | std::views::transform(&JoinActionRef::dump), ", "));
 
     return components.at(0);
 }
@@ -361,28 +361,35 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
     return nullptr;
 }
 
-std::optional<JoinKind> JoinOrderOptimizer::getJoinKind(const BitSet & lhs, const BitSet & rhs) const
+std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const
 {
+    auto check = [&](const auto & lhs, const auto & rhs) -> std::optional<JoinKind>
+    {
+        if (lhs.count() == 1)
+        {
+            auto it = query_graph.join_kinds.find(safe_cast<size_t>(lhs.findFirstSet()));
+            if (it != query_graph.join_kinds.end())
+            {
+                if (isSubsetOf(it->second.first, rhs))
+                    return it->second.second;
+                return {};
+            }
+        }
+        return JoinKind::Inner;
+    };
+
     JoinKind left_join_type = JoinKind::Inner;
     JoinKind right_join_type = JoinKind::Inner;
 
-    if (lhs.count() == 1)
-    {
-        auto it = query_graph.join_kinds.find(safe_cast<size_t>(lhs.findFirstSet()));
-        if (it != query_graph.join_kinds.end())
-        {
-            left_join_type = it->second;
-        }
-    }
+    if (auto res = check(left_mask, right_mask))
+        left_join_type = res.value();
+    else
+        return {};
 
-    if (rhs.count() == 1)
-    {
-        auto it = query_graph.join_kinds.find(safe_cast<size_t>(rhs.findFirstSet()));
-        if (it != query_graph.join_kinds.end())
-        {
-            right_join_type = it->second;
-        }
-    }
+    if (auto res = check(right_mask, left_mask))
+        right_join_type = res.value();
+    else
+        return {};
 
     if (left_join_type == JoinKind::Inner)
         return right_join_type;

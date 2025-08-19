@@ -232,7 +232,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), has_filter);
         auto limit = limit_step->getLimit();
-        if (estimated.estimated_rows == 0 || estimated.estimated_rows > limit)
+        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
         return estimated;
     }
@@ -346,7 +346,7 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
-    std::unordered_map<size_t, JoinKind> join_kinds;
+    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
     std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
     std::unordered_map<JoinActionRef, size_t> pinned;
 
@@ -404,8 +404,11 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
 
-    for (auto [id, kind] : rhs.join_kinds)
-        lhs.join_kinds[id + shift] = kind;
+    for (auto [id, restriction] : rhs.join_kinds)
+    {
+        restriction.first.shift(shift);
+        lhs.join_kinds[id + shift] = restriction;
+    }
 
     for (auto && [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
@@ -443,6 +446,11 @@ static bool isTrivialStep(const QueryPlan::Node * node)
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+constexpr bool isNonOuter(JoinKind kind)
+{
+    return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
+}
+
 size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label, int join_steps_limit)
 {
     if (isTrivialStep(node))
@@ -451,7 +459,10 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
     if (child_join_step && !child_join_step->isOptimized())
     {
-        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1)
+        auto child_join_kind = child_join_step->getJoinOperator().kind;
+        bool allow_child_join_kind = isNonOuter(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
+        allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
         {
             QueryGraphBuilder child_graph(graph.context);
             buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
@@ -489,21 +500,29 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     QueryPlan::Node * rhs_plan = node.children[1];
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
     auto join_kind = join_step->getJoinOperator().kind;
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, isInnerOrLeft(join_kind) ? join_steps_limit - 1 : 0);
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, isInnerOrRight(join_kind) ? join_steps_limit - lhs_count : 0);
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, isNonOuter(join_kind) || isLeft(join_kind) ? join_steps_limit - 1 : 0);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, isNonOuter(join_kind) || isRight(join_kind) ? join_steps_limit - lhs_count : 0);
 
     size_t total_inputs = query_graph.inputs.size();
     if (isRightOrFull(join_kind))
     {
         if (lhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
-        query_graph.join_kinds[0] = join_kind;
+        BitSet join_expression_sources;
+        for (const auto & expr : join_step->getJoinOperator().expression)
+            join_expression_sources |= expr.getSourceRelations();
+        join_expression_sources.set(0, false);
+        query_graph.join_kinds[0] = std::make_pair(std::move(join_expression_sources), join_kind);
     }
     if (isLeftOrFull(join_kind))
     {
         if (rhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
-        query_graph.join_kinds[total_inputs - 1] = join_kind;
+        BitSet join_expression_sources;
+        for (const auto & expr : join_step->getJoinOperator().expression)
+            join_expression_sources |= expr.getSourceRelations();
+        join_expression_sources.set(total_inputs - 1, false);
+        query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
     }
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
@@ -584,9 +603,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
-                if (it != query_graph.join_kinds.end() && it->second != JoinKind::Inner)
+                if (it != query_graph.join_kinds.end())
                 {
                     query_graph.pinned[edge] = total_inputs - 1;
+                    break;
                 }
             }
         }
