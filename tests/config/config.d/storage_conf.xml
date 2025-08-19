@@ -9,8 +9,7 @@
                 <endpoint>http://localhost:11111/test/s3/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <max_single_read_retries>100</max_single_read_retries>
-                <request_timeout_ms>40000</request_timeout_ms>
+                <request_timeout_ms>20000</request_timeout_ms>
             </s3_disk>
             <s3_plain_disk>
                 <type>s3_plain</type>

@@ -33,7 +33,10 @@ SQL
 }
 function show_cluster_info()
 {
-    :
+    echo 'Cluster info:'
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM system.disks"
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM system.storage_policies"
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM system.tables WHERE storage_policy != ''"
 }
 function insert()
 {

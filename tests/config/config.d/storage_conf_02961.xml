@@ -4,18 +4,26 @@
             <disk1_02961>
                 <type>local</type>
                 <path>disk1_02961/</path>
+                <max_single_read_retries>10</max_single_read_retries>
+                <request_timeout_ms>100000</request_timeout_ms>
             </disk1_02961>
             <disk2_02961>
                 <type>local</type>
                 <path>disk2_02961/</path>
+                <max_single_read_retries>10</max_single_read_retries>
+                <request_timeout_ms>100000</request_timeout_ms>
             </disk2_02961>
             <disk3_02961>
                 <type>local</type>
                 <path>disk3_02961/</path>
+                <max_single_read_retries>10</max_single_read_retries>
+                <request_timeout_ms>100000</request_timeout_ms>
             </disk3_02961>
             <disk4_02961>
                 <type>local</type>
                 <path>disk4_02961/</path>
+                <max_single_read_retries>10</max_single_read_retries>
+                <request_timeout_ms>100000</request_timeout_ms>
             </disk4_02961>
         </disks>
         <policies>
