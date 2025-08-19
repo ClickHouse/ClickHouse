@@ -567,10 +567,10 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     FunctionDocumentation::Description description_edit_utf8 = R"(
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
 )";
-    FunctionDocumentation::Syntax syntax_edit_utf8 = "editDistanceUTF8(string1, string2)";
+    FunctionDocumentation::Syntax syntax_edit_utf8 = "editDistanceUTF8(s1, s2)";
     FunctionDocumentation::Arguments arguments_edit_utf8 = {
-        {"string1", "First input string.", {"String"}},
-        {"string2", "Second input string.", {"String"}}
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_edit_utf8 = {"Returns the edit distance between the two UTF8 strings.", {"UInt64"}};
     FunctionDocumentation::Examples examples_edit_utf8 = {

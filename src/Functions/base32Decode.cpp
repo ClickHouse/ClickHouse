@@ -18,7 +18,7 @@ REGISTER_FUNCTION(Base32Decode)
 {
     FunctionDocumentation::Description description = R"(
 Decodes a string from [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6), according to RFC 4648.
-Throws an exception in case of error.
+Throws an exception in case of an error.
 )";
     FunctionDocumentation::Syntax syntax = "base32Decode(encoded)";
     FunctionDocumentation::Arguments arguments = {
