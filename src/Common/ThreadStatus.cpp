@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
@@ -190,8 +191,10 @@ void ThreadStatus::flushUntrackedMemory()
     if (untracked_memory == 0)
         return;
 
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
+    Int64 current_untracked_memory = current_thread->untracked_memory;
     untracked_memory = 0;
+    memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
 bool ThreadStatus::isQueryCanceled() const

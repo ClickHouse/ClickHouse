@@ -3,6 +3,7 @@
 #include <chrono>
 #include <shared_mutex>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Common/thread_local_rng.h>
@@ -408,19 +409,20 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
 }
 
 template<typename Storage>
-bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
+std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
 {
     const auto op_num = request_for_session.request->getOpNum();
     if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-        return true;
+        return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
     if (storage->isFinalized())
-        return false;
+        return std::nullopt;
 
+    KeeperDigest digest_after_preprocessing;
     try
     {
         LockGuardWithStats<true> lock(storage_mutex);
-        storage->preprocessRequest(
+        digest_after_preprocessing = storage->preprocessRequest(
             request_for_session.request,
             request_for_session.session_id,
             request_for_session.time,
@@ -443,12 +445,12 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & req
     if (keeper_context->digestEnabled() && request_for_session.digest)
         assertDigest(
             *request_for_session.digest,
-            storage->getNodesDigest(false, /*lock_transaction_mutex=*/true),
+            digest_after_preprocessing,
             *request_for_session.request,
             request_for_session.log_idx,
             false);
 
-    return true;
+    return digest_after_preprocessing;
 }
 
 template<typename Storage>
@@ -564,9 +566,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
             int64_t session_id;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-            response->internal_id = session_id_request.internal_id;
-            response->server_id = session_id_request.server_id;
+            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
             KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
@@ -961,7 +961,7 @@ void KeeperStateMachine<Storage>::shutdownStorage()
 template<typename Storage>
 std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    LockGuardWithStats lock(storage_mutex);
+    LockGuardWithStats<true> lock(storage_mutex);
     return storage->getDeadSessions();
 }
 

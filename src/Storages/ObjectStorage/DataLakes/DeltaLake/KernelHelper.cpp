@@ -61,7 +61,9 @@ public:
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);
         set_option("aws_token", token);
-        set_option("aws_region", region);
+
+        if (!region.empty())
+            set_option("aws_region", region);
 
         if (url.uri_str.starts_with("http"))
         {
@@ -113,11 +115,15 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & s3_credentials = s3_client->getCredentials();
             const auto & url = s3_conf->getURL();
 
+            auto region = s3_client->getRegion();
+            if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+                region = s3_client->getRegionForBucket(url.bucket, /* force_detect */true);
+
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 url,
                 s3_credentials.GetAWSAccessKeyId(),
                 s3_credentials.GetAWSSecretKey(),
-                s3_client->getRegionForBucket(url.bucket),
+                std::move(region),
                 s3_credentials.GetSessionToken());
         }
         default:

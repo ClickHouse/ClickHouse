@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace
@@ -120,7 +121,11 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
+            auto table_it = database->getLightweightTablesIterator(context,
+                                                                   /* filter_by_table_name */ {},
+                                                                   /* skip_not_loaded */ false,
+                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
+            for (; table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -350,16 +355,17 @@ protected:
                                 try
                                 {
                                     if (auto total_rows = table.second->totalRows(settings))
-                                        res_columns[res_index++]->insert(*total_rows);
+                                        res_columns[res_index]->insert(*total_rows);
                                     else
-                                        res_columns[res_index++]->insertDefault();
+                                        res_columns[res_index]->insertDefault();
                                 }
                                 catch (const Exception &)
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index++]->insertDefault();
+                                    res_columns[res_index]->insertDefault();
                                 }
+                                ++res_index;
                             }
                             // total_bytes
                             else if (src_index == 20 && columns_mask[src_index])
@@ -367,9 +373,9 @@ protected:
                                 try
                                 {
                                     if (auto total_bytes = table.second->totalBytes(settings))
-                                        res_columns[res_index++]->insert(*total_bytes);
+                                        res_columns[res_index]->insert(*total_bytes);
                                     else
-                                        res_columns[res_index++]->insertDefault();
+                                        res_columns[res_index]->insertDefault();
                                 }
                                 catch (const Exception &)
                                 {
@@ -377,6 +383,7 @@ protected:
                                     tryLogCurrentException("StorageSystemTables");
                                     res_columns[res_index++]->insertDefault();
                                 }
+                                ++res_index;
                             }
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
@@ -394,7 +401,10 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context,
+                        /* filter_by_table_name */ {},
+                        /* skip_not_loaded */ false,
+                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -596,16 +606,17 @@ protected:
                     {
                         auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                         if (total_rows)
-                            res_columns[res_index++]->insert(*total_rows);
+                            res_columns[res_index]->insert(*total_rows);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])
@@ -614,16 +625,17 @@ protected:
                     {
                         auto total_bytes = table->totalBytes(settings);
                         if (total_bytes)
-                            res_columns[res_index++]->insert(*total_bytes);
+                            res_columns[res_index]->insert(*total_bytes);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])
@@ -632,16 +644,17 @@ protected:
                     {
                         auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
                         if (total_bytes_uncompressed)
-                            res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                            res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
-                            res_columns[res_index++]->insertDefault();
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
                     }
+                    ++res_index;
                 }
 
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);

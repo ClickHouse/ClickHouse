@@ -1,21 +1,24 @@
 Basic custom character trimming
-1	1	1
-Same as before but with non-const input strings
-1	1	1
+1	1	1	1	1	1
+Same AS before but with non-const input strings
+1	1	1	1	1	1
 Multiple different characters to trim
-1	1	1
+1	1	1	1	1	1
 Empty trim character string
-1	1	1
+1	1	1	1	1	1
 Empty string to trim
 1	1	1
 String containing only trim characters
-1	1	1
+1	1	1	1	1	1
 Characters that have special meaning in regex
-1	1	1
+1	1	1	1	1	1
 Very long input strings
-1	1	1
+1	1	1	1	1	1
 Overlapping trim characters
-1	1	1
+1	1	1	1	1	1
 Same trim characters provided more than once
-1	1	1
+1	1	1	1	1	1
 Negative tests
+Special tests
+abc
+b

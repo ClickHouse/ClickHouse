@@ -102,6 +102,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.output_string_as_string = format_settings.parquet.output_string_as_string;
         options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
         options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
+        options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
         options.data_page_size = format_settings.parquet.data_page_size;
         options.write_batch_size = format_settings.parquet.write_batch_size;
         options.write_page_index = format_settings.parquet.write_page_index;

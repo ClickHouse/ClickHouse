@@ -54,6 +54,7 @@
     M(PageCacheWeightLost, "Number of bytes evicted from the userspace page cache", ValueType::Bytes) \
     M(PageCacheResized, "Number of times the userspace page cache was auto-resized (typically happens a few times per second, controlled by memory_worker_period_ms).", ValueType::Number) \
     M(PageCacheOvercommitResize, "Number of times the userspace page cache was auto-resized to free memory during a memory allocation.", ValueType::Number) \
+    M(PageCacheReadBytes, "Number of bytes read from userspace page cache.", ValueType::Bytes) \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.", ValueType::Number) \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.", ValueType::Number) \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.", ValueType::Number) \
@@ -565,6 +566,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
+    M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \

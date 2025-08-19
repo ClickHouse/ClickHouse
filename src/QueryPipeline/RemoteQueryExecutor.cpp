@@ -371,7 +371,7 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     ///
     ///     Unexpected packet Data received from client
     ///
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     sendQueryUnlocked(query_kind, async_callback);
 }
 
@@ -441,7 +441,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 int RemoteQueryExecutor::sendQueryAsync()
 {
 #if defined(OS_LINUX)
-    std::lock_guard lock(was_cancelled_mutex);
+    LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
 
@@ -493,7 +493,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -515,7 +515,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -528,7 +528,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
     while (true)
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -592,7 +592,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
 {
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -763,7 +763,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
 
     /** If one of:
       * - nothing started to do;
@@ -837,14 +837,14 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
 
 void RemoteQueryExecutor::cancelUnlocked()
 {
     {
-        std::lock_guard lock(external_tables_mutex);
+        LockAndBlocker lock(external_tables_mutex);
 
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
@@ -958,7 +958,7 @@ bool RemoteQueryExecutor::hasThrownException() const
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
 
     if (extension && extension->parallel_reading_coordinator)
@@ -967,7 +967,7 @@ void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 
 void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
 }
 
@@ -985,7 +985,7 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
-    std::lock_guard lock(was_cancelled_mutex);
+    LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return false;
 

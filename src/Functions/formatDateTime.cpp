@@ -558,11 +558,17 @@ private:
                 fractional_second /= 10;
             }
 
-            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
+            size_t writes = 0;
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
+                ++writes;
             }
+
+            for (UInt32 i = writes; i < 6; ++i)
+                dest[i] = '0';
+
             return 6;
         }
 
@@ -1182,11 +1188,11 @@ public:
         };
 
         Pos pos = format.data();
-        Pos const end = format.data() + format.size();
+        const Pos end = format.data() + format.size();
 
         while (true)
         {
-            Pos const percent_pos = find_first_symbols<'%'>(pos, end);
+            const Pos percent_pos = find_first_symbols<'%'>(pos, end);
 
             if (percent_pos < end)
             {
@@ -1309,9 +1315,10 @@ public:
                     // Fractional seconds
                     case 'f':
                     {
-                        /// If the time data type has no fractional part, we print (default) '000000' or (deprecated) '0' as fractional part.
                         if (mysql_f_prints_single_zero)
                         {
+                            /// If the time data type has no fractional part, print '0' as fractional part.
+                            /// Legacy behavior.
                             Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondSingleZero);
                             instructions.push_back(std::move(instruction));
@@ -1319,6 +1326,7 @@ public:
                         }
                         else
                         {
+                            /// If the time data type has no fractional part, print '000000' as fractional part.
                             if (mysql_f_prints_scale_number_of_digits)
                             {
                                 /// Print as many digits as specified by scale. Legacy behavior.
@@ -1329,7 +1337,8 @@ public:
                             }
                             else
                             {
-                                /// Unconditionally print six digits (independent of scale). This is what MySQL does, may it live long and prosper.
+                                /// Unconditionally print six digits (independent of scale).
+                                /// This is what MySQL does, may it live long and prosper.
                                 Instruction<T> instruction;
                                 instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
                                 instructions.push_back(std::move(instruction));

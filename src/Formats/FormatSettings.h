@@ -282,6 +282,7 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
+        bool output_date_as_uint16 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;

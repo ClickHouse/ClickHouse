@@ -331,6 +331,17 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         /// Parquet doesn't have 16-bit date type, so we cast Date to 32 bits.
         case TypeIndex::Date:
+            if (options.output_date_as_uint16)
+                types(T::INT32, C::UINT_16, int_type(16, false));
+            else
+            {
+                parq::LogicalType t;
+                t.__set_DATE({});
+                types(T::INT32, C::DATE, t);
+                break;
+            }
+            break;
+
         case TypeIndex::Date32:
         {
             parq::LogicalType t;
@@ -610,6 +621,10 @@ void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas)
 {
+    /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
+    /// parquet dictionary-encoding.
+    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas); break;

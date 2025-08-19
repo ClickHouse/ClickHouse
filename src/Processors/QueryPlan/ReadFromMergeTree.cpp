@@ -1042,8 +1042,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
-    const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
-    bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
+    const bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
@@ -1063,6 +1062,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
+        const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+
         std::vector<RangesInDataParts> split_parts_and_ranges;
         split_parts_and_ranges.reserve(num_streams);
 
@@ -1549,8 +1550,10 @@ static void buildIndexes(
 
     const auto & settings = context->getSettingsRef();
 
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr), context);
+
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_actions_dag, context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1558,12 +1561,12 @@ static void buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
 
-        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
+        indexes->minmax_idx_condition.emplace(filter_dag, context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context, false /* strict */);
     }
 
-    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
-    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context);
+    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
     if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
@@ -1647,17 +1650,20 @@ static void buildIndexes(
         {
 #if USE_USEARCH
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_actions_dag, context, vector_search_parameters);
+                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
 #endif
             if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
-                condition = legacy_vector_similarity_index->createIndexCondition(filter_actions_dag, context);
+                condition = legacy_vector_similarity_index->createIndexCondition(filter_dag.predicate, context);
 
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }
         else
         {
-            condition = index_helper->createIndexCondition(filter_actions_dag, context);
+            if (!filter_dag.predicate)
+                continue;
+
+            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
         if (!condition->alwaysUnknownOrTrue())

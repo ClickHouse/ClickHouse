@@ -137,7 +137,8 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {}) const;
+        const std::string & exception_message = {},
+        int error_code = 0) const;
 };
 
 }

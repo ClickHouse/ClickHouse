@@ -805,11 +805,16 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 
 std::string ZooKeeperMultiRequest::toStringImpl(bool short_format) const
 {
-    if (short_format)
-        return fmt::format("Subrequests size = {}", requests.size());
-
     auto out = fmt::memory_buffer();
-    for (const auto & request : requests)
+    static constexpr size_t subrequests_to_print_in_short_format = 5;
+    std::span requests_to_print{requests};
+    if (short_format && requests_to_print.size() > subrequests_to_print_in_short_format)
+    {
+        fmt::format_to(std::back_inserter(out), "Subrequests size = {}\nFirst {} requests\n", requests.size(), subrequests_to_print_in_short_format);
+        requests_to_print = requests_to_print.subspan(0, subrequests_to_print_in_short_format);
+    }
+
+    for (const auto & request : requests_to_print)
     {
         const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
         fmt::format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
@@ -1004,7 +1009,10 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperSessionIDResponse>();
+    auto response = std::make_shared<ZooKeeperSessionIDResponse>();
+    response->server_id = server_id;
+    response->internal_id = internal_id;
+    return std::move(response);
 }
 
 void ZooKeeperSessionIDResponse::readImpl(ReadBuffer & in)

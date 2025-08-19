@@ -596,13 +596,14 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
-    if (parts.empty())
+    if (parts.empty() || !filter_dag)
         return {};
 
     ASTPtr expression_ast;
 
     ConditionSelectivityEstimator estimator;
-    PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
 
     if (partition_pruner.isUseless())
     {
@@ -997,12 +998,22 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     {
         NameSet columns_ttl_forbidden;
 
+        // Check old metadata keys
         if (old_metadata.hasPartitionKey())
             for (const auto & col : old_metadata.getColumnsRequiredForPartitionKey())
                 columns_ttl_forbidden.insert(col);
 
         if (old_metadata.hasSortingKey())
             for (const auto & col : old_metadata.getColumnsRequiredForSortingKey())
+                columns_ttl_forbidden.insert(col);
+
+        // Check new metadata keys (fix for issue #84442)
+        if (new_metadata.hasPartitionKey())
+            for (const auto & col : new_metadata.getColumnsRequiredForPartitionKey())
+                columns_ttl_forbidden.insert(col);
+
+        if (new_metadata.hasSortingKey())
+            for (const auto & col : new_metadata.getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
         for (const auto & [name, ttl_description] : new_column_ttls)
@@ -1315,7 +1326,9 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
 
-    PartitionPruner partition_pruner(metadata_snapshot, &*filter_dag, local_context, true /* strict */);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+
+    PartitionPruner partition_pruner(metadata_snapshot, inverted_dag, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -5833,8 +5846,13 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        if (backup_settings.check_projection_parts)
-            part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
+        if (backup_settings.check_parts)
+        {
+            if (backup_settings.check_projection_parts)
+                part->checkConsistencyWithProjections(/*require_part_metadata=*/true);
+            else
+                part->checkConsistency(/*require_part_metadata=*/true);
+        }
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
@@ -7381,10 +7399,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
             minmax_idx_condition.emplace(
-                filter_dag, query_context, minmax_columns_names,
+                inverted_dag, query_context, minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
-            partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
+            partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);

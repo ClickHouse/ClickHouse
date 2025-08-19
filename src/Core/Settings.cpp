@@ -2436,14 +2436,15 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 )", 0) \
-    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", R"(
-Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
-)", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
+The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
+
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
@@ -3974,6 +3975,11 @@ Allow to execute alters which affects not only tables metadata, but also data on
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
+)", 0) \
+    DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
+If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+
+Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -5706,6 +5712,9 @@ When the ratio of rows containing NULL values to the total number of rows exceed
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6202,6 +6211,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
+    MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

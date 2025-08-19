@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             /// Release closed. Please use 25.4
+            {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"enable_json_type", false, true, "JSON data type is production-ready"},
             {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
             {"enable_variant_type", false, true, "Variant data type is production-ready"},
@@ -84,6 +85,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// Release closed. Please use 25.4
         });
         addSettingsChanges(settings_changes_history, "25.2",
@@ -165,6 +167,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
+            {"output_format_parquet_date_as_uint16", true, false, "Write Date as Date32 instead of plain UInt16 (these are the two Parquet types closest to Date)."},
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},

@@ -46,6 +46,8 @@ struct ZooKeeperRequest : virtual Request
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
 
+    bool add_root_path = true;
+
     bool restored_from_zookeeper_log = false;
 
     UInt64 thread_id = 0;

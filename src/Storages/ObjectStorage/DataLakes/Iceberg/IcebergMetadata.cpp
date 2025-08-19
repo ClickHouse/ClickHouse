@@ -304,7 +304,9 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
 
     auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
-    auto current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
+    Int64 current_snapshot_id = -1;
+    if (metadata->has("current-snapshot-id"))
+        current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {

@@ -1,8 +1,6 @@
 import json
 import logging
-import os.path as p
 import random
-import subprocess
 import threading
 import time
 import uuid
@@ -10,10 +8,9 @@ from random import randrange
 
 import pika
 import pytest
-from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 
@@ -38,19 +35,6 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
-instance3 = cluster.add_instance(
-    "instance3",
-    user_configs=["configs/users.xml"],
-    main_configs=[
-        "configs/rabbitmq.xml",
-        "configs/macros.xml",
-        "configs/named_collection.xml",
-        "configs/mergetree.xml",
-    ],
-    with_rabbitmq=True,
-    stay_alive=True,
-)
-
 # Helpers
 
 
@@ -71,9 +55,6 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
-        instance.query("CREATE DATABASE test")
-        instance3.query("CREATE DATABASE test")
-
         yield cluster
 
     finally:
@@ -83,9 +64,31 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
+    instance.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance.query("CREATE DATABASE test")
+    cluster.reset_rabbitmq()
+
+
+def check_expected_result_polling(expected, query, instance=instance, timeout=DEFAULT_TIMEOUT_SEC):
+    deadline = time.monotonic() + timeout
+    prev_result = 0
+    result = None
+    while time.monotonic() < deadline:
+        result = int(instance.query(query))
+        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
+        if result > prev_result:
+            deadline += 1
+        prev_result = result
+        if result == expected:
+            break
+        logging.debug(f"Result: {result} / {expected}. Now {time.monotonic()}, deadline {deadline}")
+        time.sleep(1)
+    else:
+        pytest.fail(
+            f"Time limit of {timeout} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
+        )
+    return result
 
 
 # Tests
@@ -511,6 +514,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
         """
+        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
         DROP TABLE IF EXISTS test.view3;
@@ -633,27 +637,11 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="big", routing_key="", body=message)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        if int(result) == batch_messages * rabbitmq_messages:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
+    check_expected_result_polling(batch_messages * rabbitmq_messages, "SELECT count() FROM test.view")
     connection.close()
-
-    assert (
-        int(result) == rabbitmq_messages * batch_messages
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
-    NUM_CONSUMERS = 10
-    NUM_QUEUES = 10
     logging.getLogger("pika").propagate = False
 
     instance.query(
@@ -715,34 +703,18 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    result1 = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     expected = messages_num * threads_num
-    while time.monotonic() < deadline:
-        result1 = instance.query("SELECT count() FROM test.view")
-        time.sleep(1)
-        if int(result1) == expected:
-            break
-        logging.debug(f"Result {result1} / {expected}")
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
+    check_expected_result_polling(expected, "SELECT count() FROM test.view")
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
 
     for thread in threads:
         thread.join()
 
-    assert (
-        int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 10
 
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
-    NUM_CONSUMERS = 4
     logging.getLogger("pika").propagate = False
 
     instance.query(
@@ -1055,17 +1027,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     for thread in threads:
         thread.join()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view_many")
-        logging.debug(result, messages_num * threads_num)
-        if int(result) == messages_num * threads_num:
-            break
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * threads_num, "SELECT count() FROM test.view_many")
 
     instance.query(
         """
@@ -1075,10 +1037,6 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
         DROP TABLE test.view_many;
     """
     )
-
-    assert (
-        int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
@@ -1153,18 +1111,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     for thread in threads:
         thread.join()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view_overload")
-        expected = messages_num * threads_num
-        if int(result) == expected:
-            break
-        logging.debug(f"Result: {result} / {expected}")
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * threads_num, "SELECT count() FROM test.view_overload")
 
     instance.query(
         """
@@ -1174,10 +1121,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         DROP TABLE test.rabbitmq_overload SYNC;
     """
     )
-
-    assert (
-        int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_direct_exchange(rabbitmq_cluster):
@@ -1248,16 +1191,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     connection.close()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result) == messages_num * num_tables:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * num_tables, "SELECT count() FROM test.destination")
 
     for consumer_id in range(num_tables):
         instance.query(
@@ -1274,10 +1208,6 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         DROP TABLE IF EXISTS test.destination;
     """
     )
-
-    assert (
-        int(result) == messages_num * num_tables
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
@@ -1341,16 +1271,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     connection.close()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result) == messages_num * num_tables:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * num_tables, "SELECT count() FROM test.destination")
 
     for consumer_id in range(num_tables):
         instance.query(
@@ -1367,10 +1288,6 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
         DROP TABLE test.destination;
     """
     )
-
-    assert (
-        int(result) == messages_num * num_tables
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_topic_exchange(rabbitmq_cluster):
@@ -1459,7 +1376,6 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
             )
 
     key = "random.logs"
-    current = 0
     for msg_id in range(messages_num):
         channel.basic_publish(
             exchange="topic_exchange_testing",
@@ -1470,16 +1386,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     connection.close()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result) == messages_num * num_tables + messages_num * num_tables:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * num_tables + messages_num * num_tables, "SELECT count() FROM test.destination")
 
     for consumer_id in range(num_tables * 2):
         instance.query(
@@ -1496,10 +1403,6 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         DROP TABLE test.destination;
     """
     )
-
-    assert (
-        int(result) == messages_num * num_tables + messages_num * num_tables
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_hash_exchange(rabbitmq_cluster):
@@ -1571,18 +1474,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    result1 = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result1 = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result1) == messages_num * threads_num:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
-
+    check_expected_result_polling(messages_num * threads_num, "SELECT count() FROM test.destination")
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.destination")
 
     for consumer_id in range(num_tables):
@@ -1605,9 +1497,6 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     for thread in threads:
         thread.join()
 
-    assert (
-        int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 4 * num_tables
 
 
@@ -1677,16 +1566,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result) == messages_num * threads_num * 5:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * threads_num * 5, "SELECT count() FROM test.destination")
 
     for thread in threads:
         thread.join()
@@ -1698,10 +1578,6 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
         DROP TABLE test.destination;
     """
     )
-
-    assert (
-        int(result) == messages_num * threads_num * 5
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_headers_exchange(rabbitmq_cluster):
@@ -1795,16 +1671,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     connection.close()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result) == messages_num * num_tables_to_receive:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * num_tables_to_receive, "SELECT count() FROM test.destination")
 
     for consumer_id in range(num_tables_to_receive + num_tables_to_ignore):
         instance.query(
@@ -1821,10 +1688,6 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
         DROP TABLE test.destination;
     """
     )
-
-    assert (
-        int(result) == messages_num * num_tables_to_receive
-    ), "ClickHouse lost some messages: {}".format(result)
 
 
 def test_rabbitmq_virtual_columns(rabbitmq_cluster):
@@ -1859,16 +1722,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="virtuals", routing_key="", body=message)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        time.sleep(1)
-        if int(result) == message_num:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(message_num, "SELECT count() FROM test.view")
 
     connection.close()
 
@@ -1938,16 +1792,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="virtuals_mv", routing_key="", body=message)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        time.sleep(1)
-        if int(result) == message_num:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(message_num, "SELECT count() FROM test.view")
 
     connection.close()
 
@@ -2047,17 +1892,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    result1 = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result1 = instance.query("SELECT count() FROM test.destination")
-        time.sleep(1)
-        if int(result1) == messages_num * threads_num:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * threads_num, "SELECT count() FROM test.destination")
 
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.destination")
 
@@ -2080,9 +1915,6 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     """
     )
 
-    assert (
-        int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
     # 4 tables, 2 consumers for each table => 8 consumer tags
     assert int(result2) == 8
 
@@ -2227,7 +2059,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     )
     instance.query("DETACH TABLE test.cs")
 
-    with rabbitmq_cluster.pause_container("rabbitmq1"):
+    with rabbitmq_cluster.pause_rabbitmq():
         instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000
@@ -2247,26 +2079,13 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
         )
     connection.close()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        time.sleep(1)
-        if int(result) == messages_num:
-            break
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num, "SELECT count() FROM test.view")
 
     instance.query(
         """
         DROP TABLE test.consumer;
         DROP TABLE test.cs;
     """
-    )
-
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
     )
 
 
@@ -2473,21 +2292,9 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
 
     time.sleep(5)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view", ignore_error=True)
-        if int(result) == 10:
-            break
-        time.sleep(0.5)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value of 10."
-        )
+    check_expected_result_polling(10, "SELECT count() FROM test.view")
 
     instance.query("DROP TABLE test.rabbitmq_settings")
-
-    # queue size is 10, but 50 messages were sent, they will be dropped (setting x-overflow = reject-publish) and only 10 will remain.
-    assert int(result) == 10
 
 
 def test_rabbitmq_queue_consume(rabbitmq_cluster):
@@ -2535,17 +2342,7 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
         """
     )
 
-    result = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        if int(result) == messages_num * threads_num:
-            break
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    check_expected_result_polling(messages_num * threads_num, "SELECT count() FROM test.view")
 
     for thread in threads:
         thread.join()
@@ -2723,25 +2520,12 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    messages = []
     for i in range(20):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        res = instance.query("SELECT COUNT(*) FROM test.view")
-        logging.debug(f"Current count (1): {res}")
-        if int(res) == 20:
-            break
-        else:
-            logging.debug(f"Number of rows in test.view: {res}")
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The row count did not reach 20."
-        )
+    check_expected_result_polling(20, "SELECT count() FROM test.view")
 
     instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
@@ -2760,17 +2544,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view")
-        logging.debug(f"Current count (2): {result}")
-        if int(result) == 50:
-            break
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The row count did not reach 50."
-        )
+    check_expected_result_polling(50, "SELECT count() FROM test.view")
 
     result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
@@ -2798,8 +2572,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
 
 def test_rabbitmq_random_detach(rabbitmq_cluster):
-    NUM_CONSUMERS = 2
-    NUM_QUEUES = 2
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -3106,19 +2878,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
         == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
     )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    rows = 0
-    while time.monotonic() < deadline:
-        rows = int(instance.query("SELECT count() FROM test.view"))
-        if rows == num_rows:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
-        )
-
-    assert rows == num_rows
+    check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
 
     result = instance.query("SELECT * FROM test.view")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
@@ -3202,19 +2962,7 @@ def test_row_based_formats(rabbitmq_cluster):
 
         assert insert_messages == 2
 
-        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-        rows = 0
-        while time.monotonic() < deadline:
-            rows = int(instance.query("SELECT count() FROM test.view"))
-            if rows == num_rows:
-                break
-            time.sleep(0.05)
-        else:
-            pytest.fail(
-                f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
-            )
-
-        assert rows == num_rows
+        check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
 
         expected = ""
         for i in range(num_rows):
@@ -3352,19 +3100,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
 
         assert insert_messages == 9
 
-        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-        rows = 0
-        while time.monotonic() < deadline:
-            rows = int(instance.query("SELECT count() FROM test.view"))
-            if rows == num_rows:
-                break
-            time.sleep(0.05)
-        else:
-            pytest.fail(
-                f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
-            )
-
-        assert rows == num_rows
+        check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
 
         result = instance.query("SELECT * FROM test.view ORDER by key")
         expected = ""
@@ -3616,19 +3352,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
     # The order of messages in select * from test.rabbitmq is not guaranteed, so sleep to collect everything in one select
     time.sleep(1)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    rows = 0
-    while time.monotonic() < deadline:
-        rows = int(instance.query("SELECT count() FROM test.data"))
-        if rows == num_rows:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
-        )
-
-    assert rows == num_rows
+    check_expected_result_polling(num_rows, "SELECT count() FROM test.data")
 
     result = instance.query("SELECT * FROM test.data ORDER by key")
     expected = "0\t0\n" * (num_rows // 2)
@@ -3638,19 +3362,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     assert result == expected
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    errors_count = 0
-    while time.monotonic() < deadline:
-        errors_count = int(instance.query("SELECT count() FROM test.errors"))
-        if errors_count == num_rows / 2:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of errors ({errors_count}) did not match the expected {num_rows}."
-        )
-
-    assert errors_count == num_rows / 2
+    check_expected_result_polling(num_rows / 2, "SELECT count() FROM test.errors")
 
     broken_messages = instance.query(
         "SELECT broken_message FROM test.errors order by broken_message"
@@ -3693,7 +3405,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     queue_name = result.method.queue
     channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
 
-    instance3.query(
+    instance.query(
         f"""
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3701,7 +3413,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
-                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+                     rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
 
         DROP TABLE IF EXISTS test.view;
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -3710,7 +3422,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
         DROP TABLE IF EXISTS test.consumer;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.{table_name};
+            SELECT intDiv(key, if(key < 25, 0, 1)) as key, value FROM test.{table_name};
         """
     )
 
@@ -3719,60 +3431,33 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
-    instance3.wait_for_log_line(
-        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    instance.wait_for_log_line(
+        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero"
     )
 
-    try:
-        instance3.replace_in_config(
-            "/etc/clickhouse-server/config.d/mergetree.xml",
-            "parts_to_throw_insert>0",
-            "parts_to_throw_insert>10",
-        )
-        instance3.restart_clickhouse()
+    count = [0]
 
-        count = [0]
+    def on_consume(channel, method, properties, body):
+        data = json.loads(body)
+        message = json.dumps({"key": data["key"] + 100, "value": data["value"]}) + "\n"
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+        count[0] += 1
+        if count[0] == num_rows:
+            channel.stop_consuming()
 
-        def on_consume(channel, method, properties, body):
-            channel.basic_publish(exchange=exchange, routing_key="", body=body)
-            count[0] += 1
-            if count[0] == num_rows:
-                channel.stop_consuming()
+    channel.basic_consume(queue_name, on_consume)
+    channel.start_consuming()
 
-        channel.basic_consume(queue_name, on_consume)
-        channel.start_consuming()
+    check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
 
-        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-        count = 0
-        while time.monotonic() < deadline:
-            count = int(instance3.query("SELECT count() FROM test.view"))
-            if count == num_rows:
-                break
-            time.sleep(0.05)
-        else:
-            pytest.fail(
-                f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count did not match {num_rows}."
-            )
-
-        assert count == num_rows
-
-        instance3.query(
-            f"""
-            DROP TABLE test.consumer;
-            DROP TABLE test.view;
-            DROP TABLE test.{table_name};
-        """
-        )
-        connection.close()
-    finally:
-        # Restore the original configuration so that other tests (this one included if executed
-        # again) behave as expected by the initial configuration
-        instance3.replace_in_config(
-            "/etc/clickhouse-server/config.d/mergetree.xml",
-            "parts_to_throw_insert>10",
-            "parts_to_throw_insert>0",
-        )
-        instance3.restart_clickhouse()
+    instance.query(
+        f"""
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.{table_name};
+    """
+    )
+    connection.close()
 
 
 def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
@@ -3840,19 +3525,7 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
 
     time.sleep(1)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    rows = 0
-    while time.monotonic() < deadline:
-        rows = int(instance.query("SELECT count() FROM test.data"))
-        if rows == num_rows:
-            break
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
-        )
-
-    assert rows == num_rows
+    check_expected_result_polling(num_rows, "SELECT count() FROM test.data")
 
     dead_letters = []
 

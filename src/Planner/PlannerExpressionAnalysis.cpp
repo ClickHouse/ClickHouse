@@ -368,7 +368,8 @@ std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query
   * Projection actions are added into actions chain.
   * It is client responsibility to update projection analysis result with project names actions after chain is finalized.
   */
-ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
+ProjectionAnalysisResult analyzeProjection(
+    const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)

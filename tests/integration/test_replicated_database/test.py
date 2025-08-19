@@ -1646,3 +1646,18 @@ def test_create_alter_sleeping(started_cluster, engine):
         SHOW CREATE TABLE create_alter_sleeping.t;
         """, timeout=10
     )
+
+
+def test_implicit_index(started_cluster):
+    competing_node.query("DROP DATABASE IF EXISTS implicit_index")
+    dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
+
+    competing_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica1');"
+        "CREATE TABLE implicit_index.t0 (c0 Int) ENGINE = ReplicatedMergeTree() ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;"
+        "ALTER TABLE implicit_index.t0 MODIFY SETTING replicated_can_become_leader = 0;"
+    )
+    dummy_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
+        "SYSTEM SYNC DATABASE REPLICA implicit_index;"
+    )

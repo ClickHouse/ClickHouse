@@ -17,6 +17,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
+    IntNode copyFromSnapshotNode() { return *this; }
     [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
@@ -284,7 +285,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     manager.serializeSnapshotBufferToDisk(*buf, 50);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
 
-
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
     auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
@@ -489,7 +489,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 {
-
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -532,6 +531,46 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
         {
             EXPECT_EQ(*snapshot_hash, new_hash);
         }
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
+{
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    static constexpr StringRef path = "/hello";
+    static constexpr uint64_t acl_id = 42;
+    addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 50);
+
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
+    {
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
+        auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
+
+        EXPECT_EQ(restored_storage->container.size(), 5);
+        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, acl_id);
+    }
+
+    {
+        this->keeper_context->setBlockACL(true);
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
+        auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
+
+        EXPECT_EQ(restored_storage->container.size(), 5);
+        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, 0);
     }
 }
 

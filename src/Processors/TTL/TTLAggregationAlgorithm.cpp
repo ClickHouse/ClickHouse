@@ -3,6 +3,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -215,18 +217,26 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             for (const auto & it : description.set_parts)
                 it.expression->execute(agg_block);
 
-            for (const auto & name : description.group_by_keys)
-            {
-                const IColumn * values_column = agg_block.getByName(name).column.get();
-                auto & result_column = result_columns[header.getPositionByName(name)];
-                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-            }
-
+            /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
+            /// the SET values over the GROUP BY because doing it the other way causes unexpected
+            /// results.
+            std::unordered_set<String> columns_added;
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(it.column_name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                columns_added.emplace(it.column_name);
+            }
+
+            for (const auto & name : description.group_by_keys)
+            {
+                if (!columns_added.contains(name))
+                {
+                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
+                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                }
             }
         }
     }

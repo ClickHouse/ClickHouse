@@ -276,7 +276,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
     try:
         subprocess.check_output(
             docker_exec(
@@ -284,24 +284,29 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
                 f"RABBITMQ_ERLANG_COOKIE={cookie}",
                 rabbitmq_id,
                 "rabbitmqctl",
-                "await_startup",
+                command,
             ),
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
-        return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
         error_message = (
-            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"rabbitmqctl {command} failed with return code {e.returncode}. "
             f"Output: {e.output.decode(errors='replace')}"
         )
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
+        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
         raise RuntimeError(
-            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+            f"rabbitmqctl {command} timed out{output}"
         )
+
+
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", 5)
+    return True
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -1389,17 +1394,18 @@ class ClickHouseCluster:
                 ),
             ]
         )
-        self.base_iceberg_catalog_cmd = self.compose_cmd(
+        self.base_glue_catalog_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
-        return self.base_iceberg_catalog_cmd
+        return self.base_glue_catalog_cmd
 
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
+        self.with_iceberg_catalog = True
         self.base_cmd.extend(
             [
                 "--file",
@@ -2353,13 +2359,13 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
                 ):
                     logging.debug("RabbitMQ is available")
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.5)
+                time.sleep(1)
 
         start = time.time()
         while time.time() - start < timeout:
@@ -2374,6 +2380,38 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
+
+    def stop_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
+        )
+
+    def start_rabbitmq_app(self, timeout=120):
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+        )
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
+
+    def reset_rabbitmq(self, timeout=240):
+        self.stop_rabbitmq_app()
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
+        self.start_rabbitmq_app()
+
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2472,6 +2510,34 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
+
+
+    def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
+        ip = self.get_instance_ip(host)
+        minio_client = Minio(
+            f"{ip}:{port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                minio_client.list_buckets()
+
+                logging.debug("Connected to Minio.")
+
+                if all(minio_client.bucket_exists(bucket) for bucket in buckets):
+                    return
+
+                time.sleep(1)
+            except Exception as ex:
+                logging.debug("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
@@ -2997,6 +3063,18 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+
+            if self.with_glue_catalog and self.base_glue_catalog_cmd:
+                logging.info("Trying to connect to Minio for glue catalog...")
+                subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-glue'], 'minio', 9000)
+
+            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
+                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-rest'], 'minio', 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
@@ -4507,8 +4585,22 @@ class ClickHouseInstance:
         )
 
     def replace_in_config(self, path_to_config, replace, replacement):
+        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
+        # and {replacement} have quotes or slashes.
+        for d in "/|#-=+@^*~":
+            if d not in replace and d not in replacement:
+                delimiter = d
+                break
+        else:
+            raise Exception(f"Couldn't find a suitable delimiter")
+        replace = shlex.quote(replace)
+        replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
+            [
+                "bash",
+                "-c",
+                f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}",
+            ]
         )
 
     def create_dir(self):

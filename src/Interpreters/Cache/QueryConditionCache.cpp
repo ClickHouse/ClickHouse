@@ -27,7 +27,29 @@ void QueryConditionCache::write(
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    std::lock_guard lock(entry->mutex);
+    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    {
+        std::shared_lock shared_lock(entry->mutex); /// cheap
+
+        bool need_not_update_marks = true;
+        for (const auto & mark_range : mark_ranges)
+        {
+            /// If the bits are already in the desired state (false), we don't need to update them.
+            need_not_update_marks = std::all_of(entry->matching_marks.begin() + mark_range.begin,
+                                                entry->matching_marks.begin() + mark_range.end,
+                                                [](auto b) { return b == false; });
+            if (!need_not_update_marks)
+                break;
+        }
+
+        /// Do we either have no final mark or final mark is already in the desired state?
+        bool need_not_update_final_mark = !has_final_mark || entry->matching_marks[marks_count - 1] == false;
+
+        if (need_not_update_marks && need_not_update_final_mark)
+            return;
+    }
+
+    std::lock_guard lock(entry->mutex); /// (*)
 
     chassert(marks_count == entry->matching_marks.size());
 
@@ -133,4 +155,5 @@ size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Ent
     size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
     return dynamic_memory + sizeof(decltype(entry.matching_marks));
 }
+
 }

@@ -2305,7 +2305,7 @@ struct ConjunctionNodes
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
+ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
@@ -2376,7 +2376,13 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         {
             if (cur.num_allowed_children == cur.node->children.size())
             {
-                if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN && cur.node->type != ActionsDAG::ActionType::INPUT)
+                bool is_deprecated_function = !allow_non_deterministic_functions
+                    && cur.node->type == ActionsDAG::ActionType::FUNCTION
+                    && !cur.node->function_base->isDeterministicInScopeOfQuery();
+
+                if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
+                    && cur.node->type != ActionsDAG::ActionType::INPUT
+                    && !is_deprecated_function)
                     allowed_nodes.emplace(cur.node);
             }
 
@@ -2526,7 +2532,8 @@ std::optional<ActionsDAG> ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
     const Names & available_inputs,
-    const ColumnsWithTypeAndName & all_inputs)
+    const ColumnsWithTypeAndName & all_inputs,
+    bool allow_non_deterministic_functions)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -2559,7 +2566,7 @@ std::optional<ActionsDAG> ActionsDAG::splitActionsForFilterPushDown(
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
+    auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
 
     if (conjunction.allowed.empty())
         return {};
@@ -2636,9 +2643,9 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes);
-    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes);
-    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes);
+    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
+    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
+    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
