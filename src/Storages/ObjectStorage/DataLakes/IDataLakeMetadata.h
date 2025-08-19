@@ -9,6 +9,14 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Storages/MutationCommands.h>
+#include <Interpreters/StorageID.h>
+#include <Databases/DataLake/ICatalog.h>
+
+namespace DataLake
+{
+class ICatalog;
+}
 
 namespace DB
 {
@@ -18,6 +26,11 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+class StorageObjectStorageConfiguration;
+using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
+struct StorageID;
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -45,8 +58,8 @@ public:
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
     virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
@@ -75,6 +88,30 @@ public:
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+
+    virtual SinkToStoragePtr write(
+        SharedHeader /*sample_block*/,
+        const StorageID & /*table_id*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("write"); }
+
+    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
+    virtual bool supportsDelete() const { return false; }
+    virtual void mutate(const MutationCommands & /*commands*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        StorageMetadataPtr /*metadata_snapshot*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
+
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
 protected:
     virtual ObjectIterator createKeysIterator(
