@@ -582,7 +582,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         while (parents_list[current_snapshot_id] != 0)
         {
             ancestors.push_back(parents_list[current_snapshot_id]);
-            current_snapshot_id = parents_list[current_snapshot_id];
+            current_snapshot_id = parents_list[current_snapshot_id + 1];
         }
     }
 
