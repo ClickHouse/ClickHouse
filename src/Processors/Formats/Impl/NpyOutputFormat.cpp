@@ -259,7 +259,8 @@ void registerOutputFormatNpy(FormatFactory & factory)
     factory.registerOutputFormat("Npy",[](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<NpyOutputFormat>(buf, std::make_shared<const Block>(sample));
     });

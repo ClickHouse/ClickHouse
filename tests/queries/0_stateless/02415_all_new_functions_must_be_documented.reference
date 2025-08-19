@@ -49,7 +49,6 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-alphaTokens
 and
 appendTrailingCharIfAbsent
 bar
@@ -63,7 +62,6 @@ buildId
 byteSize
 caseWithExpression
 catboostEvaluate
-ceil
 concat
 concatAssumeInjective
 connectionId
@@ -106,9 +104,6 @@ errorCodeToName
 evalMLMethod
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
@@ -121,7 +116,6 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
-floor
 format
 formatReadableQuantity
 formatReadableSize
@@ -345,12 +339,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -367,11 +355,6 @@ sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 space
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 startsWith
 substring
 substringIndex
@@ -520,7 +503,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd
