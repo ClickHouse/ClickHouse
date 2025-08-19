@@ -21,6 +21,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <__format/format_functions.h>
 #include <base/defines.h>
+#include "Storages/IStorage.h"
 #include <algorithm>
 #include <memory>
 #include <format>
@@ -65,6 +66,18 @@ static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
         printHierarchicalActions(subnode, indent + 1);
 }
 
+namespace {
+
+    struct IndexInfo : public IndexSize
+    {
+        String name;
+
+        IndexInfo(String name_, IndexSize size_info)
+            : IndexSize(size_info), name(name_)
+        {
+        }
+    };
+}
 
 /// This is a wrapper function declared as an ActionsDAG's friend to access its private members.
 /// The function is intended to perform DAG substitution for filter ActionsDAGs when it detects that the filter uses
@@ -101,9 +114,8 @@ static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
 /// conflicts and minimizing coupling between this optimization and ActionsDAG.
 class FunctionReplacerDAG
 {
-
     ActionsDAG &dag;
-    const std::map<String, String> &columns_to_index_name;
+    const std::map<String, IndexInfo> &columns_to_index_info;
 
     /// These will be initialized in the constructor if they exist or initialized lazily in the first effective replacement to avoid
     /// redundant or repetitions in the node list.
@@ -134,10 +146,10 @@ class FunctionReplacerDAG
         chassert(column.result_type->getTypeId() == TypeIndex::String);
         chassert(column.children.empty());
 
-        const auto map_it = columns_to_index_name.find(column.result_name);
-        chassert(map_it != columns_to_index_name.end());
+        const auto map_it = columns_to_index_info.find(column.result_name);
+        chassert(map_it != columns_to_index_info.end());
 
-        String name = fmt::format("'{}'_String", map_it->second);
+        String name = fmt::format("'{}'_String", map_it->second.name);
 
         { /// Check if the associated index column already exist
 
@@ -154,7 +166,7 @@ class FunctionReplacerDAG
         }
 
         /// else create it
-        Field cast_type_constant_value(map_it->second);
+        Field cast_type_constant_value(map_it->second.name);
 
         ColumnWithTypeAndName tmp;
         tmp.name = name;
@@ -196,7 +208,7 @@ class FunctionReplacerDAG
         return (node->type == ActionsDAG::ActionType::INPUT
                 && node->result_type->getTypeId() == TypeIndex::String
                 && node->children.empty()
-                && columns_to_index_name.contains(node->result_name));
+                && columns_to_index_info.contains(node->result_name));
     }
 
     bool hasChildColumnNodeWithTextIndex(const ActionsDAG::Node &subnode) const
@@ -236,7 +248,7 @@ class FunctionReplacerDAG
             new_children.push_back(child);
         }
 
-        /// When there was not replacement it means that none of the columns has a index associated in columns_to_index_name.
+        /// When there was not replacement it means that none of the columns has a index associated in columns_to_index_info.
         /// In that case we don't perform any substitution
         if (replaced > 0)
         {
@@ -269,8 +281,8 @@ class FunctionReplacerDAG
 
 public:
 
-    explicit FunctionReplacerDAG(ActionsDAG &_dag, const std::map<String, String> &_columns_to_index_name)
-        : dag(_dag), columns_to_index_name(_columns_to_index_name)
+    explicit FunctionReplacerDAG(ActionsDAG &_dag, const std::map<String, IndexInfo> &columns_to_index_info_)
+        : dag(_dag), columns_to_index_info(columns_to_index_info_)
     {
         /// Check if these nodes are already there.
         /// This may happen if the query uses them explicitly.
@@ -347,6 +359,38 @@ public:
 
         return {};
     }
+
+    static std::map<String, IndexInfo> getColumnsToIndexInfo(const ReadFromMergeTree * read_from_mergetree_step)
+    {
+        std::map<String, IndexInfo> columns_to_index_info;
+
+        const IStorage::IndexSizeByName secondary_index_sizes = read_from_mergetree_step->getMergeTreeData().getSecondaryIndexSizes();
+
+        const StorageMetadataPtr metadata = read_from_mergetree_step->getStorageMetadata();
+        if (!metadata || !metadata->hasSecondaryIndices())
+            return {};
+
+        /// Get the list of column: text_index we use latter and construct the size information needed by replacer
+        for (const IndexDescription & index : metadata->getSecondaryIndices())
+        {
+            if (index.type != "text")
+                continue;
+
+            auto size_it = secondary_index_sizes.find(index.name);
+            if (size_it == secondary_index_sizes.end())
+                continue;
+
+            /// Attempt to detect if the index is not materialized.
+            /// This needs more work because the materialization is per part.
+            if (size_it->second.marks == 0 || size_it->second.data_uncompressed == 0)
+                continue;
+
+            chassert(index.column_names.size() == 1);
+            columns_to_index_info.emplace(index.column_names.front(), IndexInfo(index.name, size_it->second));
+        }
+
+        return columns_to_index_info;
+    }
 };
 
 /// Text index search queries have this form:
@@ -384,45 +428,34 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
         return updated_layers;
 
     node = node->children.front();
-    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+    ReadFromMergeTree * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
         return updated_layers;
 
-    const StorageMetadataPtr metadata = read_from_mergetree_step->getStorageMetadata();
-    if (!metadata || !metadata->hasSecondaryIndices())
+    const IStorage::IndexSizeByName secondary_index_sizes = read_from_mergetree_step->getMergeTreeData().getSecondaryIndexSizes();
+
+    // Get information of MATERIALIZED indices
+    std::map<String, IndexInfo> columns_to_index_info = FunctionReplacerDAG::getColumnsToIndexInfo(read_from_mergetree_step);
+    if (columns_to_index_info.empty())
         return updated_layers;
 
-    /// Get the list of column: text_index we use latter
-    std::map<String, String> columns_to_index_name;
-    for (const IndexDescription &index : metadata->getSecondaryIndices())
-    {
-        if (index.type != "text")
-            continue;
-
-        chassert(index.column_names.size() == 1);
-        columns_to_index_name.emplace(index.column_names.front(), index.name);
-    }
-    /// If no text index, the optimization doesn't apply, early exit
-    if (columns_to_index_name.empty())
-        return updated_layers;
-
-    /// Look in detail is any of the inputs is a column with a text index, or early exit
-    {
+    { /// Look in detail is any of the inputs is a column with a text index, else this optimization does not apply
         bool has_mapped_input = false;
-        for (const auto *const input: filter_step->getExpression().getInputs())
+        for (const auto * const input: filter_step->getExpression().getInputs())
         {
-            if (columns_to_index_name.contains(input->result_name))
-            {
-                has_mapped_input = true;
-                break;
-            }
+            const auto index_it = columns_to_index_info.find(input->result_name);
+            if (index_it == columns_to_index_info.end())
+                continue;
+
+            has_mapped_input = true;
+            break;
         }
         if (!has_mapped_input)
             return updated_layers;
     }
 
     /// Ok, so far we can try to apply the optimization. Let's build a replaced.
-    FunctionReplacerDAG replacer(filter_step->getExpression(), columns_to_index_name);
+    FunctionReplacerDAG replacer(filter_step->getExpression(), columns_to_index_info);
 
     const std::vector<String> removed_inputs = replacer.optimize();
 
