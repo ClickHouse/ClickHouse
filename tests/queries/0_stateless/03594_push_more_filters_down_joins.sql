@@ -33,6 +33,7 @@ FROM generateRandom(1, 2, 2) LIMIT 1000;
 INSERT INTO t3 SELECT * REPLACE('BACKLOG' as status, 2 as id) 
 FROM generateRandom(1, 2, 2) LIMIT 1000;
 
+SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
 
 SELECT 1
