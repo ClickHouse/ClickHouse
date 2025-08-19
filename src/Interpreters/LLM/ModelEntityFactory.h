@@ -8,6 +8,7 @@ namespace DB
 {
 
 class IModelEntity;
+struct ModelConfiguration;
 class Context;
 /** Allows to create a ModelEntity by the name and configurations.
   */
@@ -15,10 +16,10 @@ class ModelEntityFactory : private boost::noncopyable
 {
 public:
     static ModelEntityFactory & instance();
-    using CreatorFn = std::function<std::shared_ptr<IModelEntity>(const std::string &)>;
-    std::shared_ptr<IModelEntity> get(const std::string & type);
+    using CreatorFn = std::function<std::shared_ptr<IModelEntity>(const ModelConfiguration &)>;
+    std::shared_ptr<IModelEntity> get(const ModelConfiguration &);
 
-    void registerModelEntity(const std::string & name, CreatorFn creator_fn);
+    void registerModelEntity(const std::string & id, CreatorFn creator_fn);
 private:
     std::unordered_map<std::string, CreatorFn> model_entries;
 };

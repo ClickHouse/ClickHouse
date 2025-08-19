@@ -17,6 +17,9 @@ struct AIConfiguration
     /// Custom API base URL for OpenAI-compatible services (optional)
     std::string base_url;
 
+    /// Endpoint
+    std::string endpoint;
+
     /// Model to use (e.g., "gpt-4", "claude-3-opus-20240229")
     std::string model;
 

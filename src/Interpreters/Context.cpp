@@ -1657,12 +1657,11 @@ void Context::setModelsConfig(const Poco::Util::AbstractConfiguration & config)
     Poco::Util::AbstractConfiguration::Keys keys;
     getConfigRef().keys("llm_models", keys);
 
-    for (const auto & model_name : keys)
+    for (const auto & key : keys)
     {
-        auto type = config.getString("llm_models." + model_name + ".type");
-        auto model = ModelEntityFactory::instance().get(type);
-        model->reload(config, model_name);
-        shared->llm_models[model_name] = model;
+        auto model_config = buildModelConfiguration(config, key);
+        auto model = ModelEntityFactory::instance().get(model_config);
+        shared->llm_models[key] = model;
     }
 }
 
@@ -1673,10 +1672,8 @@ static void reloadModelEntityIfChangedImpl(
 {
     if (!model || model->configChanged(*config, name))
     {
-        auto prefix = "llm_models." + name;
-        auto type = config->getString(prefix + ".type");
-        model = ModelEntityFactory::instance().get(type);
-        model->reload(*config, name);
+        auto model_config = buildModelConfiguration(*config, name);
+        model = ModelEntityFactory::instance().get(model_config);
     }
 }
 

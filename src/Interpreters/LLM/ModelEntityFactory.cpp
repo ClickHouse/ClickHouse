@@ -21,20 +21,20 @@ static std::string toLower(const std::string & s)
     return s_;
 }
 }
-void ModelEntityFactory::registerModelEntity(const std::string & type, CreatorFn creator_fn)
+void ModelEntityFactory::registerModelEntity(const std::string & key, CreatorFn creator_fn)
 {
-    auto lower_type = toLower(type);
+    auto lower_type = toLower(key);
     if (!model_entries.emplace(lower_type, std::move(creator_fn)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ModelEntityFactory: the model '{}' is not unique", type);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ModelEntityFactory: the model '{}' is not unique", key);
 }
 
-std::shared_ptr<IModelEntity> ModelEntityFactory::get(const std::string & type)
+std::shared_ptr<IModelEntity> ModelEntityFactory::get(const ModelConfiguration & config)
 {
-    auto lower_type = toLower(type);
-    auto creator_it = model_entries.find(lower_type);
+    auto key = config.ai_config.provider;
+    auto creator_it = model_entries.find(key);
     if (creator_it == model_entries.end())
-        throw Exception(ErrorCodes::UNKNOWN_MODEL_ENTITY, "The model entitiy name {} is not registered.", type);
-    return creator_it->second(type);
+        throw Exception(ErrorCodes::UNKNOWN_MODEL_ENTITY, "The model entity id {} is not registered.", key);
+    return creator_it->second(config);
 }
 
 ModelEntityFactory & ModelEntityFactory::instance()
