@@ -196,7 +196,7 @@ def create_clickhouse_glue_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_glue_catalog=true;
+SET allow_database_glue_catalog=true;
 SET write_full_path_in_iceberg_metadata=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
@@ -218,7 +218,7 @@ def create_clickhouse_glue_table(
 
     node.query(
         f"""
-SET allow_experimental_database_glue_catalog=true;
+SET allow_database_glue_catalog=true;
 SET write_full_path_in_iceberg_metadata=true;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
@@ -470,8 +470,8 @@ def test_empty_table(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
-    
-    
+
+
 def test_timestamps(started_cluster):
     node = started_cluster.instances["node1"]
 
