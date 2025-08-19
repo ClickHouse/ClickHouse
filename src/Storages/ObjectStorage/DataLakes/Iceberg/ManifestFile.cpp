@@ -395,9 +395,16 @@ ManifestFileContent::ManifestFileContent(
                 std::optional<String> reference_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
-                    reference_file_path
-                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
-                              .safeGet<String>();
+                    try
+                    {
+                        reference_file_path
+                            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
+                                .safeGet<String>();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,

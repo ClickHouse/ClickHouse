@@ -106,7 +106,7 @@ public:
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const
     {
-        throwNotImplemented("delete");
+        return;
     }
 
 protected:

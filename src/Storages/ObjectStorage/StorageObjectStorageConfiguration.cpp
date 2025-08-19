@@ -209,7 +209,7 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     const std::optional<FormatSettings> &,
     ContextPtr) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "addDeleteTransformers is not supported");
+    return;
 }
 
 }
