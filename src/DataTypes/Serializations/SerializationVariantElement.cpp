@@ -117,7 +117,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     std::optional<size_t> variant_rows_offset;
     std::optional<size_t> variant_limit;
     size_t num_read_discriminators = 0;
-    if (auto cached_column_with_num_read_rows  = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
         std::tie(variant_element_state->discriminators, num_read_discriminators) = *cached_column_with_num_read_rows;
@@ -159,7 +159,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         num_read_discriminators = variant_element_state->discriminators->size() - prev_size;
         /// We are not going to apply rows_offsets to discriminators column here, so we can put it as is in the cache.
-        addColumnWithNumReadRowsToSubstreamsCache(cache,settings.path,variant_element_state->discriminators, num_read_discriminators);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, variant_element_state->discriminators, num_read_discriminators);
     }
     else
     {
@@ -177,7 +177,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         if (rows_offset)
         {
-            auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
+            const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators).getData();
 
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
                 variant_rows_offset = *variant_rows_offset + (discriminators_data[i] == variant_discriminator);

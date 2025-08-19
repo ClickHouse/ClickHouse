@@ -1498,6 +1498,9 @@ Possible values:
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
+    DECLARE(Bool, per_part_index_stats, false, R"(
+        Logs index statistics per part
+)", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
@@ -5002,6 +5005,9 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
+Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -6451,6 +6457,12 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
+Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
 )", 0) \
@@ -6575,6 +6587,9 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_support_projection, true, R"(
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
+)", BETA) \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
@@ -6593,6 +6608,9 @@ Allow new query analyzer.
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
+Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
+    )", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -6811,6 +6829,9 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+Use roaring bitmap for iceberg positional deletes.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6945,6 +6966,9 @@ Allow experimental delta-kernel-rs implementation.
 )", BETA) \
     DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
