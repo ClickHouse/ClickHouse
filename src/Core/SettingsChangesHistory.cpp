@@ -62,6 +62,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
             {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
+            {"enable_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
+            {"allow_experimental_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
