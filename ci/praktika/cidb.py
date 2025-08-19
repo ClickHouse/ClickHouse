@@ -159,6 +159,8 @@ class CIDB:
             print(f"Parameter key: {key}")
             print(f"Parameter value: {value}")
 
+        print(f"Making a query to url: {self.url}, sending {len(jsons)} rows")
+
         for retry in range(retries):
             try:
                 response = requests.post(
