@@ -290,7 +290,7 @@ As this decreases performance, it is not recommended to use non-String/FixedStri
 
     FunctionDocumentation::Description description_injective = R"(
 Like [`concat`](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective,
-i.e, it returns different results for for different arguments.
+i.e, it returns different results for different arguments.
 
 Can be used for optimization of `GROUP BY`.
 )";
@@ -299,7 +299,7 @@ Can be used for optimization of `GROUP BY`.
         {"s1, s2, ...", "Any number of values of arbitrary type.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_injective = {
-        "Returns the String created by concatenating the arguments. If any of argument values is `NULL`, the function returns `NULL`. If no arguments are passed, it returns an empty string.",
+        "Returns the string created by concatenating the arguments. If any of argument values is `NULL`, the function returns `NULL`. If no arguments are passed, it returns an empty string.",
         {"String"}
     };
     FunctionDocumentation::Examples examples_injective = {

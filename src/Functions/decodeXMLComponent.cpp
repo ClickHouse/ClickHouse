@@ -240,7 +240,7 @@ Decodes XML entities in a string to their corresponding characters.
     FunctionDocumentation::Arguments arguments = {
         {"s", "String containing XML entities to decode.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the string with XML entities decoded.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the provided string with XML entities decoded.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

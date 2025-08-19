@@ -11,14 +11,14 @@ using FunctionEndsWith = FunctionStartsEndsWith<NameEndsWith>;
 REGISTER_FUNCTION(EndsWith)
 {
     FunctionDocumentation::Description description = R"(
-Checks whether a string ends with the provided string.
+Checks whether a string ends with the provided suffix.
 )";
-    FunctionDocumentation::Syntax syntax = "endsWith(str, suffix)";
+    FunctionDocumentation::Syntax syntax = "endsWith(s, suffix)";
     FunctionDocumentation::Arguments arguments = {
-        {"str", "String to check.", {"String"}},
+        {"s", "String to check.", {"String"}},
         {"suffix", "Suffix to check for.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `str` ends with `suffix`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `s` ends with `suffix`, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

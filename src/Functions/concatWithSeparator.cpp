@@ -181,7 +181,7 @@ using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameC
 REGISTER_FUNCTION(ConcatWithSeparator)
 {
     FunctionDocumentation::Description description = R"(
-Concatenates the given strings with a given separator.
+Concatenates the provided strings, separating them by the specified separator.
 )";
     FunctionDocumentation::Syntax syntax = "concatWithSeparator(sep[, exp1, exp2, ...])";
     FunctionDocumentation::Arguments arguments = {

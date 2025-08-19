@@ -20,7 +20,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         {"s", "String to check.", {"String"}},
         {"suffix", "Suffix to check for.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `str` ends with `suffix`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `s` ends with `suffix`, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

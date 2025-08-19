@@ -22,13 +22,12 @@ REGISTER_FUNCTION(Base64Decode)
 Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation, according to RFC 4648.
 Throws an exception in case of error.
 
-Alias: `FROM_BASE64`.
 )";
     FunctionDocumentation::Syntax syntax = "base64Decode(encoded)";
     FunctionDocumentation::Arguments arguments = {
         {"encoded", "String column or constant to decode. If the string is not valid Base64-encoded, an exception is thrown.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the decoded string.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
