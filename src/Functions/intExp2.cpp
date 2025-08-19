@@ -78,7 +78,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
 REGISTER_FUNCTION(IntExp2)
 {
     FunctionDocumentation::Description description = R"(
-Like [exp](#exp) but returns a `UInt64` number.
+Like [exp2](#exp2) but returns a `UInt64` number.
 )";
     FunctionDocumentation::Syntax syntax = "intExp2(x)";
     FunctionDocumentation::Arguments arguments = {
