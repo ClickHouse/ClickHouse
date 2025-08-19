@@ -159,7 +159,7 @@ void OpenAIModelEntity::embedding(EmbeddedContext & embedding_context) const
         std::move(input),
          embedding_context.dimensions
     );
-    auto embedding_result = client.client->embedding(embedding_options);
+    auto embedding_result = client.client->embeddings(embedding_options);
     if (embedding_result.error)
         throw Exception(ErrorCodes::REMOTE_LLM_API_ERROR, "The request was refused due to exception {}", embedding_result.error.value());
 
@@ -168,7 +168,7 @@ void OpenAIModelEntity::embedding(EmbeddedContext & embedding_context) const
 }
 
 
-void registerRemoteModelEntity(ModelEntityFactory & factory)
+void registerOpenAIModelEntity(ModelEntityFactory & factory)
 {
     auto register_model = [&] (const std::string & provider)
     {

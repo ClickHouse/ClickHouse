@@ -3,7 +3,6 @@
 
 namespace DB
 {
-/// This model comes from the OLLAMA platform.
 class OpenAIModelEntity : public IModelEntity
 {
 public:
@@ -15,11 +14,6 @@ public:
     void complete(GenerateContext & generate_context) const override;
     void embedding(EmbeddedContext & embedding_context) const override;
 protected:
-    void buildResult(const nlohmann::json & reply,
-        ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t offset,
-        size_t size) const;
     nlohmann::json parameters;
 };
 

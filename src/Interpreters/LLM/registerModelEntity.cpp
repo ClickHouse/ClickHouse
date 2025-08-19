@@ -4,12 +4,14 @@
 namespace DB
 {
 
-void registerRemoteModelEntity(ModelEntityFactory & factory);
+void registerOpenAIModelEntity(ModelEntityFactory & factory);
+void registerAnthropicModelEntity(ModelEntityFactory & factory);
 
 void registerModelEntities()
 {
     auto & factory = ModelEntityFactory::instance();
-    registerRemoteModelEntity(factory);
+    registerOpenAIModelEntity(factory);
+    registerAnthropicModelEntity(factory);
 }
 
 }

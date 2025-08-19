@@ -88,7 +88,6 @@ public:
     virtual void complete(GenerateContext & generate_context) const = 0;
     virtual void embedding(EmbeddedContext & embedding_context) const = 0;
     size_t getBatchSize() const { return config.batch_size; }
-    //static std::string generateModelID(const std::string & provider, const std::string & model_name) { return provider + "#" + model_name; }
     static std::string systemPrompt();
 protected:
     LoggerPtr log;
