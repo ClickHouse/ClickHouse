@@ -7,7 +7,7 @@ namespace DB
 class RemovingSparseTransform : public ISimpleTransform
 {
 public:
-    explicit RemovingSparseTransform(SharedHeader header);
+    explicit RemovingSparseTransform(const Block & header);
 
     String getName() const override { return "RemovingSparseTransform"; }
 

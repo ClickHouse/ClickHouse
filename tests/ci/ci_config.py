@@ -362,7 +362,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_MSAN], release_only=True
         ),
         JobNames.UPGRADE_TEST_ASAN: CommonJobConfigs.UPGRADE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
             random_bucket="upgrade_with_sanitizer",
             pr_only=True,
         ),
@@ -388,7 +388,6 @@ class CI:
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=6,
-            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -402,7 +401,7 @@ class CI:
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=6,
+            num_batches=4,
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
