@@ -239,7 +239,7 @@ Decodes HTML entities in a string to their corresponding characters.
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

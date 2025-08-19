@@ -384,9 +384,9 @@ Compares two strings lexicographically.
         {"s2", "The second string to compare.", {"String"}},
         {"s1_offset", "The position (zero-based) in `s1` from which the comparison starts.", {"UInt*"}},
         {"s2_offset", "The position (zero-based index) in `s2` from which the comparison starts.", {"UInt*"}},
-        {"num_bytes", "The maximum number of bytes to compare in both strings. If `s1_offset`( or `s2_offset`) + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.", {"UInt*"}}
+        {"num_bytes", "The maximum number of bytes to compare in both strings. If `s1_offset` (or `s2_offset`) + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.", {"UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns:
 - `-1` if `s1`[`s1_offset` : `s1_offset` + `num_bytes`] < `s2`[`s2_offset` : `s2_offset` + `num_bytes`].
 - `0` if `s1`[`s1_offset` : `s1_offset` + `num_bytes`] = `s2`[`s2_offset` : `s2_offset` + `num_bytes`].

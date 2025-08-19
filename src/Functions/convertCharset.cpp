@@ -234,7 +234,7 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');"
+        "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
 ┌─convertChars⋯SO-8859-1')─┐
 │ Caf�                     │
