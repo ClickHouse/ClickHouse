@@ -115,7 +115,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", type, syntax);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }
     result += "\n";
     return result;
