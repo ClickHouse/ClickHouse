@@ -221,7 +221,32 @@ public:
 
 REGISTER_FUNCTION(ConvertCharset)
 {
-    factory.registerFunction<FunctionConvertCharset>();
+    FunctionDocumentation::Description description = R"(
+Returns string `s` converted from the encoding `from` to encoding `to`.
+)";
+    FunctionDocumentation::Syntax syntax = "convertCharset(s, from, to)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}},
+        {"from", "Source character encoding.", {"String"}},
+        {"to", "Target character encoding.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns string `s` converted from encoding `from` to encoding `to`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');"
+        R"(
+┌─convertChars⋯SO-8859-1')─┐
+│ Caf�                     │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionConvertCharset>(documentation);
 }
 
 }

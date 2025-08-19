@@ -10,12 +10,23 @@ using FunctionEndsWithUTF8 = FunctionStartsEndsWith<NameEndsWithUTF8>;
 
 REGISTER_FUNCTION(EndsWithUTF8)
 {
-    factory.registerFunction<FunctionEndsWithUTF8>(FunctionDocumentation{
-        .description = R"(
-Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
-        )",
-        .examples{{"endsWithUTF8", "select endsWithUTF8('富强民主文明和谐', '富强');", ""}},
-        .category = FunctionDocumentation::Category::String});
+    FunctionDocumentation::Description description = R"(
+Returns whether string `str` ends with `suffix`.
+Assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+)";
+    FunctionDocumentation::Syntax syntax = "endsWithUTF8(str, suffix)";
+    FunctionDocumentation::Arguments arguments = {
+        {"str", "String to check.", {"String"}},
+        {"suffix", "Suffix to check for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `str` ends with `suffix`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionEndsWithUTF8>(documentation);
 }
 
 }
