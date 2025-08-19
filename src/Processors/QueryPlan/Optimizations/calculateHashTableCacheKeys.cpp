@@ -30,8 +30,16 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
     hash.update(read.getSerializationName());
+    String table_name;
     if (const auto & snapshot = read.getStorageSnapshot())
-        hash.update(snapshot->storage.getStorageID().getFullTableName());
+    {
+        StorageID storage_id = snapshot->storage.getStorageID();
+        if (storage_id.hasUUID())
+            hash.update(storage_id.uuid.toUnderType());
+        else
+            hash.update(storage_id.getFullTableName());
+        table_name = storage_id.getFullTableName();
+    }
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();
@@ -58,14 +66,26 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     return 0;
 }
 
-UInt64 calculateHashFromStep(const JoinStepLogical & join_step)
+UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
 
     hash.update(join_step.getSerializationName());
-    join_step.getActionsDAG().updateHash(hash);
     for (const auto & condition : join_step.getJoinOperator().expression)
-        condition.getNode()->updateHash(hash);
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
+        {
+            if (side == JoinTableSide::Left && lhs.fromLeft())
+                lhs.getNode()->updateHash(hash);
+            if (side == JoinTableSide::Left && rhs.fromLeft())
+                rhs.getNode()->updateHash(hash);
+            if (side == JoinTableSide::Right && lhs.fromRight())
+                lhs.getNode()->updateHash(hash);
+            if (side == JoinTableSide::Right && rhs.fromRight())
+                rhs.getNode()->updateHash(hash);
+        }
+    }
 
     return hash.get64();
 }
@@ -126,8 +146,8 @@ void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_ma
                 }
                 else
                 {
-                    frame.left.update(calculateHashFromStep(*join_step));
-                    frame.right.update(calculateHashFromStep(*join_step));
+                    frame.left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
+                    frame.right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
 
                     auto left_val = frame.left.get64();
                     auto right_val = frame.right.get64();

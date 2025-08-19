@@ -486,7 +486,9 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (!label.empty())
         stats.table_name = label;
 
-    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics for {} {}", node->step->getName(), dumpStatsForLogs(stats));
+    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
+        num_rows_from_cache.has_value() ? "(from cache)" : "",
+        node->step->getName(), dumpStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
 }
