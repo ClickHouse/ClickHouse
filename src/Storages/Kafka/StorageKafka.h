@@ -22,6 +22,7 @@ namespace DB
 
 struct KafkaSettings;
 class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>
@@ -51,7 +52,7 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViewsOnInserts() const override { return true; }
+    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;

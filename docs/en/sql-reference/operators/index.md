@@ -27,7 +27,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` – The `divide(a, b)` function.
 
@@ -110,6 +110,7 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 ### notIn subquery function {#notin-subquery-function-1}
 `a != ALL (subquery)` – The `notIn(a, subquery)` function. 
+
 
 **Examples**
 
@@ -356,8 +357,8 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 ### IS NULL {#is_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
-  - `1`, if the value is `NULL`.
-  - `0` otherwise.
+    - `1`, if the value is `NULL`.
+    - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
@@ -377,8 +378,8 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 ### IS NOT NULL {#is_not_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
-  - `0`, if the value is `NULL`.
-  - `1` otherwise.
+    - `0`, if the value is `NULL`.
+    - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
 
 <!-- -->

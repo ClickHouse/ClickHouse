@@ -2,9 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -42,11 +40,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
-}
-
-IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
-    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
-{
 }
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
@@ -189,7 +182,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader());
+    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);

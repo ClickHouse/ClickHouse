@@ -227,9 +227,7 @@ StorageMaterializedView::StorageMaterializedView(
 
             /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
             /// To fix this, we don't check the permissions for the target table for the first time.
-            /// If the table is created later when adding a new replica to Replicated database,
-            /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
-            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
+            if (!is_restore_from_backup)
             {
                 auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
                 refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
@@ -378,8 +376,8 @@ void StorageMaterializedView::read(
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = *getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = *query_plan.getCurrentHeader();
+        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
+        auto target_header = query_plan.getCurrentHeader();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
@@ -582,14 +580,14 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    SharedHeader header;
+    Block header;
     if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
     auto columns = std::make_shared<ASTExpressionList>(',');
-    for (const String & name : header->getNames())
+    for (const String & name : header.getNames())
         columns->children.push_back(std::make_shared<ASTIdentifier>(name));
     insert_query->columns = std::move(columns);
 

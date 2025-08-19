@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class VectorSimilarityIndexCache;
-
 class MergeTreeIndexReader
 {
 public:
