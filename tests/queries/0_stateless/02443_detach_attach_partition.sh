@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./replication.lib
 . "$CURDIR"/replication.lib
 
-export MAX_RETRIES=10
+export S3_MAX_RETRIES=40
 
 function thread_detach()
 {
@@ -100,9 +100,8 @@ show_cluster_info
 
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
-show_cluster_info
-query_with_retry "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = 20" "ATOMIC_RENAME_fail"
-query_with_retry "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = 20" "ATOMIC_RENAME_fail"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $S3_MAX_RETRIES"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all' SETTINGS s3_max_single_read_retries = $S3_MAX_RETRIES"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"

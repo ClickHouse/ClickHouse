@@ -190,30 +190,22 @@ function random_str()
 
 function query_with_retry()
 {
-    local query="$1"
-    shift
+    local query="$1" && shift
 
-    local ignore_result="$1"
-    shift
-
-    local max_retries=${MAX_RETRIES:-5}
-
-    for retry in {1..$max_retries}
+    local retry=0
+    until [ $retry -ge 5 ]
     do
         local result
         result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
         if [ "$?" == 0 ]; then
             echo -n "$result"
             return
-        elif [ -n "$ignore_result" ]; then
-            if [[ ! "$result" =~ "$ignore_result" ]]; then
-                echo -n "$result"
-                exit 1
-            fi
+        else
+            retry=$((retry + 1))
+            sleep 3
         fi
-        sleep 3
     done
-    echo "Query '$query' failed (after $max_retries retries) with '$result'"
+    echo "Query '$query' failed with '$result'"
 }
 
 function run_with_error()
