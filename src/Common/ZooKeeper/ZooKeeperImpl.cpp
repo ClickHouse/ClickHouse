@@ -1832,7 +1832,6 @@ std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
     return nullptr;
 }
 
-
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
