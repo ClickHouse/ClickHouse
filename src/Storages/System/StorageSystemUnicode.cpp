@@ -304,7 +304,7 @@ static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPt
 }
 
 void StorageSystemUnicode::fillData(
-    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     Poco::UTF8Encoding encoding;
 
@@ -317,15 +317,25 @@ void StorageSystemUnicode::fillData(
 
     /// Get filtered code points based on the predicate.
     Block filtered_block = getFilteredCodePoints(predicate, context, encoding);
+    size_t mask_index = 0;
+    size_t column_index = 0;
+    if (columns_mask[mask_index++])
+    {
+        res_columns[column_index++] = IColumn::mutate(std::move(filtered_block.getByPosition(0).column));
+    }
 
-    res_columns[0] = IColumn::mutate(std::move(filtered_block.getByPosition(0).column));
-    res_columns[1] = IColumn::mutate(std::move(filtered_block.getByPosition(1).column));
-
-    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*res_columns[1]).getData();
-
-    size_t column_index = 2;
+    const ColumnInt32::Container * filtered_code_points_ptr
+        = &assert_cast<const ColumnInt32 &>(*filtered_block.getByPosition(1).column).getData();
+    if (columns_mask[mask_index++])
+    {
+        res_columns[column_index] = IColumn::mutate(std::move(filtered_block.getByPosition(1).column));
+        filtered_code_points_ptr = &assert_cast<const ColumnInt32 &>(*res_columns[column_index]).getData();
+        ++column_index;
+    }
+    const ColumnInt32::Container & filtered_code_points = *filtered_code_points_ptr;
 
     // First, process U+XXXX notation for all code points
+    if (columns_mask[mask_index++])
     {
         ColumnString & col_notation = assert_cast<ColumnString &>(*res_columns[column_index++]);
         ColumnString::Offsets & col_notation_offsets = col_notation.getOffsets();
@@ -391,49 +401,61 @@ void StorageSystemUnicode::fillData(
     // Process binary properties
     for (const auto & binary_prop : binary_properties)
     {
-        ColumnUInt8 & column = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]);
-        for (UChar32 code : filtered_code_points)
+        if (columns_mask[mask_index++])
         {
-            column.insert(u_hasBinaryProperty(code, binary_prop));
+            ColumnUInt8 & column = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]);
+            for (UChar32 code : filtered_code_points)
+            {
+                column.insert(u_hasBinaryProperty(code, binary_prop));
+            }
         }
     }
 
     // Process integer properties
     for (const auto & int_prop : int_properties)
     {
-        ColumnInt32 & column = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
-        for (UChar32 code : filtered_code_points)
+        if (columns_mask[mask_index++])
         {
-            column.insert(u_getIntPropertyValue(code, int_prop));
+            ColumnInt32 & column = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
+            for (UChar32 code : filtered_code_points)
+            {
+                column.insert(u_getIntPropertyValue(code, int_prop));
+            }
         }
     }
 
     // Process mask properties
     for (const auto & mask_prop : mask_properties)
     {
-        ColumnInt32 & column = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
-        for (UChar32 code : filtered_code_points)
+        if (columns_mask[mask_index++])
         {
-            column.insert(u_getIntPropertyValue(code, mask_prop));
+            ColumnInt32 & column = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
+            for (UChar32 code : filtered_code_points)
+            {
+                column.insert(u_getIntPropertyValue(code, mask_prop));
+            }
         }
     }
 
     // Process double properties
     for (const auto & double_prop : double_properties)
     {
-        if (double_prop == UCHAR_NUMERIC_VALUE)
+        if (columns_mask[mask_index++])
         {
-            ColumnFloat64 & column = assert_cast<ColumnFloat64 &>(*res_columns[column_index++]);
-            for (UChar32 code : filtered_code_points)
+            if (double_prop == UCHAR_NUMERIC_VALUE)
             {
-                auto type = u_getIntPropertyValue(code, UCHAR_NUMERIC_TYPE);
-                if (type == U_NT_NUMERIC)
+                ColumnFloat64 & column = assert_cast<ColumnFloat64 &>(*res_columns[column_index++]);
+                for (UChar32 code : filtered_code_points)
                 {
-                    column.insert(u_getNumericValue(code));
-                }
-                else
-                {
-                    column.insertDefault();
+                    auto type = u_getIntPropertyValue(code, UCHAR_NUMERIC_TYPE);
+                    if (type == U_NT_NUMERIC)
+                    {
+                        column.insert(u_getNumericValue(code));
+                    }
+                    else
+                    {
+                        column.insertDefault();
+                    }
                 }
             }
         }
@@ -442,207 +464,217 @@ void StorageSystemUnicode::fillData(
     // Process string properties
     for (const auto & string_prop : string_properties)
     {
-        ColumnString & column = assert_cast<ColumnString &>(*res_columns[column_index++]);
+        if (columns_mask[mask_index++])
+        {
+            ColumnString & column = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
-        if (string_prop == UCHAR_AGE)
-        {
-            for (UChar32 code : filtered_code_points)
+            if (string_prop == UCHAR_AGE)
             {
-                UVersionInfo version_info;
-                u_charAge(code, version_info);
-                char uvbuf[U_MAX_VERSION_STRING_LENGTH];
-                u_versionToString(version_info, uvbuf);
-                column.insertData(uvbuf, strlen(uvbuf));
+                for (UChar32 code : filtered_code_points)
+                {
+                    UVersionInfo version_info;
+                    u_charAge(code, version_info);
+                    char uvbuf[U_MAX_VERSION_STRING_LENGTH];
+                    u_versionToString(version_info, uvbuf);
+                    column.insertData(uvbuf, strlen(uvbuf));
+                }
             }
-        }
-        else if (string_prop == UCHAR_BIDI_MIRRORING_GLYPH)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_BIDI_MIRRORING_GLYPH)
             {
-                auto cm = u_charMirror(code);
-                toUTF8(cm, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cm = u_charMirror(code);
+                    toUTF8(cm, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_CASE_FOLDING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_CASE_FOLDING)
             {
-                err_code = U_ZERO_ERROR;
-                UChar s[2];
-                int32_t length = 0;
-                U16_APPEND_UNSAFE(s, length, code);
-                u_strFoldCase(buffer, 32, s, length, U_FOLD_CASE_DEFAULT, &err_code);
-                if (U_FAILURE(err_code))
-                    throw Exception(ErrorCodes::UNICODE_ERROR, "Failed to fold case for code point {}: {}", code, u_errorName(err_code));
-                icu::UnicodeString str(buffer);
-                String ret;
-                str.toUTF8String(ret);
-                column.insert(ret);
+                for (UChar32 code : filtered_code_points)
+                {
+                    err_code = U_ZERO_ERROR;
+                    UChar s[2];
+                    int32_t length = 0;
+                    U16_APPEND_UNSAFE(s, length, code);
+                    u_strFoldCase(buffer, 32, s, length, U_FOLD_CASE_DEFAULT, &err_code);
+                    if (U_FAILURE(err_code))
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to fold case for code point {}: {}", code, u_errorName(err_code));
+                    icu::UnicodeString str(buffer);
+                    String ret;
+                    str.toUTF8String(ret);
+                    column.insert(ret);
+                }
             }
-        }
-        else if (string_prop == UCHAR_LOWERCASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_LOWERCASE_MAPPING)
             {
-                err_code = U_ZERO_ERROR;
-                UChar s[2];
-                int32_t length = 0;
-                U16_APPEND_UNSAFE(s, length, code);
-                u_strToLower(buffer, 32, s, length, "", &err_code);
-                if (U_FAILURE(err_code))
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Failed to convert to lowercase for code point {}: {}", code, u_errorName(err_code));
-                icu::UnicodeString str(buffer);
-                String ret;
-                str.toUTF8String(ret);
-                column.insert(ret);
+                for (UChar32 code : filtered_code_points)
+                {
+                    err_code = U_ZERO_ERROR;
+                    UChar s[2];
+                    int32_t length = 0;
+                    U16_APPEND_UNSAFE(s, length, code);
+                    u_strToLower(buffer, 32, s, length, "", &err_code);
+                    if (U_FAILURE(err_code))
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to convert to lowercase for code point {}: {}", code, u_errorName(err_code));
+                    icu::UnicodeString str(buffer);
+                    String ret;
+                    str.toUTF8String(ret);
+                    column.insert(ret);
+                }
             }
-        }
-        else if (string_prop == UCHAR_NAME)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_NAME)
             {
-                err_code = U_ZERO_ERROR;
-                auto len = u_charName(code, U_UNICODE_CHAR_NAME, char_name_buffer, sizeof(char_name_buffer), &err_code);
-                if (U_FAILURE(err_code))
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Failed to get character name for code point {}: {}", code, u_errorName(err_code));
-                column.insertData(char_name_buffer, len);
+                for (UChar32 code : filtered_code_points)
+                {
+                    err_code = U_ZERO_ERROR;
+                    auto len = u_charName(code, U_UNICODE_CHAR_NAME, char_name_buffer, sizeof(char_name_buffer), &err_code);
+                    if (U_FAILURE(err_code))
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to get character name for code point {}: {}", code, u_errorName(err_code));
+                    column.insertData(char_name_buffer, len);
+                }
             }
-        }
-        else if (string_prop == UCHAR_SIMPLE_CASE_FOLDING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_SIMPLE_CASE_FOLDING)
             {
-                auto cp = u_foldCase(code, U_FOLD_CASE_DEFAULT);
-                toUTF8(cp, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_foldCase(code, U_FOLD_CASE_DEFAULT);
+                    toUTF8(cp, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_SIMPLE_LOWERCASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_SIMPLE_LOWERCASE_MAPPING)
             {
-                auto cp = u_tolower(code);
-                toUTF8(cp, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_tolower(code);
+                    toUTF8(cp, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_SIMPLE_TITLECASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_SIMPLE_TITLECASE_MAPPING)
             {
-                auto cp = u_totitle(code);
-                toUTF8(cp, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_totitle(code);
+                    toUTF8(cp, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_SIMPLE_UPPERCASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_SIMPLE_UPPERCASE_MAPPING)
             {
-                auto cp = u_toupper(code);
-                toUTF8(cp, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_toupper(code);
+                    toUTF8(cp, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_TITLECASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_TITLECASE_MAPPING)
             {
-                auto cp = u_totitle(code);
-                toUTF8(cp, column, encoding);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_totitle(code);
+                    toUTF8(cp, column, encoding);
+                }
             }
-        }
-        else if (string_prop == UCHAR_UPPERCASE_MAPPING)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_UPPERCASE_MAPPING)
             {
-                err_code = U_ZERO_ERROR;
-                UChar s[2];
-                int32_t length = 0;
-                U16_APPEND_UNSAFE(s, length, code);
-                u_strToUpper(buffer, 32, s, length, "", &err_code);
-                if (U_FAILURE(err_code))
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Failed to convert to uppercase for code point {}: {}", code, u_errorName(err_code));
-                String ret;
-                icu::UnicodeString str(buffer);
-                str.toUTF8String(ret);
-                column.insert(ret);
+                for (UChar32 code : filtered_code_points)
+                {
+                    err_code = U_ZERO_ERROR;
+                    UChar s[2];
+                    int32_t length = 0;
+                    U16_APPEND_UNSAFE(s, length, code);
+                    u_strToUpper(buffer, 32, s, length, "", &err_code);
+                    if (U_FAILURE(err_code))
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to convert to uppercase for code point {}: {}", code, u_errorName(err_code));
+                    String ret;
+                    icu::UnicodeString str(buffer);
+                    str.toUTF8String(ret);
+                    column.insert(ret);
+                }
             }
-        }
-        else if (string_prop == UCHAR_BIDI_PAIRED_BRACKET)
-        {
-            for (UChar32 code : filtered_code_points)
+            else if (string_prop == UCHAR_BIDI_PAIRED_BRACKET)
             {
-                auto cp = u_getBidiPairedBracket(code);
-                String ret;
-                icu::UnicodeString str(cp);
-                str.toUTF8String(ret);
-                column.insert(ret);
+                for (UChar32 code : filtered_code_points)
+                {
+                    auto cp = u_getBidiPairedBracket(code);
+                    String ret;
+                    icu::UnicodeString str(cp);
+                    str.toUTF8String(ret);
+                    column.insert(ret);
+                }
             }
-        }
-        else
-        {
-            column.insertManyDefaults(filtered_code_points.size());
+            else
+            {
+                column.insertManyDefaults(filtered_code_points.size());
+            }
         }
     }
 
     // Process other properties
     for (const auto & other_prop : other_properties)
     {
-        if (other_prop == UCHAR_SCRIPT_EXTENSIONS)
+        if (columns_mask[mask_index++])
         {
-            ColumnArray & column = assert_cast<ColumnArray &>(*res_columns[column_index++]);
-            for (UChar32 code : filtered_code_points)
+            if (other_prop == UCHAR_SCRIPT_EXTENSIONS)
             {
-                const static int32_t SCX_ARRAY_CAPACITY = 32;
-                UScriptCode scx_val_array[SCX_ARRAY_CAPACITY];
-                err_code = U_ZERO_ERROR;
-                int32_t num_scripts = uscript_getScriptExtensions(code, scx_val_array, SCX_ARRAY_CAPACITY, &err_code);
-                if (U_FAILURE(err_code))
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Failed to get script extensions for code point {}: {}", code, u_errorName(err_code));
-                if (num_scripts < 0)
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Invalid number of scripts returned for code point {}: {}", code, num_scripts);
+                ColumnArray & column = assert_cast<ColumnArray &>(*res_columns[column_index++]);
+                for (UChar32 code : filtered_code_points)
+                {
+                    const static int32_t SCX_ARRAY_CAPACITY = 32;
+                    UScriptCode scx_val_array[SCX_ARRAY_CAPACITY];
+                    err_code = U_ZERO_ERROR;
+                    int32_t num_scripts = uscript_getScriptExtensions(code, scx_val_array, SCX_ARRAY_CAPACITY, &err_code);
+                    if (U_FAILURE(err_code))
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR,
+                            "Failed to get script extensions for code point {}: {}",
+                            code,
+                            u_errorName(err_code));
+                    if (num_scripts < 0)
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Invalid number of scripts returned for code point {}: {}", code, num_scripts);
 
-                Array arr;
-                for (int32_t j = 0; j < num_scripts; ++j)
-                {
-                    const char * script_name = uscript_getName(scx_val_array[j]);
-                    if (script_name == nullptr)
+                    Array arr;
+                    for (int32_t j = 0; j < num_scripts; ++j)
                     {
-                        throw Exception(
-                            ErrorCodes::UNICODE_ERROR, "Failed to get script name for code point {}: {}", code, scx_val_array[j]);
+                        const char * script_name = uscript_getName(scx_val_array[j]);
+                        if (script_name == nullptr)
+                        {
+                            throw Exception(
+                                ErrorCodes::UNICODE_ERROR, "Failed to get script name for code point {}: {}", code, scx_val_array[j]);
+                        }
+                        arr.emplace_back(std::string_view(script_name));
                     }
-                    arr.emplace_back(std::string_view(script_name));
+                    column.insert(arr);
                 }
-                column.insert(arr);
             }
-        }
-        else if (other_prop == UCHAR_IDENTIFIER_TYPE)
-        {
-            ColumnArray & column = assert_cast<ColumnArray &>(*res_columns[column_index++]);
-            for (UChar32 code : filtered_code_points)
+            else if (other_prop == UCHAR_IDENTIFIER_TYPE)
             {
-                UIdentifierType types[12];
-                err_code = U_ZERO_ERROR;
-                int32_t count = u_getIDTypes(code, types, 12, &err_code);
-                if (U_FAILURE(err_code))
+                ColumnArray & column = assert_cast<ColumnArray &>(*res_columns[column_index++]);
+                for (UChar32 code : filtered_code_points)
                 {
-                    throw Exception(
-                        ErrorCodes::UNICODE_ERROR, "Failed to get identifier types for code point {}: {}", code, u_errorName(err_code));
-                }
-                Array arr;
-                for (int32_t i = 0; i < count; i++)
-                {
-                    const char * type_name = u_getPropertyValueName(UCHAR_IDENTIFIER_TYPE, types[i], U_LONG_PROPERTY_NAME);
-                    if (type_name == nullptr)
+                    UIdentifierType types[12];
+                    err_code = U_ZERO_ERROR;
+                    int32_t count = u_getIDTypes(code, types, 12, &err_code);
+                    if (U_FAILURE(err_code))
                     {
                         throw Exception(
-                            ErrorCodes::UNICODE_ERROR, "Failed to get identifier type name for code point {}: {}", code, types[i]);
+                            ErrorCodes::UNICODE_ERROR, "Failed to get identifier types for code point {}: {}", code, u_errorName(err_code));
                     }
-                    arr.emplace_back(std::string_view(type_name));
+                    Array arr;
+                    for (int32_t i = 0; i < count; i++)
+                    {
+                        const char * type_name = u_getPropertyValueName(UCHAR_IDENTIFIER_TYPE, types[i], U_LONG_PROPERTY_NAME);
+                        if (type_name == nullptr)
+                        {
+                            throw Exception(
+                                ErrorCodes::UNICODE_ERROR, "Failed to get identifier type name for code point {}: {}", code, types[i]);
+                        }
+                        arr.emplace_back(std::string_view(type_name));
+                    }
+                    column.insert(arr);
                 }
-                column.insert(arr);
             }
         }
     }
