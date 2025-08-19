@@ -151,6 +151,7 @@ select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', ev
 from funnel_test_reentry where uid = 3 group by uid format JSONCompactEachRow;
 drop table funnel_test_reentry;
 
+SET enable_analyzer = 1;
 DROP TABLE IF EXISTS funnel_test_conv_time;
 CREATE TABLE funnel_test_conv_time (user_id UInt64, event_time UInt32, eventName String) ENGINE = Memory;
 
