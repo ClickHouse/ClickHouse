@@ -436,7 +436,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         DatabasePtr database;
         if (throw_if_database_not_found)
         {
-            database = DatabaseCatalog::instance().getDatabase(database_name);
+            database = DatabaseCatalog::instance().getDatabase(database_name, getContext());
         }
         else
         {
