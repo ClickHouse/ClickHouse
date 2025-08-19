@@ -7,6 +7,8 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/sortBlock.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -98,10 +100,6 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
-
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
 
 
 namespace fs = std::filesystem;
@@ -585,6 +583,13 @@ void ClientBase::onLogData(Block & block)
     {
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
+    }
+    /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
+    {
+        SortDescription desc;
+        desc.push_back(SortColumnDescription("event_time"));
+        desc.push_back(SortColumnDescription("event_time_microseconds"));
+        sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
     }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
@@ -2857,13 +2862,13 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI SQL generator is not initialized. "
                          << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
                          << "or configure AI settings in your configuration file. "
-                         << "See documentation for detailed setup instructions." << std::endl;
+                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
             return true;
         }
 
         if (free_text.empty())
         {
-            error_stream << "Please provide a natural language query after ??" << std::endl;
+            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
             return true;
         }
 
@@ -2885,6 +2890,7 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI query generation failed: " << e.what() << std::endl;
         }
 
+        error_stream << std::endl;
         return true;
     }
 #endif
@@ -3197,7 +3203,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
         ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
-        ("highlight", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode")
+        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")

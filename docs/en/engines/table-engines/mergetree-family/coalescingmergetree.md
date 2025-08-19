@@ -11,9 +11,11 @@ show_related_blogs: true
 
 # CoalescingMergeTree
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `CoalescingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains the latest non-null values of each column. CoalescingMergeTree will use 0 instead of NULL if column is not nullable. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row that contains the latest non-NULL values for each column.
 
-We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `CoalescingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
+This enables column-level upserts, meaning you can update only specific columns rather than entire rows.
+
+`CoalescingMergeTree` is intended for use with Nullable types in non-key columns. If the columns are not Nullable, the behavior is the same as with [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree).
 
 ## Creating a table {#creating-a-table}
 
@@ -75,8 +77,10 @@ Consider the following table:
 ```sql
 CREATE TABLE test_table
 (
-    key UInt32,
-    value UInt32
+    key UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String),
+    value_date Nullable(Date)
 )
 ENGINE = CoalescingMergeTree()
 ORDER BY key
@@ -85,33 +89,37 @@ ORDER BY key
 Insert data to it:
 
 ```sql
-INSERT INTO test_table VALUES(1,NULL),(1,2),(2,1)
+INSERT INTO test_table VALUES(1, NULL, NULL, '2025-01-01'), (2, 10, 'test', NULL);
+INSERT INTO test_table VALUES(1, 42, 'win', '2025-02-01');
+INSERT INTO test_table(key, value_date) VALUES(2, '2025-02-01');
 ```
 
 The result will looks like this:
 
 ```sql
-SELECT * FROM test_table;
+SELECT * FROM test_table ORDER BY key;
 ```
 
 ```text
-┌─key─┬─value─┐
-│   2 │     1 │
-│   1 │     2 │
-└─────┴───────┘
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   1 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-01-01 │
+│   2 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-02-01 │
+│   2 │        10 │ test         │       ᴺᵁᴸᴸ │
+└─────┴───────────┴──────────────┴────────────┘
 ```
 
-Recommended query for correct and deterministic result:
+Recommended query for correct and final result:
 
 ```sql
-SELECT * FROM test_table FINAL;
+SELECT * FROM test_table FINAL ORDER BY key;
 ```
 
 ```text
-┌─key─┬─value─┐
-│   2 │     1 │
-│   1 │     2 │
-└─────┴───────┘
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   2 │        10 │ test         │ 2025-02-01 │
+└─────┴───────────┴──────────────┴────────────┘
 ```
 
 Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time, ensuring you get the correct, coalesced "latest" value for each column. This is the safest and most accurate method when querying from a CoalescingMergeTree table.
@@ -121,7 +129,7 @@ Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time,
 An approach with `GROUP BY` may return incorrect results if the underlying parts have not been fully merged.
 
 ```sql
-SELECT key, last_value(value) FROM test_table GROUP BY key; -- Not recommended.
+SELECT key, last_value(value_int), last_value(value_string), last_value(value_date)  FROM test_table GROUP BY key; -- Not recommended.
 ```
 
 :::
