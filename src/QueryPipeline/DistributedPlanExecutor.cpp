@@ -141,12 +141,24 @@ public:
 
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
+        if (!temporary_files)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
+                exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
     std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
+        if (!temporary_files)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
+                exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
         return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name));
@@ -443,6 +455,9 @@ protected:
 TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storage_, const String & object_storage_path_,
     const Strings & input_temporary_files_, const Strings & output_temporary_files_)
 {
+    if (!object_storage_)
+        return nullptr;
+
     return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
 }
 
@@ -593,12 +608,19 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
 {
     const auto & config = context->getConfigRef();
     String config_prefix = "distributed_query.temporary_files_storage";
-    ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
+    if (config.has(config_prefix))
+    {
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
 
-    String object_storage_path_prefix = config.getString("distributed_query.temporary_files_storage.endpoint_subpath");
-    String object_storage_path = object_storage_path_prefix + unique_temp_file_path;
+        String object_storage_path_prefix = config.getString("distributed_query.temporary_files_storage.endpoint_subpath");
+        String object_storage_path = object_storage_path_prefix + unique_temp_file_path;
 
-    return {object_storage, object_storage_path};
+        return {object_storage, object_storage_path};
+    }
+    else
+    {
+        return {nullptr, unique_temp_file_path};
+    }
 }
 
 void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
