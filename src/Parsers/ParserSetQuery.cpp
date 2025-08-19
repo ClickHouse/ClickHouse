@@ -228,7 +228,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool parse_internals_only)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -244,6 +244,8 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         return false;
 
     have_eq = s_eq.ignore(pos, expected);
+    if (parse_internals_only && !have_eq)
+        return false;
 
     tryGetIdentifierNameInto(node, name);
 
@@ -323,7 +325,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String name_of_default_setting;
         Parameter parameter;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, parse_only_internals))
             return false;
 
         if (!parameter.first.empty())

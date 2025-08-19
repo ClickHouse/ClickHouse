@@ -25,7 +25,8 @@ public:
                                                          String & default_settings,
                                                          Parameter & parameter,
                                                          IParser::Pos & pos,
-                                                         Expected & expected);
+                                                         Expected & expected,
+                                                         bool parse_internals_only = false);
 
 protected:
     const char * getName() const override { return "SET query"; }
