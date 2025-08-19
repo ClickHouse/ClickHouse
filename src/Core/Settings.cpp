@@ -5529,7 +5529,14 @@ Use filter expressions to inference equivalent expressions and substitute them i
     DECLARE(Bool, correlated_subqueries_use_input_buffer, true, R"(
 Use in-memory buffer for correlated subquery input. If disabled, input subplan will be executed separately for correlated subquery result evaluation.
 )", 0) \
-    \
+    DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
+Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
+
+Possible values:
+
+- `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
+- `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+)", 0) \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
 

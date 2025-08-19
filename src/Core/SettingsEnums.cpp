@@ -333,4 +333,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"any", SearchOrphanedPartsDisks::ANY},
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
+
 }

@@ -430,4 +430,13 @@ enum class SearchOrphanedPartsDisks : uint8_t
 };
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class DecorrelationJoinKind : uint8_t
+{
+    LEFT,
+    RIGHT,
+};
+
+DECLARE_SETTING_ENUM(DecorrelationJoinKind)
+
 }
