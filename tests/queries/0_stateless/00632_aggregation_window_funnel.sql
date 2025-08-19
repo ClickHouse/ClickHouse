@@ -129,6 +129,7 @@ DROP TABLE IF EXISTS funnel_test2;
 
 drop table funnel_test_strict_increase;
 
+SET enable_analyzer = 1;
 DROP TABLE IF EXISTS funnel_test_conv_time;
 CREATE TABLE funnel_test_conv_time (user_id UInt64, event_time UInt32, eventName String) ENGINE = Memory;
 
