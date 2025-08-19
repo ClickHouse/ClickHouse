@@ -1,4 +1,3 @@
-#include <atomic>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
