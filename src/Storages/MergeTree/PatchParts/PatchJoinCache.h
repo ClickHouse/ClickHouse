@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace DB
 {
@@ -44,7 +45,7 @@ struct PatchJoinCache
     {
         PatchHashMap hash_map;
         std::vector<BlockPtr> blocks;
-        std::map<MarkRange, std::shared_future<void>> ranges_futures;
+        absl::node_hash_map<MarkRange, std::shared_future<void>, MarkRangeHash> ranges_futures;
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
@@ -57,7 +58,7 @@ struct PatchJoinCache
     struct PatchStatsEntry
     {
         bool initialized = false;
-        std::map<MarkRange, PatchStats> stats;
+        PatchStatsMap stats;
         mutable std::mutex mutex;
     };
 
@@ -79,9 +80,9 @@ private:
     size_t num_buckets;
     mutable std::mutex mutex;
 
-    absl::flat_hash_map<String, Entries> cache;
-    absl::flat_hash_map<String, PatchStatsEntryPtr> stats_cache;
-    absl::flat_hash_map<String, std::map<MarkRange, size_t>> ranges_to_buckets;
+    absl::node_hash_map<String, Entries> cache;
+    absl::node_hash_map<String, PatchStatsEntryPtr> stats_cache;
+    absl::node_hash_map<String, absl::node_hash_map<MarkRange, size_t, MarkRangeHash>> ranges_to_buckets;
 };
 
 using PatchJoinCachePtr = std::shared_ptr<PatchJoinCache>;

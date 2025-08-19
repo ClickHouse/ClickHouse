@@ -162,7 +162,7 @@ static MinMaxStat getResultBlockStat(const Block & result_block, const String & 
 
 static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ranges)
 {
-    std::set<MarkRange> read_ranges_set(read_ranges.begin(), read_ranges.end());
+    std::unordered_set<MarkRange, MarkRangeHash> read_ranges_set(read_ranges.begin(), read_ranges.end());
 
     for (auto it = all_ranges.begin(); it != all_ranges.end();)
     {

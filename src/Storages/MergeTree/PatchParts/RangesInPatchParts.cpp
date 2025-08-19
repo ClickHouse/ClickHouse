@@ -209,22 +209,19 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
     std::vector<MarkRanges> optimized_ranges(raw_ranges.size());
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
-    {
-        auto ranges_for_patch = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
-        optimized_ranges[i] = MarkRanges(ranges_for_patch.begin(), ranges_for_patch.end());
-    }
+        optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
 
     return optimized_ranges;
 }
 
-std::set<MarkRange> RangesInPatchParts::getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const
+MarkRanges RangesInPatchParts::getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const
 {
-    std::set<MarkRange> res;
-
     auto it = ranges_by_name.find(patch_name);
     if (it == ranges_by_name.end())
-        return res;
+        return {};
 
+    /// The result ranges must be sorted.
+    std::set<MarkRange> res;
     const auto & patch_ranges = it->second;
 
     for (const auto & range : ranges)
@@ -235,7 +232,7 @@ std::set<MarkRange> RangesInPatchParts::getIntersectingRanges(const String & pat
         res.insert(left, right);
     }
 
-    return res;
+    return MarkRanges(res.begin(), res.end());
 }
 
 static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & granule)
@@ -317,7 +314,7 @@ bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }
 
-MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats)
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
     MarkRanges result;

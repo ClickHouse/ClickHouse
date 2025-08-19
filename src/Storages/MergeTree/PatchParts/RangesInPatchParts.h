@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <absl/container/node_hash_map.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ public:
     const std::unordered_map<String, MarkRanges> & getRanges() const { return ranges_by_name; }
 
 private:
-    std::set<MarkRange> getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const;
+    MarkRanges getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const;
 
     size_t max_granules_in_range;
     std::unordered_map<String, MarkRanges> ranges_by_name;
@@ -38,8 +39,9 @@ struct PatchStats
 
 using MinMaxStats = std::vector<MinMaxStat>;
 using MaybeMinMaxStats = std::optional<MinMaxStats>;
+using PatchStatsMap = absl::node_hash_map<MarkRange, PatchStats, MarkRangeHash>;
 
 MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name);
-MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::map<MarkRange, PatchStats> & patch_stats, const PatchStats & result_stats);
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats);
 
 }
