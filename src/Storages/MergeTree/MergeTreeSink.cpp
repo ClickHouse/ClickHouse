@@ -47,7 +47,7 @@ MergeTreeSink::MergeTreeSink(
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
     ContextPtr context_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)

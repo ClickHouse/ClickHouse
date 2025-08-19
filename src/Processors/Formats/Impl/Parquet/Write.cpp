@@ -22,6 +22,7 @@
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -137,7 +138,8 @@ struct StatisticsFixedStringRef
     }
 };
 
-template<size_t S>
+/// If SIGNED, compare as signed big endian integers.
+template<size_t S, bool SIGNED>
 struct StatisticsFixedStringCopy
 {
     bool empty = true;
@@ -151,7 +153,7 @@ struct StatisticsFixedStringCopy
         empty = false;
     }
 
-    void merge(const StatisticsFixedStringCopy<S> & s)
+    void merge(const StatisticsFixedStringCopy<S, SIGNED> & s)
     {
         if (s.empty)
             return;
@@ -174,14 +176,25 @@ struct StatisticsFixedStringCopy
         return s;
     }
 
+    inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
+    {
+        if constexpr (SIGNED)
+        {
+            /// Comparing the first byte as signed is sufficient.
+            if (*lhs != *rhs)
+                return int(int8_t(*lhs)) - int(int8_t(*rhs));
+        }
+        return memcmp(lhs, rhs, S);
+    }
+
     void addMin(const uint8_t * p)
     {
-        if (empty || memcmp(p, min.data(), S) < 0)
+        if (empty || compare(p, min.data()) < 0)
             memcpy(min.data(), p, S);
     }
     void addMax(const uint8_t * p)
     {
-        if (empty || memcmp(p, max.data(), S) > 0)
+        if (empty || compare(p, max.data()) > 0)
             memcpy(max.data(), p, S);
     }
 };
@@ -343,6 +356,34 @@ struct ConverterString
     }
 };
 
+template <typename T>
+struct ConverterEnumAsString
+{
+    using Statistics = StatisticsStringRef;
+
+    explicit ConverterEnumAsString(const ColumnPtr & c, const DataTypePtr & enum_type_)
+    : column(assert_cast<const ColumnVector<T> &>(*c)), enum_type(assert_cast<const DataTypeEnum<T> *>(enum_type_.get())) {}
+
+    const ColumnVector<T> & column;
+    const DataTypeEnum<T> * enum_type;
+    PODArray<parquet::ByteArray> buf;
+
+    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+
+        const auto & data = column.getData();
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            const T value = data[offset + i];
+            const StringRef s = enum_type->getNameForValue(value);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
+        }
+        return buf.data();
+    }
+};
+
 struct ConverterFixedString
 {
     using Statistics = StatisticsFixedStringRef;
@@ -386,7 +427,7 @@ struct ConverterNumberAsFixedString
 {
     /// Calculate min/max statistics for little-endian fixed strings, not numbers, because parquet
     /// doesn't know it's numbers.
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>;
 
     const ColumnVector<T> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -449,7 +490,7 @@ struct ConverterJSON
 template <typename T>
 struct ConverterDecimal
 {
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ true>;
 
     const ColumnDecimal<T> & column;
     PODArray<uint8_t> data_buf;
@@ -717,6 +758,7 @@ void writeColumnImpl(
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
     size_t data_offset = 0; // index in primitive_column
+    size_t row_idx = 0;
 
     auto flush_page = [&](size_t def_count, size_t data_count)
     {
@@ -724,8 +766,17 @@ void writeColumnImpl(
 
         /// Concatenate encoded rep, def, and data.
 
+        size_t row_count = def_count;
         if (s.max_rep > 0)
+        {
             encodeRepDefLevelsRLE(s.rep.data() + def_offset, def_count, s.max_rep, encoded);
+
+            row_count = 0;
+            for (size_t i = def_offset; i < def_offset + def_count; ++i)
+            {
+                row_count += s.rep[i] == 0;
+            }
+        }
         if (s.max_def > 0)
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
 
@@ -784,15 +835,16 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = def_offset});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = row_idx});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
         {
-            writePage(header, compressed, s, options.write_page_index, def_offset, out);
+            writePage(header, compressed, s, options.write_page_index, row_idx, out);
         }
         def_offset += def_count;
         data_offset += data_count;
+        row_idx += row_count;
     };
 
     auto flush_dict = [&] -> bool
@@ -908,6 +960,7 @@ void writeColumnImpl(
 
                 def_offset = 0;
                 data_offset = 0;
+                row_idx = 0;
                 dict_encoded_pages.clear();
                 use_dictionary = false;
 
@@ -997,8 +1050,24 @@ void writeColumnChunkBody(
             break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
-        case TypeIndex::Int8   : N(Int8,   Int32Type); break;
-        case TypeIndex::Int16  : N(Int16,  Int32Type); break;
+        case TypeIndex::Int8:
+        {
+            if (options.output_enum_as_byte_array && isEnum8(s.type))
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.type));
+            else
+                N(Int8, Int32Type);
+         break;
+        }
+        case TypeIndex::Int16:
+        {
+            if (options.output_enum_as_byte_array && isEnum16(s.type))
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.type));
+            else
+                N(Int16, Int32Type);
+            break;
+        }
         case TypeIndex::Int32  : N(Int32,  Int32Type); break;
         case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 

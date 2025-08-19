@@ -14,7 +14,7 @@ public:
     using Base = ISourceStep;
     using Base::Base;
 
-    explicit SourceStepWithFilterBase(Header output_header_)
+    explicit SourceStepWithFilterBase(SharedHeader output_header_)
         : ISourceStep(std::move(output_header_))
     {
     }
@@ -95,7 +95,7 @@ public:
     using Base::Base;
 
     SourceStepWithFilter(
-        Header output_header_,
+        SharedHeader output_header_,
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,

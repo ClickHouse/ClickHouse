@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database
+# Tags: long, no-ordinary-database, no-encrypted-storage, no-msan
+# no-msan: it is too slow
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

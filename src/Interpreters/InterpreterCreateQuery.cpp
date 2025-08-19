@@ -376,6 +376,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
+        if (need_write_metadata)
+        {
+            /// Prevents from overwriting metadata of detached database
+            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
+            renamed = true;
+        }
+
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
@@ -386,14 +393,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-        }
-
-
-        if (need_write_metadata)
-        {
-            /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
-            renamed = true;
         }
     }
     catch (...)
@@ -947,7 +946,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -958,7 +957,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1095,7 +1094,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    Block input_block;
+    SharedHeader input_block;
 
     if (check_columns)
     {
@@ -1131,7 +1130,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         ColumnsWithTypeAndName input_columns;
         ColumnsWithTypeAndName output_columns;
-        for (const auto & input_column : input_block)
+        for (const auto & input_column : *input_block)
         {
             auto it = output_types.find(input_column.name);
             if (it != output_types.end())
@@ -2097,10 +2096,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(table_to_replace_name);
     }
 
     {
-        const String name_hash = getHexUIntLowercase(sipHash64(create.getDatabase() + create.getTable()));
+        const String name_hash = TemporaryReplaceTableName::calculateHash(create.getDatabase(), create.getTable());
         const String random_suffix = [&]()
         {
             if (auto txn = current_context->getZooKeeperMetadataTransaction())

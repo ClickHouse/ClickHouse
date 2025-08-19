@@ -160,9 +160,9 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
-void MetadataStorageFromDiskTransaction::commit()
+void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
-    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -275,11 +275,4 @@ std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFrom
     return std::nullopt;
 }
 
-std::vector<std::string> MetadataStorageFromDiskTransaction::listUncommittedDirectory(const std::string & path) const
-{
-    chassert(!metadata_storage.isTransactional());
-    std::vector<std::string> result;
-    metadata_storage.disk->listFiles(path, result);
-    return result;
-}
 }

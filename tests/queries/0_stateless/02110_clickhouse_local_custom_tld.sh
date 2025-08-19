@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function clickhouse_local()
 {
     local opts=(
-        --config "$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
+        --config "$CURDIR/02110_clickhouse_local_custom_tld.config.xml"
         --top_level_domains_path "$CURDIR"
     )
     $CLICKHOUSE_LOCAL "${opts[@]}" "$@"

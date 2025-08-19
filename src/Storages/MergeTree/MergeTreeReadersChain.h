@@ -22,7 +22,7 @@ public:
     size_t numRowsInCurrentGranule() const;
     size_t currentMark() const;
 
-    Block getSampleBlock() const;
+    const Block & getSampleBlock() const;
     bool isCurrentRangeFinished() const;
 
 private:

@@ -397,13 +397,13 @@ def read_file_as_binary_string(file_path):
 
 
 # First and last lines of the log
-def trim_for_log(s):
+def trim_for_log(s, limit=10000):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
+    if len(lines) > limit:
+        separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
+        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
     return "\n".join(lines)
 
 
@@ -542,24 +542,54 @@ def clickhouse_execute_json(
 CAPTURE_CLIENT_STACKTRACE = False
 
 
-def kill_process_group(pgid):
-    print(f"Killing process group {pgid}")
-    print(f"Processes in process group {pgid}:")
-    print(
-        subprocess.check_output(
-            f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8"),
-        end="",
-    )
+def kill_process_group(pgid, fatal_log):
     try:
+        print(f"Processes left in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
+        if SANITIZED:
+            print("Wait 60 seconds to let sanitizers print the report...")
+            sleep(60)
+
+        print(f"Killing process group {pgid}")
+        print(f"Processes in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            # Wait some time for clickhouse utilities to gather stacktrace
-            if RELEASE_NON_SANITIZED:
-                sleep(0.5)
-            else:
-                sleep(10)
+            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
+            sleep(stacktrace_delay)
+
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            client_printed_stacktrace = False
+            try:
+                if fatal_log and os.path.exists(fatal_log):
+                    with open(fatal_log, "rb") as f:
+                        if b'This is a signal used for debugging purposes by the user' in f.read():
+                            client_printed_stacktrace = True
+            except:
+                print(f"Cannot read {fatal_log}. Ignoring.")
+
+            if not client_printed_stacktrace:
+                pgrep = subprocess.run(f"pgrep --pgroup {pgid} clickhouse", shell=True, capture_output=True, text=False)
+                processes = pgrep.stdout.decode("utf-8").strip().split("\n")
+                processes = map(lambda x: x.strip(), processes)
+                processes = filter(lambda x: len(x) > 0, processes)
+                processes = list(map(lambda x: int(x.strip()), processes))
+                for child in processes:
+                    print(get_stacktraces_from_gdb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -617,7 +647,7 @@ def cleanup_child_processes(pid):
             continue
 
         if child_pgid != pgid:
-            kill_process_group(child_pgid)
+            kill_process_group(child_pgid, None)
 
     # SIGKILL should not be sent, since this will kill the script itself
     os.killpg(pgid, signal.SIGTERM)
@@ -769,32 +799,13 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def kill_gdb_if_any():
-    # Check if we have running gdb.
-    code = subprocess.call("pidof gdb", shell=True)
-    if code != 0:
-        return
-
-    for i in range(5):
-        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
-        if code != 0:
-            sleep(i)
-        else:
-            break
-
-
 # collect server stacktraces using gdb
-def get_stacktraces_from_gdb(server_pid):
+def get_stacktraces_from_gdb(pid):
     try:
-        # We could attach gdb to clickhouse-server before running some tests
-        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-        # We should kill existing gdb if any before starting new one.
-        kill_gdb_if_any()
-
-        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
+        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
-        print(f"Error occurred while receiving stack traces from gdb: {e}")
+        print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
         return None
 
 
@@ -954,6 +965,7 @@ class FailureReason(enum.Enum):
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
+    ENCRYPTED_STORAGE = "encrypted-storage"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1130,6 +1142,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
@@ -1624,6 +1637,9 @@ class TestCase:
         if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
             return FailureReason.NO_OPENSSL_FIPS
 
+        if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
+            return FailureReason.ENCRYPTED_STORAGE
+
         if tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -1642,7 +1658,7 @@ class TestCase:
             if proc.returncode is None:
                 f = io.StringIO()
                 with redirect_stdout(f):
-                    kill_process_group(os.getpgid(proc.pid))
+                    kill_process_group(os.getpgid(proc.pid), self.fatal_sanitizer_prefix)
                 kill_output = f.getvalue()
 
         description = ""
@@ -1675,7 +1691,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[-100:])
+            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -1755,7 +1771,7 @@ class TestCase:
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
         ):
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -2516,6 +2532,7 @@ class TestSuite:
         self.parallel_tests = []
 
         self.all_tests = self.apply_test_runs(all_tests)
+
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
@@ -2762,7 +2779,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 5)
+                signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -2897,6 +2914,8 @@ class BuildFlags:
 
 # Release and non-sanitizer build
 RELEASE_NON_SANITIZED = False
+# Build with any sanitizer
+SANITIZED = False
 
 
 def collect_build_flags(args):
@@ -2909,12 +2928,16 @@ def collect_build_flags(args):
     )
     if b"-fsanitize=thread" in value:
         result.append(BuildFlags.THREAD)
+        SANITIZED = True
     elif b"-fsanitize=address" in value:
         result.append(BuildFlags.ADDRESS)
+        SANITIZED = True
     elif b"-fsanitize=undefined" in value:
         result.append(BuildFlags.UNDEFINED)
+        SANITIZED = True
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+        SANITIZED = True
     elif b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
@@ -3052,7 +3075,8 @@ def do_run_tests(
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
-        random.shuffle(test_suite.parallel_tests)
+        if jobs > 1:
+            random.shuffle(test_suite.parallel_tests)
 
         batch_size = len(test_suite.parallel_tests) // jobs
         manager = multiprocessing.Manager()
@@ -3098,7 +3122,6 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                kill_gdb_if_any()
                 # Wait for test results
                 sleep(args.timeout)
                 for p in processes:
@@ -3854,6 +3877,12 @@ def parse_args():
         action="store_true",
         help="Display $ characters after line with trailing whitespaces in diff output",
     )
+    parser.add_argument(
+        "--encrypted-storage",
+        action="store_true",
+        default=False,
+        help="Run tests over encrypted storage",
+    )
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
@@ -4196,6 +4225,10 @@ if __name__ == "__main__":
 
     if args.replace_replicated_with_shared:
         args.s3_storage = True
+
+    if args.encrypted_storage and not args.s3_storage and not args.azure_blob_storage:
+        print("Disabling encrypted storage. To run tests with encrypted storage, either s3_storage or azure_blob_storage should be enabled.")
+        args.encrypted_storage = False
 
     try:
         main(args)

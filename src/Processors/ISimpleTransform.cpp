@@ -12,7 +12,7 @@ ISimpleTransform::ISimpleTransform(Block input_header_, Block output_header_, bo
 {
 }
 
-ISimpleTransform::ISimpleTransform(ConstBlockPtr input_header_, ConstBlockPtr output_header_, bool skip_empty_chunks_)
+ISimpleTransform::ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_)
     : IProcessor({std::move(input_header_)}, {std::move(output_header_)})
     , input(inputs.front())
     , output(outputs.front())
@@ -110,7 +110,7 @@ void ISimpleTransform::work()
     if (!skip_empty_chunks || output_data.chunk)
         has_output = true;
 
-    if (has_output && !output_data.chunk && getOutputPort().getHeader())
+    if (has_output && !output_data.chunk && !getOutputPort().getHeader().empty())
         /// Support invariant that chunks must have the same number of columns as header.
         output_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }

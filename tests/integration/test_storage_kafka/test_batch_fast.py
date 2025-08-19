@@ -3583,6 +3583,58 @@ def test_kafka_json_type(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
+def test_kafka_assigned_partitions(kafka_cluster):
+    admin_client = k.get_admin_client(kafka_cluster)
+    topic_name = "assigned_partitions"
+    num_partitions = 4
+    k.kafka_create_topic(admin_client, topic_name, num_partitions=num_partitions)
+
+    metrics_before = instance.query(
+            f"""
+            SELECT
+                anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
+                anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
+            FROM system.metrics;
+            """
+        )
+    metrics_before_numeric = [int(x) for x in metrics_before.strip().split('\t')]
+
+    instance.query(
+        f"""
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic_name}',
+                     kafka_group_name = '{topic_name}',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8;
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        """
+    )
+
+    assert_eq_with_retry(
+        instance,
+        "SELECT value FROM system.metrics WHERE metric = 'KafkaAssignedPartitions'",
+        str(metrics_before_numeric[0] + num_partitions),
+    )
+
+    instance.query("DROP TABLE test.consumer SYNC")
+    instance.query("DROP TABLE test.view SYNC")
+    instance.query("DROP TABLE test.kafka SYNC")
+
+    assert_eq_with_retry(
+        instance,
+        """
+            SELECT
+                anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
+                anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
+            FROM system.metrics
+        """,
+        metrics_before,
+    )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

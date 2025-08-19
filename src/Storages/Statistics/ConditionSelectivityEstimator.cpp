@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPNBuilderTreeNode & node) const
 {
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
@@ -89,7 +89,14 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     }
     auto* final_element = rpn_stack.top();
     final_element->finalize(column_estimators);
-    return final_element->selectivity * total_rows;
+    RelationProfile result;
+    result.rows = final_element->selectivity * total_rows;
+    for (const auto & [column_name, estimator] : column_estimators)
+    {
+        Float64 cardinality = std::min(result.rows, estimator.estimateCardinality());
+        result.column_profile.emplace(column_name, cardinality);
+    }
+    return result;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -158,32 +165,37 @@ void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)
     total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::addStatistics(String part_name, ColumnStatisticsPartPtr column_stat)
+void ConditionSelectivityEstimator::addStatistics(ColumnStatisticsPtr column_stat)
 {
     if (column_stat != nullptr)
-        column_estimators[column_stat->columnName()].addStatistics(part_name, column_stat);
+        column_estimators[column_stat->columnName()].addStatistics(column_stat);
 }
 
-void ConditionSelectivityEstimator::ColumnSelectivityEstimator::addStatistics(String part_name, ColumnStatisticsPartPtr stats)
+void ConditionSelectivityEstimator::ColumnEstimator::addStatistics(ColumnStatisticsPtr other_stats)
 {
-    if (part_statistics.contains(part_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
-    part_statistics[part_name] = stats;
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateRanges(const PlainRanges & ranges) const
-{
-    Float64 partial_cnt = 0;
-    Float64 result = 0;
-    for (const auto & [key, estimator] : part_statistics)
+    /// if (part_statistics.contains(part_name))
+    ///     throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
+    if (stats == nullptr)
     {
-        for (const Range & range : ranges.ranges)
-        {
-            result += estimator->estimateRange(range);
-        }
-        partial_cnt += estimator->rowCount();
+        stats = other_stats;
+        return;
     }
-    return result / partial_cnt;
+    stats->merge(other_stats);
+}
+
+Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
+{
+    Float64 result = 0;
+    for (const Range & range : ranges.ranges)
+    {
+        result += stats->estimateRange(range);
+    }
+    return result / stats->rowCount();
+}
+
+Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
+{
+    return stats->estimateCardinality();
 }
 
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
