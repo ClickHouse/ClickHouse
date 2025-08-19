@@ -45,4 +45,7 @@
 
     <!-- Allow sending query plan -->
     <process_query_plan_packet>true</process_query_plan_packet>
+
+    <jemalloc_flush_profile_interval_bytes>1073741824</jemalloc_flush_profile_interval_bytes>
+    <jemalloc_flush_profile_on_memory_exceeded>1</jemalloc_flush_profile_on_memory_exceeded>
 </clickhouse>

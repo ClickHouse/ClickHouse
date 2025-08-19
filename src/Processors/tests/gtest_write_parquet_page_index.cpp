@@ -159,7 +159,7 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromFile write_buffer(parquet_path);
-    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getSharedHeader(), format_settings);
+    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getSharedHeader(), format_settings, nullptr);
 
     pipeline.complete(output);
     CompletedPipelineExecutor executor(pipeline);

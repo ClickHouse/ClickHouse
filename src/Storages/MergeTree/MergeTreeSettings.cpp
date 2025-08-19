@@ -1305,9 +1305,6 @@ namespace ErrorCodes
     Preferred batch size for background cleanup (points are abstract but 1 point
     is approximately equivalent to 1 inserted block).
     )", 0) \
-    DECLARE(UInt64, cleanup_threads, 128, R"(
-    Threads for cleanup of outdated threads. Only available in ClickHouse Cloud
-    )", 0) \
     DECLARE(UInt64, min_relative_delay_to_close, 300, R"(
     Minimal delay from other replicas to close, stop serving
     requests and not return Ok during status check.
@@ -1885,6 +1882,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period, 30) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE

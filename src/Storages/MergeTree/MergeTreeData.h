@@ -993,16 +993,20 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
     ColumnSizeByName getColumnSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return column_sizes;
     }
 
@@ -1012,8 +1016,10 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = lockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(std::move(parts_lock));
         return secondary_index_sizes;
     }
 
@@ -1531,7 +1537,11 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
+    void calculateColumnAndSecondaryIndexSizesImpl() const;
+
+    /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
+    /// Call it with data_parts and columns_and_secondary_indices_sizes_mutex mutexes locked.
+    void calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;

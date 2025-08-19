@@ -190,3 +190,7 @@ insert into function file(datetime64_02735.parquet) select
     from numbers(2000);
 desc file(datetime64_02735.parquet);
 select sum(cityHash64(*)) from file(datetime64_02735.parquet);
+
+insert into function file(date_as_uint16.parquet) select toDate('2025-08-12') as d settings output_format_parquet_date_as_uint16 = 1;
+select * from file(date_as_uint16.parquet);
+desc file(date_as_uint16.parquet);

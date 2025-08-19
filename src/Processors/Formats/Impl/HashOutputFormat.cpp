@@ -41,7 +41,7 @@ void HashOutputFormat::finalizeImpl()
 void registerOutputFormatHash(FormatFactory & factory)
 {
     factory.registerOutputFormat("Hash",
-        [](WriteBuffer & buf, const Block & header, const FormatSettings &)
+        [](WriteBuffer & buf, const Block & header, const FormatSettings &, FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<HashOutputFormat>(buf, std::make_shared<const Block>(header));
         });

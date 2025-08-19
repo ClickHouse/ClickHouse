@@ -1240,7 +1240,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     fillVirtualColumns(columns, result);
 
     updatePerformanceCounters(num_rows);
-    result.addNumBytesRead(getTotalBytesInColumns(result.columns));
+    result.addNumBytesRead(getTotalBytesInColumns(columns));
 
     return columns;
 }
