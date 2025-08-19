@@ -148,8 +148,13 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
 
 void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
 {
-    std::lock_guard lock(stats_mutex);
-    for (auto & [entry_key, entry_stats] : stats)
+    std::unordered_map<EntryKey, EntryStats, EntryKeyHash> local_stats;
+    {
+        std::lock_guard lock(stats_mutex);
+        std::swap(stats, local_stats);
+    }
+
+    for (auto & [entry_key, entry_stats] : local_stats)
     {
         AggregatedZooKeeperLogElement element{
             .event_time = std::chrono::system_clock::to_time_t(current_time),
@@ -162,7 +167,6 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
         };
         add(std::move(element));
     }
-    stats.clear();
 }
 
 void AggregatedZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
