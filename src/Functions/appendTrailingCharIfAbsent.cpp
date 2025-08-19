@@ -137,6 +137,7 @@ Appends character `c` to string `s` if `s` is non-empty and does not end with ch
 │ https://example.com/     │
 └──────────────────────────┘
         )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;

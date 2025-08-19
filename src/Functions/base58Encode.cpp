@@ -23,8 +23,18 @@ Encodes a string using [Base58](https://tools.ietf.org/id/draft-msporny-base58-0
         {"plaintext", "Plaintext to encode.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the encoded value of the argument.", {"String"}};
-    FunctionDocumentation::Examples examples = {};
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT base58Encode('ClickHouse');",
+        R"(
+┌─base58Encode('ClickHouse')─┐
+│ 4nhk8K7GHXf6zx             │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
