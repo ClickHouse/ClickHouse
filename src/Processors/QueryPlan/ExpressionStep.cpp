@@ -152,9 +152,8 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
     if (!updated_actions && output_header->columns() == required_output_count)
         return UnusedColumnRemovalResult{false, false};
 
-    // TODO(antaljanosbenjamin): check this
-    // if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
-    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
+    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
     const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
     const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
