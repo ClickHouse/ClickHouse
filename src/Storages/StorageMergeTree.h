@@ -225,7 +225,6 @@ private:
         const MergeTreePartInfo & right,
         std::unique_lock<std::mutex> & lock) const;
 
-    // MergeMutateSelectedEntryPtr selectPartsToMerge(
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,

@@ -39,68 +39,7 @@ public:
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
       * Used to reduce ZooKeeper requests during merge predicate construction for RMT.
       */
-    // UInt64 getMaxSourcePartsSizeForMerge() const;
 
-    // /** For explicitly passed size of pool and number of used tasks.
-    //   * This method could be used to calculate threshold depending on number of tasks in replication queue.
-    //   */
-    // UInt64 getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const;
-
-    // /** Get maximum total size of parts to do mutation, at current moment of time.
-    //   * It depends only on amount of free space in disk.
-    //   */
-    // UInt64 getMaxSourcePartSizeForMutation() const;
-
-    // struct PartitionInfo
-    // {
-    //     time_t min_age{std::numeric_limits<time_t>::max()};
-    //     size_t num_parts = 0;
-    // };
-    // using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
-
-    // using PartitionIdsHint = PartitionIds;
-
-    // /// The first step of selecting parts to merge: returns a list of all active/visible parts
-    // MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const;
-
-    // /// Same as above, but filters partitions according to partitions_hint
-    // MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(
-    //     const MergeTreeTransactionPtr & txn,
-    //     const PartitionIdsHint * partitions_hint) const;
-
-    // struct MergeSelectingInfo
-    // {
-    //     time_t current_time;
-    //     PartitionsInfo partitions_info;
-    //     IMergeSelector::PartsRanges parts_ranges;
-    //     size_t parts_selected_precondition = 0;
-    // };
-
-    // /// The second step of selecting parts to merge: splits parts list into a set of ranges according to can_merge_callback.
-    // /// All parts within a range can be merged without violating some invariants.
-    // MergeSelectingInfo getPossibleMergeRanges(
-    //     const MergeTreeData::DataPartsVector & data_parts,
-    //     const AllowedMergingPredicate & can_merge_callback,
-    //     const MergeTreeTransactionPtr & txn,
-    //     PreformattedMessage & out_disable_reason) const;
-
-    // /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
-    // SelectPartsDecision selectPartsToMergeFromRanges(
-    //     FutureMergedMutatedPartPtr future_part,
-    //     bool aggressive,
-    //     size_t max_total_size_to_merge,
-    //     bool merge_with_ttl_allowed,
-    //     const StorageMetadataPtr & metadata_snapshot,
-    //     const IMergeSelector::PartsRanges & parts_ranges,
-    //     const time_t & current_time,
-    //     PreformattedMessage & out_disable_reason,
-    //     bool dry_run = false);
-
-    // /// Actually the most fresh partition with biggest modification_time
-    // String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
-
-    // /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    // /// The result is limited by top_number_of_partitions_to_consider_for_merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <mutex>
-// #include <base/defines.h>
+#include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>

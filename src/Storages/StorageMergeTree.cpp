@@ -1704,13 +1704,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     if (!truncate && !finished_mutations_to_keep)
         return 0;
 
-    // { /// ??
-    //     std::lock_guard lock(currently_processing_in_background_mutex);
-
-    //     if (current_mutations_by_version.size() <= finished_mutations_to_keep)
-    //         return 0;
-    // }
-
     std::map<std::string, MutationCommands> unfinished_mutations = getUnfinishedMutationCommands();
     finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
@@ -1720,7 +1713,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
 
-        // size_t done_count = finished_mutations_to_keep + 1;
         size_t done_count = 0;
 
         for (auto it = begin_it; it != end_it; ++it)
