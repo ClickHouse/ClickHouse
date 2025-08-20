@@ -131,7 +131,7 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
-    const Block & right_sample_block_,
+    SharedHeader right_sample_block_,
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
@@ -145,8 +145,9 @@ HashJoin::HashJoin(
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
     , tmp_data(table_join_->getTempDataOnDisk())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -156,7 +157,7 @@ HashJoin::HashJoin(
             column.column = column.type->createColumn();
     }
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,
@@ -677,7 +678,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(right_sample_block, tmp_data.get());
+            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data.get());
 
         chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
@@ -935,15 +936,29 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
         for (const ColumnWithTypeAndName & right_column : join.sample_block_with_columns_to_add)
             dst_columns.emplace_back(right_column.column->cloneEmpty());
 
+        size_t to_reserve = 0;
+        if (common::mulOverflow(block.rows(), join.data->rows_to_join, to_reserve))
+            to_reserve = join.max_joined_block_rows;
+
+        to_reserve = std::min(join.max_joined_block_rows, to_reserve);
+
         for (auto & dst : dst_columns)
-            dst->reserve(join.max_joined_block_rows);
+            dst->reserve(to_reserve);
     }
 
     size_t rows_total = block.rows();
     size_t rows_added = 0;
+    size_t bytes_added = 0;
+
+    auto enough_data = [&]()
+    {
+        return (join.max_joined_block_rows && rows_added > join.max_joined_block_rows)
+            || (join.max_joined_block_bytes && bytes_added > join.max_joined_block_bytes);
+    };
+
     for (; left_row < rows_total; ++left_row)
     {
-        if (rows_added >= join.max_joined_block_rows)
+        if (enough_data())
             break;
 
         auto process_right_block = [&](const Columns & columns)
@@ -959,6 +974,14 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                 const IColumn & column_right = *columns[col_num];
                 dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
+
+            if (join.max_joined_block_bytes)
+            {
+                bytes_added = 0;
+                /// Using byteSize here instead of allocatedBytes because memory was already reserved.
+                for (const auto & dst : dst_columns)
+                    bytes_added += dst->byteSize();
+            }
         };
 
         if (!right_block_it.has_value())
@@ -966,7 +989,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
         for (; *right_block_it != join.data->columns.end(); ++*right_block_it)
         {
-            if (rows_added >= join.max_joined_block_rows)
+            if (enough_data())
                 break;
 
             const auto & scattered_columns = **right_block_it;
@@ -997,11 +1020,11 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
             while (reader)
             {
-                if (rows_added >= join.max_joined_block_rows)
+                if (enough_data())
                     break;
 
                 auto block_right = reader.value()->read();
-                if (!block_right)
+                if (block_right.empty())
                 {
                     reader.reset();
                     break;

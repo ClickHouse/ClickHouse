@@ -447,11 +447,11 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### Delta {#delta}
 
-`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
+`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. The `bytes_size` has a similar meaning than `delta_bytes` in [Delta](#delta) codec. Specifying `bytes_size` as an argument is deprecated and support will be removed in a future release. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any numeric type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### GCD {#gcd}
 
@@ -464,10 +464,6 @@ These codecs are designed to make compression more effective by exploiting speci
 #### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
-
-#### SZ3 {#sz3}
-
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). If the column type is of array type, then all inserted arrays must have the same length. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
 
 #### T64 {#t64}
 
@@ -490,11 +486,9 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 
 Encryption codecs:
 
-
 #### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
-
 
 #### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
@@ -762,7 +756,6 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
 
 ## Related content {#related-content}
 

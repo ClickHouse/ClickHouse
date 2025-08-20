@@ -112,7 +112,7 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
@@ -126,12 +126,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        const Block &,
-        const Block & right_sample_block_) const override
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
@@ -443,6 +443,7 @@ public:
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
+    void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
@@ -511,6 +512,7 @@ private:
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
+    size_t max_joined_block_bytes = 0;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;

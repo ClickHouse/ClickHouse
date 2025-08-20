@@ -16,19 +16,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static Block checkHeaders(const Headers & input_headers)
+static SharedHeader checkHeaders(const SharedHeaders & input_headers)
 {
     if (input_headers.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of query plan steps");
 
-    Block res = input_headers.front();
+    auto res = input_headers.front();
     for (const auto & header : input_headers)
-        assertBlocksHaveEqualStructure(header, res, "UnionStep");
+        assertBlocksHaveEqualStructure(*header, *res, "UnionStep");
 
     return res;
 }
 
-UnionStep::UnionStep(Headers input_headers_, size_t max_threads_)
+UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_)
     : max_threads(max_threads_)
 {
     updateInputHeaders(std::move(input_headers_));
@@ -46,7 +46,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
     if (pipelines.empty())
     {
         QueryPipelineProcessorsCollector collector(*pipeline, this);
-        pipeline->init(Pipe(std::make_shared<NullSource>(*output_header)));
+        pipeline->init(Pipe(std::make_shared<NullSource>(output_header)));
         processors = collector.detachProcessors();
         return pipeline;
     }
@@ -56,20 +56,20 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
     for (auto & cur_pipeline : pipelines)
     {
 #if !defined(NDEBUG)
-        assertCompatibleHeader(cur_pipeline->getHeader(), getOutputHeader(), "UnionStep");
+        assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
 #endif
         /// Headers for union must be equal.
         /// But, just in case, convert it to the same header if not.
-        if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputHeader()))
+        if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader()))
         {
             QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
-                getOutputHeader().getColumnsWithTypeAndName(),
+                getOutputHeader()->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
             auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
-            cur_pipeline->addSimpleTransform([&](const Block & cur_header)
+            cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });

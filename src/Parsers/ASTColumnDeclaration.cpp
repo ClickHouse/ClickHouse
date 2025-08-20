@@ -76,13 +76,13 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (null_modifier)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
-                      << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
+        ostr << ' '
+                      << (*null_modifier ? "" : "NOT ") << "NULL" ;
     }
 
     if (default_expression)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
+        ostr << ' '  << default_specifier ;
         if (!ephemeral_default)
         {
             ostr << ' ';
@@ -92,7 +92,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (comment)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ostr << ' '  << "COMMENT"  << ' ';
         comment->format(ostr, format_settings, state, frame);
     }
 
@@ -110,19 +110,19 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (ttl)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ostr << ' '  << "TTL"  << ' ';
         ttl->format(ostr, format_settings, state, frame);
     }
 
     if (collation)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ostr << ' '  << "COLLATE"  << ' ';
         collation->format(ostr, format_settings, state, frame);
     }
 
     if (settings)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
+        ostr << ' '  << "SETTINGS"  << ' ' << '(';
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }

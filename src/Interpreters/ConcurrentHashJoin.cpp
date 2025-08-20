@@ -152,7 +152,7 @@ namespace ErrorCodes
 ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
-    const Block & right_sample_block,
+    SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : table_join(table_join_)
@@ -190,6 +190,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         fmt::format("concurrent{}", i),
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+                    inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
@@ -363,7 +364,7 @@ void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
 
 void ConcurrentHashJoin::setTotals(const Block & block)
 {
-    if (block)
+    if (!block.empty())
     {
         std::lock_guard lock(totals_mutex);
         totals = block;

@@ -171,8 +171,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
-
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -319,6 +317,7 @@ public:
     String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
     const String & getReplicaName() const { return replica_name; }
+    const String & getReplicaPath() const { return replica_path; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
@@ -553,8 +552,6 @@ private:
     };
 
     std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
-
-    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     void readLocalImpl(
         QueryPlan & query_plan,

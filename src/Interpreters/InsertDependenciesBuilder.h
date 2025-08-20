@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Storages/StorageSnapshot.h>
@@ -64,7 +65,7 @@ private:
         const StorageIDPrivate & back() const { return path.back(); }
         const StorageIDPrivate & current() const { return back(); }
         StorageIDPrivate parent(size_t inheritance) const;
-        String debugString() const;
+        String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<StorageIDPrivate, std::vector<StorageID>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
@@ -75,7 +76,7 @@ private:
     using MapIdAST = std::unordered_map<StorageIDPrivate, ASTPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdLock = std::unordered_map<StorageIDPrivate, TableLockHolder, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdContext = std::unordered_map<StorageIDPrivate, ContextPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using MapIdBlock = std::unordered_map<StorageIDPrivate, Block, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdBlock = std::unordered_map<StorageIDPrivate, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::unordered_map<StorageIDPrivate, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<StorageIDPrivate, QueryViewsLogElement::ViewType, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
@@ -98,13 +99,15 @@ public:
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
 
 protected:
-    InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool skip_destination_table_, ContextPtr context);
+    InsertDependenciesBuilder(StoragePtr table, ASTPtr query, SharedHeader insert_header, bool async_insert_, bool skip_destination_table_, ContextPtr context);
 
 private:
     bool isView(StorageIDPrivate id) const;
 
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
+    String debugTree() const;
+    String debugPath(const DependencyPath & path) const;
     void collectAllDependencies();
 
     Chain createPreSink(StorageIDPrivate view_id) const;
@@ -117,7 +120,7 @@ private:
     StorageIDPrivate init_table_id;
     StoragePtr init_storage;
     ASTPtr init_query;
-    Block init_header;
+    SharedHeader init_header;
     ContextPtr init_context;
 
     bool async_insert = false;

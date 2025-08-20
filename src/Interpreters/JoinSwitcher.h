@@ -16,7 +16,7 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }

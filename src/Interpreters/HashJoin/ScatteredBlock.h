@@ -225,7 +225,7 @@ struct ScatteredBlock : private boost::noncopyable
     const auto & getSelector() const { return selector; }
     std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
 
-    explicit operator bool() const { return !!block; }
+    bool empty() const { return block.empty(); }
 
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
@@ -272,9 +272,7 @@ struct ScatteredBlock : private boost::noncopyable
             return;
         }
         else if (matched_rows.size() == rows())
-        {
             return;
-        }
 
         IndexesPtr new_selector = Indexes::create(matched_rows.size());
         auto & data = new_selector->getData();
@@ -287,7 +285,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
-        if (!block || !wasScattered())
+        if (block.empty() || !wasScattered())
             return;
 
         if (selector.isContinuousRange())
@@ -319,7 +317,7 @@ struct ScatteredBlock : private boost::noncopyable
             return ScatteredBlock{Block{}};
         }
 
-        chassert(block);
+        chassert(!block.empty());
 
         auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
 

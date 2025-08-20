@@ -828,8 +828,12 @@ protected:
 };
 
 /// Tweaks for better highlighting of LIKE and REGEXP functions.
-static void highlightRegexps(const ASTPtr & node, Expected & expected)
+static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
 {
+    static constexpr size_t max_depth = 1000;
+    if (depth > max_depth)
+        return;
+
     if (!expected.enable_highlighting)
         return;
 
@@ -863,10 +867,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected)
     else
     {
         for (const auto & arg : args->children)
-            highlightRegexps(arg, expected);
+            highlightRegexps(arg, expected, depth + 1);
+        return;
     }
 
-    if (args->children.size() != 2)
+    if (args->children.size() < 2)
         return;
 
     auto * literal = args->children[1]->as<ASTLiteral>();
@@ -2383,7 +2388,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
-        highlightRegexps(node, expected);
+        highlightRegexps(node, expected, 0);
         return true;
     }
     return false;

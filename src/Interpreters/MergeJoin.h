@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
-#include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CacheBase.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -20,7 +20,7 @@ enum class JoinTableSide : uint8_t;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
 
     struct NotProcessed
     {
@@ -30,7 +30,7 @@ public:
         size_t right_position;
         size_t right_block;
 
-        bool empty() const { return !block; }
+        bool empty() const { return block.empty(); }
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
@@ -50,6 +50,7 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+    static bool isSupported(JoinKind kind, JoinStrictness strictness);
 
 private:
     friend class NotJoinedMerge;

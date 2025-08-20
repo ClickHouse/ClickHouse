@@ -154,7 +154,13 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
-    template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
+    template <
+        typename KeyGetter,
+        typename Map,
+        bool need_filter,
+        bool check_null_map,
+        typename AddedColumns,
+        typename Selector>
     static void joinRightColumnsSwitchJoinMaskKind(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,

@@ -64,7 +64,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         std::shared_ptr<IStorageCluster> storage_,
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
@@ -93,7 +93,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
+    void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,14 +105,10 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
-
-    createExtension(predicate, max_replicas_to_use);
+    createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
@@ -121,7 +117,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
         predicate,
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
-        number_of_replicas);
+        cluster);
 }
 
 /// The code executes on initiator
@@ -142,7 +138,7 @@ void IStorageCluster::read(
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
-    Block sample_block;
+    SharedHeader sample_block;
     ASTPtr query_to_send = query_info.query;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -200,7 +196,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr, max_replicas_to_use);
+    createExtension(nullptr);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -239,7 +235,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             add_agg_info,
             current_settings[Setting::async_socket_for_remote],
             current_settings[Setting::async_query_sending_for_remote])};
-        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
 

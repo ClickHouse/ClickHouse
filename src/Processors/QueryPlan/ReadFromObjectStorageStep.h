@@ -13,7 +13,6 @@ public:
     ReadFromObjectStorageStep(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        const String & name_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
         const SelectQueryInfo & query_info_,
@@ -26,7 +25,9 @@ public:
         size_t max_block_size_,
         size_t num_streams_);
 
-    std::string getName() const override { return name; }
+    static constexpr auto STEP_NAME = "ReadFromObjectStorage";
+
+    std::string getName() const override { return STEP_NAME; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -40,7 +41,6 @@ private:
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
     const std::optional<DB::FormatSettings> format_settings;
-    const std::string name;
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;

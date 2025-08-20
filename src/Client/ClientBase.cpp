@@ -7,6 +7,8 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/sortBlock.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -18,7 +20,6 @@
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
@@ -45,7 +46,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -101,10 +101,6 @@
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
 
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
-
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -117,7 +113,7 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -236,7 +232,7 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
-    if (!dst)
+    if (dst.empty())
     {
         dst = src.cloneEmpty();
     }
@@ -423,14 +419,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     if (is_interactive)
     {
-        output_stream << std::endl;
-        WriteBufferFromOStream res_buf(output_stream, 4096);
+        WriteBufferFromOwnString res_buf;
         IAST::FormatSettings format_settings(/* one_line */ false);
-        format_settings.hilite = true;
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
         res->format(res_buf, format_settings);
         res_buf.finalize();
+
+        output_stream << std::endl;
+#if USE_REPLXX
+        output_stream << highlighted(res_buf.str(), *client_context);
+#else
+        output_stream << res_buf.str();
+#endif
         output_stream << std::endl << std::endl;
     }
 
@@ -504,7 +505,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     processed_rows += block.rows();
@@ -583,6 +584,13 @@ void ClientBase::onLogData(Block & block)
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
     }
+    /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
+    {
+        SortDescription desc;
+        desc.push_back(SortColumnDescription("event_time"));
+        desc.push_back(SortColumnDescription("event_time_microseconds"));
+        sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
+    }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -627,7 +635,7 @@ try
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
-            output_format = std::make_shared<NullOutputFormat>(block);
+            output_format = std::make_shared<NullOutputFormat>(std::make_shared<const Block>(block));
             return;
         }
 
@@ -772,7 +780,7 @@ If you want to output it into a file, use the "INTO OUTFILE" modifier in the que
 Do you want to output it anyway? [y/N] )", current_format);
 
             if (!ask(question, *std_in, *std_out))
-                output_format = std::make_shared<NullOutputFormat>(block);
+                output_format = std::make_shared<NullOutputFormat>(std::make_shared<const Block>(block));
 
             *std_out << '\n';
         }
@@ -1793,8 +1801,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        sendCancel(std::current_exception());
-        receiveEndOfQueryForInsert();
+        if (sendCancel(std::current_exception()))
+            receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -1985,7 +1993,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
     if (columns_description.hasDefaults())
     {
-        pipe.addSimpleTransform([&](const Block & header)
+        pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });
@@ -2032,7 +2040,7 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
             return;
         }
 
-        if (block)
+        if (!block.empty())
         {
             connection->sendData(block, /* name */"", /* scalar */false);
             processed_rows += block.rows();
@@ -2119,7 +2127,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
     }
 }
 
-void ClientBase::sendCancel(std::exception_ptr exception_ptr)
+bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
@@ -2130,9 +2138,13 @@ void ClientBase::sendCancel(std::exception_ptr exception_ptr)
             error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
         }
         error_stream << '\n';
+        return false;
     }
     else
+    {
         connection->sendCancel();
+        return true;
+    }
 }
 
 void ClientBase::cancelQuery()
@@ -2310,7 +2322,7 @@ void ClientBase::processParsedSingleQuery(
     }
 
     /// Always print last block (if it was not printed already)
-    if (profile_events.last_block)
+    if (!profile_events.last_block.empty())
     {
         initLogsOutputStream();
         if (need_render_progress && tty_buf)
@@ -2847,13 +2859,22 @@ bool ClientBase::processQueryText(const String & text)
 
         if (!ai_generator)
         {
-            error_stream << "AI SQL generator is not initialized" << std::endl;
+            error_stream << "AI SQL generator is not initialized. "
+                         << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
+                         << "or configure AI settings in your configuration file. "
+                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
             return true;
         }
 
         if (free_text.empty())
         {
-            error_stream << "Please provide a natural language query after ??" << std::endl;
+            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
+            return true;
+        }
+
+        // Check if AI provider usage needs acknowledgment from user
+        if (!checkAIProviderAcknowledgment())
+        {
             return true;
         }
 
@@ -2869,6 +2890,7 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI query generation failed: " << e.what() << std::endl;
         }
 
+        error_stream << std::endl;
         return true;
     }
 #endif
@@ -3000,13 +3022,26 @@ void ClientBase::initAIProvider()
     try {
         AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
 
+        // Create the AI client and get metadata about how it was created
+        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+
+        // If no configuration was found, don't initialize the AI generator
+        if (ai_result.no_configuration_found || !ai_result.client.has_value())
+        {
+            return;
+        }
+
+        // Store metadata for later use
+        ai_inferred_from_env = ai_result.inferred_from_env;
+        ai_provider_name = ai_result.provider;
+
         // Create a query executor that uses the connection
         auto query_executor = [this](const std::string & query) -> std::string
         {
             return executeQueryForSingleString(query);
         };
 
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, query_executor, error_stream);
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
     }
     catch (const std::exception & e)
     {
@@ -3045,7 +3080,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             switch (packet.type)
             {
                 case Protocol::Server::Data:
-                    if (packet.block && packet.block.rows() > 0)
+                    if (!packet.block.empty() && packet.block.rows() > 0)
                     {
                         /// Convert block to string representation
                         /// For schema queries, we expect single column results
@@ -3084,6 +3119,38 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         return "";
     }
+}
+
+bool ClientBase::checkAIProviderAcknowledgment()
+{
+    // If API key came from environment and user hasn't acknowledged yet, ask for confirmation
+    if (ai_inferred_from_env && !ai_provider_acknowledged && is_interactive)
+    {
+        // Clear any progress display
+        if (need_render_progress && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        }
+
+        const auto question = fmt::format(
+            "AI SQL generation will use {} API key from environment variable.\n"
+            "Do you want to continue? [y/N] ",
+            ai_provider_name);
+
+        if (!ask(question, *std_in, *std_out))
+        {
+            // User declined
+            error_stream << "AI query cancelled.\n";
+            return false;
+        }
+
+        // User accepted, remember for this session
+        ai_provider_acknowledged = true;
+        *std_out << '\n';
+    }
+
+    return true;
 }
 #endif
 
@@ -3136,7 +3203,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
         ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
-        ("highlight", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode")
+        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
