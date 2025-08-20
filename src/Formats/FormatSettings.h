@@ -237,7 +237,6 @@ struct FormatSettings
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
         bool allow_deprecated_object_type = false;
-        bool allow_json_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
