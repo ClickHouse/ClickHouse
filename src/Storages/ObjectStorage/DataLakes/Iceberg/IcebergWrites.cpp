@@ -122,37 +122,28 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
     }
 }
 
+template <typename T>
+std::vector<uint8_t> dumpValue(T value)
+{
+    std::vector<uint8_t> bytes(sizeof(T));
+    std::memcpy(bytes.data(), &value, sizeof(T));
+    return bytes;
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable:
-        {
             return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
-        }
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        {
-            auto value = field.safeGet<Int32>();
-            std::vector<uint8_t> bytes(sizeof(Int32));
-            std::memcpy(bytes.data(), &value, sizeof(Int32));
-            return bytes;
-        }
+            return dumpValue(field.safeGet<Int32>());
         case TypeIndex::Int64:
-        {
-            auto value = field.safeGet<Int64>();
-            std::vector<uint8_t> bytes(sizeof(Int64));
-            std::memcpy(bytes.data(), &value, sizeof(Int64));
-            return bytes;
-        }
+            return dumpValue(field.safeGet<Int64>());
         case TypeIndex::DateTime64:
-        {
-            auto value = field.safeGet<Decimal64>().getValue().value;
-            std::vector<uint8_t> bytes(sizeof(Int64));
-            std::memcpy(bytes.data(), &value, sizeof(Int64));
-            return bytes;
-        }
+            return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
         {
             auto value = field.safeGet<String>();
@@ -161,6 +152,10 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
                 bytes.push_back(elem);
             return bytes;
         }
+        case TypeIndex::Float64:
+            return dumpValue(field.safeGet<Float64>());
+        case TypeIndex::Float32:
+            return dumpValue(field.safeGet<Float32>());
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not dump such stats");
@@ -178,7 +173,8 @@ bool canWriteStatistics(
 
     for (const auto & [field_id, stat] : statistics)
     {
-        if (!canDumpIcebergStats(stat, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]))
+        auto type = sample_block->getDataTypes()[field_id_to_column_index.at(field_id)];
+        if (!canDumpIcebergStats(stat, type))
             return false;
     }
     return true;
@@ -498,38 +494,28 @@ void generateManifestFile(
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
-            auto lower_statistics = data_file_statistics->getLowerBounds();
-            if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
+            auto set_fields = [&] (const std::vector<std::pair<size_t, Field>> & statistics, const std::string & field_name)
             {
-                auto & data_file_record = data_file.field(Iceberg::f_lower_bounds);
+                auto & data_file_record = data_file.field(field_name);
                 data_file_record.selectBranch(1);
-                auto & lower_bounds = data_file_record.value<avro::GenericArray>();
-                auto schema_element = lower_bounds.schema()->leafAt(0);
-                for (const auto & [field_id, lower_value] : lower_statistics)
+                auto & bounds = data_file_record.value<avro::GenericArray>();
+                auto schema_element = bounds.schema()->leafAt(0);
+                for (const auto & [field_id, lower_value] : statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
                     record.field(Iceberg::f_value) = dumpFieldToBytes(lower_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
-                    lower_bounds.value().push_back(record_datum);
+                    bounds.value().push_back(record_datum);
                 }
-            }
+            };
+
+            auto lower_statistics = data_file_statistics->getLowerBounds();
+            if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
+                set_fields(lower_statistics, Iceberg::f_lower_bounds);
             auto upper_statistics = data_file_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
-            {
-                auto & data_file_record = data_file.field(Iceberg::f_upper_bounds);
-                data_file_record.selectBranch(1);
-                auto & upper_bounds = data_file_record.value<avro::GenericArray>();
-                auto schema_element = upper_bounds.schema()->leafAt(0);
-                for (const auto & [field_id, upper_value] : upper_statistics)
-                {
-                    avro::GenericDatum record_datum(schema_element);
-                    auto& record = record_datum.value<avro::GenericRecord>();
-                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = dumpFieldToBytes(upper_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
-                    upper_bounds.value().push_back(record_datum);
-                }
-            }
+                set_fields(upper_statistics, Iceberg::f_upper_bounds);
         }
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (summary->has(Iceberg::f_added_records))
@@ -1103,13 +1089,13 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
-void DataFileStatistics::update(const Chunk & chunk, std::optional<size_t> num_non_virtual_columns)
+void DataFileStatistics::update(const Chunk & chunk)
 {
-    size_t columns_to_process = num_non_virtual_columns.value_or(chunk.getNumColumns());
+    size_t num_columns = chunk.getNumColumns();
     if (column_sizes.empty())
     {
-        column_sizes.resize(columns_to_process);
-        for (size_t i = 0; i < columns_to_process; ++i)
+        column_sizes.resize(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
         {
             Field min_val;
             Field max_val;
@@ -1119,7 +1105,7 @@ void DataFileStatistics::update(const Chunk & chunk, std::optional<size_t> num_n
         }
     }
 
-    for (size_t i = 0; i < columns_to_process; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         column_sizes[i] += chunk.getColumns()[i]->byteSize();
         Field min_val;
@@ -1132,19 +1118,10 @@ void DataFileStatistics::update(const Chunk & chunk, std::optional<size_t> num_n
 
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
-    bool left_bound_use_mine = false;
-    bool right_bound_use_mine = false;
-
-    if (Range::less(left.left, right.left))
-        left_bound_use_mine = true;
-
-    if (Range::less(right.right, left.right))
-        right_bound_use_mine = true;
-
     return Range(
-        left_bound_use_mine ? left.left : right.left,
+        Range::less(left.left, right.left) ? left.left : right.left,
         true,
-        right_bound_use_mine ? left.right : right.right,
+        Range::less(right.right, left.right) ? left.right : right.right,
         true);
 }
 

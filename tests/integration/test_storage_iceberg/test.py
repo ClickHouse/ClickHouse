@@ -2627,7 +2627,7 @@ def test_writes_create_version_hint(started_cluster, format_version, storage_typ
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_writes_minmax_pruning(started_cluster, format_version, storage_type):
+def test_writes_statistics_by_minmax_pruning(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2639,7 +2639,7 @@ def test_writes_minmax_pruning(started_cluster, format_version, storage_type):
     name String,
     number Int64)
     """
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, schema)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, schema, format_version)
 
     instance.query(
     f"""

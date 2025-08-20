@@ -128,17 +128,7 @@ DeleteFileWriteResultWithStats writeDataFiles(
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
                 if (!statistics.contains(partition_key))
-                {
-                    Poco::JSON::Array::Ptr pos_delete_schema = new Poco::JSON::Array;
-                    Poco::JSON::Object::Ptr field_pos = new Poco::JSON::Object;
-                    field_pos->set(Iceberg::f_id, 2147483545);
-                    Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
-                    field_filename->set(Iceberg::f_id, 2147483546);
-                    pos_delete_schema->add(field_filename);
-                    pos_delete_schema->add(field_pos);
-
-                    statistics.emplace(partition_key, DataFileStatistics(pos_delete_schema));
-                }
+                    statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
 
                 if (!writers.contains(partition_key))
                 {
@@ -193,7 +183,7 @@ DeleteFileWriteResultWithStats writeDataFiles(
                 chunk_pos_delete.push_back(col_data_filename.column);
                 chunk_pos_delete.push_back(col_position.column);
                 auto stats_chunk = Chunk(chunk_pos_delete, partition_chunk.getNumRows());
-                statistics.at(partition_key).update(stats_chunk, 2);
+                statistics.at(partition_key).update(stats_chunk);
 
                 Block delete_file_block({col_data_filename, col_position});
                 result[partition_key].total_rows += delete_file_block.rows();

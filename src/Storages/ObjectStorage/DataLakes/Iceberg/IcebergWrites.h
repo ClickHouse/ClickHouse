@@ -88,7 +88,7 @@ class DataFileStatistics
 public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
-    void update(const Chunk & chunk, std::optional<size_t> num_non_virtual_columns = std::nullopt);
+    void update(const Chunk & chunk);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
@@ -96,7 +96,7 @@ public:
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
 private:
-    Range uniteRanges(const Range & left, const Range & right);
+    static Range uniteRanges(const Range & left, const Range & right);
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
