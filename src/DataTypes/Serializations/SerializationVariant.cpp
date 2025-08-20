@@ -477,8 +477,16 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     size_t num_read_discriminators = 0;
     if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second);
-        num_read_discriminators = cached_column_with_num_read_rows->second;
+        auto [cached_column, num_read_rows] = *cached_column_with_num_read_rows;
+        /// Cached column contains discriminators without applied rows_offset and can be used in other serializations
+        /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
+        /// Instead we need to insert data from the current range from it.
+        if (rows_offset)
+            col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        else
+            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows);
+
+        num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
