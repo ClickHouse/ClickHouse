@@ -511,6 +511,9 @@ void TableSnapshot::initSnapshotImpl() const
         log, "Table logical schema: {}, physical names map size: {}",
         fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
 
+    if (table_schema.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
+
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 

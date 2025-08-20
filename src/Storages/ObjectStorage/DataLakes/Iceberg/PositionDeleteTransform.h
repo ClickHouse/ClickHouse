@@ -8,15 +8,16 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
-
-namespace DB
+namespace DB::Iceberg
 {
-
 class IcebergPositionDeleteTransform : public ISimpleTransform
 {
 public:
     static constexpr const char * positions_column_name = "pos";
     static constexpr const char * data_file_path_column_name = "file_path";
+
+    static constexpr Int64 positions_column_field_id = 2147483545;
+    static constexpr Int64 data_file_path_column_field_id = 2147483546;
 
     IcebergPositionDeleteTransform(
         const SharedHeader & header_,
@@ -30,7 +31,6 @@ public:
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
-        , relevant_position_deletes_objects(iceberg_object_info_->position_deletes_objects)
     {
         initializeDeleteSources();
     }
@@ -49,7 +49,6 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
-    std::span<const Iceberg::ManifestFileEntry> relevant_position_deletes_objects;
 
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
