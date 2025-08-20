@@ -7,12 +7,19 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <base/defines.h>
 
 
 namespace DB
 {
-struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+};
+
+struct IcebergDataObjectInfo : public DB::ObjectInfoOneFile, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
@@ -31,6 +38,20 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
     Int64 sequence_number;
 
+    std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+    void setDataLakeMetadata(std::optional<DataLakeObjectMetadata>) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
+    }
+
+    bool suitableForNumsRowCache() const override { return false; }
     bool hasPositionDeleteTransformer() const override { return !position_deletes_objects.empty(); }
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(

@@ -16,6 +16,7 @@
 #include <Common/SharedMutex.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -66,8 +67,6 @@ definePositionDeletesSpan(ManifestFileEntry data_object_, const std::vector<Mani
 
 }
 
-#endif
-
 namespace DB
 {
 
@@ -76,33 +75,30 @@ namespace Setting
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
 
-#if USE_AVRO
-
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_manifest_file_entry_,
     const std::vector<Iceberg::ManifestFileEntry> & all_position_delete_entries_,
-    String format_)
-    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    String format)
+    : ObjectInfoOneFile(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
-    , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects(definePositionDeletesSpan(data_manifest_file_entry_, all_position_delete_entries_))
 {
-    auto toupper = [](String & str)
+    auto toupper = [](String str)
     {
         std::transform(str.begin(), str.end(), str.begin(), ::toupper);
         return str;
     };
-    if (!position_deletes_objects.empty() && toupper(format_) != "PARQUET")
+    if (!position_deletes_objects.empty() && toupper(format) != "PARQUET")
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            format_);
+            format);
     }
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_)
-    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    : ObjectInfoOneFile(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , position_deletes_objects({})
@@ -121,5 +117,6 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
 }
 
-#endif
 }
+
+#endif

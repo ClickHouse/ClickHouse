@@ -12,7 +12,7 @@ namespace
         explicit TestIterator(const std::vector<std::string> & paths)
         {
             for (const auto & path : paths)
-                objects.push_back(std::make_shared<ObjectInfo>(path));
+                objects.push_back(std::make_shared<ObjectInfoPlain>(path));
         }
         ~TestIterator() override = default;
         ObjectInfoPtr next(size_t) override

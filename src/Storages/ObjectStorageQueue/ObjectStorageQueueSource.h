@@ -27,7 +27,7 @@ public:
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
-    struct ObjectStorageQueueObjectInfo : public ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public ObjectInfoPlain
     {
         ObjectStorageQueueObjectInfo(
             const ObjectInfo & object_info,
@@ -87,15 +87,15 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(Source::ObjectInfos & objects);
-        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects);
+        void filterOutProcessedAndFailed(ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;

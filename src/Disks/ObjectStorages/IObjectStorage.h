@@ -90,8 +90,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 class ReadBufferFromFileBase;
@@ -114,8 +113,6 @@ struct RelativePathWithMetadata
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Delta lake related object metadata.
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
@@ -128,19 +125,8 @@ struct RelativePathWithMetadata
 
     virtual ~RelativePathWithMetadata() = default;
 
-    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
-    virtual std::string getPath() const { return relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual bool hasPositionDeleteTransformer() const { return false; }
-    virtual std::shared_ptr<ISimpleTransform>
-    getPositionDeleteTransformer(ObjectStoragePtr, const SharedHeader &, const std::optional<FormatSettings> &, ContextPtr)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Position delete transformer is not implemented for object with path: {}", relative_path);
-    }
+    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getPath() const { return relative_path; }
 };
 
 struct ObjectKeyWithMetadata
