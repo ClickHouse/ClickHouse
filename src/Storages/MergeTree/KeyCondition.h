@@ -486,4 +486,5 @@ private:
 
 std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
+String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);
 }

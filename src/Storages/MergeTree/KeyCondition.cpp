@@ -202,7 +202,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,
   *  or return an empty string if there are no such strings.
   */
-static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
+String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
 {
     /** Increment the last byte of the prefix by one. But if it is max (255), then remove it and increase the previous one.
       * Example (for convenience, suppose that the maximum value of byte is `z`)
