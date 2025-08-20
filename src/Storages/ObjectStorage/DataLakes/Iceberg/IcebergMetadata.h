@@ -115,6 +115,9 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands) override;
+    void alter(const AlterCommands & params, ContextPtr context) override;
+
 protected:
     ObjectIterator
     iterate(const ActionsDAG * filter_dag, FileProgressCallback callback, size_t list_batch_size, ContextPtr local_context) const override;
