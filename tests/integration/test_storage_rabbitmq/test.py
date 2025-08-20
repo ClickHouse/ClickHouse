@@ -4,6 +4,7 @@ import random
 import threading
 import time
 import uuid
+import urllib
 from random import randrange
 
 import pika
@@ -11,6 +12,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import rabbitmq_username, rabbitmq_password
 from helpers.test_tools import TSV
 
 
@@ -20,7 +22,6 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
         "configs/dead_letter_queue.xml",
@@ -114,18 +115,18 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
 
     # MATERIALIZED and ALIAS columns are not supported in RabbitMQ engine, but we can test that it does not fail
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:{}',
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:{port}',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n',
-                     rabbitmq_secure = {};
-        """.format(
-            rabbitmq_cluster.rabbitmq_host, port, secure
-        )
+                     rabbitmq_secure = {secure};
+        """
     )
 
     assert (
@@ -133,7 +134,7 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
         in instance.query("SELECT * FROM system.warnings")
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -170,18 +171,18 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
 
 def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:5672',
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'empty',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'TSV',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_row_delimiter = '\\n';
-        """.format(
-            rabbitmq_cluster.rabbitmq_host
-        )
+        """
     )
 
     assert int(instance.query("SELECT count() FROM test.rabbitmq")) == 0
@@ -189,21 +190,21 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
 
 def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:5672',
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
-        """.format(
-            rabbitmq_cluster.rabbitmq_host
-        )
+        """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -248,10 +249,12 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
 
 def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'csv',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'CSV',
@@ -261,7 +264,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -298,10 +301,12 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
 
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
                      rabbitmq_commit_on_select = 1,
@@ -317,7 +322,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -349,19 +354,21 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
 
 def test_rabbitmq_macros(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
+            SETTINGS rabbitmq_host_port = '{{rabbitmq_host}}:{{rabbitmq_port}}',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
-                     rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
-                     rabbitmq_format = '{rabbitmq_format}'
+                     rabbitmq_exchange_name = '{{rabbitmq_exchange_name}}',
+                     rabbitmq_format = '{{rabbitmq_format}}'
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -395,10 +402,12 @@ def test_rabbitmq_macros(rabbitmq_cluster):
 
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64, dt1 DateTime MATERIALIZED now(), value2 ALIAS value + 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -418,7 +427,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -466,10 +475,12 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
 
 def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'mvsq',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -483,7 +494,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -514,7 +525,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
@@ -525,6 +536,8 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1, value4 DEFAULT 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'mmv',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -548,7 +561,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -611,7 +624,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
         for i in range(rabbitmq_messages)
     ]
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -619,10 +632,12 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     channel = connection.channel()
 
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value String)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'big',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -646,10 +661,12 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
 
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'test_sharding',
                      rabbitmq_num_queues = 5,
                      rabbitmq_num_consumers = 10,
@@ -670,7 +687,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     i = [0]
     messages_num = 10000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -719,10 +736,12 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
 
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'combo',
                      rabbitmq_queue_base = 'combo',
                      rabbitmq_max_block_size = 100,
@@ -754,7 +773,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
     i = [0]
     messages_num = 10000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -824,10 +843,12 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
 
 def test_rabbitmq_insert(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'insert',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -838,7 +859,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -887,10 +908,12 @@ def test_rabbitmq_insert(rabbitmq_cluster):
 
 def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'insert_headers',
                      rabbitmq_exchange_type = 'headers',
                      rabbitmq_flush_interval_ms=1000,
@@ -901,7 +924,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -955,7 +978,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
 
 def test_rabbitmq_many_inserts(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.rabbitmq_many;
         DROP TABLE IF EXISTS test.rabbitmq_consume;
         DROP TABLE IF EXISTS test.view_many;
@@ -963,6 +986,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_many (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'many_inserts',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
@@ -973,6 +998,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'many_inserts',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'insert2',
@@ -1042,13 +1069,15 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
 
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.view_overload;
         DROP TABLE IF EXISTS test.consumer_overload;
         DROP TABLE IF EXISTS test.rabbitmq_consume;
         CREATE TABLE test.rabbitmq_consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
@@ -1061,6 +1090,8 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_overload (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
@@ -1140,32 +1171,32 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
     for consumer_id in range(num_tables):
         logging.debug(("Setting up table {}".format(consumer_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.direct_exchange_{0};
-            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
-            CREATE TABLE test.direct_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.direct_exchange_{consumer_id};
+            DROP TABLE IF EXISTS test.direct_exchange_{consumer_id}_mv;
+            CREATE TABLE test.direct_exchange_{consumer_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
-                        rabbitmq_max_block_size=100,
+                         rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'direct_exchange_testing',
                          rabbitmq_exchange_type = 'direct',
-                         rabbitmq_routing_key_list = 'direct_{0}',
+                         rabbitmq_routing_key_list = 'direct_{consumer_id}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.direct_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.direct_exchange_{0};
-        """.format(
-                consumer_id
-            )
+            CREATE MATERIALIZED VIEW test.direct_exchange_{consumer_id}_mv TO test.destination AS
+            SELECT key, value FROM test.direct_exchange_{consumer_id};
+        """
         )
 
     i = [0]
     messages_num = 1000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1225,32 +1256,32 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
     for consumer_id in range(num_tables):
         logging.debug(("Setting up table {}".format(consumer_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.fanout_exchange_{0};
-            DROP TABLE IF EXISTS test.fanout_exchange_{0}_mv;
-            CREATE TABLE test.fanout_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.fanout_exchange_{consumer_id};
+            DROP TABLE IF EXISTS test.fanout_exchange_{consumer_id}_mv;
+            CREATE TABLE test.fanout_exchange_{consumer_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
                          rabbitmq_max_block_size=100,
-                         rabbitmq_routing_key_list = 'key_{0}',
+                         rabbitmq_routing_key_list = 'key_{consumer_id}',
                          rabbitmq_exchange_name = 'fanout_exchange_testing',
                          rabbitmq_exchange_type = 'fanout',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.fanout_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.fanout_exchange_{0};
-        """.format(
-                consumer_id
-            )
+            CREATE MATERIALIZED VIEW test.fanout_exchange_{consumer_id}_mv TO test.destination AS
+            SELECT key, value FROM test.fanout_exchange_{consumer_id};
+        """
         )
 
     i = [0]
     messages_num = 1000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1305,37 +1336,39 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     for consumer_id in range(num_tables):
         logging.debug(("Setting up table {}".format(consumer_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.topic_exchange_{0};
-            DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
-            CREATE TABLE test.topic_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.topic_exchange_{consumer_id};
+            DROP TABLE IF EXISTS test.topic_exchange_{consumer_id}_mv;
+            CREATE TABLE test.topic_exchange_{consumer_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
                          rabbitmq_max_block_size=100,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
-                         rabbitmq_routing_key_list = '*.{0}',
+                         rabbitmq_routing_key_list = '*.{consumer_id}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.topic_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.topic_exchange_{0};
-        """.format(
-                consumer_id
-            )
+            CREATE MATERIALIZED VIEW test.topic_exchange_{consumer_id}_mv TO test.destination AS
+            SELECT key, value FROM test.topic_exchange_{consumer_id};
+        """
         )
 
     for consumer_id in range(num_tables):
         logging.debug(("Setting up table {}".format(num_tables + consumer_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.topic_exchange_{0};
-            DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
-            CREATE TABLE test.topic_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.topic_exchange_{num_tables + consumer_id};
+            DROP TABLE IF EXISTS test.topic_exchange_{num_tables + consumer_id}_mv;
+            CREATE TABLE test.topic_exchange_{num_tables + consumer_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_num_queues = 2,
                          rabbitmq_flush_interval_ms=1000,
@@ -1345,17 +1378,15 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                          rabbitmq_routing_key_list = '*.logs',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.topic_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.topic_exchange_{0};
-        """.format(
-                num_tables + consumer_id
-            )
+            CREATE MATERIALIZED VIEW test.topic_exchange_{num_tables + consumer_id}_mv TO test.destination AS
+            SELECT key, value FROM test.topic_exchange_{num_tables + consumer_id};
+        """
         )
 
     i = [0]
     messages_num = 1000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1421,12 +1452,14 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
         table_name = "rabbitmq_consumer{}".format(consumer_id)
         logging.debug(("Setting up {}".format(table_name)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.{0};
-            DROP TABLE IF EXISTS test.{0}_mv;
-            CREATE TABLE test.{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.{table_name};
+            DROP TABLE IF EXISTS test.{table_name}_mv;
+            CREATE TABLE test.{table_name} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 4,
                          rabbitmq_num_queues = 2,
                          rabbitmq_exchange_type = 'consistent_hash',
@@ -1434,8 +1467,8 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_flush_interval_ms=1000,
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.{0}_mv TO test.destination AS
-                SELECT key, value, _channel_id AS channel_id FROM test.{0};
+            CREATE MATERIALIZED VIEW test.{table_name}_mv TO test.destination AS
+                SELECT key, value, _channel_id AS channel_id FROM test.{table_name};
         """.format(
                 table_name
             )
@@ -1444,7 +1477,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     i = [0]
     messages_num = 500
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1512,12 +1545,14 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     )
 
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.bindings;
         DROP TABLE IF EXISTS test.bindings_mv;
         CREATE TABLE test.bindings (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'multiple_bindings_testing',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
@@ -1533,7 +1568,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     i = [0]
     messages_num = 500
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1595,12 +1630,14 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     for consumer_id in range(num_tables_to_receive):
         logging.debug(("Setting up table {}".format(consumer_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.headers_exchange_{0};
-            DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
-            CREATE TABLE test.headers_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.headers_exchange_{consumer_id};
+            DROP TABLE IF EXISTS test.headers_exchange_{consumer_id}_mv;
+            CREATE TABLE test.headers_exchange_{consumer_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_num_consumers = 2,
                          rabbitmq_exchange_name = 'headers_exchange_testing',
                          rabbitmq_exchange_type = 'headers',
@@ -1609,8 +1646,8 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2020',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.headers_exchange_{0};
+            CREATE MATERIALIZED VIEW test.headers_exchange_{consumer_id}_mv TO test.destination AS
+            SELECT key, value FROM test.headers_exchange_{consumer_id};
         """.format(
                 consumer_id
             )
@@ -1622,12 +1659,14 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
             ("Setting up table {}".format(consumer_id + num_tables_to_receive))
         )
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.headers_exchange_{0};
-            DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
-            CREATE TABLE test.headers_exchange_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.headers_exchange_{consumer_id + num_tables_to_receive};
+            DROP TABLE IF EXISTS test.headers_exchange_{consumer_id + num_tables_to_receive}_mv;
+            CREATE TABLE test.headers_exchange_{consumer_id + num_tables_to_receive} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_exchange_name = 'headers_exchange_testing',
                          rabbitmq_exchange_type = 'headers',
                          rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2019',
@@ -1635,17 +1674,15 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
                          rabbitmq_flush_interval_ms=1000,
                          rabbitmq_max_block_size=100,
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
-            SELECT key, value FROM test.headers_exchange_{0};
-        """.format(
-                consumer_id + num_tables_to_receive
-            )
+            CREATE MATERIALIZED VIEW test.headers_exchange_{consumer_id + num_tables_to_receive}_mv TO test.destination AS
+            SELECT key, value FROM test.headers_exchange_{consumer_id + num_tables_to_receive};
+        """
         )
 
     i = [0]
     messages_num = 1000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1693,10 +1730,12 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
 def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_virtuals (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'virtuals',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -1706,7 +1745,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1759,10 +1798,12 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
 
 def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_virtuals_mv (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'virtuals_mv',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_max_block_size=100,
@@ -1776,7 +1817,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1838,12 +1879,14 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     for table_id in range(num_tables):
         logging.debug(("Setting up table {}".format(table_id)))
         instance.query(
-            """
-            DROP TABLE IF EXISTS test.many_consumers_{0};
-            DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
-            CREATE TABLE test.many_consumers_{0} (key UInt64, value UInt64)
+            f"""
+            DROP TABLE IF EXISTS test.many_consumers_{table_id};
+            DROP TABLE IF EXISTS test.many_consumers_{table_id}_mv;
+            CREATE TABLE test.many_consumers_{table_id} (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_exchange_name = 'many_consumers',
                          rabbitmq_num_queues = 2,
                          rabbitmq_num_consumers = 2,
@@ -1852,17 +1895,15 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
                          rabbitmq_queue_base = 'many_consumers',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.many_consumers_{0}_mv TO test.destination AS
-            SELECT key, value, _channel_id as channel_id FROM test.many_consumers_{0};
-        """.format(
-                table_id
-            )
+            CREATE MATERIALIZED VIEW test.many_consumers_{table_id}_mv TO test.destination AS
+            SELECT key, value, _channel_id as channel_id FROM test.many_consumers_{table_id};
+        """
         )
 
     i = [0]
     messages_num = 1000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -1923,10 +1964,12 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'block',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'block',
@@ -1941,7 +1984,7 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2025,10 +2068,12 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
     error = instance.query_and_get_error(
-        """
+        f"""
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'no_connection_at_startup:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2041,10 +2086,12 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
 
 def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_num_consumers = '5',
@@ -2064,7 +2111,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
         instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2092,11 +2139,13 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
 
 def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.format_settings (
             id String, date DateTime
         ) ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'format_settings',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_format = 'JSONEachRow',
@@ -2104,7 +2153,7 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2168,10 +2217,12 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
 
 def test_rabbitmq_vhost(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_vhost (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'vhost',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2179,7 +2230,7 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2205,10 +2256,12 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
 
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'drop',
                      rabbitmq_format = 'JSONEachRow',
@@ -2216,7 +2269,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2255,10 +2308,12 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_settings (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'rabbit_exchange',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_format = 'JSONEachRow',
@@ -2267,7 +2322,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2299,7 +2354,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
 
 
 def test_rabbitmq_queue_consume(rabbitmq_cluster):
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2328,10 +2383,12 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
         thread.start()
 
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_queue (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'rabbit_queue',
                      rabbitmq_flush_interval_ms=1000,
@@ -2355,7 +2412,7 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
     num_rows = 75
 
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.rabbit;
         DROP TABLE IF EXISTS test.rabbit_writer;
@@ -2363,6 +2420,8 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
         CREATE TABLE test.rabbit_writer (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_format = 'Avro',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'avro',
@@ -2372,6 +2431,8 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
         CREATE TABLE test.rabbit (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_format = 'Avro',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'avro',
@@ -2404,7 +2465,7 @@ def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
 
 
 def test_rabbitmq_bad_args(rabbitmq_cluster):
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2412,10 +2473,12 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
     channel = connection.channel()
     channel.exchange_declare(exchange="f", exchange_type="fanout")
     assert "Unable to declare exchange" in instance.query_and_get_error(
-        """
+        f"""
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = 'f',
                      rabbitmq_format = 'JSONEachRow';
@@ -2425,10 +2488,12 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
 
 def test_rabbitmq_issue_30691(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq_drop (json String)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '30691',
                      rabbitmq_row_delimiter = '\\n', -- Works only if adding this setting
@@ -2437,7 +2502,7 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2490,10 +2555,12 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
 
 def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.drop_mv (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2514,7 +2581,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2574,10 +2641,12 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
 def test_rabbitmq_random_detach(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'random',
                      rabbitmq_queue_base = 'random',
                      rabbitmq_num_queues = 2,
@@ -2595,7 +2664,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
     i = [0]
     messages_num = 10000
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2636,7 +2705,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
 
 
 def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2688,13 +2757,15 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 def test_rabbitmq_msgpack(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         drop table if exists rabbit_in;
         drop table if exists rabbit_out;
         create table
             rabbit_in (val String)
             engine=RabbitMQ
             settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'xhep',
                      rabbitmq_format = 'MsgPack',
                      rabbitmq_flush_interval_ms=1000,
@@ -2703,6 +2774,8 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
             rabbit_out (val String)
             engine=RabbitMQ
             settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'xhep',
                      rabbitmq_format = 'MsgPack',
                      rabbitmq_flush_interval_ms=1000,
@@ -2732,7 +2805,7 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
 
 def test_rabbitmq_address(rabbitmq_cluster):
     instance2.query(
-        """
+        f"""
         drop table if exists rabbit_in;
         drop table if exists rabbit_out;
         create table
@@ -2742,14 +2815,14 @@ def test_rabbitmq_address(rabbitmq_cluster):
                      rabbitmq_format = 'CSV',
                      rabbitmq_num_consumers = 1,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+                     rabbitmq_address='amqp://{rabbitmq_username}:{urllib.parse.quote_plus(rabbitmq_password)}@rabbitmq1:5672/';
         create table
             rabbit_out (val String) engine=RabbitMQ
             SETTINGS rabbitmq_exchange_name = 'rxhep',
                      rabbitmq_format = 'CSV',
                      rabbitmq_num_consumers = 1,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+                     rabbitmq_address='amqp://{rabbitmq_username}:{urllib.parse.quote_plus(rabbitmq_password)}@rabbitmq1:5672/';
         set stream_like_engine_allow_direct_select=1;
         insert into rabbit_out select 'kek';
     """
@@ -2775,10 +2848,12 @@ def test_rabbitmq_address(rabbitmq_cluster):
 
 def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'insert',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'custom',
@@ -2786,7 +2861,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2825,13 +2900,15 @@ def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
 
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.rabbit;
 
         CREATE TABLE test.rabbit (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_format = 'CustomSeparated',
                      rabbitmq_exchange_name = 'custom',
                      rabbitmq_exchange_type = 'direct',
@@ -2846,7 +2923,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -2916,6 +2993,8 @@ def test_row_based_formats(rabbitmq_cluster):
             CREATE TABLE test.rabbit (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_format = '{format_name}',
                          rabbitmq_exchange_name = '{format_name}',
                          rabbitmq_exchange_type = 'direct',
@@ -2929,7 +3008,7 @@ def test_row_based_formats(rabbitmq_cluster):
         """
         )
 
-        credentials = pika.PlainCredentials("root", "clickhouse")
+        credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
         parameters = pika.ConnectionParameters(
             rabbitmq_cluster.rabbitmq_ip,
             rabbitmq_cluster.rabbitmq_port,
@@ -2975,10 +3054,12 @@ def test_row_based_formats(rabbitmq_cluster):
 
 def test_block_based_formats_1(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'PrettySpace',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_max_block_size = 100,
@@ -2988,7 +3069,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -3055,6 +3136,8 @@ def test_block_based_formats_2(rabbitmq_cluster):
             CREATE TABLE test.rabbit (key UInt64, value UInt64)
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_username = '{rabbitmq_username}',
+                         rabbitmq_password = '{rabbitmq_password}',
                          rabbitmq_format = '{format_name}',
                          rabbitmq_exchange_name = '{format_name}',
                          rabbitmq_exchange_type = 'direct',
@@ -3067,7 +3150,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
         """
         )
 
-        credentials = pika.PlainCredentials("root", "clickhouse")
+        credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
         parameters = pika.ConnectionParameters(
             rabbitmq_cluster.rabbitmq_ip,
             rabbitmq_cluster.rabbitmq_port,
@@ -3112,13 +3195,15 @@ def test_block_based_formats_2(rabbitmq_cluster):
 
 def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
          DROP TABLE IF EXISTS test.view;
          DROP TABLE IF EXISTS test.consumer;
 
          CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
              ENGINE = RabbitMQ
              SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                      rabbitmq_username = '{rabbitmq_username}',
+                      rabbitmq_password = '{rabbitmq_password}',
                       rabbitmq_exchange_name = 'flush_by_block',
                       rabbitmq_queue_base = 'flush_by_block',
                       rabbitmq_max_block_size = 100,
@@ -3139,7 +3224,7 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
     cancel = threading.Event()
 
     def produce():
-        credentials = pika.PlainCredentials("root", "clickhouse")
+        credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
         parameters = pika.ConnectionParameters(
             rabbitmq_cluster.rabbitmq_ip,
             rabbitmq_cluster.rabbitmq_port,
@@ -3203,13 +3288,15 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
 
 def test_rabbitmq_flush_by_time(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
 
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'flush_by_time',
                      rabbitmq_queue_base = 'flush_by_time',
                      rabbitmq_max_block_size = 100,
@@ -3225,7 +3312,7 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
     cancel = threading.Event()
 
     def produce():
-        credentials = pika.PlainCredentials("root", "clickhouse")
+        credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
         parameters = pika.ConnectionParameters(
             rabbitmq_cluster.rabbitmq_ip,
             rabbitmq_cluster.rabbitmq_port,
@@ -3296,7 +3383,7 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
 
 def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.rabbitmq;
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.data;
@@ -3305,7 +3392,9 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
         CREATE TABLE test.rabbit (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:5672',
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
@@ -3326,12 +3415,10 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
         CREATE MATERIALIZED VIEW test.view TO test.data AS
                 SELECT key, value FROM test.rabbit;
-        """.format(
-            rabbitmq_cluster.rabbitmq_host
-        )
+        """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -3396,7 +3483,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     table_name = f"nack_failed_insert_{uuid.uuid4().hex}"
     exchange = f"{table_name}_exchange"
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -3414,6 +3501,8 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
@@ -3486,7 +3575,7 @@ def dead_letter_queue_test(expected_num_messages, exchange_name):
 def rabbitmq_reject_broken_messages(
     rabbitmq_cluster, handle_error_mode, additional_dml, check_method, broken_messages_rejected
 ):
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -3516,6 +3605,8 @@ def rabbitmq_reject_broken_messages(
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
                      rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n',
@@ -3607,11 +3698,13 @@ def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
 
 def test_rabbitmq_json_type(rabbitmq_cluster):
     instance.query(
-        """
+        f"""
         SET enable_json_type=1;
         CREATE TABLE test.rabbitmq (data JSON)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
                      rabbitmq_exchange_name = 'json_type',
                      rabbitmq_format = 'JSONAsObject',
                      rabbitmq_commit_on_select = 1,
@@ -3627,7 +3720,7 @@ def test_rabbitmq_json_type(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
+    credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
     )
@@ -3674,13 +3767,13 @@ def test_hiding_credentials(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:{cluster.rabbitmq_port}',
                      rabbitmq_exchange_name = '{table_name}',
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_username = 'clickhouse',
-                     rabbitmq_password = 'rabbitmq',
-                     rabbitmq_address = 'amqp://root:clickhouse@rabbitmq1:5672/';
+                     rabbitmq_username = '{rabbitmq_username}',
+                     rabbitmq_password = '{rabbitmq_password}',
+                     rabbitmq_address='amqp://{rabbitmq_username}:{urllib.parse.quote_plus(rabbitmq_password)}@rabbitmq1:5672/';
         """
     )
 
     instance.query("SYSTEM FLUSH LOGS")
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
-    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message
+    assert f"rabbitmq_address = \\'amqp://{rabbitmq_username}:[HIDDEN]@rabbitmq1:5672/\\'" in  message

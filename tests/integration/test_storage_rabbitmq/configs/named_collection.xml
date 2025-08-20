@@ -7,8 +7,8 @@
         <rabbitmq_skip_broken_messages>111</rabbitmq_skip_broken_messages>
         <num_consumers>12</num_consumers>
         <rabbitmq_persistent>1</rabbitmq_persistent>
-        <rabbitmq_username>root</rabbitmq_username>
-        <rabbitmq_password>clickhouse</rabbitmq_password>
+        <rabbitmq_username>rabbitmq</rabbitmq_username>
+        <rabbitmq_password>ClickHouse_RabbitMQ_P@ssw0rd</rabbitmq_password>
     </rabbit1>
   </named_collections>
 </clickhouse>
