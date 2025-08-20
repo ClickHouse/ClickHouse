@@ -69,9 +69,20 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
-DEFAULT_BASE_CONFIG_DIR = os.environ.get(
-    "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
-)
+
+def find_default_config_path():
+    path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
+    if path is not None:
+        return path
+    path = "/etc/clickhouse-server/"
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    path = p.join(CLICKHOUSE_ROOT_DIR, "programs/server")
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    raise RuntimeError("Cannot find config.xml. Please set CLICKHOUSE_TESTS_BASE_CONFIG_DIR")
+
+DEFAULT_BASE_CONFIG_DIR = find_default_config_path()
 
 DEFAULT_THREAD_FUZZER_SETTINGS = {
     "THREAD_FUZZER_CPU_TIME_PERIOD_US" : "1000",
