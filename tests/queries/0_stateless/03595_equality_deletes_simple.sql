@@ -1,3 +1,3 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 
 SELECT sum(id), count(name) FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table');
