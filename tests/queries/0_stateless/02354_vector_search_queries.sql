@@ -2,8 +2,6 @@
 
 -- Tests various simple approximate nearest neighborhood (ANN) queries that utilize vector search indexes.
 
-SET enable_vector_similarity_index = 1;
-
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
 

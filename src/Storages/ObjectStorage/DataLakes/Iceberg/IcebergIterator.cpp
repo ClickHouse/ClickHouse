@@ -70,6 +70,42 @@ extern const SettingsBool use_iceberg_partition_pruning;
 
 using namespace Iceberg;
 
+namespace
+{
+std::span<const ManifestFileEntry>
+definePositionDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & position_deletes_objects_)
+{
+    ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// It is done to have an invariant that position deletes objects which corresponds
+    /// to the data object form a subsegment in a position_deletes_objects_ vector.
+    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
+    /// ManifestFileEntry has comparator by default which helps to do that.
+    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
+    auto end_it = std::upper_bound(
+        position_deletes_objects_.begin(),
+        position_deletes_objects_.end(),
+        data_object_,
+        [](const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
+        {
+            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
+                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
+        });
+    if (beg_it - position_deletes_objects_.begin() > end_it - position_deletes_objects_.begin())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "beginning: {}, end: {}, position_deletes_objects size: {}",
+            beg_it - position_deletes_objects_.begin(),
+            end_it - position_deletes_objects_.begin(),
+            position_deletes_objects_.size());
+    }
+    return {beg_it, end_it};
+}
+
+}
+
 std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
@@ -274,7 +310,16 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        return std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, position_deletes_files, equality_deletes_files, manifest_file_entry.file_format);
+        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
+        for (const auto & position_delete : definePositionDeletesSpan(manifest_file_entry, position_deletes_files))
+        {
+            object_info->addPositionDeleteObject(position_delete);
+        }
+        for (const auto & equality_delete : definePositionDeletesSpan(manifest_file_entry, equality_deletes_files))
+        {
+            object_info->addEqualityDeleteObject(equality_delete);
+        }
+        return object_info;
     }
     return nullptr;
 }
