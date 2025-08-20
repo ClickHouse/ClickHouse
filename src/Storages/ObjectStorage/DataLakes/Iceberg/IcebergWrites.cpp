@@ -29,7 +29,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include "Common/assert_cast.h"
 #include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
