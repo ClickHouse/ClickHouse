@@ -19,6 +19,8 @@ import time
 import traceback
 import urllib.parse
 import uuid
+from glob import glob
+from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -519,7 +521,8 @@ class ClickHouseCluster:
         #
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
+        # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
+        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -1555,14 +1558,17 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
+        file_name = "docker_compose_iceberg_rest_catalog.yml"
+        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
+            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                    docker_compose_yml_dir, file_name
                 ),
             ]
         )
@@ -1570,7 +1576,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+            p.join(docker_compose_yml_dir, file_name),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1799,6 +1805,7 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
+        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1928,6 +1935,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
+            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2098,7 +2106,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
+                    instance, env_variables, docker_compose_yml_dir, extra_parameters
                 )
             )
 
@@ -3603,7 +3611,8 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
@@ -3812,13 +3821,16 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        entrypoint: {entrypoint_cmd}
+        entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -3920,6 +3932,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
+        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4729,15 +4742,7 @@ class ClickHouseInstance:
         return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(
-                    process_name
-                ),
-            ]
-        )
+        output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
         if output:
             try:
                 pid = int(output.split("\n")[0].strip())
@@ -5336,16 +5341,10 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
-        entrypoint_cmd = self.clickhouse_start_command
-
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
-            entrypoint_cmd = (
-                "["
-                + ", ".join(map(lambda x: '"' + x + '"', entrypoint_cmd.split()))
-                + "]"
-            )
+            entrypoint_cmd = self.clickhouse_start_command
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
