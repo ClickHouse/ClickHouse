@@ -761,12 +761,6 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorag
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-            {
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-                ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
-            }
-
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
             if (joined_tables.tablesCount() == 1)
                 src_storage = joined_tables.getLeftTableStorage();
