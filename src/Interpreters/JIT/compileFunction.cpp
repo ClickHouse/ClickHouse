@@ -70,6 +70,14 @@ llvm::StructType * buildColumnDataLLVMStruct(llvm::IRBuilderBase & b)
     return llvm::StructType::get(char_ptr_type, char_ptr_type, char_ptr_type);
 }
 
+llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
+{
+    auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
+    auto * offset_ptr_type = b.getInt64Ty()->getPointerTo();
+    auto * index_type = b.getIntNTy(sizeof(size_t) * 8);
+    return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
+}
+
 static void compileFunction(llvm::Module & module, const IFunctionBase & function)
 {
     const auto & function_argument_types = function.getArgumentTypes();
@@ -596,44 +604,74 @@ static void compileSortDescription(llvm::Module & module,
 
         auto dummy_column = column_type->createColumn();
 
-        auto * column_native_type = toNativeType(b, nested_column_type);
-        if (!column_native_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No native type for column type {}", column_type->getName());
-
-        bool column_type_is_nullable = column_type->isNullable();
-
-        auto * nullable_unitialized = llvm::Constant::getNullValue(toNullableType(b, column_native_type));
-
-        auto * lhs_column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_lhs_arg, i));
-        auto * lhs_column_data = b.CreateExtractValue(lhs_column, {0});
-        auto * lhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(lhs_column, {1}) : nullptr;
-
-        llvm::Value * lhs_column_element_offset = b.CreateInBoundsGEP(column_native_type, lhs_column_data, lhs_index_arg);
-        llvm::Value * lhs_value = b.CreateLoad(column_native_type, lhs_column_element_offset);
-
-        if (lhs_column_null_data)
+        auto load_column_string_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
         {
-            auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_column_null_data, lhs_index_arg);
-            auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
-            auto * lhs_nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitialized, lhs_value, {0}), is_null, {1});
-            lhs_value = lhs_nullable_value;
-        }
+            auto * string_ref_type = buildStringRefType(b);
+            auto * nullable_uninitialized = llvm::Constant::getNullValue(toNullableType(b, string_ref_type));
+            
+            auto * column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, column_arg, i));
+            auto * column_data = b.CreateExtractValue(column, {0});
+            auto * column_null_data = is_nullable ? b.CreateExtractValue(column, {1}) : nullptr;
+            auto * column_offset_data = b.CreateExtractValue(column, {2});
+            
+            /// build struct : {chars ptr, offset ptr, index}
+            /// The string comparison logic is relatively complex, so here we only pass the raw memory pointer. The specific
+            /// implementation will be completed in ColumnString::compileComparator
+            llvm::Value * value = llvm::UndefValue::get(string_ref_type);
+            value = b.CreateInsertValue(value, column_data, {0});
+            value = b.CreateInsertValue(value, column_offset_data, {1});
+            value = b.CreateInsertValue(value, index_arg, {2});
 
-        auto * rhs_column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_rhs_arg, i));
-        auto * rhs_column_data = b.CreateExtractValue(rhs_column, {0});
-        auto * rhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(rhs_column, {1}) : nullptr;
+            if (column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
+                value = nullable_value;
+            }
+            return value;
+        };
 
-        llvm::Value * rhs_column_element_offset = b.CreateInBoundsGEP(column_native_type, rhs_column_data, rhs_index_arg);
-        llvm::Value * rhs_value = b.CreateLoad(column_native_type, rhs_column_element_offset);
-
-        if (rhs_column_null_data)
+        auto load_column_native_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
         {
-            auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_column_null_data, rhs_index_arg);
-            auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
-            auto * rhs_nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitialized, rhs_value, {0}), is_null, {1});
-            rhs_value = rhs_nullable_value;
-        }
+            auto * column_native_type = toNativeType(b, nested_column_type);
+            if (!column_native_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No native type for column type {}", column_type->getName());
 
+            auto * nullable_uninitialized = llvm::Constant::getNullValue(toNullableType(b, column_native_type));
+
+            auto * column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, column_arg, i));
+            auto * column_data = b.CreateExtractValue(column, {0});
+            auto * column_null_data = is_nullable ? b.CreateExtractValue(column, {1}) : nullptr;
+
+            llvm::Value * column_element_offset = b.CreateInBoundsGEP(column_native_type, column_data, index_arg);
+            llvm::Value * value = b.CreateLoad(column_native_type, column_element_offset);
+
+            if (column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
+                value = nullable_value;
+            }
+            return value;
+        };
+
+        llvm::Value * lhs_value = nullptr;
+        llvm::Value * rhs_value = nullptr;
+        if (nested_column_type->getName() == "String")
+        {
+            lhs_value = load_column_string_value(columns_lhs_arg, lhs_index_arg, column_type->isNullable());
+            rhs_value = load_column_string_value(columns_rhs_arg, rhs_index_arg, column_type->isNullable());
+        }
+        else if (canBeNativeType(column_type))
+        {
+            lhs_value = load_column_native_value(columns_lhs_arg, lhs_index_arg, column_type->isNullable());
+            rhs_value = load_column_native_value(columns_rhs_arg, rhs_index_arg, column_type->isNullable());
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported type for column type {}", column_type->getName());
+    
         llvm::Value * direction = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.direction);
         llvm::Value * nan_direction_hint = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.nulls_direction);
         llvm::Value * compare_result = dummy_column->compileComparator(b, lhs_value, rhs_value, nan_direction_hint);
