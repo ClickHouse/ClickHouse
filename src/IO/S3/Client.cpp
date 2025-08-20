@@ -50,7 +50,12 @@ namespace ProfileEvents
     extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
+    extern const Event DiskS3WriteRequestAttempts;
+    extern const Event DiskS3WriteRequestRetryableErrors;
+
     extern const Event DiskS3ReadRequestsErrors;
+    extern const Event DiskS3ReadRequestAttempts;
+    extern const Event DiskS3ReadRequestRetryableErrors;
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
@@ -705,7 +710,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            if (!isClientForDisk())
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
+            else
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -732,7 +739,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    if (!isClientForDisk())
+                    if (isClientForDisk())
+                        incrementProfileEvents<IsReadMethod>(
+                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+                    else
                         incrementProfileEvents<IsReadMethod>(
                             ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
 
