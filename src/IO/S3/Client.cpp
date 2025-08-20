@@ -710,10 +710,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
-            else
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
@@ -739,12 +738,11 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
+                    incrementProfileEvents<IsReadMethod>(
+                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
                     if (isClientForDisk())
                         incrementProfileEvents<IsReadMethod>(
                             ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
-                    else
-                        incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
@@ -755,10 +753,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
-                else
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
