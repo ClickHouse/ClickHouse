@@ -648,6 +648,16 @@ public:
         }
     }
 
+    std::vector<Filter> getFilters(std::string_view parameter)
+    {
+        std::vector<Filter> res;
+        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        for (auto it = node.begin(); it != node.end(); ++it)
+            res.emplace_back(it->flags, it.getPath());
+
+        return res;
+    }
+
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
     AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
@@ -1647,6 +1657,15 @@ void AccessRights::makeDifference(const AccessRights & other)
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+std::vector<AccessRights::Filter> AccessRights::getFilters(std::string_view parameter) const
+{
+    if (root)
+        return root->getFilters(parameter);
+
+    return {};
 }
 
 

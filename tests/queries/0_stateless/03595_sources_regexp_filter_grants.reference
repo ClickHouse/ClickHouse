@@ -1,0 +1,3 @@
+OK
+GRANT CREATE TEMPORARY TABLE ON *.*
+GRANT READ ON URL('http://localhost:812[1-3]/.*')

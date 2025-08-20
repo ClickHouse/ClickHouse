@@ -7,6 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -23,11 +24,8 @@ namespace
             if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
                 return true;
 
-            ASTPtr ast;
-            if (!ParserIdentifier().parse(pos, ast, expected))
+            if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
                 return false;
-
-            parameter_regexp = getIdentifierName(ast);
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
