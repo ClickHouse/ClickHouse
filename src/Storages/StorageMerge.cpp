@@ -1572,11 +1572,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         const auto & source_elem = current_step_columns[i];
         auto source_elem_name = source_elem.name;
-        if (!qualifier.empty())
-        {
-            chassert(source_elem.name.starts_with(qualifier));
+        if (!qualifier.empty() && source_elem_name.starts_with(qualifier))
             source_elem_name = source_elem_name.substr(qualifier.size());
-        }
 
         if (header.has(source_elem_name))
         {
