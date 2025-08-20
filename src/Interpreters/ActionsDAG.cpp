@@ -231,6 +231,18 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
     }
 }
 
+ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
+{
+    Node node;
+    node.type = ActionType::ALIAS;
+    node.result_type = child.result_type;
+    node.result_name = std::move(alias);
+    node.column = child.column;
+    node.children.emplace_back(&child);
+
+    return node;
+}
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));
@@ -278,14 +290,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string alias)
 {
-    Node node;
-    node.type = ActionType::ALIAS;
-    node.result_type = child.result_type;
-    node.result_name = std::move(alias);
-    node.column = child.column;
-    node.children.emplace_back(&child);
-
-    return addNode(std::move(node));
+    return addNode(createAlias(child, std::move(alias)));
 }
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::string result_name)
@@ -1621,7 +1626,7 @@ void ActionsDAG::addMaterializingOutputActions(bool materialize_sparse)
         output_node = &materializeNode(*output_node, materialize_sparse);
 }
 
-const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool materialize_sparse)
+const ActionsDAG::Node & ActionsDAG::materializeNodeWithoutRename(const Node & node, bool materialize_sparse)
 {
     FunctionPtr func_materialize;
     if (materialize_sparse)
@@ -1631,9 +1636,13 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(func_materialize));
 
-    const auto & name = node.result_name;
-    const auto * func = &addFunction(func_builder_materialize, {&node}, {});
-    return addAlias(*func, name);
+    return addFunction(func_builder_materialize, {&node}, {});
+}
+
+const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool materialize_sparse)
+{
+    const auto & func = materializeNodeWithoutRename(node, materialize_sparse);
+    return addAlias(func, node.result_name);
 }
 
 ActionsDAG ActionsDAG::makeConvertingActions(
@@ -2656,7 +2665,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+    return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
@@ -2721,7 +2730,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         return {};
 
     /// Now, when actions are created, update the current DAG.
-    removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
+    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
 
     return actions;
 }
@@ -2927,25 +2936,25 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         right_stream_filter_to_push_down_dag = std::move(right_stream_filter_to_push_down->dag);
     }
 
-    ActionsDAG::ActionsForJOINFilterPushDown result
-    {
+    ActionsDAG::ActionsForJOINFilterPushDown result{
         .left_stream_filter_to_push_down = std::move(left_stream_filter_to_push_down_dag),
         .left_stream_filter_removes_filter = left_stream_filter_removes_filter,
         .right_stream_filter_to_push_down = std::move(right_stream_filter_to_push_down_dag),
-        .right_stream_filter_removes_filter = right_stream_filter_removes_filter
-    };
+        .right_stream_filter_removes_filter = right_stream_filter_removes_filter,
+        .is_filter_const_after_all_push_downs = false};
 
     if (!result.left_stream_filter_to_push_down && !result.right_stream_filter_to_push_down)
         return result;
 
     /// Now, when actions are created, update the current DAG.
-    removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
+    result.is_filter_const_after_all_push_downs = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
 
     return result;
 }
 
-void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
+bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
 {
+    bool is_filter_const = false;
     if (rejected_conjunctions.empty())
     {
         /// The whole predicate was split.
@@ -2963,6 +2972,14 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
+            const auto should_materialize = !predicate->column || !isColumnConst(*predicate->column);
+            if (should_materialize)
+            {
+                const auto & const_node = addNode(std::move(node));
+                const auto & materialized_node = materializeNodeWithoutRename(const_node, false);
+                node = createAlias(materialized_node, predicate->result_name);
+            }
+
             if (predicate->type != ActionType::INPUT)
                 *predicate = std::move(node);
             else
@@ -2975,6 +2992,8 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
                     if (output_node == predicate)
                         output_node = new_predicate;
             }
+
+            is_filter_const = true;
         }
     }
     else
@@ -3024,6 +3043,8 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         used_inputs.insert(input);
 
     removeUnusedActions(used_inputs);
+
+    return is_filter_const;
 }
 
 static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)

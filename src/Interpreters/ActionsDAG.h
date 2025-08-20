@@ -138,6 +138,8 @@ public:
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
+    static Node createAlias(const Node & child, std::string alias);
+
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(ColumnWithTypeAndName column);
@@ -314,7 +316,9 @@ public:
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions(bool materialize_sparse);
 
-    /// Apply materialize() function to node. Result node has the same name.
+    /// Apply materialize() function to node. Unlike for materializeNode, result node name can be arbitrary.
+    const Node & materializeNodeWithoutRename(const Node & node, bool materialize_sparse = true);
+    /// Apply materialize() function to node. Unlike for materializeNodeWithoutRename, result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     enum class MatchColumnsMode : uint8_t
@@ -495,7 +499,7 @@ private:
 
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
-    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
+    bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
 struct ActionsDAG::SplitResult
@@ -510,6 +514,8 @@ struct ActionsDAG::ActionsForFilterPushDown
     ActionsDAG dag;
     size_t filter_pos;
     bool remove_filter;
+    /// Whether the filter becomes const after pushing down expressions
+    bool is_filter_const_after_push_down;
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown
@@ -518,6 +524,8 @@ struct ActionsDAG::ActionsForJOINFilterPushDown
     bool left_stream_filter_removes_filter;
     std::optional<ActionsDAG> right_stream_filter_to_push_down;
     bool right_stream_filter_removes_filter;
+    /// Whether the filter becomes const after pushing down all expressions
+    bool is_filter_const_after_all_push_downs;
 };
 
 class FindOriginalNodeForOutputName
