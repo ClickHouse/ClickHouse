@@ -680,9 +680,9 @@ GRANT READ ON S3('s3://foo/.*') TO john
 GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
-**Regranting with GRANT OPTION:**
+**Re-granting with GRANT OPTION:**
 
-If the original grant has `WITH GRANT OPTION`, it can be regranted using `GRANT CURRENT GRANTS`:
+If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
 ```sql
 -- Original grant with GRANT OPTION
 GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
