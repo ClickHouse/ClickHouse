@@ -41,7 +41,6 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
-#include "Interpreters/Context_fwd.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/CastOverloadResolver.h>
 #include <IO/WriteHelpers.h>
@@ -90,6 +89,7 @@ extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 
 namespace ErrorCodes
 {
+extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -174,6 +174,9 @@ bool canWriteStatistics(
     const std::unordered_map<size_t, size_t> & field_id_to_column_index,
     SharedHeader sample_block)
 {
+    if (statistics.empty())
+        return false;
+
     for (const auto & [field_id, stat] : statistics)
     {
         if (!canDumpIcebergStats(stat, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]))
