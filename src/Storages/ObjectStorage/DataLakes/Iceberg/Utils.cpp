@@ -356,9 +356,10 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
         case TypeIndex::Float64:
             return "double";
         case TypeIndex::Date32:
+            return "date";
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return "date";
+            return "timestamp";
         case TypeIndex::Time:
             return "time";
         case TypeIndex::String:

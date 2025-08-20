@@ -94,6 +94,7 @@ public:
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
+    const std::vector<Int64> & getFieldIds() const { return field_ids; }
 private:
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
@@ -108,6 +109,7 @@ void generateManifestFile(
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
     const std::optional<std::vector<DataFileStatistics>> & data_file_statistics,
+    SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,

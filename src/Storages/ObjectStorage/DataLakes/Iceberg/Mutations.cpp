@@ -21,6 +21,7 @@
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
 #include <Common/FailPoint.h>
+#include "Core/Block_fwd.h"
 
 namespace DB::ErrorCodes
 {
@@ -216,7 +217,8 @@ bool writeMetadataFiles(
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
-    ChunkPartitioner & chunk_partitioner)
+    ChunkPartitioner & chunk_partitioner,
+    SharedHeader sample_block)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -280,6 +282,7 @@ bool writeMetadataFiles(
                     chunk_partitioner.getResultTypes(),
                     {delete_filename.path.path_in_metadata},
                     std::vector{delete_filenames.statistic.at(partition_key)},
+                    sample_block,
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
@@ -419,7 +422,7 @@ void mutate(
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, sample_block))
     {
     }
 }

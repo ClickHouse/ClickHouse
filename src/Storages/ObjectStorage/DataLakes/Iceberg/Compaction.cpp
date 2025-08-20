@@ -397,6 +397,7 @@ void writeMetadataFiles(
                 ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
                 std::vector(data_filenames.begin(), data_filenames.end()),
                 std::nullopt,
+                sample_block_,
                 snapshot,
                 configuration->format,
                 partititon_spec,

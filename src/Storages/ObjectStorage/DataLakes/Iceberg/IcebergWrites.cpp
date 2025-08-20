@@ -29,6 +29,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include "Common/assert_cast.h"
 #include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
@@ -39,12 +40,19 @@
 #include <sys/stat.h>
 #include <Poco/JSON/Array.h>
 #include <Common/FailPoint.h>
+#include "Core/Block_fwd.h"
+#include "DataTypes/DataTypeNullable.h"
+#include "Functions/CastOverloadResolver.h"
+#include "IO/WriteBufferFromString.h"
+#include "IO/WriteHelpers.h"
+#include "base/Decimal.h"
 #include <Core/Range.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
 
 #if USE_AVRO
@@ -93,31 +101,62 @@ extern const char iceberg_writes_cleanup[];
 namespace
 {
 
-std::optional<std::vector<uint8_t>> dumpFieldToBytes(const Field & field)
+std::optional<std::vector<uint8_t>> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
-    if (field.getType() == Field::Types::Which::Int64)
+    switch (type->getTypeId())
     {
-        auto value = field.safeGet<Int64>();
-        std::vector<uint8_t> bytes(sizeof(Int64));
-        std::memcpy(bytes.data(), &value, sizeof(Int64));
-        return bytes;
+        case TypeIndex::Nullable:
+        {
+            if (field.isNull())
+                return std::nullopt;
+            return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+        }
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        {
+            auto value = field.safeGet<Int32>();
+            std::vector<uint8_t> bytes(sizeof(Int32));
+            std::memcpy(bytes.data(), &value, sizeof(Int32));
+            return bytes;
+        }
+        case TypeIndex::Int64:
+        {
+            auto value = field.safeGet<Int64>();
+            std::vector<uint8_t> bytes(sizeof(Int64));
+            std::memcpy(bytes.data(), &value, sizeof(Int64));
+            return bytes;
+        }
+        case TypeIndex::DateTime64:
+        {
+            auto value = field.safeGet<Decimal64>().getValue().value;
+            std::vector<uint8_t> bytes(sizeof(Int64));
+            std::memcpy(bytes.data(), &value, sizeof(Int64));
+            return bytes;
+        }
+        case TypeIndex::String:
+        {
+            auto value = field.safeGet<String>();
+            std::vector<uint8_t> bytes;
+            for (auto elem : value)
+                bytes.push_back(elem);
+            return bytes;
+        }
+        default:
+        {
+            return std::nullopt;
+        }
     }
-    if (field.getType() == Field::Types::Which::String)
-    {
-        auto value = field.safeGet<String>();
-        std::vector<uint8_t> bytes;
-        for (auto elem : value)
-            bytes.push_back(elem);
-        return bytes;
-    }
-    return std::nullopt;
 }
 
-bool canWriteStatistics(const std::vector<std::pair<size_t, Field>> & statistics)
+bool canWriteStatistics(
+    const std::vector<std::pair<size_t, Field>> & statistics,
+    const std::unordered_map<size_t, size_t> & field_id_to_column_index,
+    SharedHeader sample_block)
 {
-    for (const auto & [_, stat] : statistics)
+    for (const auto & [field_id, stat] : statistics)
     {
-        if (!dumpFieldToBytes(stat))
+        if (!dumpFieldToBytes(stat, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]))
             return false;
     }
     return true;
@@ -293,6 +332,7 @@ void generateManifestFile(
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
     const std::optional<std::vector<DataFileStatistics>> & data_file_statistics,
+    SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
@@ -389,8 +429,14 @@ void generateManifestFile(
                     column_sizes.value().push_back(record_datum);
                 }
             }
+
+            std::unordered_map<size_t, size_t> field_id_to_column_index;
+            auto field_ids = data_file_statistics->at(data_file_index).getFieldIds();
+            for (size_t i = 0; i < field_ids.size(); ++i)
+                field_id_to_column_index[field_ids[i]] = i;
+
             auto lower_statistics = data_file_statistics->at(data_file_index).getLowerBounds();
-            if (canWriteStatistics(lower_statistics))
+            if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
             {
                 auto & data_file_record = data_file.field(Iceberg::f_lower_bounds);
                 data_file_record.selectBranch(1);
@@ -401,12 +447,12 @@ void generateManifestFile(
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = *dumpFieldToBytes(lower_value);
+                    record.field(Iceberg::f_value) = *dumpFieldToBytes(lower_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
                     lower_bounds.value().push_back(record_datum);
                 }
             }
             auto upper_statistics = data_file_statistics->at(data_file_index).getUpperBounds();
-            if (canWriteStatistics(upper_statistics))
+            if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
             {
                 auto & data_file_record = data_file.field(Iceberg::f_upper_bounds);
                 data_file_record.selectBranch(1);
@@ -417,7 +463,7 @@ void generateManifestFile(
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = *dumpFieldToBytes(upper_value);
+                    record.field(Iceberg::f_value) = *dumpFieldToBytes(upper_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
                     upper_bounds.value().push_back(record_datum);
                 }
             }
@@ -1164,6 +1210,7 @@ bool IcebergStorageSink::initializeMetadata()
                     partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     {data_filename},
                     std::vector{statistics.at(partition_key)},
+                    sample_block,
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
