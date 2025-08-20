@@ -432,9 +432,8 @@ void generateManifestFile(
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
-    for (size_t data_file_index = 0; data_file_index < data_file_names.size(); ++data_file_index)
+    for (const auto & data_file_name : data_file_names)
     {
-        const auto & data_file_name = data_file_names.at(data_file_index);
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
