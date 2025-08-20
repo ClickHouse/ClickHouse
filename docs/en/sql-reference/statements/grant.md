@@ -618,23 +618,23 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
 - `WRITE`. Level: `GLOBAL_WITH_PARAMETER`
 
 Possible parameters:
-  - `AZURE`
-  - `FILE`
-  - `HDFS`
-  - `HIVE`
-  - `JDBC`
-  - `KAFKA`
-  - `MONGO`
-  - `MYSQL`
-  - `NATS`
-  - `ODBC`
-  - `POSTGRES`
-  - `RABBITMQ`
-  - `REDIS`
-  - `REMOTE`
-  - `S3`
-  - `SQLITE`
-  - `URL`
+- `AZURE`
+- `FILE`
+- `HDFS`
+- `HIVE`
+- `JDBC`
+- `KAFKA`
+- `MONGO`
+- `MYSQL`
+- `NATS`
+- `ODBC`
+- `POSTGRES`
+- `RABBITMQ`
+- `REDIS`
+- `REMOTE`
+- `S3`
+- `SQLITE`
+- `URL`
 
 :::note
 The separation on READ/WRITE grants for sources is available starting with version 25.7 and only with server setting
