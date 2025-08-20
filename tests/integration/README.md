@@ -72,11 +72,10 @@ To check, that you have access to Docker, run `docker ps`.
 
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
-By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:
-* `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
-* `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
-* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
+By default tests tries to locate binaries and configs automatically, but if this does not work you may try to set:
+* `CLICKHOUSE_TESTS_SERVER_BIN_PATH`
+* `CLICKHOUSE_TESTS_CLIENT_BIN_PATH`
+* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` (path to `config.xml` and`users.xml`)
 
 Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
 
@@ -222,6 +221,16 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
+
+### Using pdb to break on assert
+
+It is very handy to stop the test on assertion failure and play with it in
+`python`, this can be done with `--pdb` switch, it will spawn `python`
+interpreter in case of failures.
+
+For native runs, simply `pytest --pdb <tests and other options>`
+
+For docker runs, `runner <opts> -- <tests> --pdb`
 
 ### Debug mode
 
