@@ -34,7 +34,8 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         # Log the request
         if self.config.get("verbose", True):
             self.logger.info(f"PUT request received at: {self.path}")
-            self.logger.info(f"Headers: {self.headers}")
+            if self.config.get("headers", False):
+                self.logger.info(f"Headers: {self.headers}")
             self.logger.info(f"Body: {request_body.decode('utf-8')}")
 
         # Process the request
@@ -136,4 +137,4 @@ class DolorHTTPServer:
 
     def is_alive(self):
         """Check if the server thread is alive"""
-        return self.thread and self.thread.is_alive()
+        return self.thread is not None and self.thread.is_alive()

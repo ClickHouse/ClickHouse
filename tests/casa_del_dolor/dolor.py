@@ -31,6 +31,7 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 
 from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from integration.helpers.postgres_utility import get_postgres_conn
 from integration.helpers.s3_tools import (
     AzureUploader,
@@ -47,10 +48,7 @@ from properties import (
     modify_keeper_settings,
 )
 from httpserver import DolorHTTPServer
-from catalogs.datalakes import (
-    create_lake_database,
-    create_lake_table,
-)
+from catalogs.datalakes import SparkHandler
 
 
 def ordered_pair(value):
@@ -347,9 +345,7 @@ with open(current_server, "r+") as f:
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
-cluster = ClickHouseCluster(
-    __file__, custom_keeper_configs=keeper_configs, with_spark=args.with_spark
-)
+cluster = ClickHouseCluster(__file__, custom_keeper_configs=keeper_configs)
 
 # Set environment variables such as locales and timezones
 test_env_variables = set_environment_variables(logger, args, "cluster")
@@ -418,11 +414,17 @@ for i in range(0, len(args.replica_values)):
 servers[len(servers) - 1].wait_start(8)
 
 # Uploaders for object storage
-if args.with_spark:
-    cluster.catalogs = {}
+credentials_file = tempfile.NamedTemporaryFile()
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
+    os.environ["AWS_ACCESS_KEY_ID"] = minio_access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = minio_secret_key
+    os.environ["AWS_REGION"] = "us-east-1"
+    with open(credentials_file.name, "w") as file:
+        file.write(f"[default]\naws_access_key_id = {minio_access_key}\naws_secret_access_key = {minio_secret_key}\n")
+    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 if args.with_azurite:
     cluster.azure_container_name = "cont"
     cluster.blob_service_client = cluster.blob_service_client
@@ -434,6 +436,7 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
+spark_handler = SparkHandler()
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -448,7 +451,7 @@ if args.with_postgresql:
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
     if path == "/sparkdatabase":
-        create_lake_database(
+        spark_handler.create_lake_database(
             cluster,
             data["database_name"],
             data["storage"],
@@ -457,7 +460,7 @@ def datalakehandler(path, data, headers):
         )
         return True
     if path == "/sparktable":
-        create_lake_table(
+        spark_handler.create_lake_table(
             cluster,
             data["database_name"],
             data["table_name"],
@@ -490,7 +493,7 @@ def dolor_cleanup():
         client.process.kill()
         client.process.wait()
     try:
-        cluster.shutdown(kill=True, ignore_fatal=False)
+        cluster.shutdown(kill=True, ignore_fatal=True)
     except:
         pass
     if modified_server_settings:
@@ -515,6 +518,11 @@ def dolor_cleanup():
         os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
+    if args.with_minio:
+        try:
+            os.unlink(credentials_file.name)
+        except FileNotFoundError:
+            pass
     for entry in keeper_configs:
         try:
             os.unlink(entry)

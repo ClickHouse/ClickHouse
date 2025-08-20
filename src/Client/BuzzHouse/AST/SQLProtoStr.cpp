@@ -1925,7 +1925,7 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
         ret += "default";
     }
     ret += separator;
-    TableToString(ret, true, est.table());
+    TableToString(ret, false, est.table());
     ret += "'";
 }
 

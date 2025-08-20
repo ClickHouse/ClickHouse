@@ -139,7 +139,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         if args.with_spark or args.with_glue or args.with_hms or args.with_rest:
             buzz_config["dolor"] = {
-                "server_hostname": "host.docker.internal",
+                "server_hostname": catalog_server.host,
                 "port": catalog_server.port,
             }
             if args.with_glue:

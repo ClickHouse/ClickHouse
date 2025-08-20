@@ -4,7 +4,7 @@ import random
 from abc import abstractmethod
 from enum import Enum
 
-from clickhousetospark import ClickHouseSparkTypeMapper
+from .clickhousetospark import ClickHouseSparkTypeMapper
 
 
 class TableStorage(Enum):
@@ -79,7 +79,9 @@ class LakeTableGenerator:
         )
 
     @abstractmethod
-    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
+    def generate_table_properties(
+        self, columns: list[dict[str, str]], include_all: bool = False
+    ) -> dict[str, str]:
         pass
 
     @abstractmethod
@@ -87,7 +89,7 @@ class LakeTableGenerator:
         pass
 
     def generate_create_table_ddl(
-        self, database_name: str, table_name: str, columns: list[dict[str, str]]
+        self, catalog_name: str, table_name: str, columns: list[dict[str, str]]
     ) -> str:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -95,11 +97,7 @@ class LakeTableGenerator:
         Args:
             table_name: Name of the table
         """
-        ddl = "CREATE TABLE IF NOT EXISTS "
-        ddl += f"{database_name}"
-        if database_name != "default":
-            ddl += ".test"
-        ddl += f".{table_name} ("
+        ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_str = []
         for val in columns:
             # Convert columns
@@ -144,13 +142,13 @@ class LakeTableGenerator:
         # elif storage == TableStorage.S3:
         #    location_str += f"s3a://{self.bucket}"
         # else:
-        #    location_str += "wasbs://cont@devstoreaccount1.blob.core.windows.net/"
+        #    location_str += "wasbs://cont@devstoreaccount1/"
         # location_str += f"/{table_name}'"
         # ddl += location_str
 
         # Add table properties
         if random.randint(1, 2) == 1:
-            properties = self.generate_table_properties()
+            properties = self.generate_table_properties(columns)
             if properties:
                 ddl += " TBLPROPERTIES ("
                 prop_lines = []
@@ -160,9 +158,11 @@ class LakeTableGenerator:
                 ddl += ")"
         return ddl + ";"
 
-    def generate_alter_table_statements(self, table_name: str) -> str:
+    def generate_alter_table_statements(
+        self, table_name: str, columns: list[dict[str, str]]
+    ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        properties = self.generate_table_properties()
+        properties = self.generate_table_properties(columns)
 
         if properties and random.randint(1, 2) == 1:
             # Set random properties
@@ -183,7 +183,9 @@ class IcebergTableGenerator(LakeTableGenerator):
     def get_format(self) -> str:
         return "iceberg"
 
-    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
+    def generate_table_properties(
+        self, columns: list[dict[str, str]], include_all: bool = False
+    ) -> dict[str, str]:
         """
         Generate random Iceberg table properties
 
@@ -215,7 +217,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         # Metadata properties
         if include_all or random.random() > 0.6:
-            properties.update(self._generate_metadata_properties())
+            properties.update(self._generate_metadata_properties(columns))
 
         # Write properties
         if include_all or random.random() > 0.3:
@@ -395,7 +397,9 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_metadata_properties(self) -> dict[str, str]:
+    def _generate_metadata_properties(
+        self, columns: list[dict[str, str]]
+    ) -> dict[str, str]:
         """Generate metadata related properties"""
         properties = {}
 
@@ -413,9 +417,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         )
 
         # Column statistics
-        properties["write.metadata.metrics.column.col1"] = random.choice(
-            ["none", "counts", "truncate(8)", "truncate(16)", "full"]
-        )
+        properties[
+            f"write.metadata.metrics.column.{random.choice(columns)["name"]}"
+        ] = random.choice(["none", "counts", "truncate(8)", "truncate(16)", "full"])
 
         return properties
 
@@ -524,7 +528,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
     def get_format(self) -> str:
         return "delta"
 
-    def generate_table_properties(self, include_all: bool = False) -> dict[str, str]:
+    def generate_table_properties(
+        self, columns: list[dict[str, str]], include_all: bool = False
+    ) -> dict[str, str]:
         """
         Generate random Delta Lake table properties
 

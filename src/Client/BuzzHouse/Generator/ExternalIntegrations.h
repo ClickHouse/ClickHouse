@@ -340,6 +340,9 @@ public:
 
 class DolorIntegration : public ClickHouseIntegration
 {
+private:
+    bool httpPut(const String & path, const String & body);
+
 public:
     explicit DolorIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)

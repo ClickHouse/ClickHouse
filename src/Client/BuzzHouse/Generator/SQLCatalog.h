@@ -339,6 +339,10 @@ public:
 
     String getDatabaseName() const;
 
+    String getTableName(bool full = true) const;
+
+    String getCatalogName() const;
+
     void setTablePath(RandomGenerator & rg);
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
@@ -390,8 +394,6 @@ public:
         res += "t" + std::to_string(name);
         est->mutable_table()->set_table(std::move(res));
     }
-
-    String getTableName(bool full = true) const;
 
     String getFullName(bool setdbname) const;
 

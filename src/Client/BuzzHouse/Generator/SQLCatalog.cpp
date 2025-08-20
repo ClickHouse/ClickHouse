@@ -27,6 +27,7 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
         const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
         const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
+        chassert(prob_space > 0);
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
@@ -86,6 +87,29 @@ String SQLBase::getDatabaseName() const
     return "d" + (db ? std::to_string(db->dname) : "efault");
 }
 
+String SQLBase::getTableName(const bool full) const
+{
+    String res;
+
+    if (full && getLakeCatalog() != LakeCatalog::None)
+    {
+        res += "test.";
+    }
+    res += "t" + std::to_string(tname);
+    return res;
+}
+
+String SQLBase::getCatalogName() const
+{
+    chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
+    if (getLakeCatalog() == LakeCatalog::None)
+    {
+        /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+        return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
+    }
+    return getDatabaseName();
+}
+
 static const constexpr String PARTITION_STR = "{_partition_id}";
 
 void SQLBase::setTablePath(RandomGenerator & rg)
@@ -98,12 +122,11 @@ void SQLBase::setTablePath(RandomGenerator & rg)
         && rg.nextSmallNumber() < 5;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        /// Set catalog first if possible
+        /// Set bucket path first if possible
         String next_bucket_path;
-        const LakeCatalog catalog = getLakeCatalog();
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (catalog != LakeCatalog::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
+        if (getLakeCatalog() != LakeCatalog::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -115,21 +138,25 @@ void SQLBase::setTablePath(RandomGenerator & rg)
         {
             integration = IntegrationCall::Azurite;
         }
-        if (isS3QueueEngine() || isAzureQueueEngine())
+
+        if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
+        {
+            const bool onSpark = integration == IntegrationCall::Dolor;
+            const String base = isOnLocal() ? "/var/lib/clickhouse/user_files/lakehouse/" : (isOnAzure() ? "/" : "");
+
+            /// Set bucket path, Spark has the warehouse concept on the path :(
+            next_bucket_path = fmt::format(
+                "{}{}{}{}{}t{}/",
+                base,
+                onSpark ? getCatalogName() : "",
+                onSpark ? "/" : "",
+                onSpark ? "test" : "",
+                onSpark ? "/" : "",
+                tname);
+        }
+        else if (isS3QueueEngine() || isAzureQueueEngine())
         {
             next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
-        }
-        else if (catalog != LakeCatalog::None)
-        {
-            next_bucket_path = fmt::format("{}/t{}/", getDatabaseName(), tname);
-        }
-        else if (isIcebergLocalEngine() || isDeltaLakeLocalEngine())
-        {
-            next_bucket_path = fmt::format("/var/lib/clickhouse/user_files/lakehouse/default/t{}/", tname);
-        }
-        else if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
-        {
-            next_bucket_path = fmt::format("t{}/", tname);
         }
         else
         {
@@ -277,19 +304,6 @@ size_t SQLTable::numberOfInsertableColumns() const
     {
         res += entry.second.canBeInserted() ? 1 : 0;
     }
-    return res;
-}
-
-String SQLTable::getTableName(const bool full) const
-{
-    String res;
-    const LakeCatalog catalog = getLakeCatalog();
-
-    if (full && catalog != LakeCatalog::None)
-    {
-        res += "test.";
-    }
-    res += "t" + std::to_string(tname);
     return res;
 }
 

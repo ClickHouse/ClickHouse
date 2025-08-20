@@ -13,8 +13,10 @@
 
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 
 namespace BuzzHouse
 {
@@ -1570,6 +1572,39 @@ bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, con
     return true;
 }
 
+bool DolorIntegration::httpPut(const String & path, const String & body)
+{
+    /// Build URI
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(sc.server_hostname);
+    uri.setPort(sc.port);
+    uri.setPath(path);
+
+    /// Build PUT request
+    Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    req.setContentType("application/json");
+    req.setContentLength(static_cast<int>(body.size()));
+
+    try
+    {
+        /// Send body
+        std::ostream & os = session.sendRequest(req);
+        os.write(body.data(), body.size());
+
+        /// Receive response
+        Poco::Net::HTTPResponse res;
+        const auto & u = session.receiveResponse(res);
+        UNUSED(u);
+        return res.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase & d)
 {
     String buf;
@@ -1593,22 +1628,15 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase
         "{{\"database_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"catalog\":\"{}\"}}",
         d.getName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
-        d.format == LakeFormat::DeltaLake ? "delta" : "iceberg",
+        d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
         catalog);
-    Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPClientSession httpsession(sc.server_hostname, sc.port);
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparkdatabase", buf);
-
-    request.set("Content-Type", "application/json");
-    httpsession.sendRequest(request);
-    const auto & u = httpsession.receiveResponse(response);
-    UNUSED(u);
-    return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+    return httpPut("/sparkdatabase", buf);
 }
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
     const Catalog * cat = nullptr;
+    const ServerCredentials & minio = fc.minio_server.value();
     SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
     SetValue * sv2 = svs->add_other_values();
     SetValue * sv3 = svs->add_other_values();
@@ -1639,17 +1667,17 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     {
         chassert(0);
     }
-    de->add_params()->set_svalue(sc.user);
-    de->add_params()->set_svalue(sc.password);
+    de->add_params()->set_svalue(minio.user);
+    de->add_params()->set_svalue(minio.password);
     sv2->set_property("warehouse");
     sv2->set_value("'" + d.getName() + "'");
     sv3->set_property("storage_endpoint");
-    sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, d.getName()));
+    sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, d.getName()));
     if (!cat->region.empty())
     {
         SetValue * sv4 = svs->add_other_values();
 
-        sv4->set_property("storage_region");
+        sv4->set_property("region");
         sv4->set_value("'" + cat->region + "'");
     }
     if (rg.nextSmallNumber() < 4)
@@ -1669,7 +1697,6 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     String buf;
     bool first = true;
     std::vector<ColumnPathChain> entries;
-    const LakeCatalog catalog = t.getLakeCatalog();
 
     for (const auto & [key, val] : t.cols)
     {
@@ -1678,13 +1705,13 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
 
-    chassert((t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine()) && (catalog == LakeCatalog::None || t.db));
+    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
         "{{\"database_name\":\"{}\",\"table_name\":\"{}\",\"storage\":\"{}\",\"format\":\"{}\",\"columns\":[",
-        catalog == LakeCatalog::None ? "default" : t.getDatabaseName(),
+        t.getCatalogName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
-        t.isAnyDeltaLakeEngine() ? "delta" : "iceberg");
+        t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
@@ -1695,15 +1722,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
         first = false;
     }
     buf += "]}";
-    Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPClientSession httpsession(sc.server_hostname, sc.port);
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/sparktable", buf);
-
-    request.set("Content-Type", "application/json");
-    httpsession.sendRequest(request);
-    const auto & u = httpsession.receiveResponse(response);
-    UNUSED(u);
-    return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+    return httpPut("/sparktable", buf);
 }
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
