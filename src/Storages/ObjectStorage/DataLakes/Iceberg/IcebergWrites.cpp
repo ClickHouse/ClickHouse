@@ -41,13 +41,11 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
-#include "Core/Block_fwd.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "Functions/CastOverloadResolver.h"
-#include "IO/WriteBufferFromString.h"
-#include "IO/WriteHelpers.h"
 #include "Interpreters/Context_fwd.h"
-#include "base/Decimal.h"
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/CastOverloadResolver.h>
+#include <IO/WriteHelpers.h>
+#include <base/Decimal.h>
 #include <Core/Range.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
@@ -103,14 +101,34 @@ extern const char iceberg_writes_cleanup[];
 namespace
 {
 
-std::optional<std::vector<uint8_t>> dumpFieldToBytes(const Field & field, DataTypePtr type)
+bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable:
         {
             if (field.isNull())
-                return std::nullopt;
+                return false;
+            return canDumpIcebergStats(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+        }
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::Int64:
+        case TypeIndex::DateTime64:
+        case TypeIndex::String:
+            return true;
+        default:
+            return false;
+    }
+}
+
+std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+        {
             return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
         }
         case TypeIndex::Int32:
@@ -146,7 +164,7 @@ std::optional<std::vector<uint8_t>> dumpFieldToBytes(const Field & field, DataTy
         }
         default:
         {
-            return std::nullopt;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not dump such stats");
         }
     }
 }
@@ -158,7 +176,7 @@ bool canWriteStatistics(
 {
     for (const auto & [field_id, stat] : statistics)
     {
-        if (!dumpFieldToBytes(stat, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]))
+        if (!canDumpIcebergStats(stat, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]))
             return false;
     }
     return true;
@@ -491,7 +509,7 @@ void generateManifestFile(
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = *dumpFieldToBytes(lower_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
+                    record.field(Iceberg::f_value) = dumpFieldToBytes(lower_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
                     lower_bounds.value().push_back(record_datum);
                 }
             }
@@ -507,7 +525,7 @@ void generateManifestFile(
                     avro::GenericDatum record_datum(schema_element);
                     auto& record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = *dumpFieldToBytes(upper_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
+                    record.field(Iceberg::f_value) = dumpFieldToBytes(upper_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
                     upper_bounds.value().push_back(record_datum);
                 }
             }
