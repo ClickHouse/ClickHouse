@@ -137,10 +137,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     if (!description.compile_sort_description || sort_description_types.empty())
         return;
 
-    bool x = true;
     for (const auto & type : sort_description_types)
     {
-        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type) || x)
+        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type))
             return;
     }
 

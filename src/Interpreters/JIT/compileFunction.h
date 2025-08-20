@@ -17,16 +17,10 @@ namespace DB
   * data is raw column data.
   * null_data is null map column raw data.
   */
-enum class ColumnType : uint32_t
-{
-    NativeNumber = 0, // Native data type, e.g. UInt64, Int32, etc.
-    String = 1, // String data type
-};
 struct ColumnData
 {
     const char * data = nullptr;
     const char * null_data = nullptr;
-    ColumnType type = ColumnType::NativeNumber; // Column data type
     const char * offset_data = nullptr; // For String type, points to offsets data
 };
 

@@ -12,6 +12,11 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
+#endif
 
 namespace DB
 {
@@ -705,6 +710,34 @@ ColumnPtr ColumnString::compress(bool force_compression) const
         });
 }
 
+#if USE_EMBEDDED_COMPILER
+bool ColumnString::isComparatorCompilable() const
+{
+    return false;
+}
+
+llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_size = b.CreateExtractValue(lhs, {1});
+    llvm::Value * rhs_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_size = b.CreateExtractValue(rhs, {1});
+
+    // Call memcmpSmallAllowOverflow15
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
+        b.getInt32Ty(),
+        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
+        false
+    );
+
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallAllowOverflow15", memcmp_func_type).getCallee()
+    );
+    
+    return b.CreateCall(memcmp_func, {lhs_ptr, lhs_size, rhs_ptr, rhs_size});
+}
+#endif
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
