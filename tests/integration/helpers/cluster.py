@@ -450,6 +450,28 @@ def extract_test_name(base_path):
     return name
 
 
+def find_binary(name):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
+        return name
+    paths = os.environ.get("PATH").split(":")
+    for path in paths:
+        bin_path = os.path.join(path, name)
+        if is_executable(bin_path):
+            return bin_path
+
+    # maybe it wasn't in PATH
+    bin_path = os.path.join("/usr/local/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+
+    raise RuntimeError(f"{name} was not found in PATH")
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -485,13 +507,13 @@ class ClickHouseCluster:
         self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
         self.server_bin_path = p.realpath(
             server_bin_path
-            or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse")
+            or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", None)
+            or find_binary("clickhouse")
         )
         self.client_bin_path = p.realpath(
             client_bin_path
-            or os.environ.get(
-                "CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse-client"
-            )
+            or os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", None)
+            or find_binary("clickhouse-client")
         )
         self.zookeeper_config_path = (
             p.join(self.base_dir, zookeeper_config_path)
