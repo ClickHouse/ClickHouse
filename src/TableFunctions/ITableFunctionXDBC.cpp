@@ -87,7 +87,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "JDBC"; }
+    const char * getStorageEngineName() const override { return "JDBC"; }
 };
 
 class TableFunctionODBC : public ITableFunctionXDBC
@@ -108,7 +108,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "ODBC"; }
+    const char * getStorageEngineName() const override { return "ODBC"; }
 };
 
 

@@ -317,6 +317,7 @@ public:
     String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
     const String & getReplicaName() const { return replica_name; }
+    const String & getReplicaPath() const { return replica_path; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
