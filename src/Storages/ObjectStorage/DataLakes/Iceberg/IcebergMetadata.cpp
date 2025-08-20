@@ -496,7 +496,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
         auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
         schema_processor.registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
-        if (snapshot->getValue<Int64>(f_snapshot_id) == relevant_snapshot_id)
+        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == relevant_snapshot_id)
         {
             successfully_found_snapshot = true;
             if (!snapshot->has(f_manifest_list))
@@ -570,7 +570,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
             if (snapshot_timestamp <= query_timestamp && snapshot_timestamp > closest_timestamp)
             {
                 closest_timestamp = snapshot_timestamp;
-                relevant_snapshot_id = snapshot->getValue<Int64>(f_snapshot_id);
+                relevant_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
             }
         }
         if (relevant_snapshot_id < 0)
@@ -767,7 +767,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto snapshot_id = snapshot->getValue<Int64>(f_snapshot_id);
+        auto snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             parents_list[snapshot_id] = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -794,7 +794,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         IcebergHistoryRecord history_record;
 
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        history_record.snapshot_id = snapshot->getValue<Int64>(f_snapshot_id);
+        history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -804,7 +804,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
-            if (snapshot_log->getValue<Int64>(f_snapshot_id) == history_record.snapshot_id)
+            if (snapshot_log->getValue<Int64>(f_metadata_snapshot_id) == history_record.snapshot_id)
             {
                 auto value = snapshot_log->getValue<std::string>(f_timestamp_ms);
                 ReadBufferFromString in(value);

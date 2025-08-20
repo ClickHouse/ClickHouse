@@ -40,12 +40,14 @@ DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
 DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
+DEFINE_ICEBERG_FIELD(added_snapshot_id);
+DEFINE_ICEBERG_FIELD(snapshot_id)
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
-DEFINE_ICEBERG_FIELD_ALIAS(snapshot_id, snapshot-id);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot - id);
 DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
 DEFINE_ICEBERG_FIELD_ALIAS(schema_id, schema-id);
