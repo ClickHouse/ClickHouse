@@ -70,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
@@ -202,7 +203,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
-            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             /// Release closed. Please use 25.4
             {"enable_json_type", false, true, "JSON data type is production-ready"},
             {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
