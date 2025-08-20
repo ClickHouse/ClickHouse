@@ -67,7 +67,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 

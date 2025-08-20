@@ -28,7 +28,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
-    extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
     extern const SettingsSeconds lock_acquire_timeout;

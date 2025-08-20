@@ -9616,10 +9616,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
 StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     if (without_data)
-    {
-        auto lock = lockParts();
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::make_unique<SnapshotData>());
-    }
 
     auto snapshot_data = std::make_unique<SnapshotData>();
 

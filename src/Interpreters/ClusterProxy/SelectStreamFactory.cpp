@@ -318,13 +318,10 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
-    QueryTreeNodePtr modified_query = query_tree;
-    auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
-
     createForShardImpl(
         shard_info,
-        query_ast,
-        modified_query,
+        queryNodeToDistributedSelectQuery(query_tree),
+        query_tree,
         main_table,
         table_func_ptr,
         std::move(context),
