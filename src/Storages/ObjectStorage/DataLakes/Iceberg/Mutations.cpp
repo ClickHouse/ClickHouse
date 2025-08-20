@@ -64,6 +64,17 @@ struct DeleteFileWriteResultWithStats
     DeleteFileStatisticsByPartitionKey statistic;
 };
 
+static Block getPositionDeleteFileSampleBlock()
+{
+    ColumnsWithTypeAndName delete_file_columns_desc;
+    delete_file_columns_desc.push_back(
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), IcebergPositionDeleteTransform::data_file_path_column_name));
+    delete_file_columns_desc.push_back(
+        ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), IcebergPositionDeleteTransform::positions_column_name));
+
+    return Block(delete_file_columns_desc);
+}
+
 DeleteFileWriteResultWithStats writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
@@ -94,12 +105,6 @@ DeleteFileWriteResultWithStats writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
-
-        ColumnsWithTypeAndName delete_file_columns_desc;
-        delete_file_columns_desc.push_back(
-            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), IcebergPositionDeleteTransform::data_file_path_column_name));
-        delete_file_columns_desc.push_back(
-            ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), IcebergPositionDeleteTransform::positions_column_name));
 
         Block block;
         while (executor.pull(block))
@@ -147,7 +152,7 @@ DeleteFileWriteResultWithStats writeDataFiles(
                         DBMS_DEFAULT_BUFFER_SIZE,
                         context->getWriteSettings());
 
-                    Block delete_file_sample_block(delete_file_columns_desc);
+                    auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
                     ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
                     std::unordered_map<String, Int64> field_ids;
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
@@ -219,8 +224,7 @@ bool writeMetadataFiles(
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
-    ChunkPartitioner & chunk_partitioner,
-    SharedHeader sample_block)
+    ChunkPartitioner & chunk_partitioner)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -284,7 +288,7 @@ bool writeMetadataFiles(
                     chunk_partitioner.getResultTypes(),
                     {delete_filename.path.path_in_metadata},
                     delete_filenames.statistic.at(partition_key),
-                    sample_block,
+                    std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
                     new_snapshot,
                     configuration->format,
                     partititon_spec,
@@ -424,7 +428,7 @@ void mutate(
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, sample_block))
+    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
     {
     }
 }
