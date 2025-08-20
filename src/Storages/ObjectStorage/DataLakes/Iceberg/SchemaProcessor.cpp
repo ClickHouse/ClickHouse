@@ -261,22 +261,25 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr
-IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
+DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(
+    const Poco::JSON::Object::Ptr & type, const String & current_full_name, TraversableInformation * traversable_information)
 {
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
         bool element_required = type->getValue<bool>("element-required");
-        auto element_type = getFieldType(type, f_element, element_required);
+        String name = Nested::concatenateName(current_full_name, "element");
+        auto element_type = getFieldType(type, f_element, element_required, name);
         return std::make_shared<DataTypeArray>(element_type);
     }
 
     if (type_name == f_map)
     {
+        String name = Nested::concatenateName(current_full_name, "key");
         auto key_type = getFieldType(type, f_key, true);
         auto value_required = type->getValue<bool>("value-required");
-        auto value_type = getFieldType(type, f_value, value_required);
+        name = Nested::concatenateName(current_full_name, "value");
+        auto value_type = getFieldType(type, f_value, value_required, name);
         return std::make_shared<DataTypeMap>(key_type, value_type);
     }
 
@@ -292,19 +295,12 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
             auto field = fields->getObject(static_cast<Int32>(i));
             element_names.push_back(field->getValue<String>(f_name));
             auto required = field->getValue<bool>(f_required);
-            if (is_subfield_of_root)
-            {
-                /// NOTE: getComplexTypeFromObject() with is_subfield_of_root==true called only from addIcebergTableSchema(), which already holds the exclusive lock
-                /// So it is OK to use TSA_SUPPRESS_WARNING_FOR_READ/TSA_SUPPRESS_WARNING_FOR_WRITE
-                Int32 schema_id = TSA_SUPPRESS_WARNING_FOR_READ(current_schema_id).value();
+            String nested_name = Nested::concatenateName(current_full_name, element_names.back());
+            element_types.push_back(getFieldType(field, f_type, required, current_full_name));
+            TSA_SUPPRESS_WARNING_FOR_WRITE( xz)
+            [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
-                (current_full_name += ".").append(element_names.back());
-                scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
-                element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>(f_id)}]
-                    = NameAndTypePair{current_full_name, element_types.back()};
-
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+            TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {

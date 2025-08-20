@@ -20,6 +20,19 @@
 namespace DB
 {
 
+struct IcebergInfoForSchema
+{
+    struct IcebergTraversableInformation
+    {
+        std::map<Int32, NameAndTypePair> clickhouse_types_by_source_ids;
+        std::map<String, Int32> clickhouse_ids_by_source_names;
+    };
+
+
+public:
+    clickhouse_table_schema
+};
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -73,9 +86,21 @@ namespace DB
  */
 class IcebergSchemaProcessor
 {
+    struct IcebergTraversableInformation
+    {
+        std::map<Int32, NameAndTypePair> clickhouse_types_by_source_ids;
+        std::map<String, Int32> clickhouse_ids_by_source_names;
+    };
+
     static std::string default_link;
 
     using Node = ActionsDAG::Node;
+
+    struct TraversableInformation
+    {
+        std::map<Int32, NameAndTypePair> clickhouse_types_by_source_ids;
+        std::map<String, Int32> clickhouse_ids_by_source_names;
+    };
 
 public:
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
@@ -97,27 +122,30 @@ public:
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
 
 private:
-    std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
-    std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
+    std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
+    std::map<Int32, IcebergInfoForSchema> iceberg_traversable_information_by_ids TSA_GUARDED_BY(mutex);
+
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
+
+    std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
-    std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
-    std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
-    DataTypePtr getFieldType(
+    static DataTypePtr getComplexTypeFromObject(
+        const Poco::JSON::Object::Ptr & type, TraversableInformation * traversable_information, const String & current_full_name);
+    static DataTypePtr getFieldType(
         const Poco::JSON::Object::Ptr & field,
         const String & type_key,
         bool required,
-        String & current_full_name = default_link,
-        bool is_subfield_of_root = false);
+        TraversableInformation * traversable_information,
+        const String & current_full_name = default_link);
 
-    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+    static bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
-    std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
+    static std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
 
     mutable SharedMutex mutex;
