@@ -1,10 +1,9 @@
-#include <optional>
-#include "Common/Exception.h"
 #include "config.h"
 
 #if USE_AVRO
 
 #include <compare>
+#include <optional>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
