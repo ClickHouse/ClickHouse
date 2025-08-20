@@ -3827,7 +3827,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
-            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
+            - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
@@ -5423,6 +5423,7 @@ class ClickHouseInstance:
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
+                    HELPERS_DIR=HELPERS_DIR,
                 )
             )
 
