@@ -108,7 +108,7 @@ bool ExpressionStep::canRemoveUnusedColumns() const
 IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     if (output_header == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
 
     const auto required_output_count = required_outputs.size();
     auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
@@ -142,7 +142,7 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
 
         for (const auto & name_and_type : *input_header)
             if (!required_inputs_set.contains(name_and_type.name))
-                actions_dag.addInput(name_and_type);
+                actions_dag.addInput(name_and_type.name, name_and_type.type);
 
         updated_actions = true;
     }
