@@ -49,6 +49,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
 #include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 #include <stack>
 
@@ -349,6 +350,51 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
 }
 
 
+template <class T, class KeyFn>
+static inline void appendUniqueBy(std::vector<T> & dst, const std::vector<T> & src, KeyFn key_fn)
+{
+    std::unordered_set<String> seen;
+    seen.reserve(dst.size() + src.size());
+    for (const auto & x : dst)
+        seen.insert(key_fn(x));
+    for (const auto & x : src)
+        if (seen.insert(key_fn(x)).second)
+            dst.push_back(x);
+}
+
+static inline String predicateKey(const JoinPredicate & p)
+{
+    // Left/right are stable (left table -> left_node, right table -> right_node),
+    // so we don’t need to canonicalize (swap)
+    return fmt::format("{}|{}|{}",
+        p.left_node.getColumnName(),
+        static_cast<int>(p.op),
+        p.right_node.getColumnName());
+}
+
+static inline String actionKey(const JoinActionRef & a)
+{
+    // Good for dedup of identical scalar filter atoms like "greater(__table1.a, 0_UInt8)"
+    return a.getColumnName();
+}
+
+JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
+{
+    JoinCondition result = lhs;
+
+    appendUniqueBy(result.predicates, rhs.predicates, [](const JoinPredicate & p) { return predicateKey(p); });
+
+    appendUniqueBy(result.left_filter_conditions, rhs.left_filter_conditions, [](const JoinActionRef & a) { return actionKey(a); });
+    appendUniqueBy(result.right_filter_conditions, rhs.right_filter_conditions, [](const JoinActionRef & a) { return actionKey(a); });
+    appendUniqueBy(result.residual_conditions, rhs.residual_conditions, [](const JoinActionRef & a) { return actionKey(a); });
+
+    result.left_filter_disjunctive |= rhs.left_filter_disjunctive;
+    result.right_filter_disjunctive |= rhs.right_filter_disjunctive;
+    result.residual_disjunctive |= rhs.residual_disjunctive;
+
+    return result;
+}
+
 void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions, bool or_pushdown = false)
 {
     if (!join_conditions.empty())
@@ -357,28 +403,11 @@ void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<J
         {
             for (const auto & condition : join_conditions)
             {
-                build_context.result_join_info.expression.condition.left_filter_conditions.insert(
-                    build_context.result_join_info.expression.condition.left_filter_conditions.end(),
-                    condition.left_filter_conditions.begin(),
-                    condition.left_filter_conditions.end());
                 build_context.result_join_info.expression.condition.left_filter_disjunctive = true;
-
-                build_context.result_join_info.expression.condition.right_filter_conditions.insert(
-                    build_context.result_join_info.expression.condition.right_filter_conditions.end(),
-                    condition.right_filter_conditions.begin(),
-                    condition.right_filter_conditions.end());
                 build_context.result_join_info.expression.condition.right_filter_disjunctive = true;
-
-                build_context.result_join_info.expression.condition.residual_conditions.insert(
-                    build_context.result_join_info.expression.condition.residual_conditions.end(),
-                    condition.residual_conditions.begin(),
-                    condition.residual_conditions.end());
                 build_context.result_join_info.expression.condition.residual_disjunctive = true;
 
-                build_context.result_join_info.expression.condition.predicates.insert(
-                    build_context.result_join_info.expression.condition.predicates.end(),
-                    condition.predicates.begin(),
-                    condition.predicates.end());
+                build_context.result_join_info.expression.condition = concatConditions(build_context.result_join_info.expression.condition, condition);
             }
             build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
         }
@@ -411,16 +440,6 @@ static bool hasEquiConditions(const JoinCondition & condition)
 }
 
 
-JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
-{
-    JoinCondition result = lhs;
-    result.predicates.insert(result.predicates.end(), rhs.predicates.begin(), rhs.predicates.end());
-    result.left_filter_conditions.insert(result.left_filter_conditions.end(), rhs.left_filter_conditions.begin(), rhs.left_filter_conditions.end());
-    result.right_filter_conditions.insert(result.right_filter_conditions.end(), rhs.right_filter_conditions.begin(), rhs.right_filter_conditions.end());
-    result.residual_conditions.insert(result.residual_conditions.end(), rhs.residual_conditions.begin(), rhs.residual_conditions.end());
-    return result;
-}
-
 static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinCondition> & lhs, const std::vector<JoinCondition> & rhs)
 {
     std::vector<JoinCondition> result;
@@ -429,14 +448,6 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
         for (const auto & lhs_clause : lhs)
         {
             result.emplace_back(concatConditions(lhs_clause, rhs_clause));
-
-            auto & merged = result.back();
-            merged.left_filter_disjunctive =
-                    lhs_clause.left_filter_disjunctive || rhs_clause.left_filter_disjunctive;
-            merged.right_filter_disjunctive =
-                    lhs_clause.right_filter_disjunctive || rhs_clause.right_filter_disjunctive;
-            merged.residual_disjunctive =
-                    lhs_clause.residual_disjunctive || rhs_clause.residual_disjunctive;
         }
     }
     return result;

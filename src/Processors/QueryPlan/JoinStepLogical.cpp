@@ -274,19 +274,14 @@ JoinActionRef concatConditionsWithFunction(
 
 JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
 {
-    LOG_TRACE(getLogger("DEBUGGING!"), "dag: {}", actions_dag->dumpDAG());
+    FunctionOverloadResolverPtr operator_function = nullptr;
+
     if (use_or_semantics)
-    {
-        LOG_TRACE(getLogger("DEBUGGING!"), "1");
-        FunctionOverloadResolverPtr or_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-        return concatConditionsWithFunction(conditions, actions_dag, or_function);
-    }
+        operator_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
     else
-    {
-        LOG_TRACE(getLogger("DEBUGGING!"), "2");
-        FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        return concatConditionsWithFunction(conditions, actions_dag, and_function);
-    }
+        operator_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+    return concatConditionsWithFunction(conditions, actions_dag, operator_function);
 }
 
 JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, bool use_or_semantics = false)
@@ -623,29 +618,6 @@ JoinPtr JoinStepLogical::convertToPhysical(
         }
     }
 
-    const bool left_filter_is_disjunction =
-        join_expression.condition.left_filter_disjunctive;
-
-    if (auto left_pre_filter_condition =
-            concatMergeConditions(join_expression.condition.left_filter_conditions,
-                                   expression_actions.left_pre_join_actions,
-                                   left_filter_is_disjunction))
-    {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-    }
-
-
-    const bool right_filter_is_disjunction =
-        join_expression.condition.right_filter_disjunctive;
-
-    if (auto right_pre_filter_condition =
-            concatMergeConditions(join_expression.condition.right_filter_conditions,
-                                   expression_actions.right_pre_join_actions,
-                                   right_filter_is_disjunction))
-    {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-    }
-
     if (join_info.strictness == JoinStrictness::Asof)
     {
         if (!join_expression.disjunctive_conditions.empty())
@@ -810,46 +782,26 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
 
     auto & join_expression = join_info.expression;
 
-    [[maybe_unused]] bool disjunctive_pushdown = !join_expression.condition.left_filter_disjunctive || !join_expression.condition.right_filter_disjunctive;
+    bool disjunctive_pushdown = join_expression.condition.left_filter_disjunctive || join_expression.condition.right_filter_disjunctive;
 
     if (!canPushDownFromOn(join_info, side))
         return {};
 
-    for (auto & condition : join_expression.condition.left_filter_conditions)
-        LOG_DEBUG(getLogger("getFilterActions 1"), "condition: {}", condition.getColumnName()); // For now, here is only first filter column
-
-    for (auto & condition : join_expression.condition.right_filter_conditions)
-        LOG_DEBUG(getLogger("getFilterActions 2"), "condition: {}", condition.getColumnName());
-
     const ActionsDAGPtr & actions_dag = side == JoinTableSide::Left ? expression_actions.left_pre_join_actions : expression_actions.right_pre_join_actions;
     std::vector<JoinActionRef> & conditions = side == JoinTableSide::Left ? join_expression.condition.left_filter_conditions : join_expression.condition.right_filter_conditions;
-
-    LOG_DEBUG(getLogger("getFilterActions 4"), "actions_dag: {}", actions_dag->dumpDAG());
-    if (auto filter_condition = concatMergeConditions(conditions, actions_dag))
+    if (auto filter_condition = concatMergeConditions(conditions, actions_dag, disjunctive_pushdown))
     {
         filter_column_name = filter_condition.getColumnName();
 
-        LOG_DEBUG(getLogger("getFilterActions 5"), "filter_column_name: {}", filter_column_name);
-        for (auto & condition : conditions)
-            LOG_DEBUG(getLogger("getFilterActions 6"), "condition: {}", condition.getColumnName());
-        LOG_DEBUG(getLogger("getFilterActions 7"), "actions_dag: {}", actions_dag->dumpDAG());
-
-        // if (!disjunctive_pushdown)
-            conditions.clear(); // For disjunctions pushdown, we should not clear join clauses.
+        conditions.clear();
 
         ActionsDAG new_dag(actions_dag->getResultColumns());
         new_dag.getOutputs() = new_dag.getInputs();
 
-        LOG_DEBUG(getLogger("getFilterActions 8"), "new_dag: {}", new_dag.dumpDAG());
-
         ActionsDAG result = std::move(*actions_dag);
         *actions_dag = std::move(new_dag);
 
-        LOG_DEBUG(getLogger("getFilterActions 9"), "actions_dag: {}", actions_dag->dumpDAG());
-        LOG_DEBUG(getLogger("getFilterActions 10"), "result: {}", result.dumpDAG());
-
         updateInputHeader(std::make_shared<const Block>(result.getResultColumns()), side == JoinTableSide::Left ? 0 : 1);
-        LOG_DEBUG(getLogger("getFilterActions 11"), "result: {}", result.dumpDAG());
 
         return result;
     }
