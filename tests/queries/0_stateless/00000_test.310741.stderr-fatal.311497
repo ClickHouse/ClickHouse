@@ -1,0 +1,174 @@
+==311497==AddressSanitizer: failed to intercept 'preadv'
+==311497==AddressSanitizer: failed to intercept 'sscanf'
+==311497==AddressSanitizer: failed to intercept '__isoc99_vsscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_scanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_sscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_fscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_vscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_vsscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_vfscanf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_printf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_sprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_snprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_fprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_vprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_vsprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_vsnprintf'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc99_vfprintf'
+==311497==AddressSanitizer: failed to intercept 'glob'
+==311497==Registered root region at 0x7aed31000f40 of size 64
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31000f40 of size 64
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__b64_ntop'
+==311497==Registered root region at 0x7aed31000f40 of size 64
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31000f40 of size 64
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__b64_pton'
+==311497==AddressSanitizer: failed to intercept 'posix_spawnp'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_strtoimax'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_strtoumax'
+==311497==Registered root region at 0x7aed30e016e0 of size 96
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed30e016e0 of size 96
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept 'pthread_mutexattr_getrobust_np'
+==311497==AddressSanitizer: failed to intercept 'pthread_setname_np'
+==311497==AddressSanitizer: failed to intercept 'pthread_getname_np'
+==311497==Registered root region at 0x7aed31000f40 of size 64
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31000f40 of size 64
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept 'xdr_quad_t'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept 'xdr_u_quad_t'
+==311497==Registered root region at 0x7aed31000f40 of size 64
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31000f40 of size 64
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept 'xdr_destroy'
+==311497==AddressSanitizer: failed to intercept 'dlopen'
+==311497==AddressSanitizer: failed to intercept 'dlclose'
+==311497==AddressSanitizer: failed to intercept 'timerfd_settime'
+==311497==AddressSanitizer: failed to intercept 'timerfd_gettime'
+==311497==AddressSanitizer: failed to intercept 'eventfd_read'
+==311497==AddressSanitizer: failed to intercept 'eventfd_write'
+==311497==AddressSanitizer: failed to intercept 'getrandom'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_strtol'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__isoc23_strtoll'
+==311497==AddressSanitizer: failed to intercept '__longjmp_chk'
+==311497==Registered root region at 0x7aed31000f40 of size 64
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31000f40 of size 64
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__cxa_throw'
+==311497==Registered root region at 0x7aed30e016e0 of size 96
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed30e016e0 of size 96
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '__cxa_rethrow_primary_exception'
+==311497==Registered root region at 0x7aed31601310 of size 80
+==311497==Registered root region at 0x7aed312007a0 of size 32
+==311497==Unregistered root region at 0x7aed31601310 of size 80
+==311497==Unregistered root region at 0x7aed312007a0 of size 32
+==311497==AddressSanitizer: failed to intercept '_Unwind_RaiseException'
+==311497==AddressSanitizer: libc interceptors initialized
+|| `[0x10007fff8000, 0x7fffffffffff]` || HighMem    ||
+|| `[0x02008fff7000, 0x10007fff7fff]` || HighShadow ||
+|| `[0x00008fff7000, 0x02008fff6fff]` || ShadowGap  ||
+|| `[0x00007fff8000, 0x00008fff6fff]` || LowShadow  ||
+|| `[0x000000000000, 0x00007fff7fff]` || LowMem     ||
+MemToShadow(shadow): 0x00008fff7000 0x000091ff6dff 0x004091ff6e00 0x02008fff6fff
+redzone=16
+max_redzone=2048
+quarantine_size_mb=256M
+thread_local_quarantine_size_kb=1024K
+malloc_context_size=10
+SHADOW_SCALE: 3
+SHADOW_GRANULARITY: 8
+SHADOW_OFFSET: 0x00007fff8000
+==311497==Installed the sigaction for signal 11
+==311497==Installed the sigaction for signal 7
+==311497==Installed the sigaction for signal 8
+==311497==T0: FakeStack created: 0x7aed2faf7000 -- 0x7aed30600000 stack_size_log: 20; mmapped 11300K, noreserve=0 
+==311497==T0: stack [0x7fff4bc3f000,0x7fff4c43f000) size 0x800000; local=0x7fff4c439a24
+==311497==AddressSanitizer Init done
+==311497==__lsan_ignore_object(): ignoring heap object at 0x50300005bb40
+==311497==T1: FakeStack created: 0x7aed2d3f3000 -- 0x7aed2defc000 stack_size_log: 20; mmapped 11300K, noreserve=0 
+==311497==T1: stack [0x7aed2defd000,0x7aed2e6f4a40) size 0x7f7a40; local=0x7aed2e6f48b4
