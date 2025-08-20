@@ -1,3 +1,3 @@
 -- Tags: no-fasttest
 
-SELECT sum(id), count(name) FROM icebergS3(s3_conn, file_name = 'deletes_db/eq_deletes_table');
+SELECT sum(id), count(name) FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table');
