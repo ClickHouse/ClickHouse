@@ -245,12 +245,12 @@ std::vector<uint32_t> GinFilter::getIndices(
         if (rowid_range.range_start > full_end)
             break;
 
-        UInt32 start = std::max({rowid_range.range_start, full_start});
-        UInt32 end = std::min({rowid_range.range_end, full_end});
+        const UInt32 start = std::max(rowid_range.range_start, full_start);
+        const UInt32 end = std::min(rowid_range.range_end + 1, full_end);
         chassert(start <= end);
 
         GinIndexPostingsList range_matches;
-        range_matches.addRangeClosed(start, end);
+        range_matches.addRange(start, end);
 
         for (const auto & term_postings : *postings_cache)
         {
@@ -259,10 +259,10 @@ std::vector<uint32_t> GinFilter::getIndices(
             auto container_it = container.find(rowid_range.segment_id);
 
             if (container_it == container.cend()
-                || container_it->second->maximum() < rowid_range.range_start
-                || container_it->second->minimum() > rowid_range.range_end)
+                || container_it->second->maximum() < start
+                || container_it->second->minimum() > end)
             {
-                range_matches.removeRangeClosed(rowid_range.range_start, rowid_range.range_end);
+                range_matches.removeRange(start, end);
                 break;
             }
 

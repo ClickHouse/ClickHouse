@@ -128,7 +128,10 @@ class FunctionSearchTextIndex : public FunctionsStringSearchBase
             while (*it < match_offset)
                 std::advance(it, 1);
 
-            chassert(*it <= match_offset);
+            // Entry not in requested offsets (there is a hole in offsets)
+            if (*it > match_offset)
+                continue;
+
             chassert(it != end_it);
 
             const size_t idx = std::distance(offsets.begin(), it);
@@ -254,7 +257,7 @@ public:
                     continue;
 
                 size_t end = offset;
-                for (size_t next_idx = idx; ++next_idx < input_rows_count;)
+                for (size_t next_idx = idx + 1; next_idx < input_rows_count; ++next_idx)
                 {
                     size_t next_offset = col_part_offset_vector->getElement(next_idx);
                     if (next_offset > mark_end)
@@ -263,6 +266,7 @@ public:
                     end = next_offset;
                     idx = next_idx;
                 }
+                chassert(end <= last_row);
 
                 const size_t current_index_mark = mark / index_granularity;
 
