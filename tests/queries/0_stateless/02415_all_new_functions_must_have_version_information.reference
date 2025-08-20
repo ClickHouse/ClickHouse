@@ -41,7 +41,6 @@ JSON_VALUE
 MACNumToString
 MACStringToNum
 MACStringToOUI
-URLHash
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -61,7 +60,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
 appendTrailingCharIfAbsent
 ascii
@@ -83,8 +81,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
-cityHash64
 compareSubstrings
 concat
 concatAssumeInjective
@@ -201,9 +197,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 extractTextFromHTML
@@ -211,8 +204,6 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 factorial
-farmFingerprint64
-farmHash64
 file
 filesystemAvailable
 filesystemCapacity
@@ -224,7 +215,6 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 flattenTuple
-floor
 format
 formatQuery
 formatQueryOrNull
@@ -241,7 +231,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fuzzBits
 generateRandomStructure
 generateSerialID
 generateUUIDv4
@@ -275,7 +264,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hiveHash
 hop
 hopEnd
 hopStart
@@ -303,8 +291,6 @@ isIPv6String
 isValidUTF8
 jaroSimilarity
 jaroWinklerSimilarity
-javaHash
-javaHashUTF16LE
 joinGet
 joinGetOrNull
 left
@@ -329,7 +315,6 @@ mapSubtract
 mapUpdate
 match
 materialize
-metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -366,7 +351,6 @@ ngramSearch
 ngramSearchCaseInsensitive
 ngramSearchCaseInsensitiveUTF8
 ngramSearchUTF8
-ngrams
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -448,25 +432,6 @@ queryID
 queryString
 queryStringAndFragment
 radians
-rand
-rand64
-randBernoulli
-randBinomial
-randCanonical
-randChiSquared
-randConstant
-randExponential
-randFisherF
-randLogNormal
-randNegativeBinomial
-randNormal
-randPoisson
-randStudentT
-randUniform
-randomFixedString
-randomPrintableASCII
-randomString
-randomStringUTF8
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -517,12 +482,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -539,12 +498,6 @@ sigmoid
 sign
 sin
 sinh
-sipHash128
-sipHash128Keyed
-sipHash128Reference
-sipHash128ReferenceKeyed
-sipHash64
-sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime
@@ -555,11 +508,6 @@ sparseGrams
 sparseGramsHashes
 sparseGramsHashesUTF8
 sparseGramsUTF8
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 startsWithUTF8
@@ -714,7 +662,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-tokens
 topLevelDomain
 topLevelDomainRFC
 transactionID
@@ -726,7 +673,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd
@@ -760,9 +706,5 @@ visibleWidth
 widthBucket
 windowID
 wkt
-wyHash64
 xor
-xxHash32
-xxHash64
-xxh3
 zookeeperSessionUptime

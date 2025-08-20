@@ -1,7 +1,9 @@
-#include <limits>
+#include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -9,6 +11,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -27,8 +30,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Interpreters/StorageID.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
@@ -44,7 +47,6 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool allow_experimental_insert_into_iceberg;
 }
 
 namespace ErrorCodes
@@ -53,7 +55,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -457,27 +458,8 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    /// Delta lake does not support writes yet.
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-    {
-#if USE_AVRO
-        if (local_context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
-        {
-            return std::make_shared<IcebergStorageSink>(
-                object_storage,
-                configuration,
-                format_settings,
-                sample_block,
-                local_context,
-                catalog,
-                storage_id);
-        }
-        else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Insert into iceberg is experimental. "
-                "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
-#endif
-    }
+        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 
@@ -500,6 +482,19 @@ SinkToStoragePtr StorageObjectStorage::write(
         format_settings,
         sample_block,
         local_context);
+}
+
+bool StorageObjectStorage::optimize(
+    const ASTPtr & /*query*/,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /* deduplicate_by_columns */,
+    bool /*cleanup*/,
+    [[maybe_unused]] ContextPtr context)
+{
+    return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(
@@ -644,5 +639,34 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
+
+void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+}
+
+void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    configuration->checkMutationIsPossible(commands);
+}
+
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+{
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    params.apply(new_metadata, context);
+
+    configuration->alter(params, context);
+
+    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
+}
+
+void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
+{
+    configuration->checkAlterIsPossible(commands);
+}
+
 
 }

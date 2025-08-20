@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
-        , condition(other.condition)
+        , query_condition_cache_writer(other.query_condition_cache_writer)
     {}
 
     String getName() const override { return "Filter"; }
@@ -35,7 +36,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    void setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -60,7 +61,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 };
 
 }
