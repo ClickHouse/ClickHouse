@@ -19,11 +19,14 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Storages/AlterCommands.h>
 
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -395,6 +398,57 @@ void mutate(
 
     while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
     {
+    }
+}
+
+void alter(
+    const AlterCommands & params,
+    ContextPtr context,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration)
+{
+    if (params.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
+
+    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    auto log = getLogger("IcebergMutations");
+    auto [last_version, metadata_path, compression_method]
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
+
+    filename_generator.setVersion(last_version + 1);
+    filename_generator.setCompressionMethod(compression_method);
+
+    auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+
+    auto metadata_json_generator = MetadataGenerator(metadata);
+
+    switch (params[0].type)
+    {
+        case AlterCommand::Type::ADD_COLUMN:
+            metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
+            break;
+        case AlterCommand::Type::DROP_COLUMN:
+            metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
+            break;
+        case AlterCommand::Type::MODIFY_COLUMN:
+            metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
+    }
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+    std::string json_representation = removeEscapedSlashes(oss.str());
+
+    auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+    auto cleanup = [] {};
+    Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
+
+    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    {
+        auto filename_version_hint = filename_generator.generateVersionHint();
+        Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
     }
 }
 
