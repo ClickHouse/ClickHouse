@@ -67,6 +67,9 @@ returns
    └────┴─────────┘
 ```
 
+Further example datasets that use approximate vector search:
+- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
+
 ## Approximate vector search {#approximate-nearest-neighbor-search}
 
 <BetaBadge/>
