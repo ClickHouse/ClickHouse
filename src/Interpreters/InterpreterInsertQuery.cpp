@@ -9,8 +9,6 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
-#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -81,7 +79,6 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
-    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace MergeTreeSetting
