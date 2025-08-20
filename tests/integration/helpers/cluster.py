@@ -74,10 +74,10 @@ def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
         return path
-    path = "/etc/clickhouse-server/"
+    path = p.join(CLICKHOUSE_ROOT_DIR, "programs/server")
     if p.exists(p.join(path, "config.xml")):
         return path
-    path = p.join(CLICKHOUSE_ROOT_DIR, "programs/server")
+    path = "/etc/clickhouse-server/"
     if p.exists(p.join(path, "config.xml")):
         return path
     raise RuntimeError("Cannot find config.xml. Please set CLICKHOUSE_TESTS_BASE_CONFIG_DIR")
