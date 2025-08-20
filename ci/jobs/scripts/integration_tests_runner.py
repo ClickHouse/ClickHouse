@@ -805,7 +805,7 @@ class ClickhouseIntegrationTestsRunner:
                     median(test_duration_ms) AS test_duration_ms
                 FROM checks
                 WHERE (check_name LIKE 'Integration%')
-                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(7)))
+                    AND (check_start_time >= ({start_time_filter} - toIntervalDay(30)))
                     AND (check_start_time <= ({start_time_filter} - toIntervalHour(2)))
                     AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
                     AND (test_name != '')
@@ -1029,8 +1029,6 @@ class ClickhouseIntegrationTestsRunner:
         except Exception as e:
             logging.error("Can't split tests by execution time: %s", e)
             logging.error(e)
-            # TODO remove after testing
-            raise
 
         # Fallback in case play server doesn't work
         # Split tests in groups by number of tests in group
