@@ -312,7 +312,7 @@ Currently, this is an experimental feature, so you first need to enable it:
 SET allow_experimental_insert_into_iceberg = 1;
 ```
 
-### Creating table {#writes-into-iceberg-table}
+### Creating table {#create-iceberg-table}
 
 To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
 
@@ -363,7 +363,7 @@ NOTE: If you want to read your tables in the future with other Iceberg engines (
 This is because Spark reads these files by parquet field-ids, while ClickHouse does not currently support writing field-ids when these flags are enabled.
 We plan to fix this behavior in the future.
 
-### Example {#example-iceberg-writes-insert}
+### Example {#example-iceberg-writes-delete}
 
 ```sql
 ALTER TABLE iceberg_writes_example DELETE WHERE x = 'Pavel';
@@ -378,7 +378,7 @@ x: Ivanov
 y: 993
 ```
 
-### Schema evolution {#example-iceberg-writes-evolution}
+### Schema evolution {#iceberg-writes-schema-evolution}
 
 ClickHouse allows you to add, drop, or modify columns with simple types (non-tuple, non-array, non-map).
 
@@ -441,7 +441,7 @@ x: Ivanov
 y: 993
 ```
 
-### Compaction
+### Compaction {#iceberg-writes-compaction}
 
 ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
 
@@ -462,7 +462,7 @@ x: Ivanov
 y: 993
 ```
 
-## Table with catalogs
+## Table with catalogs {#iceberg-writes-catalogs}
 
 All the write features described above are also available with REST and Glue catalogs.
 To use them, create a table with the `IcebergS3` engine and provide the necessary settings:
