@@ -221,7 +221,7 @@ bool UnityCatalog::tryGetTableMetadata(
                 catch (...)
                 {
                     /// Non-delta tables can have very weird datatypes in schemas like https://docs.databricks.com/aws/en/sql/language-manual/data-types/null-type
-                    /// We still don't know how to read them so we can ignore absense of schema and return weird output for SHOW CREATE TABLE.
+                    /// We still don't know how to read them so we can ignore absence of schema and return weird output for SHOW CREATE TABLE.
                     if (!result.isDefaultReadableTable())
                     {
                         LOG_DEBUG(
