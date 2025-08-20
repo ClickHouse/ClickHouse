@@ -34,8 +34,8 @@ public:
 
         const String & function_name = function_node->getFunctionName();
         const bool is_like = (function_name == "like");
-        const bool is_ilike = (function_name == "ilike");
-        if (!(is_like || is_ilike))
+        // todo: ilike
+        if (!is_like)
             return;
 
         auto & args = function_node->getArguments().getNodes();
@@ -55,10 +55,6 @@ public:
 
         if (prefix.empty())
             return;
-
-        /// Convert to lowercase for case-insensitive operations
-        if (is_ilike)
-            Poco::toLowerInPlace(prefix);
 
         /// Replace the node with the AND condition
         auto and_function = std::make_shared<FunctionNode>("and");
@@ -81,10 +77,6 @@ public:
         }
         else
         {
-            /// Convert to lowercase for case-insensitive operations
-            if (is_ilike)
-                Poco::toLowerInPlace(right_bound);
-
             /// Set new function arguments
             auto right_bound_constant = std::make_shared<ConstantNode>(right_bound);
             auto lt_function = std::make_shared<FunctionNode>("less");

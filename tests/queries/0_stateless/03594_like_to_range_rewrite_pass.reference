@@ -36,7 +36,7 @@ WHERE name LIKE '%'
 7
 SELECT *
 FROM test_like_rewrite
-WHERE (name >= 'app') AND (name < 'apq')
+WHERE (LOWER(name) >= 'app') AND (LOWER(name) < 'apq')
 3
 SELECT *
 FROM test_like_rewrite

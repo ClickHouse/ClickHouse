@@ -32,7 +32,7 @@ SELECT count() FROM test_like_rewrite WHERE name LIKE 'test%';
 EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE category LIKE 'fruit%';
 SELECT count() FROM test_like_rewrite WHERE category LIKE 'fruit%';
 
--- Test NOT LIKE with perfect prefix - should be rewritten
+-- Test NOT LIKE with perfect prefix - should be rewritten (TODO)
 EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 SELECT count() FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 
@@ -55,7 +55,7 @@ SELECT count() FROM test_like_rewrite WHERE name LIKE 'test';
 EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE '%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE '%';
 
--- Test case-insensitive ILIKE with perfect prefix - should be rewritten
+-- Test case-insensitive ILIKE with perfect prefix - should be rewritten (TODO)
 EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name ILIKE 'APP%';
 SELECT count() FROM test_like_rewrite WHERE name ILIKE 'APP%';
 
