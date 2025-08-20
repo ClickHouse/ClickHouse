@@ -26,6 +26,11 @@
 
 #if USE_AVRO
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace DB::Iceberg
 {
 
