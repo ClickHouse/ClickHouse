@@ -32,6 +32,7 @@ CREATE TABLE nnnb ( x UInt64, t Nested(t Nested(t Nested(t Nested(t UInt32, s St
 INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 
 SET enable_analyzer = 1;
+SET optimize_functions_to_subcolumns = 1;
 
 {% for join_use_nulls in [0, 1] -%}
 
