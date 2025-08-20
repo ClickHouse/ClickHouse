@@ -1403,10 +1403,10 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 #### schema_inference_make_columns_nullable ${#schema-inference-make-columns-nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability. Possible values:
- * 0 - the inferred type will never be `Nullable`,
- * 1 - all inferred types will be `Nullable`,
- * 2 or 'auto' - for text formats, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference; for strongly-typed formats (Parquet, ORC, Arrow), nullability information is taken from file metadata,
- * 3 - for text formats, use `Nullable`; for strongly-typed formats, use file metadata.
+* 0 - the inferred type will never be `Nullable`,
+* 1 - all inferred types will be `Nullable`,
+* 2 or 'auto' - for text formats, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference; for strongly-typed formats (Parquet, ORC, Arrow), nullability information is taken from file metadata,
+* 3 - for text formats, use `Nullable`; for strongly-typed formats, use file metadata.
 
 Default: 3.
 
