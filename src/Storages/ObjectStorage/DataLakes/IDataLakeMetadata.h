@@ -12,6 +12,7 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/AlterCommands.h>
 
 namespace DataLake
 {
@@ -112,6 +113,9 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
+
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
 
 protected:
     virtual ObjectIterator createKeysIterator(
