@@ -67,8 +67,7 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 llvm::StructType * buildColumnDataLLVMStruct(llvm::IRBuilderBase & b)
 {
     auto * char_ptr_type = b.getInt8Ty()->getPointerTo();
-    auto * column_type_enum = b.getInt32Ty();
-    return llvm::StructType::get(char_ptr_type, char_ptr_type, column_type_enum, char_ptr_type);
+    return llvm::StructType::get(char_ptr_type, char_ptr_type, char_ptr_type);
 }
 
 static void compileFunction(llvm::Module & module, const IFunctionBase & function)
@@ -593,10 +592,11 @@ static void compileSortDescription(llvm::Module & module,
 
         const auto & sort_description = description[i];
         const auto & column_type = sort_description_types[i];
+        auto nested_column_type = removeNullable(column_type);
 
         auto dummy_column = column_type->createColumn();
 
-        auto * column_native_type = toNativeType(b, removeNullable(column_type));
+        auto * column_native_type = toNativeType(b, nested_column_type);
         if (!column_native_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No native type for column type {}", column_type->getName());
 
