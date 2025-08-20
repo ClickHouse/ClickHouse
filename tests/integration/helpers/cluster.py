@@ -470,6 +470,11 @@ def find_binary(name):
     if is_executable(bin_path):
         return bin_path
 
+    # Default binary path if CLICKHOUSE_ROOT_DIR contains build
+    bin_path = os.path.join(CLICKHOUSE_ROOT_DIR, f"build/programs/{name}")
+    if is_executable(bin_path):
+        return bin_path
+
     raise RuntimeError(f"{name} was not found in PATH")
 
 class ClickHouseCluster:
