@@ -30,7 +30,6 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
-#include <iostream>
 
 namespace DB
 {
@@ -38,6 +37,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
+    extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
 }
 
 namespace ErrorCodes
@@ -187,10 +187,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
-    if (storage->hasExternalDynamicMetadata())
-    {
-        storage->updateExternalDynamicMetadata(context);
-    }
+    storage->updateExternalDynamicMetadataIfExists(context);
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -560,17 +557,46 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
+        /// Here we try to create Nested from Array columns with the `identifier` prefix.
+        /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
+        /// we resolve `x` into Nested(a String, b String).
+
         QueryTreeNodes nested_column_nodes;
         DataTypes nested_types;
         Array nested_names_array;
 
+        bool allow_compound = scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
+
         for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
         {
-            Identifier column_name_identifier_without_last_part(column_name);
-            auto column_name_identifier_last_part = column_name_identifier_without_last_part.getParts().back();
-            column_name_identifier_without_last_part.popLast();
+            if (table_expression_data.subcolumn_names.contains(column_name))
+                continue;
 
-            if (identifier_without_column_qualifier.getFullName() != column_name_identifier_without_last_part.getFullName())
+            Identifier column_identifier(column_name);
+            IdentifierView suffix(column_identifier);
+            size_t prefix_size = identifier_without_column_qualifier.getPartsSize();
+
+            for (const auto & part : identifier_without_column_qualifier.getParts())
+            {
+                if (suffix.empty() || part != suffix.front())
+                    break;
+
+                suffix.popFirst();
+            }
+
+            if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
+                continue;
+
+            /// Ignore compound identifiers because of the compatibility setting.
+            if (!allow_compound && suffix.getPartsSize() > 1)
+                continue;
+
+            /// FIXME: we can resulve an identifier with a few components as well, e.g.
+            /// for `x.b.first Array(Array(String))` and `x.b.second Array(Array(String))`
+            /// identifier `x.b` can be resolved into `Array(Nested(first String), second String))`.
+            /// But for now, nested functions does not support the inner nesting.
+            /// So, we will get the incorrect result `Nested(first Array(String)), second Array(String))`.
+            if (prefix_size != 1)
                 continue;
 
             auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
@@ -578,14 +604,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
                 continue;
 
             const auto & column_node = column_node_it->second;
-            const auto & column_type = column_node->getColumnType();
-            const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
-            if (!column_type_array)
+            auto column_type = column_node->getColumnType();
+
+            for (size_t i = 0; i < prefix_size; ++i)
+            {
+
+                const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
+                if (column_type_array)
+                    column_type = column_type_array->getNestedType();
+                else
+                    column_type = nullptr;
+            }
+
+            if (!column_type)
                 continue;
 
             nested_column_nodes.push_back(column_node);
-            nested_types.push_back(column_type_array->getNestedType());
-            nested_names_array.push_back(Field(std::move(column_name_identifier_last_part)));
+            nested_types.push_back(column_type);
+            nested_names_array.push_back(suffix.getFullName());
         }
 
         if (!nested_types.empty())
@@ -916,6 +952,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
+
+        if (!left_resolved_identifier && !right_resolved_identifier)
+            return {};
 
         return {
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,

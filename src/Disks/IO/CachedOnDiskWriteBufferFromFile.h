@@ -33,7 +33,8 @@ public:
         size_t reserve_space_lock_wait_timeout_milliseconds_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
-        const String & source_path_);
+        const String & source_path_,
+        bool is_distributed_cache_);
 
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
@@ -65,6 +66,7 @@ private:
     std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const String source_path;
+    const bool is_distributed_cache;
 
     FileSegmentsHolderPtr file_segments;
 
@@ -127,6 +129,7 @@ private:
     const FileCacheUserInfo user;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
     const bool throw_on_error_from_cache;
+    const bool is_distributed_cache;
 
     size_t current_download_offset = 0;
     bool cache_in_error_state_or_disabled = false;

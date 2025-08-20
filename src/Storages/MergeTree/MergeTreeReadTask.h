@@ -1,13 +1,14 @@
 #pragma once
 
+#include <vector>
 #include <boost/core/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
+#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
 namespace DB
 {
@@ -53,15 +54,16 @@ struct MergeTreeReadTaskColumns
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
     std::vector<NamesAndTypesList> pre_columns;
+    /// Column names to read from patch parts.
+    std::vector<NamesAndTypesList> patch_columns;
 
     String dump() const;
+    Names getAllColumnNames() const;
     void moveAllColumnsFromPrewhere();
 };
 
 struct MergeTreeReadTaskInfo
 {
-    bool hasLightweightDelete() const;
-
     /// Data part which should be read while performing this task
     DataPartPtr data_part;
     /// Parent part of the projection part
@@ -76,6 +78,8 @@ struct MergeTreeReadTaskInfo
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Patches that should be applied for part.
+    PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
@@ -86,7 +90,9 @@ struct MergeTreeReadTaskInfo
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
     /// Cache of the columns prefixes for this part.
-    DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
+    DeserializationPrefixesCachePtr deserialization_prefixes_cache;
+    /// Extra info for optimizations - exact row processing, calculated virtual columns.
+    RangesInDataPartReadHints read_hints;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -100,6 +106,7 @@ public:
     {
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
+        PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
         ValueSizeMap value_size_map{};
@@ -110,6 +117,7 @@ public:
     {
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
+        MergeTreePatchReaders patches;
     };
 
     struct BlockSizeParams
@@ -134,6 +142,7 @@ public:
         MergeTreeReadTaskInfoPtr info_,
         Readers readers_,
         MarkRanges mark_ranges_,
+        std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
@@ -151,7 +160,7 @@ public:
 
     Readers releaseReaders() { return std::move(readers); }
 
-    static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
+    static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
     static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
@@ -164,11 +173,14 @@ private:
     /// May be reused and released to the next task.
     Readers readers;
 
-    /// Range readers chain to read mark_ranges from data_part
+    /// Range readers chain to read mark_ranges from data_part.
     MergeTreeReadersChain readers_chain;
 
-    /// Ranges to read from data_part
+    /// Ranges to read from data_part.
     MarkRanges mark_ranges;
+
+    /// Ranges to read from patch parts.
+    std::vector<MarkRanges> patches_mark_ranges;
 
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;

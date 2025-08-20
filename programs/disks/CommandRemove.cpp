@@ -1,6 +1,6 @@
 #include <Interpreters/Context.h>
-#include "Common/Exception.h"
-#include "ICommand.h"
+#include <Common/Exception.h>
+#include <ICommand.h>
 #include <Common/logger_useful.h>
 
 namespace DB

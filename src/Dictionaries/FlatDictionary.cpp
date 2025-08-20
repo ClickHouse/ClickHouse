@@ -1,4 +1,5 @@
-#include "FlatDictionary.h"
+#include <memory>
+#include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
@@ -480,10 +481,10 @@ void FlatDictionary::updateData()
     else
     {
         auto pipeline(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::Simple>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipeline));
+            std::move(pipeline)));
     }
 
     if (update_field_loaded_block)

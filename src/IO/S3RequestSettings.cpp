@@ -4,13 +4,24 @@
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
 #include <IO/S3RequestSettings.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
 #include <Common/formatReadable.h>
+#include <Common/ProfileEvents.h>
 
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerSleepMicroseconds;
+    extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -41,7 +52,14 @@ namespace ErrorCodes
     DECLARE(String, storage_class_name, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
-    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0)
+    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
+    DECLARE(UInt64, min_bytes_for_seek, S3::DEFAULT_MIN_BYTES_FOR_SEEK, "", 0) \
+    DECLARE(UInt64, objects_chunk_size_to_delete, S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE, "", 0) \
+    DECLARE(Bool, read_only, false, "", 0) \
+    DECLARE(UInt64, max_get_rps, 0, "", 0) \
+    DECLARE(UInt64, max_get_burst, 0, "", 0) \
+    DECLARE(UInt64, max_put_rps, 0, "", 0) \
+    DECLARE(UInt64, max_put_burst, 0, "", 0)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \
@@ -265,20 +283,42 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
     /// to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time.
     /// But it is good enough unless very high `burst` values are used.
-    if (UInt64 max_get_rps = impl->isChanged("max_get_rps") ? impl->get("max_get_rps").safeGet<UInt64>() : settings[Setting::s3_max_get_rps])
+    if (UInt64 max_get_rps = (*this)[S3RequestSetting::max_get_rps].changed
+        ? (*this)[S3RequestSetting::max_get_rps].value
+        : settings[Setting::s3_max_get_rps])
     {
-        size_t default_max_get_burst
-            = settings[Setting::s3_max_get_burst] ? settings[Setting::s3_max_get_burst] : (Throttler::default_burst_seconds * max_get_rps);
+        size_t default_max_get_burst = settings[Setting::s3_max_get_burst]
+            ? settings[Setting::s3_max_get_burst]
+            : (Throttler::default_burst_seconds * max_get_rps);
 
-        size_t max_get_burst = impl->isChanged("max_get_burst") ? impl->get("max_get_burst").safeGet<UInt64>() : default_max_get_burst;
-        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+        size_t max_get_burst = (*this)[S3RequestSetting::max_get_burst].changed
+            ? (*this)[S3RequestSetting::max_get_burst].value
+            : default_max_get_burst;
+
+        get_request_throttler = std::make_shared<Throttler>(
+            max_get_rps,
+            max_get_burst,
+            ProfileEvents::S3GetRequestThrottlerCount,
+            ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
     }
-    if (UInt64 max_put_rps = impl->isChanged("max_put_rps") ? impl->get("max_put_rps").safeGet<UInt64>() : settings[Setting::s3_max_put_rps])
+
+    if (UInt64 max_put_rps = (*this)[S3RequestSetting::max_put_rps].changed
+        ? (*this)[S3RequestSetting::max_put_rps].value
+        : settings[Setting::s3_max_put_rps])
     {
-        size_t default_max_put_burst
-            = settings[Setting::s3_max_put_burst] ? settings[Setting::s3_max_put_burst] : (Throttler::default_burst_seconds * max_put_rps);
-        size_t max_put_burst = impl->isChanged("max_put_burst") ? impl->get("max_put_burst").safeGet<UInt64>() : default_max_put_burst;
-        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+        size_t default_max_put_burst = settings[Setting::s3_max_put_burst]
+            ? settings[Setting::s3_max_put_burst]
+            : (Throttler::default_burst_seconds * max_put_rps);
+
+        size_t max_put_burst = (*this)[S3RequestSetting::max_put_burst].changed
+            ? (*this)[S3RequestSetting::max_put_burst].value
+            : default_max_put_burst;
+
+        put_request_throttler = std::make_shared<Throttler>(
+            max_put_rps,
+            max_put_burst,
+            ProfileEvents::S3PutRequestThrottlerCount,
+            ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
     }
 }
 
@@ -286,6 +326,21 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!impl->storage_class_name.value.empty() && impl->storage_class_name.changed)
         impl->storage_class_name = Poco::toUpperInPlace(impl->storage_class_name.value);
+}
+
+void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
+{
+    impl->writeChangedBinary(out);
+}
+
+S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr context)
+{
+    S3RequestSettings result;
+    result.impl = std::make_unique<S3RequestSettingsImpl>();
+    result.impl->readBinary(in);
+    result.finishInit(context->getSettingsRef(), false);
+    /// TODO Proxy Configuration
+    return result;
 }
 
 }

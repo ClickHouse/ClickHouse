@@ -1,3 +1,5 @@
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -6,8 +8,8 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// This is not really an optimization. The purpose of this function is to extract and hash the filter condition of WHERE or PREWHERE
-/// filters. These correspond to these steps:
+/// This is no optimization. This function extracts and hashes the filter condition of WHERE or PREWHERE filters.
+/// These correspond to these steps:
 ///
 ///   [...]
 ///     ^
@@ -44,15 +46,18 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
+    /// Issues #81506 and #84508.
     for (const auto * output : outputs)
+    {
         if (!VirtualColumnUtils::isDeterministic(output))
             return;
+    }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
 
             String condition;
             if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)
@@ -61,7 +66,17 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 condition = outputs_names[0];
             }
 
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            if (query_condition_cache)
+            {
+                auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                    *query_condition_cache,
+                    condition_hash, condition,
+                    optimization_settings.query_condition_cache_selectivity_threshold);
+
+                filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
+            }
+
             return;
         }
     }

@@ -14,7 +14,7 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -168,8 +168,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_gin_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
-        if (is_gin_index && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
+        bool is_text_index = index_type->name == "text";
+        bool is_legacy_text_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
+        if ((is_text_index || is_legacy_text_index) && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
             return result;
 
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
@@ -259,4 +260,22 @@ Names IndicesDescription::getAllRegisteredNames() const
     }
     return result;
 }
+
+ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
+{
+    auto index_type = makeASTFunction("minmax");
+    auto index_ast = std::make_shared<ASTIndexDeclaration>(
+        std::make_shared<ASTIdentifier>(column_name), index_type,
+        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
+
+    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    return index_ast;
+}
+
+IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto index_ast = createImplicitMinMaxIndexAST(column_name);
+    return IndexDescription::getIndexFromAST(index_ast, columns, context);
+}
+
 }

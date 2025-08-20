@@ -35,9 +35,7 @@ public:
     bool isVariadic() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
 
-    bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -120,9 +118,29 @@ private:
 
 REGISTER_FUNCTION(Ngrams)
 {
-    factory.registerFunction<FunctionNgrams>(FunctionDocumentation{
-        .description = "Splits a UTF-8 string into n-grams symbols.",
-        .category = FunctionDocumentation::Category::StringSplitting});
+    FunctionDocumentation::Description description = R"(
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, ngram_size)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String", "FixedString"}},
+        {"ngram_size", "The size of an n-gram.", {"const UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT ngrams('ClickHouse', 3);",
+        R"(
+['Cli','lic','ick','ckH','kHo','Hou','ous','use']
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNgrams>(documentation);
 }
 
 }

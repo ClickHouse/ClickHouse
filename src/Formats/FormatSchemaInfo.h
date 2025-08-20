@@ -1,21 +1,35 @@
 #pragma once
 
-#include <base/types.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
+#include <base/types.h>
+#include <Common/Macros.h>
+
+#include <filesystem>
 
 namespace DB
 {
 class Context;
 class Block;
 struct FormatSettings;
+namespace fs = std::filesystem;
+
 
 /// Extracts information about where the format schema file is from passed context and keep it.
 class FormatSchemaInfo
 {
 public:
-    FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path);
+    FormatSchemaInfo(
+        const String & format_schema_source,
+        const String & format_schema,
+        const String & format_schema_message_name,
+        const String & format,
+        bool require_message,
+        bool is_server,
+        const String & format_schema_path);
     FormatSchemaInfo(const FormatSettings & settings, const String & format, bool require_message);
+
+    inline static const String CACHE_DIR_NAME = "__cache__";
 
     /// Returns path to the schema file.
     const String & schemaPath() const { return schema_path; }
@@ -28,9 +42,22 @@ public:
     const String & messageName() const { return message_name; }
 
 private:
+    void handleSchemaFile(
+        const String & format_schema, const String & format, bool require_message, bool is_server, const String & format_schema_path);
+    void verifySchemaFileName(const String & format_schema, bool require_message, fs::path & path);
+    void handleSchemaContent(const String & content, const String & format, bool is_server, const String & format_schema_path);
+    void handleSchemaSourceQuery(const String & format_schema, const String & format, bool is_server, const String & format_schema_path);
+    String querySchema(const String & query);
+    void storeSchemaOnDisk(const fs::path & file_path, const String & content);
+    void processSchemaFile(fs::path path, const String & default_file_extension, bool is_server, const String & format_schema_path);
+
+    static String generateSchemaFileName(const String & hashing_content, const String & file_extention);
+
     String schema_path;
     String schema_directory;
     String message_name;
+
+    LoggerPtr log;
 };
 
 

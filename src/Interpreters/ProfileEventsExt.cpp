@@ -1,4 +1,4 @@
-#include "ProfileEventsExt.h"
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
@@ -36,7 +36,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     auto & offsets = column_map->getNestedColumn().getOffsets();
     auto & tuple_column = column_map->getNestedData();
     auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
     for (Event event = Event(0); event < Counters::num_counters; ++event)
@@ -48,7 +48,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
 
         const char * desc = getName(event);
         key_column.insertData(desc, strlen(desc));
-        value_column.insert(value);
+        value_column.getData().push_back(value);
         size++;
     }
 

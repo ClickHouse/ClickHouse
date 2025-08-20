@@ -34,8 +34,13 @@ public:
         size_t /*num_streams*/) override;
 
     ClusterPtr getCluster(ContextPtr context) const;
+
     /// Query is needed for pruning by virtual columns (_file, _path)
-    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const = 0;
+    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(
+        const ActionsDAG::Node * predicate,
+        const ActionsDAG * filter_actions_dag,
+        const ContextPtr & context,
+        ClusterPtr cluster) const = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 

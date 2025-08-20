@@ -16,7 +16,7 @@ TTLDeleteAlgorithm::TTLDeleteAlgorithm(
 
 void TTLDeleteAlgorithm::execute(Block & block)
 {
-    if (!block || !isMinTTLExpired())
+    if (block.empty() || !isMinTTLExpired())
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);

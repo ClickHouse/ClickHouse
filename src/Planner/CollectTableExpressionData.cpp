@@ -47,28 +47,6 @@ public:
             return;
         }
 
-        if (auto * function_node = node->as<FunctionNode>())
-        {
-            /// Add used in correlated subquery columns to the table expression data.
-            /// These columns can be used only by correlated subquery, but still they
-            /// must be read by query plan for current query.
-            ///
-            /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
-            for (const auto & argument : function_node->getArguments().getNodes())
-            {
-                if (!isCorrelatedQueryOrUnionNode(argument))
-                    continue;
-
-                auto * query_node = argument->as<QueryNode>();
-                auto * union_node = argument->as<UnionNode>();
-                chassert(query_node != nullptr || union_node != nullptr);
-
-                auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
-                visit(correlated_columns);
-            }
-            return;
-        }
-
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
@@ -196,12 +174,41 @@ public:
                column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    /// Check if query node is a subquery and add used in correlated subquery columns to the table expression data.
+    /// These columns can be used only by correlated subquery, but still they
+    /// must be read by query plan for current query.
+    ///
+    /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
+    bool checkSubquery(const QueryTreeNodePtr & node)
     {
-        auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY ||
-                 child_node_type == QueryTreeNodeType::UNION ||
-                 isAliasColumn(parent_node));
+        auto node_type = node->getNodeType();
+        switch (node_type)
+        {
+            case QueryTreeNodeType::QUERY:
+            {
+                auto * query_node = node->as<QueryNode>();
+                chassert(query_node != nullptr);
+
+                /// Register correlated columns for the query or union node.
+                visit(query_node->getCorrelatedColumnsNode());
+                return true;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto * union_node = node->as<UnionNode>();
+                chassert(union_node != nullptr);
+
+                visit(union_node->getCorrelatedColumnsNode());
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        return !(checkSubquery(child_node) || isAliasColumn(parent_node));
     }
 
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
@@ -283,9 +290,11 @@ public:
                 column_source->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
+        const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
+        const auto & storage_snapshot = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
+
         if (!table_expression)
         {
-            const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
             if (!storage->supportsPrewhere())
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
@@ -296,7 +305,10 @@ public:
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
         }
 
-        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
+        const bool has_table_virtual_column =
+            column_node->getColumnName() == "_table" && storage->isVirtualColumn(column_node->getColumnName(), storage_snapshot->metadata);
+
+        if ((table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName())) || has_table_virtual_column)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),

@@ -1,14 +1,13 @@
 ---
 description: 'Documentation for Type Conversion Functions'
-sidebar_label: 'Type Conversion'
-sidebar_position: 185
+sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
 ---
 
-# Type Conversion Functions
+# Type conversion functions
 
-## Common Issues with Data Conversion {#common-issues-with-data-conversion}
+## Common issues with data conversion {#common-issues-with-data-conversion}
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
@@ -3759,7 +3758,6 @@ SELECT
 └─────────────────────┴───────────────┴─────────────┴─────────────────────┘
 ```
 
-
 ## toDateOrZero {#todateorzero}
 
 The same as [toDate](#todate) but returns lower boundary of [Date](../data-types/date.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3780,7 +3778,6 @@ Result:
 └────────────────────────────┴──────────────────┘
 ```
 
-
 ## toDateOrNull {#todateornull}
 
 The same as [toDate](#todate) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3800,7 +3797,6 @@ Result:
 │                 2022-12-30 │             ᴺᵁᴸᴸ │
 └────────────────────────────┴──────────────────┘
 ```
-
 
 ## toDateOrDefault {#todateordefault}
 
@@ -3827,7 +3823,6 @@ Result:
 │                    2022-12-30 │                                      2023-01-01 │
 └───────────────────────────────┴─────────────────────────────────────────────────┘
 ```
-
 
 ## toDateTime {#todatetime}
 
@@ -3870,7 +3865,6 @@ Result:
 └───────────────────────────────────┴───────────────────────────────┘
 ```
 
-
 ## toDateTimeOrZero {#todatetimeorzero}
 
 The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3891,7 +3885,6 @@ Result:
 └─────────────────────────────────────────┴──────────────────────┘
 ```
 
-
 ## toDateTimeOrNull {#todatetimeornull}
 
 The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3911,7 +3904,6 @@ Result:
 │                     2022-12-30 13:44:17 │                 ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴──────────────────────┘
 ```
-
 
 ## toDateTimeOrDefault {#todatetimeordefault}
 
@@ -3938,7 +3930,6 @@ Result:
 │                        2022-12-30 13:44:17 │                                                     2023-01-01 00:00:00 │
 └────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ## toDate32 {#todate32}
 
@@ -4115,7 +4106,6 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
 └─────────────────────────┴────────────────────────────────────────────┘
 ```
-
 
 3. With `timezone`:
 
@@ -4373,7 +4363,7 @@ Query:
 SELECT
     toDecimal32OrZero(toString(-1.111), 5) AS a,
     toTypeName(a),
-    toDecimal32OrZero(toString('Inf'), 5) as b,
+    toDecimal32OrZero(toString('Inf'), 5) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4436,7 +4426,7 @@ Query:
 SELECT
     toDecimal32OrNull(toString(-1.111), 5) AS a,
     toTypeName(a),
-    toDecimal32OrNull(toString('Inf'), 5) as b,
+    toDecimal32OrNull(toString('Inf'), 5) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4639,7 +4629,7 @@ Query:
 SELECT
     toDecimal64OrZero(toString(0.0001), 18) AS a,
     toTypeName(a),
-    toDecimal64OrZero(toString('Inf'), 18) as b,
+    toDecimal64OrZero(toString('Inf'), 18) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4702,7 +4692,7 @@ Query:
 SELECT
     toDecimal64OrNull(toString(0.0001), 18) AS a,
     toTypeName(a),
-    toDecimal64OrNull(toString('Inf'), 18) as b,
+    toDecimal64OrNull(toString('Inf'), 18) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4905,7 +4895,7 @@ Query:
 SELECT
     toDecimal128OrZero(toString(0.0001), 38) AS a,
     toTypeName(a),
-    toDecimal128OrZero(toString('Inf'), 38) as b,
+    toDecimal128OrZero(toString('Inf'), 38) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4968,7 +4958,7 @@ Query:
 SELECT
     toDecimal128OrNull(toString(1/42), 38) AS a,
     toTypeName(a),
-    toDecimal128OrNull(toString('Inf'), 38) as b,
+    toDecimal128OrNull(toString('Inf'), 38) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5171,7 +5161,7 @@ Query:
 SELECT
     toDecimal256OrZero(toString(0.0001), 76) AS a,
     toTypeName(a),
-    toDecimal256OrZero(toString('Inf'), 76) as b,
+    toDecimal256OrZero(toString('Inf'), 76) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5234,7 +5224,7 @@ Query:
 SELECT
     toDecimal256OrNull(toString(1/42), 76) AS a,
     toTypeName(a),
-    toDecimal256OrNull(toString('Inf'), 76) as b,
+    toDecimal256OrNull(toString('Inf'), 76) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5474,8 +5464,8 @@ toDecimalString(number, scale)
 
 - `number` — Value to be represented as String, [Int, UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md),
 - `scale` — Number of fractional digits, [UInt8](../data-types/int-uint.md).
-    * Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
-    * Maximum scale for [Float](../data-types/float.md) is 60.
+  * Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+  * Maximum scale for [Float](../data-types/float.md) is 60.
 
 **Returned value**
 
@@ -5977,7 +5967,7 @@ reinterpretAsFloat32(x)
 Query:
 
 ```sql
-SELECT reinterpretAsUInt32(toFloat32(0.2)) as x, reinterpretAsFloat32(x);
+SELECT reinterpretAsUInt32(toFloat32(0.2)) AS x, reinterpretAsFloat32(x);
 ```
 
 Result:
@@ -6011,7 +6001,7 @@ reinterpretAsFloat64(x)
 Query:
 
 ```sql
-SELECT reinterpretAsUInt64(toFloat64(0.2)) as x, reinterpretAsFloat64(x);
+SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x);
 ```
 
 Result:
@@ -6247,7 +6237,7 @@ reinterpret(x, type)
 **Arguments**
 
 - `x` — Any type.
-- `type` — Destination type. [String](../data-types/string.md).
+- `type` — Destination type. If it is an array, then the array element type must be a fixed length type.
 
 **Returned value**
 
@@ -6257,9 +6247,9 @@ reinterpret(x, type)
 
 Query:
 ```sql
-SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpret(toInt8(1), 'Float32') as int_to_float,
-    reinterpret('1', 'UInt32') as string_to_int;
+SELECT reinterpret(toInt8(-1), 'UInt8') AS int_to_uint,
+    reinterpret(toInt8(1), 'Float32') AS int_to_float,
+    reinterpret('1', 'UInt32') AS string_to_int;
 ```
 
 Result:
@@ -6268,6 +6258,19 @@ Result:
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
+```
+
+Query:
+```sql
+SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS string_to_array_of_Float32;
+```
+
+Result:
+
+```text
+┌─string_to_array_of_Float32─┐
+│ [5.626,6.626,5.626,6.626]  │
+└────────────────────────────┘
 ```
 
 ## CAST {#cast}
@@ -6386,7 +6389,7 @@ The difference from [cast](#cast) is that `accurateCast` does not allow overflow
 Query:
 
 ```sql
-SELECT cast(-1, 'UInt8') as uint8;
+SELECT cast(-1, 'UInt8') AS uint8;
 ```
 
 Result:
@@ -6400,7 +6403,7 @@ Result:
 Query:
 
 ```sql
-SELECT accurateCast(-1, 'UInt8') as uint8;
+SELECT accurateCast(-1, 'UInt8') AS uint8;
 ```
 
 Result:
@@ -6448,9 +6451,9 @@ Query:
 
 ```sql
 SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string;
+    accurateCastOrNull(-1, 'UInt8') AS uint8,
+    accurateCastOrNull(128, 'Int8') AS int8,
+    accurateCastOrNull('Test', 'FixedString(2)') AS fixed_string;
 ```
 
 Result:
@@ -6460,7 +6463,6 @@ Result:
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
 └───────┴──────┴──────────────┘
 ```
-
 
 ## accurateCastOrDefault(x, T[, default_value]) {#accuratecastordefaultx-t-default_value}
 
@@ -6502,12 +6504,12 @@ Query:
 
 ```sql
 SELECT
-    accurateCastOrDefault(-1, 'UInt8') as uint8,
-    accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
-    accurateCastOrDefault(128, 'Int8') as int8,
-    accurateCastOrDefault(128, 'Int8', 5) as int8_default,
-    accurateCastOrDefault('Test', 'FixedString(2)') as fixed_string,
-    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') as fixed_string_default;
+    accurateCastOrDefault(-1, 'UInt8') AS uint8,
+    accurateCastOrDefault(-1, 'UInt8', 5) AS uint8_default,
+    accurateCastOrDefault(128, 'Int8') AS int8,
+    accurateCastOrDefault(128, 'Int8', 5) AS int8_default,
+    accurateCastOrDefault('Test', 'FixedString(2)') AS fixed_string,
+    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') AS fixed_string_default;
 ```
 
 Result:
@@ -6535,20 +6537,19 @@ toInterval(value, unit)
 - `unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
     Possible values:
 
-    - `nanosecond`
-    - `microsecond`
-    - `millisecond`
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
+  - `nanosecond`
+  - `microsecond`
+  - `millisecond`
+  - `second`
+  - `minute`
+  - `hour`
+  - `day`
+  - `week`
+  - `month`
+  - `quarter`
+  - `year`
 
-    The `unit` argument is case-insensitive.
-
+  The `unit` argument is case-insensitive.
 
 **Returned value**
 
@@ -6977,7 +6978,7 @@ Result:
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime).
+This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime).
 
 **Syntax**
 
@@ -6997,7 +6998,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
+All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime) except:
 - %Q: Quarter (1-4)
 
 **Example**
@@ -7026,7 +7027,7 @@ Alias: `str_to_date`.
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
-This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
 
 **Syntax**
 
@@ -7046,7 +7047,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
+All format specifiers listed in [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id
@@ -7226,7 +7227,7 @@ Result:
 Query:
 
 ```sql
-SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
+SELECT toYear(now()) AS year, parseDateTimeBestEffort('10 20:19');
 ```
 
 Result:

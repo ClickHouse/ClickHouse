@@ -15,7 +15,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -29,6 +29,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -54,6 +55,11 @@ namespace CurrentMetrics
 {
     extern const Metric SendScalars;
     extern const Metric SendExternalTables;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistributedConnectionReconnectCount;
 }
 
 namespace DB
@@ -86,8 +92,8 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    if (connected)
-        Connection::cancel();
+    if (Connection::isConnected())
+        Connection::disconnect();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
@@ -132,6 +138,9 @@ Connection::Connection(const String & host_, UInt16 port_,
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
+    /// if connection was broken it is necessary to cancel it before reconnecting
+    disconnect();
+
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -148,8 +157,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
-            if (connected)
-                cancel();
+            if (isConnected())
+                disconnect();
 
             if (static_cast<bool>(secure))
             {
@@ -314,7 +323,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (DB::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -325,7 +334,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::Net::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -335,7 +344,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -352,7 +361,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (...)
     {
-        cancel();
+        disconnect();
         throw;
     }
 }
@@ -599,6 +608,12 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         {
             readVarUInt(server_query_plan_serialization_version, *in);
         }
+
+        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+        {
+            readVarUInt(server_cluster_function_protocol_version, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -618,7 +633,7 @@ const String & Connection::getDefaultDatabase() const
 
 const SettingsChanges & Connection::settingsFromServer() const
 {
-    chassert(connected);
+    chassert(isConnected());
     return settings_from_server;
 }
 
@@ -646,7 +661,7 @@ void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
                                   UInt64 & version_patch,
                                   UInt64 & revision)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     name = server_name;
@@ -658,7 +673,7 @@ void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
 
 UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_revision;
@@ -666,7 +681,7 @@ UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 
 const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_timezone;
@@ -674,7 +689,7 @@ const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts
 
 const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_display_name;
@@ -682,12 +697,13 @@ const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeo
 
 void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
     {
         connect(timeouts);
     }
     else if (!ping(timeouts))
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
     }
@@ -752,7 +768,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & timeouts,
                                                  const TablesStatusRequest & request)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
@@ -809,7 +825,7 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     /// Query is not executed within sendQuery() function.
@@ -1001,7 +1017,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -1015,12 +1031,12 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     block_out->write(block);
     if (maybe_compressed_out != out)
         maybe_compressed_out->next();
-    if (!block)
+    if (block.empty())
         out->finishChunk();
     out->next();
 
     if (throttler)
-        throttler->add(out->count() - prev_bytes);
+        throttler->throttle(out->count() - prev_bytes);
 }
 
 void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
@@ -1032,11 +1048,10 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const String & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
+    response.serialize(*out, server_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1127,7 +1142,7 @@ class ExternalTableDataSink : public ISink
 public:
     using OnCancell = std::function<void()>;
 
-    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+    ExternalTableDataSink(SharedHeader header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
             : ISink(std::move(header)), connection(connection_), table_data(table_data_),
               on_cancell(std::move(callback))
     {}
@@ -1186,8 +1201,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
             if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -1352,20 +1367,26 @@ Packet Connection::receivePacket()
 
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
-                disconnect();
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
                     toString(res.type), getDescription());
         }
     }
     catch (Exception & e)
     {
+        disconnect();
+
         /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
         e.setRemoteException();
 
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-            e.addMessage("while receiving packet from " + getDescription());
+            e.addMessage("while receiving packet from " + getDescription(true));
 
+        throw;
+    }
+    catch (...)
+    {
+        disconnect();
         throw;
     }
 }
@@ -1396,7 +1417,7 @@ Block Connection::receiveDataImpl(NativeReader & reader)
     Block res = reader.read();
 
     if (throttler)
-        throttler->add(in->count() - prev_bytes);
+        throttler->throttle(in->count() - prev_bytes);
 
     return res;
 }
@@ -1422,7 +1443,8 @@ void Connection::initBlockInput()
         if (!maybe_compressed_in)
         {
             if (compression == Protocol::Compression::Enable)
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
             else
                 maybe_compressed_in = in;
         }
@@ -1506,7 +1528,7 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in);
+    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const

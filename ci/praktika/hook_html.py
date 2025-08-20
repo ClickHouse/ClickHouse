@@ -167,9 +167,9 @@ class HtmlRunnerHooks:
             app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
             GHAuth.auth(app_id=app_id, app_key=pem)
 
-        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
+        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={"report": body, "summary": ""},
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,
@@ -201,6 +201,7 @@ class HtmlRunnerHooks:
                         branch=cache_record.branch,
                         sha=cache_record.sha,
                         job_name=skipped_job,
+                        workflow_name=cache_record.workflow,
                     )
                     result = Result.create_new(
                         skipped_job,
@@ -265,9 +266,9 @@ class HtmlRunnerHooks:
             print("Update workflow results with new info")
             new_result_info = info_str
 
-        if not result.is_ok():
+        if not result.is_ok() and not result.skip_dependee_jobs_dropping():
             print(
-                "Current job failed - find dependee jobs in the workflow and set their statuses to skipped"
+                "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
 
@@ -293,9 +294,11 @@ class HtmlRunnerHooks:
                 new_sub_results.append(
                     Result(
                         name=dependee,
-                        status=Result.Status.SKIPPED,
-                        info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
+                        status=Result.Status.DROPPED,
+                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
                         + f" [{_job.name}]",
+                        start_time=Utils.timestamp(),
+                        duration=0,
                     )
                 )
 

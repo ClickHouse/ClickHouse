@@ -111,51 +111,54 @@ def _update_workflow_artifacts(workflow):
 
 def _update_workflow_with_native_jobs(workflow):
     if workflow.dockers and not workflow.disable_dockers_build:
-        from .native_jobs import _docker_build_arm_linux_job, _docker_build_job
+        from .native_jobs import (
+            _docker_build_amd_linux_job,
+            _docker_build_arm_linux_job,
+            _docker_build_manifest_job,
+        )
 
         workflow.jobs = [copy.deepcopy(j) for j in workflow.jobs]
 
-        enable_arm_linux = True
-        if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
-            for docker in workflow.dockers:
-                if docker.has_arm_linux():
-                    enable_arm_linux = True
-                elif docker.has_amd_linux() or not docker.platforms:
-                    continue
-                else:
-                    Utils.raise_with_error(
-                        f"Unsupported docker platform [{docker.platforms}]"
-                    )
+        docker_job_names = []
+        docker_digest_config = Job.CacheDigestConfig()
+        for docker_config in workflow.dockers:
+            docker_digest_config.include_paths.append(docker_config.path)
 
-        aux_job = copy.deepcopy(_docker_build_job)
-        print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
-        if workflow.enable_cache:
-            print(f"Add automatic digest config for [{aux_job.name}] job")
-            docker_digest_config = Job.CacheDigestConfig()
-            for docker_config in workflow.dockers:
-                docker_digest_config.include_paths.append(docker_config.path)
-            aux_job.digest_config = docker_digest_config
-        workflow.jobs.insert(0, aux_job)
-        for job in workflow.jobs[1:]:
-            job.requires.append(aux_job.name)
+        if not Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
+            aux_job = copy.deepcopy(_docker_build_amd_linux_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                aux_job.digest_config = docker_digest_config
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
 
-        if enable_arm_linux:
             aux_job = copy.deepcopy(_docker_build_arm_linux_job)
             print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
             if workflow.enable_cache:
                 print(f"Add automatic digest config for [{aux_job.name}] job")
-                docker_digest_config = Job.CacheDigestConfig()
-                for docker_config in workflow.dockers:
-                    docker_digest_config.include_paths.append(docker_config.path)
                 aux_job.digest_config = docker_digest_config
-            workflow.jobs.insert(0, aux_job)
-            workflow.jobs[1].requires.append(aux_job.name)
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
 
-    if (
-        workflow.enable_cache
-        or workflow.enable_report
-        or workflow.enable_merge_ready_status
-    ):
+        if (
+            workflow.enable_dockers_manifest_merge
+            or Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB
+        ):
+            aux_job = copy.deepcopy(_docker_build_manifest_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                aux_job.digest_config = docker_digest_config
+            aux_job.requires = copy.deepcopy(docker_job_names)
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
+
+        assert docker_job_names, "Docker job names are empty, BUG?"
+        for job in workflow.jobs[len(docker_job_names) :]:
+            job.requires.extend(docker_job_names)
+
+    if workflow._enabled_workflow_config():
         from .native_jobs import _workflow_config_job
 
         print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
@@ -164,7 +167,12 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs[1:]:
             job.requires.append(aux_job.name)
 
-    if workflow.enable_merge_ready_status or workflow.post_hooks:
+    if (
+        workflow.enable_merge_ready_status
+        or workflow.post_hooks
+        or workflow.enable_automerge
+        or workflow.enable_cidb  # to write cpu and storage usage summary into cidb
+    ):
         from .native_jobs import _final_job
 
         print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")

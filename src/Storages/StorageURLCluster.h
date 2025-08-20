@@ -30,13 +30,19 @@ public:
         const StorageURL::Configuration & configuration_);
 
     std::string getName() const override { return "URLCluster"; }
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const override;
+
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(
+        const ActionsDAG::Node * predicate,
+        const ActionsDAG * /* filter */,
+        const ContextPtr & context,
+        ClusterPtr) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     String uri;
     String format_name;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 

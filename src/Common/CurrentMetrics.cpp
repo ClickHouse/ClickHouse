@@ -22,6 +22,7 @@
     M(BackgroundCommonPoolSize, "Limit on number of tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundMovePoolSize, "Limit on number of tasks in BackgroundProcessingPool for moves") \
+    M(AzureRequests, "Number of currently executing Azure requests") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundSchedulePoolSize, "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -115,6 +116,9 @@
     M(ThreadPoolFSReaderThreads, "Number of threads in the thread pool for local_filesystem_read_method=threadpool.") \
     M(ThreadPoolFSReaderThreadsActive, "Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolFSReaderThreadsScheduled, "Number of queued or active jobs in the thread pool for local_filesystem_read_method=threadpool.") \
+    M(ObjectStorageQueueShutdownThreads, "Number of threads in object storage queue shutdown pool.") \
+    M(ObjectStorageQueueShutdownThreadsActive, "Number of threads in object storage queue shutdown pool running a task.") \
+    M(ObjectStorageQueueShutdownThreadsScheduled, "Number of queued or active jobs in object storage queue shutdown pool.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
@@ -153,9 +157,6 @@
     M(ParallelFormattingOutputFormatThreads, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool.") \
     M(ParallelFormattingOutputFormatThreadsActive, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.") \
     M(ParallelFormattingOutputFormatThreadsScheduled, "Number of queued or active jobs in the ParallelFormattingOutputFormatThreads thread pool.") \
-    M(ParallelParsingInputFormatThreads, "Number of threads in the ParallelParsingInputFormat thread pool.") \
-    M(ParallelParsingInputFormatThreadsActive, "Number of threads in the ParallelParsingInputFormat thread pool running a task.") \
-    M(ParallelParsingInputFormatThreadsScheduled, "Number of queued or active jobs in the ParallelParsingInputFormat thread pool.") \
     M(MergeTreeBackgroundExecutorThreads, "Number of threads in the MergeTreeBackgroundExecutor thread pool.") \
     M(MergeTreeBackgroundExecutorThreadsActive, "Number of threads in the MergeTreeBackgroundExecutor thread pool running a task.") \
     M(MergeTreeBackgroundExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeBackgroundExecutor thread pool.") \
@@ -239,21 +240,15 @@
     M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
     M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
     M(QueryPipelineExecutorThreadsScheduled, "Number of queued or active jobs in the PipelineExecutor thread pool.") \
-    M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool.") \
-    M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
-    M(ParquetDecoderThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat thread pool.") \
-    M(ParquetDecoderIOThreads, "Number of threads in the ParquetBlockInputFormat io thread pool.") \
-    M(ParquetDecoderIOThreadsActive, "Number of threads in the ParquetBlockInputFormat io thread pool running a task.") \
-    M(ParquetDecoderIOThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat io thread pool.") \
     M(ParquetEncoderThreads, "Number of threads in ParquetBlockOutputFormat thread pool.") \
     M(ParquetEncoderThreadsActive, "Number of threads in ParquetBlockOutputFormat thread pool running a task.") \
     M(ParquetEncoderThreadsScheduled, "Number of queued or active jobs in ParquetBlockOutputFormat thread pool.") \
     M(MergeTreeSubcolumnsReaderThreads, "Number of threads in the thread pool used for subcolumns reading in MergeTree.") \
     M(MergeTreeSubcolumnsReaderThreadsActive, "Number of threads in the thread pool used for subcolumns reading in MergeTree running a task.") \
     M(MergeTreeSubcolumnsReaderThreadsScheduled, "Number of queued or active jobs in the thread pool used for subcolumns reading in MergeTree.") \
-    M(DWARFReaderThreads, "Number of threads in the DWARFBlockInputFormat thread pool.") \
-    M(DWARFReaderThreadsActive, "Number of threads in the DWARFBlockInputFormat thread pool running a task.") \
-    M(DWARFReaderThreadsScheduled, "Number of queued or active jobs in the DWARFBlockInputFormat thread pool.") \
+    M(FormatParsingThreads, "Number of threads in the thread pool used for parsing input.") \
+    M(FormatParsingThreadsActive, "Number of threads in the thread pool used for parsing input running a task.") \
+    M(FormatParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing input.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
@@ -303,9 +298,45 @@
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
+    M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(IcebergMetadataFilesCacheSize, "Size of the iceberg metadata cache in bytes") \
-    M(VectorSimilarityIndexCacheSize, "Size of the vector similarity index cache in bytes") \
+    M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
+    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
+    M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
+    M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
+    M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
+    M(AvroSchemaRegistryCacheCells, "Number of entries in Avro schema registry cache") \
+    M(HiveFilesCacheBytes, "Size of the hive cache in bytes") \
+    M(HiveFilesCacheFiles, "Number of cached files in the hive cache") \
+    M(HiveMetadataFilesCacheBytes, "Size of the hive metadata cache in bytes") \
+    M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
+    M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
+    M(VectorSimilarityIndexCacheCells, "Number of entries in vector similarity index cache") \
+    M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
+    M(DNSHostsCacheSize, "Number of cached DNS hosts") \
+    M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
+    M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
+    M(MarkCacheBytes, "Total size of mark cache in bytes") \
+    M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
+    M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
+    M(PageCacheBytes, "Total size of userspace page cache in bytes") \
+    M(PageCacheCells, "Total number of entries in the userspace page cache") \
+    M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
+    M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
+    M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
+    M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
+    M(IndexUncompressedCacheCells, "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
+    M(QueryCacheBytes, "Total size of the query cache in bytes") \
+    M(QueryCacheEntries, "Total number of entries in the query cache") \
+    M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
+    M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
+    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
+    M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -326,6 +357,9 @@
     M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
+    M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
+    M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
+    M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
@@ -361,6 +395,10 @@
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
+    M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
+    \
+    M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
+    M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
@@ -384,6 +422,8 @@
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
     \
+    M(SharedCatalogNumberOfObjectsInState, "Number of objects in the current state of Shared Catalog.") \
+    \
     M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
     \
     M(LicenseRemainingSeconds, "Remaining seconds of the license validity period.") \
@@ -392,11 +432,17 @@
     \
     M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
     \
-    M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
-    M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
+    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
+    M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
+    M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
+    M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
+    M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
+    M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
+    M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
@@ -412,7 +458,8 @@ namespace CurrentMetrics
     #undef M
     constexpr Metric END = Metric(__COUNTER__);
 
-    std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
+    /// +1 to allow using END as a placeholder
+    std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
     const char * getName(Metric event)
     {

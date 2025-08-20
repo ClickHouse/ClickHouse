@@ -19,17 +19,11 @@ class JSONEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAda
 public:
     JSONEachRowRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool pretty_json_ = false);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
-
-    /// Content-Type to set when sending HTTP response.
-    String getContentType() const override
-    {
-        return settings.json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8" ;
-    }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

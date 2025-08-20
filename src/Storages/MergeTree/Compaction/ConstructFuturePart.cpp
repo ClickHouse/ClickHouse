@@ -4,7 +4,7 @@
 namespace DB
 {
 
-static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, MergeTreeData::DataPartStates lookup_statuses)
+static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, const MergeTreeData::DataPartStates & lookup_statuses)
 {
     MergeTreeDataPartsVector data_parts;
 
@@ -19,15 +19,20 @@ static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTree
     return data_parts;
 }
 
-FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses)
+FutureMergedMutatedPartPtr constructFuturePart(
+    const MergeTreeData & data,
+    const MergeSelectorChoice & choice,
+    MergeTreeData::DataPartStates lookup_statuses)
 {
-    auto data_parts = findPartsInMemory(data, choice.range, std::move(lookup_statuses));
-    if (!data_parts.has_value())
+    auto parts = findPartsInMemory(data, choice.range, lookup_statuses);
+    auto patch_parts = findPartsInMemory(data, choice.range_patches, lookup_statuses);
+
+    if (!parts.has_value() || !patch_parts.has_value())
         return nullptr;
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     future_part->merge_type = choice.merge_type;
-    future_part->assign(std::move(data_parts.value()));
+    future_part->assign(std::move(*parts), std::move(*patch_parts));
     future_part->final = choice.final;
 
     return future_part;
