@@ -327,4 +327,5 @@ For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be
 ## Related content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+- Blog: [Inside ClickHouse full-text search: fast, native, and columnar](https://clickhouse.com/blog/clickhouse-full-text-search)
 - Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

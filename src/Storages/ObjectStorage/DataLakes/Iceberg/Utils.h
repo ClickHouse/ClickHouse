@@ -57,6 +57,8 @@ struct MetadataFileWithInfo
     CompressionMethod compression_method;
 };
 
+Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter);
+
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
