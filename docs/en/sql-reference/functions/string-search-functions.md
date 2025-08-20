@@ -757,7 +757,7 @@ Result:
 ## searchAny {#searchany}
 
 :::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
 :::
 
 Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
@@ -774,16 +774,15 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
 :::
 
-:::note
-Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
-In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+The `input` string is tokenized by the tokenizer from the index definition.
 
-Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
-:::
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
 **Returned value**
 
@@ -795,7 +794,7 @@ Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` woul
 Query:
 
 ```sql
-CREATE TABLE text_table (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
@@ -803,9 +802,23 @@ CREATE TABLE text_table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
+SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+3
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:
@@ -817,7 +830,7 @@ Result:
 ## searchAll {#searchall}
 
 :::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
 :::
 
 Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
@@ -834,16 +847,15 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
-The input data is tokenized by the tokenizer from the index definition.
+Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
 :::
 
-:::note
-Each array element token<sub>i</sub> is considered as a single token, i.e., not further tokenized.
-In case of `tokenizer = 'ngram', ngram_size = 5`, a search term 'ClickHouse' should be provided as `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+The `input` string is tokenized by the tokenizer from the index definition.
 
-Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` would be same as `['ClickHouse']`.
-:::
+Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
+For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
+To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
+Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
 
 **Returned value**
 
@@ -855,7 +867,7 @@ Also, duplicate tokens will be ignored. i.e, `['ClickHouse', 'ClickHouse']` woul
 Query:
 
 ```sql
-CREATE TABLE text_table (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
@@ -863,9 +875,23 @@ CREATE TABLE text_table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
+SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+```
+
+Result:
+
+```response
+1
+```
+
+**Generate needles using the `tokens` function**
+
+Query:
+
+```sql
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
 ```
 
 Result:

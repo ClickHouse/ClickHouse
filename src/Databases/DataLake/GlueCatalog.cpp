@@ -9,6 +9,7 @@
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
+#include <aws/glue/model/DeleteTableRequest.h>
 #include <aws/glue/model/CreateDatabaseRequest.h>
 #include <aws/glue/model/UpdateTableRequest.h>
 #include <aws/glue/model/TableInput.h>
@@ -109,19 +110,20 @@ GlueCatalog::GlueCatalog(
     int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
     int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
+    bool s3_slow_all_threads_after_retryable_error = false;
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
         region,
         getContext()->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         false,
         nullptr,
-        nullptr
-    );
+        nullptr);
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -563,6 +565,21 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
 
     return true;
+}
+
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+{
+    Aws::Glue::Model::DeleteTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetName(table_name);
+
+    auto response = glue_client->DeleteTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Can not delete table from glue catalog: {}",
+            response.GetError().GetMessage());
 }
 
 }

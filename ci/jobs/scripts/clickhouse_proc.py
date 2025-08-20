@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -39,7 +40,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -377,6 +378,12 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
         proc = subprocess.Popen(
             command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
         )
@@ -633,6 +640,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
         if Path(self.GDB_LOG).exists():
             res.append(self.GDB_LOG)
         if all:
@@ -676,6 +684,71 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
+    @classmethod
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        if not profiles:
+            return []
+
+        profiles = profiles.split('\n')
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split('.')
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+
+        # fetch jeprof
+        if Shell.check(
+            f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
+            verbose=True,
+        ) and Shell.check(
+            f"sed -i -e 's/@jemalloc_version@/5.3.0-12-g41a859ef/g' -e 's/@JEMALLOC_PREFIX@//g' {temp_dir}/jeprof && chmod +x {temp_dir}/jeprof"
+        ):
+            has_flamegraph = Shell.check(
+                f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
+                verbose=True,
+            )
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt {chbinary}"
+            for pid, profile in latest_profiles.items():
+                Shell.check(
+                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                    verbose=True
+                )
+
+                if has_flamegraph:
+                    Shell.check(
+                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                        verbose=True
+                    )
+
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
+        else:
+            print("WARNING: Jemalloc profiles not found")
+            return []
+        return res
+
     def _get_logs_archives_server(self):
         assert Path(
             self.log_dir
@@ -700,25 +773,25 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="Killed by signal (in clickhouse-server.log)",
+                name="Killed by signal (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log)",
+                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
+                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="No lost s3 keys",
+                name="Lost s3 keys",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
@@ -736,7 +809,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
+                name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
@@ -864,14 +937,9 @@ quit
             "error_log",
             "query_metric_log",
             "part_log",
-            "latency_log",
             "minio_audit_logs",
             "minio_server_logs",
         ]
-
-        if "_tsan" in Info().job_name:
-            print("minio_audit_logs scrapping is too slow with tsan - skip")
-            TABLES.remove("minio_audit_logs")
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
