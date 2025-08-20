@@ -17,12 +17,12 @@ using FunctionBase58Decode = FunctionBaseXXConversion<Base58DecodeImpl>;
 REGISTER_FUNCTION(Base58Decode)
 {
     FunctionDocumentation::Description description = R"(
-Decodes a string from [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding.
-An exception is thrown in case of an error.
+Decodes a [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-03#section-3) string.
+If the string is not valid Base58-encoded, an exception is thrown.
 )";
     FunctionDocumentation::Syntax syntax = "base58Decode(encoded)";
     FunctionDocumentation::Arguments arguments = {
-        {"encoded", "String column or constant to decode. If the string is not valid Base58-encoded, an exception is thrown.", {"String"}}
+        {"encoded", "String column or constant to decode.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
     FunctionDocumentation::Examples examples = {

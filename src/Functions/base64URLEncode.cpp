@@ -19,7 +19,7 @@ using FunctionBase64Encode = FunctionBaseXXConversion<Base64EncodeImpl>;
 REGISTER_FUNCTION(Base64URLEncode)
 {
     FunctionDocumentation::Description description = R"(
-Encodes a string using [Base64](https://en.wikipedia.org/wiki/Base64) representation using URL-safe alphabet, according to RFC 4648.
+Encodes a string using [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) representation using URL-safe alphabet.
 )";
     FunctionDocumentation::Syntax syntax = "base64URLEncode(plaintext)";
     FunctionDocumentation::Arguments arguments = {

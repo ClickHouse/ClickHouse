@@ -34,7 +34,7 @@ Encodes a string using [Base58](https://tools.ietf.org/id/draft-msporny-base58-0
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

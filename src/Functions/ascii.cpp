@@ -76,7 +76,7 @@ using FunctionAscii = FunctionStringOrArrayToT<AsciiImpl, AsciiName, AsciiImpl::
 REGISTER_FUNCTION(Ascii)
 {
     FunctionDocumentation::Description description = R"(
-Returns the ASCII code point as an `Int32` of the first character of string `s`.
+Returns the ASCII code point of the first character of string `s` as an `Int32`.
 )";
     FunctionDocumentation::Syntax syntax = "ascii(s)";
     FunctionDocumentation::Arguments arguments = {
