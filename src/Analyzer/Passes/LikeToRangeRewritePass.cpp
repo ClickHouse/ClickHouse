@@ -11,7 +11,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool optimize_rewrite_like_expressions;
+    extern const SettingsBool optimize_rewrite_like_to_range;
 }
 
 namespace
@@ -25,11 +25,17 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node) 
     {
-        if (!getSettings()[Setting::optimize_rewrite_like_expressions])
+        if (!getSettings()[Setting::optimize_rewrite_like_to_range])
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "like")
+        if (!function_node)
+            return;
+
+        const String & function_name = function_node->getFunctionName();
+        const bool is_like = (function_name == "like");
+        const bool is_ilike = (function_name == "ilike");
+        if (!(is_like || is_ilike))
             return;
 
         auto & args = function_node->getArguments().getNodes();
@@ -40,9 +46,9 @@ public:
         if (!pattern_constant || !isString(pattern_constant->getResultType()))
             return;
 
-        // Extract prefix and check if it's suitable for rewrite
+        /// Extract prefix and check if it's suitable for rewrite
         auto pattern = pattern_constant->getValue().safeGet<String>();
-        auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, false);
+        auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
 
         if (!is_perfect)
             return;
@@ -50,19 +56,20 @@ public:
         if (prefix.empty())
             return;
 
+        /// Convert to lowercase for case-insensitive operations
+        if (is_ilike)
+            Poco::toLowerInPlace(prefix);
 
-        // Replace the node with the AND condition
-        // node = createRangeCondition(args[0], prefix);
+        /// Replace the node with the AND condition
         auto and_function = std::make_shared<FunctionNode>("and");
         auto ge_function = std::make_shared<FunctionNode>("greaterOrEquals");
         auto column_node = args[0]; // The column being compared
 
-        // Get resolvers
         auto ge_resolver = FunctionFactory::instance().get("greaterOrEquals", getContext());
         auto lt_resolver = FunctionFactory::instance().get("less", getContext());
         auto and_resolver = FunctionFactory::instance().get("and", getContext());
 
-        // Set new function arguments
+        /// Set new function arguments
         auto prefix_constant = std::make_shared<ConstantNode>(Field(prefix));
         ge_function->getArguments().getNodes() = {column_node, prefix_constant};
         ge_function->resolveAsFunction(ge_resolver);
@@ -74,6 +81,11 @@ public:
         }
         else
         {
+            /// Convert to lowercase for case-insensitive operations
+            if (is_ilike)
+                Poco::toLowerInPlace(right_bound);
+
+            /// Set new function arguments
             auto right_bound_constant = std::make_shared<ConstantNode>(right_bound);
             auto lt_function = std::make_shared<FunctionNode>("less");
             lt_function->getArguments().getNodes() = {column_node, right_bound_constant};

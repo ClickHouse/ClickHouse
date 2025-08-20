@@ -1,0 +1,52 @@
+SELECT *
+FROM test_like_rewrite
+WHERE (name >= 'app') AND (name < 'apq')
+3
+SELECT *
+FROM test_like_rewrite
+WHERE (name >= 'test') AND (name < 'tesu')
+2
+SELECT *
+FROM test_like_rewrite
+WHERE (category >= 'fruit') AND (category < 'fruiu')
+1
+SELECT *
+FROM test_like_rewrite
+WHERE NOT ((name >= 'app') AND (name < 'apq'))
+4
+SELECT *
+FROM test_like_rewrite
+WHERE name LIKE 'app_ication%'
+1
+SELECT *
+FROM test_like_rewrite
+WHERE name LIKE '%app%'
+3
+SELECT *
+FROM test_like_rewrite
+WHERE name LIKE '_est%'
+1
+SELECT *
+FROM test_like_rewrite
+WHERE name LIKE 'test'
+1
+SELECT *
+FROM test_like_rewrite
+WHERE name LIKE '%'
+7
+SELECT *
+FROM test_like_rewrite
+WHERE (name >= 'app') AND (name < 'apq')
+3
+SELECT *
+FROM test_like_rewrite
+WHERE ((name >= 'app') AND (name < 'apq')) AND ((category >= 'fruit') AND (category < 'fruiu'))
+0
+SELECT *
+FROM test_like_rewrite
+WHERE ((name >= 'app') AND (name < 'apq')) OR ((name >= 'test') AND (name < 'tesu'))
+5
+SELECT *
+FROM test_like_rewrite
+WHERE name NOT LIKE 'app_ication%'
+6

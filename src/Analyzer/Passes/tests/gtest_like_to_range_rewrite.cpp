@@ -16,7 +16,7 @@
 
 using namespace DB;
 
-QueryTreeNodePtr resolve_everything(QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
+QueryTreeNodePtr resolve_string_expr(QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -40,7 +40,7 @@ QueryTreeNodePtr resolve_everything(QueryTreeNodePtr node, std::map<String, Quer
     QueryTreeNodes new_args;
     for (const auto & argument : function_node->getArguments())
     {
-        auto arg = resolve_everything(argument, resolved_map, context);
+        auto arg = resolve_string_expr(argument, resolved_map, context);
         new_args.push_back(arg);
     }
     function_node->getArguments().getNodes() = std::move(new_args);
@@ -48,7 +48,7 @@ QueryTreeNodePtr resolve_everything(QueryTreeNodePtr node, std::map<String, Quer
     return node;
 };
 
-TEST(LikeToRangeRewrite, RewritesPerfectPrefix)
+TEST(LikeToRangeRewrite, rewrite)
 {
     tryRegisterFunctions();
     std::map<String, QueryTreeNodePtr> resolved_map;
@@ -59,7 +59,7 @@ TEST(LikeToRangeRewrite, RewritesPerfectPrefix)
         ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
         QueryTreeNodePtr node = buildQueryTree(query, context);
 
-        node = resolve_everything(node, resolved_map, context);
+        node = resolve_string_expr(node, resolved_map, context);
         LikeToRangeRewritePass pass;
         pass.run(node, context);
         EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
@@ -69,24 +69,6 @@ TEST(LikeToRangeRewrite, RewritesPerfectPrefix)
     test_f("col LIKE 'test%'", "(col >= 'test') AND (col < 'tesu')");
     test_f("col LIKE 'hello%'", "(col >= 'hello') AND (col < 'hellp')");
     test_f("col LIKE 'a%'", "(col >= 'a') AND (col < 'b')");
-}
-
-TEST(LikeToRangeRewrite, DoesNotRewriteNonPrefixPatterns)
-{
-    tryRegisterFunctions();
-    std::map<String, QueryTreeNodePtr> resolved_map;
-    auto test_f = [&](const String & cond, const String & expected)
-    {
-        ContextPtr context = getContext().context;
-        ParserExpressionWithOptionalAlias exp_elem(false);
-        ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
-        QueryTreeNodePtr node = buildQueryTree(query, context);
-
-        node = resolve_everything(node, resolved_map, context);
-        LikeToRangeRewritePass pass;
-        pass.run(node, context);
-        EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
-    };
 
     // Patterns without useful prefix should not be rewritten
     test_f("col LIKE '%test%'", "col LIKE '%test%'");
@@ -94,46 +76,10 @@ TEST(LikeToRangeRewrite, DoesNotRewriteNonPrefixPatterns)
     test_f("col LIKE '_test%'", "col LIKE '_test%'");
     test_f("col LIKE '%'", "col LIKE '%'");
     test_f("col LIKE 'exactvalue'", "col LIKE 'exactvalue'");
-}
-
-TEST(LikeToRangeRewrite, RewritesNotLikePerfectPrefix)
-{
-    tryRegisterFunctions();
-    std::map<String, QueryTreeNodePtr> resolved_map;
-    auto test_f = [&](const String & cond, const String & expected)
-    {
-        ContextPtr context = getContext().context;
-        ParserExpressionWithOptionalAlias exp_elem(false);
-        ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
-        QueryTreeNodePtr node = buildQueryTree(query, context);
-
-        node = resolve_everything(node, resolved_map, context);
-        LikeToRangeRewritePass pass;
-        pass.run(node, context);
-        EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
-    };
 
     // Perfect prefix NOT LIKE should be rewritten
     test_f("col NOT LIKE 'test%'", "NOT ((col >= 'test') AND (col < 'tesu'))");
     test_f("col NOT LIKE 'hello%'", "NOT ((col >= 'hello') AND (col < 'hellp'))");
-}
-
-TEST(LikeToRangeRewrite, DoesNotRewriteNotLikeImperfectPrefix)
-{
-    tryRegisterFunctions();
-    std::map<String, QueryTreeNodePtr> resolved_map;
-    auto test_f = [&](const String & cond, const String & expected)
-    {
-        ContextPtr context = getContext().context;
-        ParserExpressionWithOptionalAlias exp_elem(false);
-        ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
-        QueryTreeNodePtr node = buildQueryTree(query, context);
-
-        node = resolve_everything(node, resolved_map, context);
-        LikeToRangeRewritePass pass;
-        pass.run(node, context);
-        EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
-    };
 
     // Imperfect prefix NOT LIKE should not be rewritten (would be incorrect)
     test_f("col NOT LIKE 'test_suffix%'", "col NOT LIKE 'test_suffix%'");
