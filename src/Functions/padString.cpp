@@ -361,7 +361,7 @@ Pads a string from the left with spaces or with a specified string (multiple tim
     FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, returned_value_left, examples_left, introduced_in, category};
 
     FunctionDocumentation::Description description_left_utf8 = R"(
-Pads the string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Pads a UTF8 string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
 Unlike [`leftPad`](#leftPad) which measures the string length in bytes, the string length is measured in code points.
 )";
     FunctionDocumentation::Syntax syntax_left_utf8 = "leftPadUTF8(string, length[, pad_string])";

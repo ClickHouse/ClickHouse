@@ -20,7 +20,7 @@ using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower
 REGISTER_FUNCTION(Lower)
 {
     FunctionDocumentation::Description description = R"(
-Converts the ASCII Latin symbols in a string to lowercase.
+Converts an ASCII string to lowercase.
 )";
     FunctionDocumentation::Syntax syntax = "lower(s)";
     FunctionDocumentation::Arguments arguments = {

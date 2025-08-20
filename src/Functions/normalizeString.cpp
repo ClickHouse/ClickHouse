@@ -172,7 +172,7 @@ using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<Norma
 REGISTER_FUNCTION(NormalizeUTF8)
 {
     FunctionDocumentation::Description description_nfc = R"(
-Normalizes a UTF-8 string according to the NFC normalization form.
+Normalizes a UTF-8 string according to the [NFC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 )";
     FunctionDocumentation::Syntax syntax_nfc = "normalizeUTF8NFC(str)";
     FunctionDocumentation::Arguments arguments_nfc = {
@@ -201,7 +201,7 @@ length(nfc_normalized);
     FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfd = R"(
-Normalizes a UTF-8 string according to the NFD normalization form.
+Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 )";
     FunctionDocumentation::Syntax syntax_nfd = "normalizeUTF8NFD(str)";
     FunctionDocumentation::Arguments arguments_nfd = {
@@ -228,7 +228,7 @@ SELECT
     FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, returned_value_nfd, examples_nfd, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkc = R"(
-Normalizes a UTF-8 string according to the NFKC normalization form.
+Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 )";
     FunctionDocumentation::Syntax syntax_nfkc = "normalizeUTF8NFKC(str)";
     FunctionDocumentation::Arguments arguments_nfkc = {
@@ -253,7 +253,7 @@ SELECT
     FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, returned_value_nfkc, examples_nfkc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkd = R"(
-Normalizes a UTF-8 string according to the NFKD normalization form.
+Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 )";
     FunctionDocumentation::Syntax syntax_nfkd = "normalizeUTF8NFKD(str)";
     FunctionDocumentation::Arguments arguments_nfkd = {

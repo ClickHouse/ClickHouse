@@ -31,7 +31,7 @@ Returns:
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_utf8 = R"(
-Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+Returns a substring of a UTF-8-encoded string `s` with a specified `offset` starting from the left.
 )";
     FunctionDocumentation::Syntax syntax_utf8 = "leftUTF8(s, offset)";
     FunctionDocumentation::Arguments arguments_utf8 = {

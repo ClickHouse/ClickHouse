@@ -30,7 +30,7 @@ using FunctionFirstLine = FunctionStringToString<ExtractSubstringImpl<FirstLine>
 REGISTER_FUNCTION(FirstLine)
 {
     FunctionDocumentation::Description description = R"(
-Returns the first line from a multi-line string.
+Returns the first line of a multi-line string.
 )";
     FunctionDocumentation::Syntax syntax = "firstLine(s)";
     FunctionDocumentation::Arguments arguments = {

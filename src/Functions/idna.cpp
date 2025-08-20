@@ -193,7 +193,7 @@ In case of an error it returns an empty string instead of throwing an exception.
     FunctionDocumentation::Description description_decode = R"(
 Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 In case of an error (e.g. because the input is invalid), the input string is returned.
-Note that repeated application of `idnaEncode()` and `idnaDecode()` does not necessarily return the original string due to case normalization.
+Note that repeated application of [`idnaEncode()`](#idnaEncode) and [`idnaDecode()`](#idnaDecode) does not necessarily return the original string due to case normalization.
 )";
     FunctionDocumentation::Syntax syntax_decode = "idnaDecode(s)";
     FunctionDocumentation::Arguments arguments_decode = {
