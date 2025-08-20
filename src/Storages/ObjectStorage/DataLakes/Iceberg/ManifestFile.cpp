@@ -403,7 +403,7 @@ ManifestFileContent::ManifestFileContent(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        tryLogCurrentException(getLogger("Manifest File initialize"), __PRETTY_FUNCTION__);
                     }
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
