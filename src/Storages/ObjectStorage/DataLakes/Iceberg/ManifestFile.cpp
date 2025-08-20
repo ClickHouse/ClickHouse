@@ -1,4 +1,5 @@
 #include <optional>
+#include "Common/Exception.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -395,15 +396,10 @@ ManifestFileContent::ManifestFileContent(
                 std::optional<String> reference_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
-                    try
+                    Field reference_file_path_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file);
+                    if (!reference_file_path_field.isNull())
                     {
-                        reference_file_path
-                            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
-                                .safeGet<String>();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(getLogger("Manifest File initialize"), __PRETTY_FUNCTION__);
+                        reference_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
