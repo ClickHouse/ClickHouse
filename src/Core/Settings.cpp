@@ -6605,13 +6605,13 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, true, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 )", BETA, allow_database_iceberg) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, true, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", BETA, allow_database_unity_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, true, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", BETA, allow_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
