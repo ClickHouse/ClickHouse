@@ -325,8 +325,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 size_t pos = extractPart(pass, reader[i]);
-
-                if (i + 1 < size)
+                if (i + 1 < size) [[likely]]
                 {
                     size_t next_pos = extractPart(pass, reader[i + 1]);
                     __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
@@ -355,7 +354,7 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    if (i + 1 < size)
+                    if (i + 1 < size) [[likely]]
                     {
                         size_t next_pos = extractPart(pass, reader[i + 1]);
                         __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
