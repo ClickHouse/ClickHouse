@@ -465,7 +465,7 @@ y: 993
 ## Table with catalogs
 
 All the write features described above are also available with REST and Glue catalogs.
-To use them, create a table with the IcebergS3 engine and provide the necessary settings:
+To use them, create a table with the `IcebergS3` engine and provide the necessary settings:
 
 ```sql
 CREATE TABLE `database_name.table_name`  ENGINE = IcebergS3('http://minio:9000/warehouse-rest/table_name/', 'minio_access_key', 'minio_secret_key')
