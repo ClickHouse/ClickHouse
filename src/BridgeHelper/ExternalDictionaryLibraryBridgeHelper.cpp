@@ -1,5 +1,6 @@
-#include "ExternalDictionaryLibraryBridgeHelper.h"
+#include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 
+#include <Core/Block.h>
 #include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -8,6 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>

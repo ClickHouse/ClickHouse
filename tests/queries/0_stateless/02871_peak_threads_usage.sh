@@ -27,8 +27,8 @@ ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_7" --query='SELECT * FROM nu
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_8" --query='SELECT * FROM numbers_mt(5000), numbers(5000) SETTINGS max_threads = 4, joined_subquery_requires_alias=0' "${QUERY_OPTIONS[@]}"
 
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_9" -m --query="""
-SELECT count() FROM 
-    (SELECT number FROM numbers_mt(1,100000) 
+SELECT count() FROM
+    (SELECT number FROM numbers_mt(1,100000)
             UNION ALL SELECT number FROM numbers_mt(10000, 200000)
             UNION ALL SELECT number FROM numbers_mt(30000, 40000)
             UNION ALL SELECT number FROM numbers_mt(30000, 40000)
@@ -39,8 +39,8 @@ SELECT count() FROM
     ) SETTINGS max_threads = 1""" "${QUERY_OPTIONS[@]}"
 
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_10" -m --query="""
-SELECT count() FROM 
-    (SELECT number FROM numbers_mt(1,100000) 
+SELECT count() FROM
+    (SELECT number FROM numbers_mt(1,100000)
             UNION ALL SELECT number FROM numbers_mt(10000, 2000)
             UNION ALL SELECT number FROM numbers_mt(30000, 40000)
             UNION ALL SELECT number FROM numbers_mt(30000, 40)
@@ -51,8 +51,8 @@ SELECT count() FROM
     ) SETTINGS max_threads = 4""" "${QUERY_OPTIONS[@]}"
 
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_11" -m --query="""
-SELECT count() FROM 
-    (SELECT number FROM numbers_mt(1,100000) 
+SELECT count() FROM
+    (SELECT number FROM numbers_mt(1,100000)
             UNION ALL SELECT number FROM numbers_mt(1, 1)
             UNION ALL SELECT number FROM numbers_mt(1, 1)
             UNION ALL SELECT number FROM numbers_mt(1, 1)
@@ -72,14 +72,20 @@ ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_13" -m --query="SELECT * FRO
 
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_14" -m --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 4" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_thread_log, query_log"
+
+# We cannot guarantee that the exact amount of different threads will be involved in execution of a query.
+# Because of that we use inequalities and the `uniqExact` function in the following checks.
+# Please refer to https://github.com/ClickHouse/ClickHouse/issues/75297 for more details.
+expected_peak_threads=(2 2 2 2 4 6 2 2 2 6 6 6 2 2)
+
 for i in {1..14}
 do
     ${CLICKHOUSE_CLIENT} -m --query="""
     SELECT '${i}',
-           peak_threads_usage, 
-           (select count() from system.query_thread_log WHERE system.query_thread_log.query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()) = length(thread_ids),
+           peak_threads_usage <= ${expected_peak_threads[i - 1]},
+           (select uniqExact(thread_id) from system.query_thread_log WHERE system.query_thread_log.query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()) = length(thread_ids),
            length(thread_ids) >= peak_threads_usage
-    FROM system.query_log 
+    FROM system.query_log
     WHERE type = 'QueryFinish' AND query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()"
 done

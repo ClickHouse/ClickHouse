@@ -390,7 +390,6 @@ String transformQueryForExternalDatabaseImpl(
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
         /*one_line=*/true,
-        /*hilite=*/false,
         /*identifier_quoting_rule=*/identifier_quoting_rule,
         /*identifier_quoting_style=*/identifier_quoting_style,
         /*show_secrets_=*/true,
@@ -427,7 +426,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree, query_info.table_expression);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,

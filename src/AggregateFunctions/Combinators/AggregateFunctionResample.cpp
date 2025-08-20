@@ -1,5 +1,5 @@
-#include "AggregateFunctionResample.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionResample.h>
 
 namespace DB
 {
@@ -46,6 +46,10 @@ public:
         const Array & params) const override
     {
         WhichDataType which{arguments.back()};
+
+        if (params.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of parameters for aggregate function with {} suffix", getName());
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {

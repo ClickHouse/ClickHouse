@@ -135,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().safeGet<Array &>();
+        current_array = &current_array->back().safeGet<Array>();
     }
 
     return array;
@@ -174,7 +174,7 @@ static auto extractVector(const std::vector<Tuple> & vec)
 
 static DataTypePtr recreateTupleWithElements(const DataTypeTuple & type_tuple, const DataTypes & elements)
 {
-    return type_tuple.haveExplicitNames()
+    return type_tuple.hasExplicitNames()
         ? std::make_shared<DataTypeTuple>(elements, type_tuple.getElementNames())
         : std::make_shared<DataTypeTuple>(elements);
 }

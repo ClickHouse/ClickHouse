@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IArraySink.h"
+#include <Functions/GatherUtils/IArraySink.h>
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>

@@ -14,9 +14,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
-#include "Columns/ColumnsDateTime.h"
-#include "Columns/ColumnsNumber.h"
+#include <Common/NaNUtils.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -74,6 +74,10 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return getNestedColumn()->getValueNameAndType(n);
+    }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -118,7 +122,7 @@ public:
         callback(column_holder);
     }
 
-    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -132,10 +136,10 @@ public:
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
         callback(*column_holder);
-        column_holder->forEachSubcolumnRecursively(callback);
+        column_holder->forEachMutableSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
@@ -340,11 +344,29 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
+template <typename>
+struct is_float_vector : std::false_type {};
+
+template <typename T>
+requires is_floating_point<T>
+struct is_float_vector<ColumnVector<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_float_vector_v = is_float_vector<T>::value;
+
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.isNull())
         return getNullValueIndex();
+
+    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    if constexpr (is_float_vector_v<ColumnType>)
+        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
+        {
+            auto nan = NaNOrZero<typename ColumnType::ValueType>();
+            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
+        }
 
     auto single_value_column = column_holder->cloneEmpty();
     single_value_column->insert(x);
@@ -368,6 +390,15 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
     if (!single_value_column->tryInsert(x))
         return false;
 
+    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    if constexpr (is_float_vector_v<ColumnType>)
+        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
+        {
+            auto nan = NaNOrZero<typename ColumnType::ValueType>();
+            index = uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
+            return true;
+        }
+
     auto single_value_data = single_value_column->getDataAt(0);
     index = uniqueInsertData(single_value_data.data, single_value_data.size);
     return true;
@@ -381,6 +412,14 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
+
+    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    if constexpr (is_float_vector_v<ColumnType>)
+        if (isNaN(src.getFloat64(n)))
+        {
+            auto nan = NaNOrZero<typename ColumnType::ValueType>();
+            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
+        }
 
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data, ref.size);
@@ -736,6 +775,7 @@ extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
+extern template class ColumnUnique<ColumnTime64>;
 extern template class ColumnUnique<ColumnIPv4>;
 extern template class ColumnUnique<ColumnIPv6>;
 extern template class ColumnUnique<ColumnUUID>;

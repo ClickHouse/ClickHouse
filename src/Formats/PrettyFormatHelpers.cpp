@@ -1,10 +1,10 @@
+#include <Columns/IColumn.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Common/formatReadable.h>
 #include <Common/UTF8Helpers.h>
-#include <base/find_symbols.h>
 
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
@@ -28,9 +28,12 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
         return;
 
     auto value = column.getFloat64(row);
+    auto abs_value = abs(value);
     auto threshold = settings.pretty.single_large_number_tip_threshold;
 
-    if (threshold && isFinite(value) && abs(value) > threshold)
+    if (threshold && isFinite(value) && abs_value > threshold
+        /// Most (~99.5%) of 64-bit hash values are in this range, and it is not necessarily to highlight them:
+        && !(abs_value > 1e17 && abs_value < 1.844675e19))
     {
         if (color)
             writeCString(GRAY_COLOR, out);
@@ -130,7 +133,7 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 {
     size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
-    if (!cut_to || length <= cut_to + hysteresis)
+    if (!cut_to || length <= cut_to + hysteresis || isValidIdentifier(name))
         return {name, length};
 
     /// We cut characters in the middle and insert filler there.

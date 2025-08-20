@@ -2,9 +2,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <fmt/args.h>
-#include <fmt/core.h>
-#include <fmt/format.h>
+#include <fmt/base.h>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -34,7 +32,7 @@ struct FormatStringHelperImpl
         formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
     }
     template<typename T>
-    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {} /// NOLINT
+    FormatStringHelperImpl(fmt::runtime_format_string<T> && str) : fmt_str(std::forward<fmt::runtime_format_string<T>>(str)) {} /// NOLINT
 
     PreformattedMessage format(Args && ...args) const;
 };
@@ -85,7 +83,7 @@ PreformattedMessage PreformattedMessage::create(FormatStringHelper<Args...> fmt,
 }
 
 template<typename T> struct is_fmt_runtime : std::false_type {};
-template<typename T> struct is_fmt_runtime<fmt::basic_runtime<T>> : std::true_type {};
+template<typename T> struct is_fmt_runtime<fmt::runtime_format_string<T>> : std::true_type {};
 
 template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x)
 {
@@ -142,7 +140,7 @@ template<bool enable> struct ConstexprIfsAreNotIfdefs
 {
     template <typename T> constexpr static std::string_view getStaticFormatString(T &&) { return {}; }
     template <typename T> static PreformattedMessage getPreformatted(T &&) { return {}; }
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args &&...) { return {}; }
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string> &, fmt::format_string<Args...>, Args &&...) { return {}; }
 };
 
 template<> struct ConstexprIfsAreNotIfdefs<true>
@@ -158,13 +156,13 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
 
     template <typename T> static T && getPreformatted(T && x) { return std::forward<T>(x); }
 
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string> & out, fmt::format_string<Args...> fmt_str, Args && ...args)
     {
         return tryGetArgsAndFormat(out, std::move(fmt_str), std::forward<Args>(args)...);
     }
 };
 
-template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
+template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string> & out, fmt::format_string<Args...> fmt_str, Args && ...args)
 {
     tryGetFormattedArgs(out, args...);
     return fmt::format(fmt_str, std::forward<Args>(args)...);
@@ -173,8 +171,8 @@ template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<s
 template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
 template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
 /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
-template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
-template <typename T, typename... Ts> constexpr auto firstArg(const fmt::basic_runtime<T> & data, Ts &&...) { return data.str.data(); }
+template <typename T, typename... Ts> constexpr auto firstArg(fmt::runtime_format_string<T> && data, Ts &&...) { return data.str.data(); }
+template <typename T, typename... Ts> constexpr auto firstArg(const fmt::runtime_format_string<T> & data, Ts &&...) { return data.str.data(); }
 
 consteval ssize_t formatStringCountArgsNum(const char * const str, size_t len)
 {
@@ -219,13 +217,13 @@ consteval void formatStringCheckArgsNum(T && str, size_t nargs)
 {
     formatStringCheckArgsNumImpl(tryGetStaticFormatString(str), nargs);
 }
-template<typename T> inline void formatStringCheckArgsNum(fmt::basic_runtime<T> &&, size_t) {}
+template<typename T> inline void formatStringCheckArgsNum(fmt::runtime_format_string<T> &&, size_t) {}
 template<> inline void formatStringCheckArgsNum(PreformattedMessage &, size_t) {}
 template<> inline void formatStringCheckArgsNum(const PreformattedMessage &, size_t) {}
 template<> inline void formatStringCheckArgsNum(PreformattedMessage &&, size_t) {}
 
 template<typename T> struct FormatStringTypeInfo{ static constexpr bool is_static = true; static constexpr bool has_format = true; };
-template<typename T> struct FormatStringTypeInfo<fmt::basic_runtime<T>> { static constexpr bool is_static = false; static constexpr bool has_format = false; };
+template<typename T> struct FormatStringTypeInfo<fmt::runtime_format_string<T>> { static constexpr bool is_static = false; static constexpr bool has_format = false; };
 template<> struct FormatStringTypeInfo<PreformattedMessage> { static constexpr bool is_static = false; static constexpr bool has_format = true; };
 
 /// This wrapper helps to avoid too frequent and noisy log messages.
@@ -248,7 +246,7 @@ public:
     LogFrequencyLimiterImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    void log(Poco::Message & message);
+    void log(Poco::Message && msg);
 
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
@@ -283,10 +281,10 @@ public:
 
     LogSeriesLimiter * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    LogSeriesLimiter * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    void log(Poco::Message & message);
+    LogSeriesLimiter * getChannel();
+    void log(Poco::Message && message);
 
     LoggerPtr getLogger() { return logger; }
 };
@@ -308,14 +306,14 @@ public:
     LogToStrImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
-    void log(Poco::Message & message)
+    void log(Poco::Message && message)
     {
         out_str = message.getText();
         if (!propagate_to_actual_log)
             return;
         if (maybe_nested)
-            maybe_nested->log(message);
+            maybe_nested->log(std::move(message));
         else if (auto * channel = logger->getChannel())
-            channel->log(message);
+            channel->log(std::move(message));
     }
 };

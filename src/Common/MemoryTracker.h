@@ -41,6 +41,11 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 struct OvercommitRatio;
 struct OvercommitTracker;
 
+namespace DB
+{
+    class PageCache;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -73,6 +78,9 @@ private:
     /// Randomly sample allocations only smaller or equal to this size
     UInt64 max_allocation_size_bytes = 0;
 
+    UInt64 jemalloc_flush_profile_interval_bytes = 0;
+    bool jemalloc_flush_profile_on_memory_exceeded = false;
+
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
     std::atomic<MemoryTracker *> parent {};
@@ -87,6 +95,8 @@ private:
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
+    std::atomic<DB::PageCache *> page_cache = nullptr;
+
     bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
@@ -95,6 +105,12 @@ private:
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
+
+    /// helper fields for analyzing MemoryTracker
+    /// amount which is not corrected by external source like RSS
+    int64_t uncorrected_amount = 0;
+    /// last corrected amount we set to memory tracker
+    int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -182,6 +198,16 @@ public:
         min_allocation_size_bytes = value;
     }
 
+    void setJemallocFlushProfileInterval(UInt64 interval)
+    {
+        jemalloc_flush_profile_interval_bytes = interval;
+    }
+
+    void setJemallocFlushProfileOnMemoryExceeded(bool flush)
+    {
+        jemalloc_flush_profile_on_memory_exceeded = flush;
+    }
+
     void setSampleMaxAllocationSize(UInt64 value)
     {
         max_allocation_size_bytes = value;
@@ -238,6 +264,16 @@ public:
         overcommit_tracker.store(nullptr, std::memory_order_relaxed);
     }
 
+    void setPageCache(DB::PageCache * cache) noexcept
+    {
+        page_cache.store(cache);
+    }
+
+    void resetPageCache() noexcept
+    {
+        page_cache.store(nullptr);
+    }
+
     /// Reset the accumulated data
     void resetCounters();
 
@@ -246,7 +282,7 @@ public:
 
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
-    static void updateAllocated(Int64 allocated_);
+    static void updateAllocated(Int64 allocated_, bool log_change);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

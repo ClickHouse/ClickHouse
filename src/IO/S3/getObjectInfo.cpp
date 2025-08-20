@@ -1,4 +1,6 @@
+#include <optional>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/Expect404ResponseScope.h>
 
 #if USE_AWS_S3
 
@@ -78,6 +80,10 @@ ObjectInfo getObjectInfo(
     bool with_metadata,
     bool throw_on_error)
 {
+    std::optional<Expect404ResponseScope> scope; // 404 is not an error
+    if (!throw_on_error)
+        scope.emplace();
+
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
     {
@@ -110,6 +116,8 @@ bool objectExists(
     const String & key,
     const String & version_id)
 {
+    Expect404ResponseScope scope; // 404 is not an error
+
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
     if (object_info)
         return true;
@@ -118,8 +126,8 @@ bool objectExists(
         return false;
 
     throw S3Exception(error.GetErrorType(),
-        "Failed to check existence of key {} in bucket {}: {}",
-        key, bucket, error.GetMessage());
+        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}",
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()), error.GetErrorType());
 }
 
 void checkObjectExists(

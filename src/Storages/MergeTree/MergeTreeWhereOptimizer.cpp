@@ -1,20 +1,21 @@
+#include <algorithm>
+#include <ranges>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/formatAST.h>
-#include <Interpreters/misc.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/NestedUtils.h>
-#include <Interpreters/ActionsDAG.h>
-#include <base/map.h>
 
 namespace DB
 {
@@ -59,6 +60,22 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
+static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+{
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet table_columns(std::from_range_t{},
+          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
+
+    /// Add also requested subcolumns to known table columns.
+    for (const auto & column : queried_columns)
+    {
+        if (columns_description.hasSubcolumn(column))
+            table_columns.insert(column);
+    }
+
+    return table_columns;
+}
+
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
@@ -67,8 +84,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns{collections::map<std::unordered_set>(
-        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
+    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
@@ -185,6 +201,12 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
 
     auto function_node = node.toFunctionNode();
     size_t arguments_size = function_node.getArgumentsSize();
+
+    /// Do not account arguments of function "indexHint"
+    /// because they won't be read from table.
+    if (function_node.getFunctionName() == "indexHint")
+        return;
+
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
@@ -295,7 +317,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator.estimateRowCount(node);
+            cond.estimated_row_count = estimator.estimateRelationProfile(node).rows;
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
@@ -538,15 +560,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (function_name == "arrayJoin")
-            return true;
-
-        /// disallow GLOBAL IN, GLOBAL NOT IN
-        /// TODO why?
-        if (function_name == "globalIn" || function_name == "globalNotIn")
-            return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if (function_name == "indexHint")
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();

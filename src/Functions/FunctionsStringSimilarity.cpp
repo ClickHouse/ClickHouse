@@ -1,9 +1,9 @@
-#include <Functions/FunctionsStringSimilarity.h>
+#include <base/MemorySanitizer.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
+#include <Functions/FunctionsStringSimilarity.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -26,7 +26,7 @@
 #endif
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include "vec_crc32.h"
+#include <vec_crc32.h>
 #endif
 
 namespace DB

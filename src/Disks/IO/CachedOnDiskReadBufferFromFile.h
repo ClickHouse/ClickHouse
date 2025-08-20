@@ -91,7 +91,7 @@ private:
 
     bool updateImplementationBufferIfNeeded();
 
-    void predownload(FileSegment & file_segment);
+    bool predownload(FileSegment & file_segment);
 
     bool nextImplStep();
 

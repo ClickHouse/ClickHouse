@@ -1,28 +1,26 @@
 #include <Planner/CollectSets.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/PreparedSets.h>
-
 #include <Storages/StorageSet.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/Set.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -66,11 +64,11 @@ public:
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))
                 return;
-
-            sets.addFromStorage(set_key, storage_set->getSet(), second_argument_table->getStorageID());
+            auto ast = in_second_argument->toAST();
+            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -78,7 +76,7 @@ public:
                 in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_opearators],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
                 });
 
             DataTypes set_element_types = {in_first_argument->getResultType()};
@@ -87,18 +85,19 @@ public:
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-            sets.addFromTuple(set_key, std::move(set), settings);
+            auto ast = in_second_argument->toAST();
+            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findSubquery(set_key))
                 return;
 
@@ -106,7 +105,8 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
+            auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
+            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else
         {

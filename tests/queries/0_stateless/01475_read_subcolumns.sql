@@ -10,7 +10,7 @@ INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
 SYSTEM DROP MARK CACHE;
 SELECT a.size0 FROM t_arr;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
@@ -27,7 +27,7 @@ SELECT t.s FROM t_tup;
 SYSTEM DROP MARK CACHE;
 SELECT t.u FROM t_tup;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
@@ -41,7 +41,7 @@ INSERT INTO t_nul VALUES (1) (NULL) (2) (NULL);
 SYSTEM DROP MARK CACHE;
 SELECT n.null FROM t_nul;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
@@ -59,7 +59,7 @@ SELECT m.keys FROM t_map;
 SYSTEM DROP MARK CACHE;
 SELECT m.values FROM t_map;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))

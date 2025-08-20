@@ -4,7 +4,6 @@
 #include <base/types.h>
 #include <base/simd.h>
 #include <Common/BitHelpers.h>
-#include <Poco/UTF8Encoding.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -90,32 +89,8 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
 }
 
 
-template <typename CharT>
-requires (sizeof(CharT) == 1)
-size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_length)
-{
-    static const Poco::UTF8Encoding utf8;
-    int res = utf8.convert(
-        code_point,
-        reinterpret_cast<uint8_t *>(out_bytes),
-        static_cast<int>(out_length));
-    assert(res >= 0);
-    return res;
-}
-
-template <typename CharT>
-requires (sizeof(CharT) == 1)
-std::optional<uint32_t> convertUTF8ToCodePoint(const CharT * in_bytes, size_t in_length)
-{
-    static const Poco::UTF8Encoding utf8;
-    int res = utf8.queryConvert(
-        reinterpret_cast<const uint8_t *>(in_bytes),
-        static_cast<int>(in_length));
-
-    if (res >= 0)
-        return res;
-    return {};
-}
+size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length);
+std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length);
 
 
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.

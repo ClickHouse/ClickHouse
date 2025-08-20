@@ -42,7 +42,6 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     env_variables={
-        "UBSAN_OPTIONS": "print_stacktrace=1",
         # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
         "TSAN_OPTIONS": "report_atomic_races=0 "
         + os.getenv("TSAN_OPTIONS", default=""),

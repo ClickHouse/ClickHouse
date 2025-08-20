@@ -1,4 +1,3 @@
-#include <chrono>
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
@@ -42,7 +41,7 @@ void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_protocol
     writeIntBinary(mode, out);
     writeIntBinary(replica_num, out);
     writeIntBinary(min_number_of_marks, out);
-    description.serialize(out);
+    description.serialize(out, initiator_protocol_version);
 }
 
 
@@ -53,7 +52,7 @@ String ParallelReadRequest::describe() const
     return result;
 }
 
-ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -74,7 +73,7 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
     readIntBinary(min_number_of_marks, in);
-    description.deserialize(in);
+    description.deserialize(in, replica_protocol_version);
 
     return ParallelReadRequest(mode, replica_num, min_number_of_marks, std::move(description));
 }
@@ -99,7 +98,7 @@ void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_protocol_
     writeIntBinary(version, out);
 
     writeBoolText(finish, out);
-    description.serialize(out);
+    description.serialize(out, replica_protocol_version);
 }
 
 String ParallelReadResponse::describe() const
@@ -107,7 +106,7 @@ String ParallelReadResponse::describe() const
     return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
-void ParallelReadResponse::deserialize(ReadBuffer & in)
+void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -119,7 +118,7 @@ void ParallelReadResponse::deserialize(ReadBuffer & in)
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     readBoolText(finish, in);
-    description.deserialize(in);
+    description.deserialize(in, replica_protocol_version);
 }
 
 
@@ -134,7 +133,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out, UInt64 initiator
     writeIntBinary(version, out);
 
     writeIntBinary(mode, out);
-    description.serialize(out);
+    description.serialize(out, initiator_protocol_version);
     writeIntBinary(replica_num, out);
     if (initiator_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         writeIntBinary(mark_segment_size, out);
@@ -164,7 +163,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
-    description.deserialize(in);
+    description.deserialize(in, replica_protocol_version);
     readIntBinary(replica_num, in);
 
     size_t mark_segment_size = 128;

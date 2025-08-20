@@ -10,6 +10,15 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
+
+#include <Storages/ObjectStorage/S3/Configuration.h>
+
+namespace DB::S3AuthSetting
+{
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+}
+
 #endif
 
 
@@ -51,6 +60,8 @@ void registerBackupEngineS3(BackupFactory & factory)
         String s3_uri;
         String access_key_id;
         String secret_access_key;
+        String role_arn;
+        String role_session_name;
 
         if (!id_arg.empty())
         {
@@ -63,6 +74,8 @@ void registerBackupEngineS3(BackupFactory & factory)
             s3_uri = config.getString(config_prefix + ".url");
             access_key_id = config.getString(config_prefix + ".access_key_id", "");
             secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
+            role_arn = config.getString(config_prefix + ".role_arn", "");
+            role_session_name = config.getString(config_prefix + ".role_session_name", "");
 
             if (config.has(config_prefix + ".filename"))
                 s3_uri = std::filesystem::path(s3_uri) / config.getString(config_prefix + ".filename");
@@ -85,6 +98,17 @@ void registerBackupEngineS3(BackupFactory & factory)
                 access_key_id = args[1].safeGet<String>();
                 secret_access_key = args[2].safeGet<String>();
             }
+
+            if (params.backup_info.function_arg)
+            {
+                S3::S3AuthSettings auth_settings;
+
+                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
+
+                role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
+                role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
+            }
         }
 
         BackupImpl::ArchiveParams archive_params;
@@ -104,52 +128,95 @@ void registerBackupEngineS3(BackupFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
         }
 
-        if (params.open_mode == IBackup::OpenMode::READ)
+        if (params.open_mode == IBackup::OpenMode::UNLOCK)
         {
-            auto reader = std::make_shared<BackupReaderS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context,
-                                                           params.is_internal_backup);
+            auto reader = std::make_shared<BackupReaderS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                role_arn,
+                role_session_name,
+                params.allow_s3_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.is_internal_backup);
+            /// We assume object storage of backup files and original disk use same endpoint, bucket and credentials.
+            auto uri_for_lightweight = S3::URI{s3_uri};
+            /// We set the prefix to "" because in meta file, object key is absolute path.
+            uri_for_lightweight.key = "";
+            auto lightweight_snapshot_writer = std::make_shared<BackupWriterS3>(
+                uri_for_lightweight,
+                access_key_id,
+                secret_access_key,
+                role_arn,
+                role_session_name,
+                params.allow_s3_native_copy,
+                params.s3_storage_class,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
                 archive_params,
-                params.base_backup_info,
                 reader,
-                params.context,
-                params.is_internal_backup,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+                lightweight_snapshot_writer);
         }
+        else if (params.open_mode == IBackup::OpenMode::READ)
+        {
+            auto reader = std::make_shared<BackupReaderS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                role_arn,
+                role_session_name,
+                params.allow_s3_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.is_internal_backup);
 
-        auto writer = std::make_shared<BackupWriterS3>(
-            S3::URI{s3_uri},
-            access_key_id,
-            secret_access_key,
-            params.allow_s3_native_copy,
-            params.s3_storage_class,
-            params.read_settings,
-            params.write_settings,
-            params.context,
-            params.is_internal_backup);
 
-        return std::make_unique<BackupImpl>(
-            params.backup_info,
-            archive_params,
-            params.base_backup_info,
-            writer,
-            params.context,
-            params.is_internal_backup,
-            params.backup_coordination,
-            params.backup_uuid,
-            params.deduplicate_files,
-            params.use_same_s3_credentials_for_base_backup,
-            params.use_same_password_for_base_backup);
+            auto snapshot_reader_creator = [&](const String & s3_uri_, const String & s3_bucket_)
+            {
+                String full_uri = std::filesystem::path(s3_uri_) / s3_bucket_;
+                auto uri_for_lightweight = S3::URI{full_uri};
+                /// We set the prefix to "" because in meta file, object key is absolute path.
+                uri_for_lightweight.key = "";
+                return std::make_shared<BackupReaderS3>(
+                    uri_for_lightweight,
+                    access_key_id,
+                    secret_access_key,
+                    role_arn,
+                    role_session_name,
+                    params.allow_s3_native_copy,
+                    params.read_settings,
+                    params.write_settings,
+                    params.context,
+                    params.is_internal_backup);
+            };
 
+            return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+        }
+        else
+        {
+            auto writer = std::make_shared<BackupWriterS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                std::move(role_arn),
+                std::move(role_session_name),
+                params.allow_s3_native_copy,
+                params.s3_storage_class,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.is_internal_backup);
+
+            return std::make_unique<BackupImpl>(params, archive_params, writer);
+        }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
 #endif

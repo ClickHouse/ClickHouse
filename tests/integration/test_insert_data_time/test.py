@@ -31,8 +31,11 @@ node2 = cluster.add_instance(
 
 node_old = cluster.add_instance(
     "node_with_old_ch",
+    main_configs=[
+        "configs/user_config.xml",
+    ],
     image="clickhouse/clickhouse-server",
-    tag="24.3",
+    tag="25.7",
     with_installed_binary=True,
     stay_alive=True,
 )

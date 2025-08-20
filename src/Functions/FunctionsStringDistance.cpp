@@ -9,7 +9,6 @@
 #include <Common/iota.h>
 
 #include <algorithm>
-#include <numeric>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -139,7 +138,8 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(data, end - data));
             }
         }
     }
@@ -518,30 +518,32 @@ using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDi
 
 REGISTER_FUNCTION(StringDistance)
 {
+    constexpr auto category_string = FunctionDocumentation::Category::String;
+
     factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
+        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)", .category = category_string});
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
     factory.registerFunction<FunctionEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)", .category = category_string});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
     factory.registerFunction<FunctionEditDistanceUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)", .category = category_string});
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(
-        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)", .category = category_string});
 
     factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)", .category = category_string});
     factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)", .category = category_string});
 
     factory.registerFunction<FunctionJaroSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)", .category = category_string});
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)", .category = category_string});
 }
 }

@@ -1,4 +1,4 @@
-#include "ObjectStorageKeyGenerator.h"
+#include <Common/ObjectStorageKeyGenerator.h>
 
 #include <Common/getRandomASCIIString.h>
 #include <Common/MatchGenerator.h>
@@ -18,6 +18,8 @@ public:
     {
         return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
     }
+
+    bool isRandom() const override { return true; }
 
 private:
     String key_template;
@@ -51,6 +53,8 @@ public:
         return DB::ObjectStorageKey::createAsRelative(key_prefix, key);
     }
 
+    bool isRandom() const override { return true; }
+
 private:
     String key_prefix;
 };
@@ -68,6 +72,8 @@ public:
     {
         return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
     }
+
+    bool isRandom() const override { return false; }
 
 private:
     String key_prefix;

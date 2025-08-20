@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
@@ -134,7 +135,7 @@ private:
 #endif
 
 MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(processor_->getHeader()), processor(std::move(processor_)), log_name(log_name_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -181,6 +182,9 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
 
     finished = chunk.is_finished;
+
+    if (finished)
+        processor->onFinish();
 
     /// We can return a chunk with no rows even if are not finished.
     /// This allows to report progress when all the rows are filtered out inside MergeTreeSelectProcessor by PREWHERE logic.

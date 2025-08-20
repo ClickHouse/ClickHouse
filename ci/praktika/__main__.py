@@ -71,7 +71,12 @@ def create_parser():
     _yaml_parser = subparsers.add_parser("yaml", help="Generates Yaml Workflows")
 
     _html_parser = subparsers.add_parser("html", help="Uploads HTML page for reports")
-
+    _html_parser.add_argument(
+        "--test",
+        help="Upload page to test location",
+        action="store_true",
+        default="",
+    )
     return parser
 
 
@@ -84,12 +89,14 @@ def main():
         Validator().validate()
         YamlGenerator().generate()
     elif args.command == "html":
-        Html.prepare()
+        Html.prepare(args.test)
     elif args.command == "run":
         from .mangle import _get_workflows
         from .runner import Runner
 
-        workflows = _get_workflows(name=args.workflow or None)
+        workflows = _get_workflows(
+            name=args.workflow or None, default=not bool(args.workflow)
+        )
         job_workflow_pairs = []
         for workflow in workflows:
             jobs = workflow.find_jobs(args.job, lazy=True)

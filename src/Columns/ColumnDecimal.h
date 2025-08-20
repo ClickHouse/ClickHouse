@@ -1,9 +1,16 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
+#include <base/sort.h>
+#include <base/TypeName.h>
+#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Core/Field.h>
 
 
 namespace DB
@@ -114,8 +121,12 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
+    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
+    }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -139,6 +150,8 @@ public:
             return scale == rhs_concrete->scale;
         return false;
     }
+
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 
@@ -190,6 +203,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }
