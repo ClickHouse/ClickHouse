@@ -46,6 +46,7 @@
 #include "Functions/CastOverloadResolver.h"
 #include "IO/WriteBufferFromString.h"
 #include "IO/WriteHelpers.h"
+#include "Interpreters/Context_fwd.h"
 #include "base/Decimal.h"
 #include <Core/Range.h>
 #include <Core/NamesAndTypes.h>
@@ -374,7 +375,7 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
-    const std::optional<std::vector<DataFileStatistics>> & data_file_statistics,
+    const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
@@ -458,7 +459,7 @@ void generateManifestFile(
         if (data_file_statistics)
         {
             {
-                auto statistics = data_file_statistics->at(data_file_index).getColumnSizes();
+                auto statistics = data_file_statistics->getColumnSizes();
                 auto & data_file_record = data_file.field(Iceberg::f_column_sizes);
                 data_file_record.selectBranch(1);
                 auto & column_sizes = data_file_record.value<avro::GenericArray>();
@@ -474,11 +475,11 @@ void generateManifestFile(
             }
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
-            auto field_ids = data_file_statistics->at(data_file_index).getFieldIds();
+            auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
-            auto lower_statistics = data_file_statistics->at(data_file_index).getLowerBounds();
+            auto lower_statistics = data_file_statistics->getLowerBounds();
             if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
             {
                 auto & data_file_record = data_file.field(Iceberg::f_lower_bounds);
@@ -494,7 +495,7 @@ void generateManifestFile(
                     lower_bounds.value().push_back(record_datum);
                 }
             }
-            auto upper_statistics = data_file_statistics->at(data_file_index).getUpperBounds();
+            auto upper_statistics = data_file_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
             {
                 auto & data_file_record = data_file.field(Iceberg::f_upper_bounds);
@@ -1106,21 +1107,26 @@ void DataFileStatistics::update(const Chunk & chunk, std::optional<size_t> num_n
         Field max_val;
         chunk.getColumns()[i]->getExtremes(min_val, max_val);
 
-        bool left_bound_use_mine = false;
-        bool right_bound_use_mine = false;
-
-        if (Range::less(ranges[i].left, min_val))
-            left_bound_use_mine = true;
-
-        if (Range::less(max_val, ranges[i].right))
-            right_bound_use_mine = true;
-
-        ranges[i] = Range(
-            left_bound_use_mine ? ranges[i].left : min_val,
-            true,
-            right_bound_use_mine ? ranges[i].right : max_val,
-            true);
+        ranges[i] = uniteRanges(ranges[i], Range(min_val, true, max_val, true));
     }
+}
+
+Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
+{
+    bool left_bound_use_mine = false;
+    bool right_bound_use_mine = false;
+
+    if (Range::less(left.left, right.left))
+        left_bound_use_mine = true;
+
+    if (Range::less(right.right, left.right))
+        right_bound_use_mine = true;
+
+    return Range(
+        left_bound_use_mine ? left.left : right.left,
+        true,
+        right_bound_use_mine ? left.right : right.right,
+        true);
 }
 
 std::vector<std::pair<size_t, size_t>> DataFileStatistics::getColumnSizes() const
@@ -1370,7 +1376,7 @@ bool IcebergStorageSink::initializeMetadata()
                     partition_key,
                     partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     {data_filename},
-                    std::vector{statistics.at(partition_key)},
+                    statistics.at(partition_key),
                     sample_block,
                     new_snapshot,
                     configuration->format,

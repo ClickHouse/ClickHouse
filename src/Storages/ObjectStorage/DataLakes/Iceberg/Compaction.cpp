@@ -33,8 +33,14 @@ using namespace DB;
 
 struct ManifestFilePlan
 {
+    explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
+        : statistics(schema_)
+    {
+    }
+
     String path;
     std::vector<String> manifest_lists_path;
+    DataFileStatistics statistics;
 
     FileNamesGenerator::Result patched_path;
 };
@@ -43,7 +49,6 @@ struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
     std::shared_ptr<ManifestFilePlan> manifest_list;
-    DataFileStatistics statistics;
 
     FileNamesGenerator::Result patched_path;
     UInt64 new_records_count = 0;
@@ -152,7 +157,7 @@ Plan getPlan(
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
-                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>();
+                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>(current_schema);
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
@@ -175,7 +180,6 @@ Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
-                        .statistics = DataFileStatistics(current_schema),
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
                 }
@@ -257,6 +261,7 @@ void writeDataFiles(
             if (chunk.empty())
                 break;
 
+            data_file->manifest_list->statistics.update(chunk);
             delete_file_transform->transform(chunk);
             data_file->new_records_count += chunk.getNumRows();
             ColumnsWithTypeAndName columns_with_types_and_name;
@@ -396,7 +401,7 @@ void writeMetadataFiles(
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
                 ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
                 std::vector(data_filenames.begin(), data_filenames.end()),
-                std::nullopt,
+                manifest_entry->statistics,
                 sample_block_,
                 snapshot,
                 configuration->format,

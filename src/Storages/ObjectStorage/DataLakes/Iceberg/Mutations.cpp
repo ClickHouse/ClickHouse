@@ -283,7 +283,7 @@ bool writeMetadataFiles(
                     partition_key,
                     chunk_partitioner.getResultTypes(),
                     {delete_filename.path.path_in_metadata},
-                    std::vector{delete_filenames.statistic.at(partition_key)},
+                    delete_filenames.statistic.at(partition_key),
                     sample_block,
                     new_snapshot,
                     configuration->format,

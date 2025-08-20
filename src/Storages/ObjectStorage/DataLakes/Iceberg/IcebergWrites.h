@@ -96,6 +96,8 @@ public:
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
 private:
+    Range uniteRanges(const Range & left, const Range & right);
+
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Range> ranges;
@@ -108,7 +110,7 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
-    const std::optional<std::vector<DataFileStatistics>> & data_file_statistics,
+    const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
