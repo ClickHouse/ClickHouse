@@ -19,6 +19,8 @@ import time
 import traceback
 import urllib.parse
 import uuid
+from glob import glob
+from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -519,7 +521,8 @@ class ClickHouseCluster:
         #
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
+        # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
+        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -591,6 +594,7 @@ class ClickHouseCluster:
         self.with_nginx = False
         self.with_hive = False
         self.with_coredns = False
+        self.with_ytsaurus = False
 
         # available when with_minio == True
         self.with_minio = False
@@ -797,6 +801,8 @@ class ClickHouseCluster:
         self.prometheus_servers = []
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
+
+        self.ytsaurus_port = 80
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1555,14 +1561,17 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
+        file_name = "docker_compose_iceberg_rest_catalog.yml"
+        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
+            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                    docker_compose_yml_dir, file_name
                 ),
             ]
         )
@@ -1570,7 +1579,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+            p.join(docker_compose_yml_dir, file_name),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1667,6 +1676,21 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_hive.yml"),
         )
         return self.base_hive_cmd
+
+    def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ytsaurus = True
+        env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
+        )
+        self.base_ytsaurus_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
+        )
+        return self.base_ytsaurus_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
         if "writer" in self.prometheus_servers:
@@ -1766,6 +1790,8 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
+
+        with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
         use_old_analyzer=None,
@@ -1799,6 +1825,7 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
+        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1928,6 +1955,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
+            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2098,7 +2126,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
+                    instance, env_variables, docker_compose_yml_dir, extra_parameters
                 )
             )
 
@@ -2155,6 +2183,11 @@ class ClickHouseCluster:
         if with_hive:
             cmds.append(
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_ytsaurus:
+            cmds.append(
+                self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_prometheus_writer:
@@ -2544,6 +2577,11 @@ class ClickHouseCluster:
         run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
+
+    def wait_ytsaurus_to_start(self):
+        self.wait_for_url(
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
 
     def wait_postgres_to_start(self, timeout=260):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
@@ -3532,6 +3570,11 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Prometheus...")
                 self.wait_prometheus_to_start()
 
+            if self.with_ytsaurus and self.base_ytsaurus_cmd:
+                ytsarurus_start_cmd = self.base_ytsaurus_cmd + common_opts
+                run_and_check(ytsarurus_start_cmd)
+                self.wait_ytsaurus_to_start()
+
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
 
@@ -3603,7 +3646,8 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
@@ -3812,13 +3856,16 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-        entrypoint: {entrypoint_cmd}
+        entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -3920,6 +3967,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
+        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4729,15 +4777,7 @@ class ClickHouseInstance:
         return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(
-                    process_name
-                ),
-            ]
-        )
+        output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
         if output:
             try:
                 pid = int(output.split("\n")[0].strip())
@@ -5336,16 +5376,10 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
-        entrypoint_cmd = self.clickhouse_start_command
-
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
-            entrypoint_cmd = (
-                "["
-                + ", ".join(map(lambda x: '"' + x + '"', entrypoint_cmd.split()))
-                + "]"
-            )
+            entrypoint_cmd = self.clickhouse_start_command
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
