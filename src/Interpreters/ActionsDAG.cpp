@@ -25,6 +25,7 @@
 
 #include <stack>
 #include <base/sort.h>
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>
@@ -2485,36 +2486,85 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         }
     }
 
+    LOG_DEBUG(getLogger("ActionsDAG"), "Conjunction nodes: {}", conjunction.allowed.size());
+    for (const auto * node : conjunction.allowed)
+        LOG_DEBUG(getLogger("ActionsDAG"), "allowed: {}", node->result_name);
+    for (const auto * node : conjunction.rejected)
+        LOG_DEBUG(getLogger("ActionsDAG"), "rejected: {}", node->result_name);
     return conjunction;
 }
 
 /// Collect leaf predicates, condition of which contains at least one OR node
 /// and decide which of them can be pushed‑down
 DisjunctionNodes getDisjunctionNodes(
-    const ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
+    const ActionsDAG::Node * predicate,
+    std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
+    bool allow_non_deterministic_functions)
 {
     DisjunctionNodes disjunction;
     if (!predicate)
         return disjunction;
 
-    std::unordered_set<const ActionsDAG::Node *> leaves_under_or;
+    // 1) Mark every node "allowed" bottom-up using the SAME rules as conjunctions.
+    struct F { const ActionsDAG::Node * node; size_t next=0; size_t ok=0; };
+    std::stack<F> dfs;
+    std::unordered_set<const ActionsDAG::Node *> vis;
+    dfs.push({predicate}); vis.insert(predicate);
+
+    while (!dfs.empty())
     {
-        struct Frame
+        auto &f = dfs.top();
+        while (f.next < f.node->children.size())
         {
-            const ActionsDAG::Node * node;
-            bool under_or;
-        };
+            const auto * ch = f.node->children[f.next];
+            if (!vis.contains(ch))
+            {
+                vis.insert(ch);
+                dfs.push({ch});
+                break;
+            }
+            if (allowed_nodes.contains(ch))
+                ++f.ok;
+            ++f.next;
+        }
+
+        if (f.next == f.node->children.size())
+        {
+            bool nondet = !allow_non_deterministic_functions
+                       && f.node->type == ActionsDAG::ActionType::FUNCTION
+                       && !f.node->function_base->isDeterministicInScopeOfQuery();
+
+            if (f.ok == f.node->children.size()
+                && f.node->type != ActionsDAG::ActionType::ARRAY_JOIN
+                && f.node->type != ActionsDAG::ActionType::INPUT
+                && !nondet)
+            {
+                allowed_nodes.emplace(f.node);
+            }
+            dfs.pop();
+        }
+    }
+
+    // 2) Traverse with an `under_or` flag; collect atoms (non-and/or/alias) only when under_or==true.
+    std::unordered_set<const ActionsDAG::Node *> atoms_under_or;
+    {
+        struct Frame { const ActionsDAG::Node * node; bool under_or; };
         std::stack<Frame> st;
         st.push({predicate, false});
 
+        auto is_bool = [](const ActionsDAG::Node * n, std::string_view name)
+        {
+            return n->type == ActionsDAG::ActionType::FUNCTION
+                && n->function_base->getName() == name;
+        };
+
         while (!st.empty())
         {
-            const auto [n, under_or] = st.top();
+            auto [n, under_or] = st.top();
             st.pop();
 
-            bool is_func = n->type == ActionsDAG::ActionType::FUNCTION;
-            bool is_or = is_func && n->function_base->getName() == "or";
-            bool is_and = is_func && n->function_base->getName() == "and";
+            bool is_or   = is_bool(n, "or");
+            bool is_and  = is_bool(n, "and");
             bool is_alias = n->type == ActionsDAG::ActionType::ALIAS;
 
             if (is_or || is_and || is_alias)
@@ -2524,59 +2574,33 @@ DisjunctionNodes getDisjunctionNodes(
             }
             else if (under_or)
             {
-                leaves_under_or.insert(n);
+                atoms_under_or.insert(n);
             }
         }
     }
 
-    struct Frame
+    // 3) Partition atoms into allowed / rejected.
+    std::unordered_set<const ActionsDAG::Node *> seen_allowed;
+    std::unordered_set<const ActionsDAG::Node *> seen_rejected;
+    for (const auto * a : atoms_under_or)
     {
-        const ActionsDAG::Node * node;
-        size_t next_child = 0;
-        size_t ok_children = 0;
-    };
-
-    std::stack<Frame> dfs;
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    dfs.push({predicate});
-    visited.insert(predicate);
-
-    while (!dfs.empty())
-    {
-        auto & f = dfs.top();
-        while (f.next_child < f.node->children.size())
+        if (allowed_nodes.contains(a))
         {
-            const auto * ch = f.node->children[f.next_child];
-            if (!visited.contains(ch))
-            {
-                visited.insert(ch);
-                dfs.push({ch});
-                break;
-            }
-            ++f.next_child;
+            if (seen_allowed.insert(a).second)
+                disjunction.allowed.push_back(a);
         }
-
-        if (f.next_child == f.node->children.size())
+        else
         {
-            bool nondet = !allow_non_deterministic_functions && f.node->type == ActionsDAG::ActionType::FUNCTION
-                && !f.node->function_base->isDeterministicInScopeOfQuery();
-
-            bool subtree_pushable = !nondet
-                && (f.node->children.empty() ? (allowed_nodes.contains(f.node) || f.node->type == ActionsDAG::ActionType::COLUMN)
-                                             : f.ok_children == f.node->children.size());
-
-            if (leaves_under_or.contains(f.node))
-            {
-                auto & dst = subtree_pushable ? disjunction.allowed : disjunction.rejected;
-                if (std::find(dst.begin(), dst.end(), f.node) == dst.end())
-                    dst.push_back(f.node);
-            }
-
-            dfs.pop();
-            if (!dfs.empty() && subtree_pushable)
-                ++dfs.top().ok_children;
+            if (seen_rejected.insert(a).second)
+                disjunction.rejected.push_back(a);
         }
     }
+
+    LOG_TRACE(getLogger("ActionsDAG"), "Disjunction nodes: {}", disjunction.allowed.size() + disjunction.rejected.size());
+    for (const auto * node : disjunction.allowed)
+        LOG_TRACE(getLogger("ActionsDAG"), "Allowed: {}", node->result_name);
+    for (const auto * node : disjunction.rejected)
+        LOG_TRACE(getLogger("ActionsDAG"), "Rejected: {}", node->result_name);
 
     return disjunction;
 }
@@ -3098,13 +3122,32 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
     std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
 
-    for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
+    for (const auto * n : both_streams_push_down_conjunctions.allowed)
     {
-        if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        if (!left_stream_allowed_conjunctions_set.contains(n))
+            left_stream_allowed_conjunctions.push_back(n);
+        if (!right_stream_allowed_conjunctions_set.contains(n))
+            right_stream_allowed_conjunctions.push_back(n);
+    }
 
-        if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+    /// getDisjunctionNodes MUST collect atoms (non-and/or/alias) that appear anywhere under an OR
+    /// and classify them using the same bottom-up allowedness rules as conjunctions
+    auto left_stream_push_down_disjunctions   = getDisjunctionNodes(predicate, left_stream_allowed_nodes,  /*allow_non_deterministic_functions*/ false);
+    auto right_stream_push_down_disjunctions  = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+    auto both_streams_push_down_disjunctions  = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+
+    NodeRawConstPtrs left_stream_allowed_disjunctions  = std::move(left_stream_push_down_disjunctions.allowed);
+    NodeRawConstPtrs right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
+
+    std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
+    std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
+
+    for (const auto * n : both_streams_push_down_disjunctions.allowed)
+    {
+        if (!left_stream_allowed_disjunctions_set.contains(n))
+            left_stream_allowed_disjunctions.push_back(n);
+        if (!right_stream_allowed_disjunctions_set.contains(n))
+            right_stream_allowed_disjunctions.push_back(n);
     }
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
@@ -3134,8 +3177,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         }
     }
 
-    auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
-    auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
+    /// Final per-side filter = AND( AND(conjuncts...), OR(disjunction_atoms...) )
+    /// createActionsForMixed handles empty sides (falls back to conj or disj as needJoinStepLogicaled)
+    auto left_stream_filter_to_push_down  =
+        createActionsForMixed(left_stream_allowed_conjunctions,
+                              left_stream_allowed_disjunctions,
+                              left_stream_header.getColumnsWithTypeAndName());
+
+    auto right_stream_filter_to_push_down =
+        createActionsForMixed(right_stream_allowed_conjunctions,
+                              right_stream_allowed_disjunctions,
+                              right_stream_header.getColumnsWithTypeAndName());
 
     auto replace_equivalent_columns_in_filter = [](
         const ActionsDAG & filter,

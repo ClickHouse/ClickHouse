@@ -29,7 +29,6 @@
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-#include "Common/logger_useful.h"
 #include <Functions/tuple.h>
 
 
@@ -84,7 +83,7 @@ void formatJoinCondition(const JoinCondition & join_condition, WriteBuffer & buf
     auto quote_string = std::views::transform([](const auto & s) { return fmt::format("({})", s.getColumnName()); });
     auto format_predicate = std::views::transform([](const auto & p) { return fmt::format("{} {} {}", p.left_node.getColumnName(), toString(p.op), p.right_node.getColumnName()); });
     buf << "[";
-    buf << fmt::format("Predicates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
+    buf << fmt::format("Predcates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
     if (!join_condition.left_filter_conditions.empty())
         buf << " " << fmt::format("Left filter: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
     if (!join_condition.right_filter_conditions.empty())
@@ -689,46 +688,6 @@ JoinPtr JoinStepLogical::convertToPhysical(
             table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 
-    // Collect OR atoms strictly from disjunctive_conditions
-    std::vector<JoinActionRef> left_or_atoms;
-    std::vector<JoinActionRef> right_or_atoms;
-
-    for (const auto & jc : join_expression.disjunctive_conditions)
-    {
-        left_or_atoms.insert(left_or_atoms.end(),
-                            jc.left_filter_conditions.begin(), jc.left_filter_conditions.end());
-        right_or_atoms.insert(right_or_atoms.end(),
-                            jc.right_filter_conditions.begin(), jc.right_filter_conditions.end());
-    }
-
-    // Optional: de-duplicate by node to avoid double c>0, etc.
-    auto dedup = [](std::vector<JoinActionRef> & v)
-    {
-        std::unordered_set<const ActionsDAG::Node*> seen;
-        v.erase(std::remove_if(v.begin(), v.end(),
-            [&](const JoinActionRef & r){ return !seen.insert(r.getNode()).second; }),
-            v.end());
-    };
-    dedup(left_or_atoms);
-    dedup(right_or_atoms);
-
-    // Build the OR nodes
-    JoinActionRef left_or_pref(nullptr);
-    JoinActionRef right_or_pref(nullptr);
-    if (!left_or_atoms.empty())
-        left_or_pref  = concatConditions(left_or_atoms,  expression_actions.left_pre_join_actions,  /*use_or_semantics=*/true);
-    if (!right_or_atoms.empty())
-        right_or_pref = concatConditions(right_or_atoms, expression_actions.right_pre_join_actions, /*use_or_semantics=*/true);
-
-    // Clear any previous names (defensive), then attach our OR to every clause
-    for (auto & clause : table_join_clauses)
-    {
-        clause.analyzer_left_filter_condition_column_name.clear();
-        clause.analyzer_right_filter_condition_column_name.clear();
-        if (left_or_pref)  clause.analyzer_left_filter_condition_column_name  = left_or_pref.getColumnName();
-        if (right_or_pref) clause.analyzer_right_filter_condition_column_name = right_or_pref.getColumnName();
-    }
-
     JoinActionRef residual_filter_condition(nullptr);
     if (join_expression.disjunctive_conditions.empty())
     {
@@ -851,11 +810,13 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
 
     auto & join_expression = join_info.expression;
 
+    [[maybe_unused]] bool disjunctive_pushdown = !join_expression.condition.left_filter_disjunctive || !join_expression.condition.right_filter_disjunctive;
+
     if (!canPushDownFromOn(join_info, side))
         return {};
 
     for (auto & condition : join_expression.condition.left_filter_conditions)
-        LOG_DEBUG(getLogger("getFilterActions 1"), "condition: {}", condition.getColumnName());
+        LOG_DEBUG(getLogger("getFilterActions 1"), "condition: {}", condition.getColumnName()); // For now, here is only first filter column
 
     for (auto & condition : join_expression.condition.right_filter_conditions)
         LOG_DEBUG(getLogger("getFilterActions 2"), "condition: {}", condition.getColumnName());
@@ -863,17 +824,32 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     const ActionsDAGPtr & actions_dag = side == JoinTableSide::Left ? expression_actions.left_pre_join_actions : expression_actions.right_pre_join_actions;
     std::vector<JoinActionRef> & conditions = side == JoinTableSide::Left ? join_expression.condition.left_filter_conditions : join_expression.condition.right_filter_conditions;
 
-    if (auto filter_condition = concatMergeConditions(conditions, actions_dag, !join_expression.disjunctive_conditions.empty()))
+    LOG_DEBUG(getLogger("getFilterActions 4"), "actions_dag: {}", actions_dag->dumpDAG());
+    if (auto filter_condition = concatMergeConditions(conditions, actions_dag))
     {
         filter_column_name = filter_condition.getColumnName();
-        conditions.clear();
+
+        LOG_DEBUG(getLogger("getFilterActions 5"), "filter_column_name: {}", filter_column_name);
+        for (auto & condition : conditions)
+            LOG_DEBUG(getLogger("getFilterActions 6"), "condition: {}", condition.getColumnName());
+        LOG_DEBUG(getLogger("getFilterActions 7"), "actions_dag: {}", actions_dag->dumpDAG());
+
+        // if (!disjunctive_pushdown)
+            conditions.clear(); // For disjunctions pushdown, we should not clear join clauses.
+
         ActionsDAG new_dag(actions_dag->getResultColumns());
         new_dag.getOutputs() = new_dag.getInputs();
+
+        LOG_DEBUG(getLogger("getFilterActions 8"), "new_dag: {}", new_dag.dumpDAG());
 
         ActionsDAG result = std::move(*actions_dag);
         *actions_dag = std::move(new_dag);
 
+        LOG_DEBUG(getLogger("getFilterActions 9"), "actions_dag: {}", actions_dag->dumpDAG());
+        LOG_DEBUG(getLogger("getFilterActions 10"), "result: {}", result.dumpDAG());
+
         updateInputHeader(std::make_shared<const Block>(result.getResultColumns()), side == JoinTableSide::Left ? 0 : 1);
+        LOG_DEBUG(getLogger("getFilterActions 11"), "result: {}", result.dumpDAG());
 
         return result;
     }

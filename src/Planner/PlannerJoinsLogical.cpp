@@ -48,6 +48,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
+#include "Common/Logger.h"
 
 #include <stack>
 
@@ -299,7 +300,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & bu
     if (function_node)
         function_name = function_node->getFunction()->getName();
 
-    if (function_name == "and" || function_name == "or")
+    if (function_name == "and")
     {
         for (const auto & child : function_node->getArguments())
             buildJoinCondition(child, builder_context, join_condition);
@@ -348,13 +349,45 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
 }
 
 
-void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions)
+void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions, bool or_pushdown = false)
 {
     if (!join_conditions.empty())
     {
-        build_context.result_join_info.expression.condition = std::move(join_conditions.back());
-        join_conditions.pop_back();
-        build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
+        if (or_pushdown)
+        {
+            for (const auto & condition : join_conditions)
+            {
+                build_context.result_join_info.expression.condition.left_filter_conditions.insert(
+                    build_context.result_join_info.expression.condition.left_filter_conditions.end(),
+                    condition.left_filter_conditions.begin(),
+                    condition.left_filter_conditions.end());
+                build_context.result_join_info.expression.condition.left_filter_disjunctive = true;
+
+                build_context.result_join_info.expression.condition.right_filter_conditions.insert(
+                    build_context.result_join_info.expression.condition.right_filter_conditions.end(),
+                    condition.right_filter_conditions.begin(),
+                    condition.right_filter_conditions.end());
+                build_context.result_join_info.expression.condition.right_filter_disjunctive = true;
+
+                build_context.result_join_info.expression.condition.residual_conditions.insert(
+                    build_context.result_join_info.expression.condition.residual_conditions.end(),
+                    condition.residual_conditions.begin(),
+                    condition.residual_conditions.end());
+                build_context.result_join_info.expression.condition.residual_disjunctive = true;
+
+                build_context.result_join_info.expression.condition.predicates.insert(
+                    build_context.result_join_info.expression.condition.predicates.end(),
+                    condition.predicates.begin(),
+                    condition.predicates.end());
+            }
+            build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
+        }
+        else
+        {
+            build_context.result_join_info.expression.condition = std::move(join_conditions.back());
+            join_conditions.pop_back();
+            build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
+        }
     }
 }
 
@@ -436,6 +469,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
 
         return it->second;
     };
+    bool or_pushdown = false;
     while (!nodes_to_process.empty())
     {
         auto node = nodes_to_process.top();
@@ -462,6 +496,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
             std::vector<JoinCondition> result;
             if (function_name == "or")
             {
+                or_pushdown = true;
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
@@ -507,7 +542,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
         }
     }
 
-    addConditionsToJoinInfo(builder_context, std::move(built_clauses.at(join_expression.get())));
+    addConditionsToJoinInfo(builder_context, std::move(built_clauses.at(join_expression.get())), or_pushdown);
 }
 
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
