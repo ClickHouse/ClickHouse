@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool execute_exists_as_scalar_subquery;
 }
 
 
@@ -613,7 +614,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
 
-    if (!execute_for_exists && scalars_cache.contains(node_with_hash))
+    if (scalars_cache.contains(node_with_hash))
     {
         if (can_use_global_scalars)
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
@@ -622,7 +623,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (!execute_for_exists && context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
@@ -3075,7 +3076,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            if (only_analyze)
+            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery])
             {
                 /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
                 QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
