@@ -2414,7 +2414,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             // Offset is inside the frame.
             const IColumn & src_column = *transform->blockAt(target_row).input_columns[
                     workspace.argument_column_indices[0]];
-            
+
             // Handle nullable/non-nullable column compatibility for ROLLUP with group_by_use_nulls
             if (auto * nullable_to = typeid_cast<ColumnNullable *>(&to))
             {
