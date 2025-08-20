@@ -1163,7 +1163,7 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
         result.emplace(METADATA_VERSION_FILE_NAME);
 
     if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
-    result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
+        result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
     if (getDataPartStorage().existsFile(MIN_MAX_TIME_OF_DATA_INSERT_FILE))
         result.emplace(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
