@@ -226,6 +226,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmultiplyDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCdivideDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCbyteSwap, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCicebergBucket, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCicebergTruncate, 0, 0, 2, 2),
     /// String and array functions
     CHFunction(SQLFunc::FUNCempty, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCnotEmpty, 0, 0, 1, 1),

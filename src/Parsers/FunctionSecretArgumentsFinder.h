@@ -107,7 +107,7 @@ protected:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "s3Cluster")
+        else if (function->name() == "s3Cluster" || function->name() == "icebergS3Cluster")
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -117,7 +117,7 @@ protected:
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if (function->name() == "azureBlobStorageCluster")
+        else if (function->name() == "azureBlobStorageCluster" || function->name() == "icebergAzureCluster")
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -218,7 +218,7 @@ protected:
                 break;
             if (f->name() == "headers")
                 result.nested_maps.push_back(f->name());
-            else if (f->name() != "extra_credentials")
+            else if (f->name() != "extra_credentials" && f->name() != "equals")
                 break;
             count -= 1;
         }
@@ -236,6 +236,8 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+
+        findSecretNamedArgument("secret_access_key", url_arg_idx);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -548,6 +550,8 @@ protected:
             findSecretNamedArgument("secret_access_key", 1);
             return;
         }
+
+        findSecretNamedArgument("secret_access_key", 0);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
