@@ -311,7 +311,7 @@ inline bool haveAMXINT8() noexcept
 
 inline bool haveSVE() noexcept
 {
-#if defined(__aarch64__)
+#if defined(__aarch64__) && defined(__linux__)
     /// https://www.kernel.org/doc/Documentation/arm64/sve.txt
     const UInt64 hwcap = getauxval(AT_HWCAP);
     return (hwcap & HWCAP_SVE) != 0;
