@@ -539,7 +539,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
-setting [json_type_escape_dots_in_keys](../../operations) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
+setting [json_type_escape_dots_in_keys](/operations/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
 escaped into `%2E` and unescaped back during formatting.
 
 ```sql title="Query"
