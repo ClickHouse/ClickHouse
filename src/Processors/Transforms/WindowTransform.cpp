@@ -2430,7 +2430,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
                     nullable_to->insertFromNotNullable(src_column, target_row.row);
                 }
             }
-            else if (auto * nullable_src = typeid_cast<const ColumnNullable *>(&src_column))
+            else if (const auto * nullable_src = typeid_cast<const ColumnNullable *>(&src_column))
             {
                 // Source is nullable, target is not nullable
                 // Extract value from nullable column if not null
