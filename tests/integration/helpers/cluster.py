@@ -3100,7 +3100,7 @@ class ClickHouseCluster:
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(
-                base_url="unix:///var/run/docker.sock",
+                base_url=os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
                 version=self.docker_api_version,
                 timeout=600,
             )
