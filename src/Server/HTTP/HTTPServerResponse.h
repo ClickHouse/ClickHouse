@@ -234,17 +234,10 @@ public:
     /// or redirect() has been called.
     std::shared_ptr<WriteBuffer> send();
 
-    /// Sends the response headers to the client
-    /// but do not finish headers with \r\n,
-    /// allowing to continue sending additional header fields.
-    ///
-    /// Must not be called after send(), sendFile(), sendBuffer()
-    /// or redirect() has been called.
-    std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> beginSend();
+    void writeStatus(std::ostream & ostr);
+    void writeHeaders(std::ostream & ostr);
 
-    /// Override to correctly mark that the data send had been started for
-    /// zero-copy response (i.e. replicated fetches).
-    void beginWrite(std::ostream & ostr) const;
+    void writeStatusAndHeaders(std::ostream & ostr);
 
     /// Sends the response header to the client, followed
     /// by the contents of the given buffer.
@@ -284,12 +277,18 @@ public:
 
     const Poco::Net::HTTPServerSession & getSession() const { return session; }
 
+    void allowKeepAliveIFFRequestIsFullyRead();
+
 private:
+    /// The semantic is changed dramaticly, hide this function to avoid wrong ussage
+    /// Even more, HTTPResponse::beginWrite is not a virtual
+    using HTTPResponse::write;
+    using HTTPResponse::beginWrite;
+
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
     ProfileEvents::Event write_event;
     std::shared_ptr<WriteBuffer> stream;
-    std::shared_ptr<WriteBuffer> header_stream;
     mutable bool send_started = false;
 };
 

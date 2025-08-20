@@ -18,13 +18,11 @@ class JSONRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<Ro
 public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header,
+        SharedHeader header,
         const FormatSettings & settings_,
         bool yield_strings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
-
-    String getContentType() const override { return "application/json; charset=UTF-8"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {

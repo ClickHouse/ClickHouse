@@ -1,3 +1,6 @@
+#include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -106,6 +109,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -113,6 +117,7 @@ RestCatalog::RestCatalog(
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
     if (!catalog_credential_.empty())
     {
@@ -204,7 +209,7 @@ std::string RestCatalog::retrieveAccessToken() const
 
     Poco::URI url;
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
-    if (oauth_server_uri.empty())
+    if (oauth_server_uri.empty() && !oauth_server_use_request_body)
     {
         url = Poco::URI(base_url / oauth_tokens_endpoint);
 
@@ -218,13 +223,17 @@ std::string RestCatalog::retrieveAccessToken() const
     }
     else
     {
-        url = Poco::URI(oauth_server_uri);
         out_stream_callback = [&](std::ostream & os)
         {
             os << fmt::format(
                 "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
                 auth_scope, client_id, client_secret);
         };
+
+        if (oauth_server_uri.empty())
+            url = Poco::URI(base_url / oauth_tokens_endpoint);
+        else
+            url = Poco::URI(oauth_server_uri);
     }
 
     const auto & context = getContext();
@@ -435,6 +444,12 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     {
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(json_str);
+        if (json.type() == typeid(Poco::JSON::Object::Ptr))
+        {
+            const Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
+            if (obj->size() == 0)
+                return {};
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
         auto namespaces_object = object->get("namespaces").extract<Poco::JSON::Array::Ptr>();
@@ -663,6 +678,192 @@ bool RestCatalog::getTableMetadataImpl(
 
     return true;
 }
+
+void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+{
+    std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    if (request_body)
+        request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (!body_str.empty())
+    {
+        out_stream_callback = [body_str](std::ostream & os)
+        {
+            os << body_str;
+        };
+    }
+
+    Poco::URI url(endpoint);
+    auto wb = DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withMethod(method)
+        .withSettings(context->getReadSettings())
+        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+        .withHostFilter(&context->getRemoteHostFilter())
+        .withHeaders(headers)
+        .withOutCallback(out_stream_callback)
+        .withSkipNotFound(false)
+        .create(credentials);
+
+    String response_str;
+    if (!ignore_result)
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+    else
+        wb->ignoreAll();
+}
+
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        request_body->set("namespace", namespaces);
+    }
+    {
+        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+        properties->set("location", location);
+        request_body->set("properties", properties);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log);
+    }
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+{
+    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
+
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    request_body->set("name", table_name);
+    request_body->set("location", metadata_content->getValue<String>("location"));
+    {
+        Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
+        Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
+        initial_schema->set("identifier-field-ids", identifier_fields);
+        request_body->set("schema", initial_schema);
+    }
+    request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
+
+    {
+        Poco::JSON::Object::Ptr write_order = new Poco::JSON::Object;
+        write_order->set("order-id", 0);
+        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+        write_order->set("fields", fields);
+        request_body->set("write-order", write_order);
+    }
+    request_body->set("stage-create", false);
+    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+    request_body->set("properties", properties);
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
+    }
+}
+
+
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    if (new_snapshot->has("parent-snapshot-id"))
+    {
+        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
+        if (parent_snapshot_id != -1)
+        {
+            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            requirement->set("type", "assert-ref-snapshot-id");
+            requirement->set("ref", "main");
+            requirement->set("snapshot-id", parent_snapshot_id);
+
+            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+            requirements->add(requirement);
+
+            request_body->set("requirements", requirements);
+        }
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        {
+            Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
+            add_snapshot->set("action", "add-snapshot");
+            add_snapshot->set("snapshot", new_snapshot);
+            updates->add(add_snapshot);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
+            set_snapshot->set("action", "set-snapshot-ref");
+            set_snapshot->set("ref-name", "main");
+            set_snapshot->set("type", "branch");
+            set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
+
+            updates->add(set_snapshot);
+        }
+        request_body->set("updates", updates);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException &)
+    {
+        return false;
+    }
+    return true;
+}
+
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+
+    Poco::JSON::Object::Ptr request_body = nullptr;
+    try
+    {
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());
+    }
+}
+
 
 }
 

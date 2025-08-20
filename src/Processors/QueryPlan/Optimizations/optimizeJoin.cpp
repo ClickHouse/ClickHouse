@@ -1,17 +1,18 @@
+#include <Core/Settings.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Core/Settings.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <Core/Joins.h>
@@ -50,8 +52,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return {};
@@ -148,8 +149,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     if (headers.size() != 2)
         return true;
 
-    const auto & left_stream_input_header = headers.front();
-    const auto & right_stream_input_header = headers.back();
+    auto left_stream_input_header = headers.front();
+    auto right_stream_input_header = headers.back();
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
@@ -215,8 +216,8 @@ void addSortingForMergeJoin(
     /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
     /// Note: it's also doesn't work with the read-in-order optimization.
     /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-    bool has_non_const_keys = has_non_const(left_node->step->getOutputHeader(), join_clause.key_names_left)
-        && has_non_const(right_node->step->getOutputHeader() , join_clause.key_names_right);
+    bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
+        && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
 
     if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
     {
@@ -266,7 +267,7 @@ bool convertLogicalJoinToPhysical(
     if (keep_logical)
         return true;
 
-    Header output_header = join_step->getOutputHeader();
+    SharedHeader output_header = join_step->getOutputHeader();
 
     const auto & join_expression_actions = join_step->getExpressionActions();
 
@@ -295,6 +296,7 @@ bool convertLogicalJoinToPhysical(
             new_right_node->step->getOutputHeader(),
             join_ptr,
             settings.max_block_size,
+            settings.min_joined_block_size_rows,
             settings.min_joined_block_size_bytes,
             optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),
@@ -315,7 +317,7 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Node result_node;
     if (post_filter)
     {
-        bool remove_filter = !output_header.has(post_filter.getColumnName());
+        bool remove_filter = !output_header->has(post_filter.getColumnName());
         result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
         result_node.children = {&new_join_node};
     }
@@ -383,7 +385,16 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     const auto & join_info = join_step->getJoinInfo();
-    if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
+    /// At the time of writing, we're not able to swap inputs for ANY partial merge join, because it only supports ANY inner or left joins, but not right.
+    const bool partial_merge_join_can_be_selected = std::ranges::any_of(
+        join_step->getJoinSettings().join_algorithms,
+        [](JoinAlgorithm alg)
+        { return alg == JoinAlgorithm::PARTIAL_MERGE || alg == JoinAlgorithm::PREFER_PARTIAL_MERGE || alg == JoinAlgorithm::AUTO; });
+    const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
+        && (!MergeJoin::isSupported(join_info.kind, join_info.strictness)
+            || !MergeJoin::isSupported(reverseJoinKind(join_info.kind), join_info.strictness));
+    const bool suitable_any_join = join_info.strictness == JoinStrictness::Any && !should_worry_about_partial_merge_join;
+    if (join_info.expression.is_using || (join_info.strictness != JoinStrictness::All && !suitable_any_join))
         return rhs_estimation;
 
     join_step->setSwapInputs();

@@ -55,7 +55,7 @@ public:
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 
-    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -67,5 +67,9 @@ private:
     std::mutex mutex;
     CacheByName caches_by_name;
 };
+
+/// Get default path prefix for non-disk caches.
+/// For disk we have a similar method in registerDiskCache.
+std::string getPathPrefixForRelativeCachePath(ContextPtr context);
 
 }

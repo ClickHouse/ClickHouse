@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -20,7 +21,7 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
-        , condition(other.condition)
+        , query_condition_cache_writer(other.query_condition_cache_writer)
     {}
 
     String getName() const override { return "Filter"; }
@@ -34,7 +35,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(size_t condition_hash_, const String & condition_);
+    void setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -55,7 +56,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<std::pair<size_t, String>> condition; /// for query condition cache
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 };
 
 }

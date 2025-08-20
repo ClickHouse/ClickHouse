@@ -5,7 +5,15 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /cctools /cctools
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
+
+# We need OpenSSL FIPS in permissive mode for build on MasterCI
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \
@@ -43,8 +51,8 @@ RUN ARCH=$(uname -m) && \
     ./rustup-init -y && \
     rm rustup-init && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2024-12-01 --no-self-update && \
-    rustup default nightly-2024-12-01 && \
+    rustup toolchain install nightly-2025-07-07 --no-self-update && \
+    rustup default nightly-2025-07-07 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
@@ -92,7 +100,11 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
 
-ARG CLANG_TIDY_SHA1=35edad32a0bfb3dafada7201afe28036624906ed
-RUN curl -Lo /usr/bin/clang-tidy-cache \
-        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
-    && chmod +x /usr/bin/clang-tidy-cache
+# This is a custom version from a PR to the original clang-tidy-cache: https://github.com/matus-chochlik/ctcache/pull/89
+# Once it's merged (if ever) we'll point back to the original matus-chochlik/ctcache repo.
+ARG CLANG_TIDY_SHA1=a646e24c642c15d85334577fadadc14d041f2f8a
+RUN curl -Lo /usr/bin/clang-tidy-cache.py \
+        "https://raw.githubusercontent.com/pamarcos/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
+    && chmod +x /usr/bin/clang-tidy-cache.py
+
+COPY clang-tidy-cache.sh /usr/bin/clang-tidy-cache

@@ -237,14 +237,6 @@ void HDFSObjectStorage::copyObject( /// NOLINT
 }
 
 
-std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(
-    const std::string &,
-    const Poco::Util::AbstractConfiguration &,
-    const std::string &, ContextPtr)
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS object storage doesn't support cloning");
-}
-
 }
 
 #endif

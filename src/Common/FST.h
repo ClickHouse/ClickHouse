@@ -1,9 +1,6 @@
 #pragma once
 #include <array>
-#include <map>
 #include <memory>
-#include <string>
-#include <unordered_set>
 #include <vector>
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
@@ -51,11 +48,11 @@ public:
     void addLabel(char label);
     bool hasLabel(char label) const;
 
-    /// computes the rank
+    /// Computes the rank
     UInt64 getIndex(char label) const;
 
     UInt64 serialize(WriteBuffer & write_buffer);
-
+    UInt64 deserialize(ReadBuffer & read_buffer);
 private:
     /// data holds a 256-bit bitmap for all labels of a state. Its 256 bits correspond to 256
     /// possible label values.
@@ -113,7 +110,7 @@ public:
 private:
     struct FlagValues
     {
-        unsigned int is_final : 1;
+        uint8_t is_final : 1;
         EncodingMethod encoding_method : 3;
     };
 
@@ -128,13 +125,13 @@ bool operator==(const State & state1, const State & state2);
 
 static constexpr size_t MAX_TERM_LENGTH = 256;
 
-/// FstBuilder is used to build Finite State Transducer by adding words incrementally.
+/// Builder is used to build Finite State Transducer by adding words incrementally.
 /// Note that all the words have to be added in sorted order in order to achieve minimized result.
 /// In the end, the caller should call build() to serialize minimized FST to WriteBuffer.
-class FstBuilder
+class Builder
 {
 public:
-    explicit FstBuilder(WriteBuffer & write_buffer_);
+    explicit Builder(WriteBuffer & write_buffer_);
 
     void add(std::string_view word, Output output);
     UInt64 build();
@@ -157,19 +154,27 @@ private:
     UInt64 previous_state_index = 0;
 };
 
-//FiniteStateTransducer is constructed by using minimized FST blob(which is loaded from index storage)
-// It is used to retrieve output by given term
+/// FiniteStateTransducer is constructed by using minimized FST blob (which is loaded from index storage)
+/// It is used to retrieve output by given term
 class FiniteStateTransducer
 {
 public:
+    struct Output
+    {
+        UInt64 offset = 0;
+        bool found = false;
+    };
+
     FiniteStateTransducer() = default;
     explicit FiniteStateTransducer(std::vector<UInt8> data_);
-    void clear();
-    std::pair<UInt64, bool> getOutput(std::string_view term);
+
+    Output getOutput(std::string_view term);
     std::vector<UInt8> & getData() { return data; }
+    void clear();
 
 private:
     std::vector<UInt8> data;
 };
+
 }
 }

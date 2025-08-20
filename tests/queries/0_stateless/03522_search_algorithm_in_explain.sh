@@ -12,5 +12,5 @@ CREATE TABLE t (a UInt8, b UInt8) ORDER BY (a, b);
 INSERT INTO t VALUES (0,0);
 "
 
-$CLICKHOUSE_CLIENT -n -q "EXPLAIN indexes = 1 SELECT * FROM t WHERE a = 0;" | grep "Search algorithm: binary search"
-$CLICKHOUSE_CLIENT -n -q "EXPLAIN indexes = 1 SELECT * FROM t WHERE b = 0;" | grep "Search algorithm: generic exclusion search"
+$CLICKHOUSE_CLIENT -n -q "EXPLAIN indexes = 1 SELECT * FROM t WHERE a = 0;" | grep "Search Algorithm: binary search"
+$CLICKHOUSE_CLIENT -n -q "EXPLAIN indexes = 1 SELECT * FROM t WHERE b = 0;" | grep "Search Algorithm: generic exclusion search"

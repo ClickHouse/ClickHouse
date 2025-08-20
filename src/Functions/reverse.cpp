@@ -8,8 +8,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <base/map.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -63,7 +63,7 @@ public:
             reversed_types.reserve(element_count);
             reversed_types.assign(original_elements.rbegin(), original_elements.rend());
 
-            if (data_type_tuple.haveExplicitNames())
+            if (data_type_tuple.hasExplicitNames())
             {
                 const auto & original_names = data_type_tuple.getElementNames();
                 Names reversed_names;
@@ -129,7 +129,7 @@ public:
             return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionReverse::create(context),
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 
@@ -146,14 +146,14 @@ REGISTER_FUNCTION(Reverse)
     FunctionDocumentation::Description description = "Reverses the order of the elements in the input array or the characters in the input string.";
     FunctionDocumentation::Syntax syntax = "reverse(arr | str)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr | str", "The source array or string. [`Array(T)`](/sql-reference/data-types/array), [`String`](/sql-reference/data-types/string)."}
+        {"arr | str", "The source array or string.", {"Array(T)", "String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array or string with the order of elements or characters reversed.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
         {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
         {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = FunctionDocumentation::VERSION_UNKNOWN;
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

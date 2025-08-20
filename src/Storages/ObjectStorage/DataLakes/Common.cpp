@@ -1,4 +1,4 @@
-#include "Common.h"
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/logger_useful.h>
@@ -10,10 +10,10 @@ namespace DB
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
+    const StorageObjectStorageConfiguration & configuration,
     const String & prefix, const String & suffix)
 {
-    auto key = std::filesystem::path(configuration.getPath()) / prefix;
+    auto key = std::filesystem::path(configuration.getPathForRead().path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;

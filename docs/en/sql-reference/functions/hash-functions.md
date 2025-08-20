@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Hash Functions'
 sidebar_label: 'Hash'
-sidebar_position: 85
 slug: /sql-reference/functions/hash-functions
 title: 'Hash Functions'
 ---
 
-# Hash Functions
+# Hash functions
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
@@ -1019,7 +1018,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](/sql-reference/functions/bit-functions#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1991,7 +1990,7 @@ Use function [hex](../functions/encoding-functions.md/#hex) to format the result
 
 Query:
 ```sql
-select hex(keccak256('hello'))
+SELECT hex(keccak256('hello'))
 ```
 
 Result:

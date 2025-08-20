@@ -1,6 +1,6 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
-#include "PositionImpl.h"
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/PositionImpl.h>
 
 
 namespace DB
@@ -21,10 +21,13 @@ REGISTER_FUNCTION(Locate)
 {
     FunctionDocumentation::Description doc_description = "Like function `position` but with arguments `haystack` and `locate` switched. The behavior of this function depends on the ClickHouse version: In versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`. In versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.";
     FunctionDocumentation::Syntax doc_syntax = "location(needle, haystack[, start_pos])";
-    FunctionDocumentation::Arguments doc_arguments = {{"needle", "Substring to be searched (String)"},
-                                                      {"haystack", "String in which the search is performed (String)."},
-                                                      {"start_pos", "Position (1-based) in `haystack` at which the search starts (UInt*)."}};
-    FunctionDocumentation::ReturnedValue doc_returned_value = "Starting position in bytes and counting from 1, if the substring was found. 0, if the substring was not found.";
+    FunctionDocumentation::Arguments doc_arguments =
+    {
+        {"needle", "Substring to be searched.", {"String"}},
+        {"haystack", "String in which the search is performed.", {"String"}},
+        {"start_pos", "Position (1-based) in `haystack` at which the search starts.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue doc_returned_value = {"Starting position in bytes and counting from 1, if the substring was found. 0, if the substring was not found."};
     FunctionDocumentation::Examples doc_examples = {{"Example", "SELECT locate('abcabc', 'ca');", "3"}};
     FunctionDocumentation::IntroducedIn doc_introduced_in = {18, 16};
     FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::StringSearch;

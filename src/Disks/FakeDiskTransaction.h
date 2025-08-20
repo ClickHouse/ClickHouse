@@ -22,7 +22,7 @@ public:
         : disk(disk_)
     {}
 
-    void commit() override {}
+    void commit(const TransactionCommitOptionsVariant &) override {}
     void undo() override {}
 
     void createDirectory(const std::string & path) override

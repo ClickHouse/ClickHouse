@@ -9,7 +9,7 @@ title: 'Object Data Type '
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Object Data Type 
+# Object data type 
 
 <DeprecatedBadge/>
 

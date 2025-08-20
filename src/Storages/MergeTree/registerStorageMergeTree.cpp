@@ -16,6 +16,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -407,6 +408,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Aggregating;
     else if (name_part == "Replacing")
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
+    else if (name_part == "Coalescing")
+        merging_params.mode = MergeTreeData::MergingParams::Coalescing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
     else if (name_part == "VersionedCollapsing")
@@ -468,6 +471,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         case MergeTreeData::MergingParams::Replacing:
             add_optional_param("is_deleted column");
             add_optional_param("version");
+            break;
+        case MergeTreeData::MergingParams::Coalescing:
+            add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
@@ -569,7 +575,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             --arg_cnt;
         }
     }
-    else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+    else if (merging_params.mode == MergeTreeData::MergingParams::Summing || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
@@ -640,7 +646,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-
+// tostartOfInterval disabling for primary key
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -719,7 +725,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (!args.query.attach && (
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
                     ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
@@ -749,12 +755,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (minmax_index_exists)
                     continue;
 
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                        std::make_shared<ASTIdentifier>(column.name), index_type,
-                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }
@@ -860,8 +861,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
             && (*storage_settings)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "Projections are not supported for {}MergeTree with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 merging_params.getModeName());
     }
 
@@ -924,6 +925,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("MergeTree", create, features);
     factory.registerStorage("CollapsingMergeTree", create, features);
     factory.registerStorage("ReplacingMergeTree", create, features);
+    factory.registerStorage("CoalescingMergeTree", create, features);
     factory.registerStorage("AggregatingMergeTree", create, features);
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
@@ -938,6 +940,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
     factory.registerStorage("ReplicatedAggregatingMergeTree", create, features);
     factory.registerStorage("ReplicatedSummingMergeTree", create, features);
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
 }

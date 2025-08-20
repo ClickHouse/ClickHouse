@@ -63,7 +63,7 @@ TEST(extractKVPairNoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     NoEscapingStateHandler handler(configuration);
 
@@ -82,7 +82,7 @@ TEST(extractKVPairNoEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     NoEscapingStateHandler handler(configuration);
 

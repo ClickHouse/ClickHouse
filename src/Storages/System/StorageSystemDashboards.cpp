@@ -162,6 +162,17 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Overview" },
             { "title", "Load Average (15 minutes)" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
@@ -365,6 +376,17 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Overview (host)" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Overview (host)" },
             { "title", "Load Average (15 minutes)" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t, hostname, avg(value)
@@ -418,282 +440,1224 @@ GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
 )EOQ") }
         },
+        /// Memory usage per host dashboard for self-managed ClickHouse
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by ClickHouse" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MemoryTracking)
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "In-Memory Caches" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Primary key" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Index Granularity" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalIndexGranularityBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by kernel (RSS)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'MemoryResident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Tracked memory by allocator" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.allocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "Resident memory used by allocator (includes allocator metadata)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.resident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "ClickHouse vs Kernel Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM merge('system', '^metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM merge('system', '^asynchronous_metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'MemoryResident')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
+            { "title", "ClickHouse vs Allocator Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM merge('system', '^metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM merge('system', '^asynchronous_metric_log')
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'jemalloc.allocated')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
         /// Default dashboard for ClickHouse Cloud
         {
             { "dashboard", "Cloud overview" },
             { "title", "Queries/second" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_Query) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_Query) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "CPU Usage (cores)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric) / 1000000\nFROM (\n  SELECT event_time, sum(ProfileEvent_OSCPUVirtualTimeMicroseconds) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32} GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(metric) / 1000000
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSCPUVirtualTimeMicroseconds) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32} GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Queries Running" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_Query) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(CurrentMetric_Query) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Merges Running" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_Merge) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(CurrentMetric_Merge) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Selected Bytes/second" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_SelectedBytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_SelectedBytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "IO Wait (local fs)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_OSIOWaitMicroseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSIOWaitMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "S3 read wait" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3Microseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3Microseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "S3 read errors/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3RequestsErrors) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3RequestsErrors) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "CPU Wait" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_OSCPUWaitMicroseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSCPUWaitMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "OS CPU Usage (Userspace, normalized)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSUserTimeNormalized'\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSUserTimeNormalized'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "OS CPU Usage (Kernel, normalized)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSSystemTimeNormalized'\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSSystemTimeNormalized'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Read From Disk (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_OSReadBytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSReadBytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Read From Filesystem (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_OSReadChars) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_OSReadChars) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Memory (tracked, bytes)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_MemoryTracking) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(CurrentMetric_MemoryTracking) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Load Average (15 minutes)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM (\n  SELECT event_time, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric = 'LoadAverage15'\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM (
+  SELECT event_time, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric = 'LoadAverage15'
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Selected Rows/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_SelectedRows) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_SelectedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Inserted Rows/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_InsertedRows) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_InsertedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Total MergeTree Parts" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'TotalPartsOfMergeTreeTables'\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'TotalPartsOfMergeTreeTables'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Max Parts For Partition" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'MaxPartCountForPartition'\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'MaxPartCountForPartition'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Read From S3 (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3Bytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ReadBufferFromS3Bytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Filesystem Cache Size" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(CurrentMetric_FilesystemCacheSize) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(CurrentMetric_FilesystemCacheSize) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Disk S3 write req/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_DiskS3PutObject + ProfileEvent_DiskS3UploadPart + ProfileEvent_DiskS3CreateMultipartUpload + ProfileEvent_DiskS3CompleteMultipartUpload) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_DiskS3PutObject + ProfileEvent_DiskS3UploadPart + ProfileEvent_DiskS3CreateMultipartUpload + ProfileEvent_DiskS3CompleteMultipartUpload) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Disk S3 read req/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_DiskS3GetObject + ProfileEvent_DiskS3HeadObject + ProfileEvent_DiskS3ListObjects) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_DiskS3GetObject + ProfileEvent_DiskS3HeadObject + ProfileEvent_DiskS3ListObjects) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "FS cache hit rate" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Page cache hit rate" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes))) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes))) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Network receive bytes/sec" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM (\n  SELECT event_time, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric LIKE 'NetworkReceiveBytes%'\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM (
+  SELECT event_time, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric LIKE 'NetworkReceiveBytes%'
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Network send bytes/sec" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM (\n  SELECT event_time, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric LIKE 'NetworkSendBytes%'\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM (
+  SELECT event_time, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric LIKE 'NetworkSendBytes%'
+  GROUP BY event_time)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
             { "title", "Concurrent network connections" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(TCP_Connections), max(MySQL_Connections), max(HTTP_Connections) FROM (SELECT event_time, sum(CurrentMetric_TCPConnection) AS TCP_Connections, sum(CurrentMetric_MySQLConnection) AS MySQL_Connections, sum(CurrentMetric_HTTPConnection) AS HTTP_Connections FROM clusterAllReplicas(default, merge('system', '^metric_log')) WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} GROUP BY event_time) GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(TCP_Connections), max(MySQL_Connections), max(HTTP_Connections) FROM (SELECT event_time, sum(CurrentMetric_TCPConnection) AS TCP_Connections, sum(CurrentMetric_MySQLConnection) AS MySQL_Connections, sum(CurrentMetric_HTTPConnection) AS HTTP_Connections FROM clusterAllReplicas(default, merge('system', '^metric_log')) WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} GROUP BY event_time) GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         /// Default per host dashboard for ClickHouse Cloud
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Queries/second" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_Query) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_Query) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "CPU Usage (cores)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(metric) / 1000000\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_OSCPUVirtualTimeMicroseconds) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32} GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(metric) / 1000000
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_OSCPUVirtualTimeMicroseconds) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32} GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Queries Running" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(CurrentMetric_Query) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(CurrentMetric_Query) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Merges Running" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(CurrentMetric_Merge) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(CurrentMetric_Merge) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Selected Bytes/second" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_SelectedBytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_SelectedBytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "IO Wait (local fs)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_OSIOWaitMicroseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_OSIOWaitMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "S3 read wait" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3Microseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3Microseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "S3 read errors/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3RequestsErrors) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3RequestsErrors) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "CPU Wait" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_OSCPUWaitMicroseconds) / 1000000 AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_OSCPUWaitMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "OS CPU Usage (Userspace, normalized)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSUserTimeNormalized'\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSUserTimeNormalized'
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "OS CPU Usage (Kernel, normalized)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSSystemTimeNormalized'\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSSystemTimeNormalized'
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Read From Disk (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_OSReadBytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_OSReadBytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Read From Filesystem (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_OSReadChars) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_OSReadChars) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Memory (tracked, bytes)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(CurrentMetric_MemoryTracking) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(CurrentMetric_MemoryTracking) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview (host)" },
+            { "title", "In-Memory Caches (bytes)" },
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Load Average (15 minutes)" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)\nFROM (\n  SELECT event_time, hostname, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric = 'LoadAverage15'\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM (
+  SELECT event_time, hostname, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric = 'LoadAverage15'
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Selected Rows/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_SelectedRows) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_SelectedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Inserted Rows/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_InsertedRows) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_InsertedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Total MergeTree Parts" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, max(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'TotalPartsOfMergeTreeTables'\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'TotalPartsOfMergeTreeTables'
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Max Parts For Partition" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, max(value)\nFROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'MaxPartCountForPartition'\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'MaxPartCountForPartition'
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Read From S3 (bytes/sec)" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3Bytes) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_ReadBufferFromS3Bytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Filesystem Cache Size" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(CurrentMetric_FilesystemCacheSize) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(CurrentMetric_FilesystemCacheSize) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Disk S3 write req/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,\n hostname,\n  avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_DiskS3PutObject + ProfileEvent_DiskS3UploadPart + ProfileEvent_DiskS3CreateMultipartUpload + ProfileEvent_DiskS3CompleteMultipartUpload) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\n GROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT as t,
+ hostname,
+  avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_DiskS3PutObject + ProfileEvent_DiskS3UploadPart + ProfileEvent_DiskS3CreateMultipartUpload + ProfileEvent_DiskS3CompleteMultipartUpload) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+ GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Disk S3 read req/sec" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n hostname,\n avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_DiskS3GetObject + ProfileEvent_DiskS3HeadObject + ProfileEvent_DiskS3ListObjects) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\nGROUP BY t, hostname\nORDER BY t\nWITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+ hostname,
+ avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_DiskS3GetObject + ProfileEvent_DiskS3HeadObject + ProfileEvent_DiskS3ListObjects) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+GROUP BY t, hostname
+ORDER BY t
+WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "FS cache hit rate" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n hostname,\n avg(metric)\nFROM (\n  SELECT event_time, hostname, sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\nGROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+ hostname,
+ avg(metric)
+FROM (
+  SELECT event_time, hostname, sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Page cache hit rate" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n hostname,\n avg(metric)\nFROM (\n  SELECT event_time, hostname, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes))) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time, hostname)\nGROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+ hostname,
+ avg(metric)
+FROM (
+  SELECT event_time, hostname, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes))) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+  GROUP BY event_time, hostname)
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Network receive bytes/sec" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)\nFROM (\n  SELECT event_time, hostname, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric LIKE 'NetworkReceiveBytes%'\n  GROUP BY event_time, hostname)\nGROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM (
+  SELECT event_time, hostname, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric LIKE 'NetworkReceiveBytes%'
+  GROUP BY event_time, hostname)
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
         {
             { "dashboard", "Cloud overview (host)" },
             { "title", "Network send bytes/sec" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)\nFROM (\n  SELECT event_time, hostname, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric LIKE 'NetworkSendBytes%'\n  GROUP BY event_time, hostname)\nGROUP BY t, hostname\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM (
+  SELECT event_time, hostname, sum(value) AS value
+  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+  WHERE event_date >= toDate(now() - {seconds:UInt32})
+    AND event_time >= now() - {seconds:UInt32}
+    AND metric LIKE 'NetworkSendBytes%'
+  GROUP BY event_time, hostname)
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        /// Memory usage per host dashboard in ClickHouse Cloud
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by ClickHouse" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MemoryTracking)
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "In-Memory Caches" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t, hostname
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Primary key" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Index Granularity" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'TotalIndexGranularityBytesInMemoryAllocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by kernel (RSS)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'MemoryResident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Tracked memory by allocator" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.allocated'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Resident memory used by allocator (includes allocator metadata)" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} AND metric = 'jemalloc.resident'
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "ClickHouse vs Kernel Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'MemoryResident')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "ClickHouse vs Allocator Drift" },
+            { "query", trim(R"EOQ(
+SELECT
+    t,
+    hostname,
+    metrics.value - async_metrics.value AS drift
+FROM
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(CurrentMetric_MemoryTracking) AS value
+    FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32}))
+    GROUP BY ALL
+) AS metrics
+JOIN
+(
+    SELECT
+        CAST(toStartOfInterval(event_time, toIntervalSecond({rounding:UInt32})), 'INT') AS t,
+        hostname,
+        avg(value) AS value
+    FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
+    WHERE (event_date >= toDate(now() - {seconds:UInt32})) AND (event_time >= (now() - {seconds:UInt32})) AND (metric = 'jemalloc.allocated')
+    GROUP BY ALL
+) AS async_metrics USING (t, hostname)
+ORDER BY t ASC WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
         },
     };
 

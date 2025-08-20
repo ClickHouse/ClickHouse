@@ -92,7 +92,8 @@ public:
     }
 
     /// Some compressed read buffer can do useful seek operation
-    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */) {}
+    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
+    virtual off_t getPosition() const;
 
     CompressionCodecPtr codec;
 };

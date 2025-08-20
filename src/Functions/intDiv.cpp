@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include "divide/divide.h"
+#include <Functions/divide/divide.h>
 
 
 namespace DB
@@ -136,7 +136,7 @@ in the range of the dividend, or when dividing a minimal negative number by minu
     FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
     FunctionDocumentation::Argument argument2 = {"y", "Right hand operand."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of `x` and `y`";
+    FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`"};
     FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
 ┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
 │ 1000 │ Int64                                   │
@@ -170,6 +170,26 @@ using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNu
 
 REGISTER_FUNCTION(IntDivOrNull)
 {
-    factory.registerFunction<FunctionIntDivOrNull>();
+    FunctionDocumentation::Description description = R"(
+Same as `intDiv` but returns NULL when dividing by zero or when dividing a
+minimal negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "intDivOrNull(x, y)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "Left hand operand.", {"(U)Int*"}},
+        {"y", "Right hand operand.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`, or NULL."};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Integer division by zero", "SELECT intDivOrNull(1, 0)", "\\N"},
+        {"Dividing a minimal negative number by minus 1", "SELECT intDivOrNull(-9223372036854775808, -1)", "\\N"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionIntDivOrNull>(documentation);
 }
 }

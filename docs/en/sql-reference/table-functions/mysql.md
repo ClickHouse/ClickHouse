@@ -139,7 +139,7 @@ Or if copying only an incremental batch from MySQL based on the max current id:
 ```sql
 INSERT INTO mysql_copy
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
-WHERE id > (SELECT max(id) from mysql_copy);
+WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
 ## Related {#related}

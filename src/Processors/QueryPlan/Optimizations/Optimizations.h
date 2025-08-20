@@ -15,7 +15,7 @@ namespace QueryPlanOptimizations
 /// First pass (ideally) apply local idempotent operations on top of Plan.
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
@@ -31,8 +31,12 @@ struct Optimization
 {
     struct ExtraSettings
     {
+        /// Vector-search-related settings
         size_t max_limit_for_vector_search_queries;
+        bool vector_search_with_rescoring;
         VectorSearchFilterStrategy vector_search_filter_strategy;
+
+        /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };
@@ -140,6 +144,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
@@ -157,8 +162,16 @@ std::optional<UInt64> optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nod
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_initiator_with_projection_support);
+
+std::optional<String> optimizeUseNormalProjections(
+    Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool is_parallel_replicas_initiator_with_projection_support);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

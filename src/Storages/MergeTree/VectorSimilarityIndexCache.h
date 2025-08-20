@@ -14,7 +14,8 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric VectorSimilarityIndexCacheSize;
+    extern const Metric VectorSimilarityIndexCacheBytes;
+    extern const Metric VectorSimilarityIndexCacheCells;
 }
 
 namespace DB
@@ -32,12 +33,6 @@ struct VectorSimilarityIndexCacheCell
         : granule(std::move(granule_))
         , memory_bytes(granule->memoryUsageBytes() + ENTRY_OVERHEAD_BYTES_GUESS)
     {
-        CurrentMetrics::add(CurrentMetrics::VectorSimilarityIndexCacheSize, memory_bytes);
-    }
-
-    ~VectorSimilarityIndexCacheCell()
-    {
-        CurrentMetrics::sub(CurrentMetrics::VectorSimilarityIndexCacheSize, memory_bytes);
     }
 
     VectorSimilarityIndexCacheCell(const VectorSimilarityIndexCacheCell &) = delete;
@@ -61,7 +56,7 @@ public:
     using Base = CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>;
 
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, max_count, size_ratio)
+        : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
     static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
@@ -94,9 +89,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
         ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
     }
 };
 
