@@ -74,7 +74,10 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
+std::optional<String> optimizeUseNormalProjections(
+    Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool is_parallel_replicas_initiator_with_projection_support)
 {
     const auto & frame = stack.back();
 
@@ -344,9 +347,17 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         reading->getNumStreams(),
         max_added_blocks,
         best_candidate->merge_tree_projection_select_result_ptr,
-        reading->isParallelReadingEnabled());
+        reading->isParallelReadingEnabled(),
+        reading->getParallelReadingExtension());
 
-    if (!projection_reading)
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    /// Only the initiator should read the projection to avoid potential data duplication.
+    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator_with_projection_support
+        && has_parent_parts;
+    if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
         if (projection_query_info.prewhere_info)
@@ -365,8 +376,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+        fallbackToLocalProjectionReading(projection_reading);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
