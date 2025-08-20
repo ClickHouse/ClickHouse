@@ -222,6 +222,16 @@ To assert that two TSV files must be equal, wrap them in the `TSV` class and use
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
 
+### Using pdb to break on assert
+
+It is very handy to stop the test on assertion failure and play with it in
+`python`, this can be done with `--pdb` switch, it will spawn `python`
+interpreter in case of failures.
+
+For native runs, simply `pytest --pdb <tests and other options>`
+
+For docker runs, `runner <opts> -- <tests> --pdb`
+
 ### Debug mode
 
 Here is how you run a debugger for the server under integration test:
