@@ -198,6 +198,7 @@ private:
 
     void doPoll();
     void cleanUnprocessed();
+    void cleanAssignment();
     void resetIfStopped();
     ReadBufferPtr getNextMessage();
 };
