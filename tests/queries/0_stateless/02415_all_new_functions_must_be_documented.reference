@@ -164,9 +164,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hop
-hopEnd
-hopStart
 hostName
 hypot
 identity
@@ -537,9 +534,6 @@ trimBoth
 trimLeft
 trimRight
 tryBase58Decode
-tumble
-tumbleEnd
-tumbleStart
 tupleConcat
 tupleDivide
 tupleDivideByNumber

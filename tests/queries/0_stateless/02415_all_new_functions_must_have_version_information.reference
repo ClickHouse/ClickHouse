@@ -264,9 +264,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hop
-hopEnd
-hopStart
 hostName
 hypot
 identity
@@ -674,9 +671,6 @@ trimBoth
 trimLeft
 trimRight
 tryBase58Decode
-tumble
-tumbleEnd
-tumbleStart
 tuple
 tupleConcat
 tupleDivide
