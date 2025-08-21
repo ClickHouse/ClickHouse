@@ -69,7 +69,7 @@ def convert_setting(key : str, value: str):
             "max_replication_lag_to_enqueue"
             | "wait_entry_commited_timeout_sec"
             | "max_retries_before_automatic_recovery"
-            | "database_replicated_logs_to_keep"
+            | "logs_to_keep"
         ):
             value = int(value)
             return key, value
@@ -112,7 +112,7 @@ def get_settings_from_logs(node, db_name) ->Dict[str, Any]:
 @pytest.mark.parametrize("collection_name", [None, "postgres2"])
 @pytest.mark.parametrize("check_consistency", [None, True, False])
 @pytest.mark.parametrize("max_retries_before_automatic_recovery", [None, 1])
-@pytest.mark.parametrize("database_replicated_logs_to_keep", [None, 100])
+@pytest.mark.parametrize("logs_to_keep", [None, 100])
 def test_database_replicated_settings(
     started_cluster,
     node_with_database_replicated_settings: bool,  # default config from database_replicated_settings.xml
@@ -122,7 +122,7 @@ def test_database_replicated_settings(
     collection_name,
     check_consistency,
     max_retries_before_automatic_recovery,
-    database_replicated_logs_to_keep,
+    logs_to_keep,
 ):
     db_name = "test_" + get_random_string()
 
@@ -160,8 +160,8 @@ def test_database_replicated_settings(
         "max_retries_before_automatic_recovery", max_retries_before_automatic_recovery, int(5) if node_with_database_replicated_settings else int(10)
     )
     add_setting(
-        "database_replicated_logs_to_keep",
-        database_replicated_logs_to_keep,
+        "logs_to_keep",
+        logs_to_keep,
         int(200) if node_with_database_replicated_settings else int(1000),
     )
 
