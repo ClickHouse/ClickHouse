@@ -2451,6 +2451,8 @@ def test_writes_create_table(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, "", True)    
 
+    assert '`x` String' in instance.query(f"SHOW CREATE TABLE {TABLE_NAME}")
+
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
