@@ -1,13 +1,15 @@
 #pragma once
 
-#include <base/types.h>
-#include <vector>
 #include <cmath>
 #include <limits>
+#include <vector>
+#include <base/types.h>
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 
 // We start with 128 bins and grow the number of bins by 128
@@ -27,9 +29,12 @@ public:
     int offset = 0;
     std::vector<Float64> bins;
 
-    explicit DDSketchDenseStore(UInt32 chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
+    explicit DDSketchDenseStore(UInt32 chunk_size_ = CHUNK_SIZE)
+        : chunk_size(chunk_size_)
+    {
+    }
 
-    void copy(DDSketchDenseStore* other)
+    void copy(DDSketchDenseStore * other)
     {
         bins = other->bins;
         count = other->count;
@@ -38,10 +43,7 @@ public:
         offset = other->offset;
     }
 
-    int length() const
-    {
-        return static_cast<int>(bins.size());
-    }
+    int length() const { return static_cast<int>(bins.size()); }
 
     void add(int key, Float64 weight)
     {
@@ -64,9 +66,10 @@ public:
         return max_key;
     }
 
-    void merge(DDSketchDenseStore* other)
+    void merge(DDSketchDenseStore * other)
     {
-        if (other->count == 0) return;
+        if (other->count == 0)
+            return;
 
         if (count == 0)
         {
@@ -89,9 +92,8 @@ public:
 
     /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-    void serialize(WriteBuffer& buf) const
+    void serialize(WriteBuffer & buf) const
     {
-
         // Calculate the size of the dense and sparse encodings to choose the smallest one
         UInt64 num_bins = 0;
         UInt64 num_non_empty_bins = 0;
@@ -144,7 +146,7 @@ public:
         }
     }
 
-    void deserialize(ReadBuffer& buf)
+    void deserialize(ReadBuffer & buf)
     {
         UInt8 encoding_mode;
         readBinary(encoding_mode, buf);
