@@ -1795,32 +1795,57 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    // Move minmax indices to first positions, so they will be applied first as cheapest ones
-    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [](const auto & l, const auto & r)
     {
-        bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
-        bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
-        if (l_is_minmax == r_is_minmax)
+        std::vector<size_t> index_sizes;
+        index_sizes.reserve(skip_indexes.useful_indices.size());
+        for (const auto& part : parts)
         {
-            const auto l_granularity = l.index->getGranularity();
-            const auto r_granularity = r.index->getGranularity();
-            return l_granularity > r_granularity;
-        }
+            auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
+            index_order.resize(skip_indexes.useful_indices.size());
+            std::iota(index_order.begin(), index_order.end(), 0);
+
+            index_sizes.clear();
+
+            for (const auto &idx : skip_indexes.useful_indices)
+            {
+                const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
+                auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
+                index_sizes.emplace_back(sz);
+            }
+            // Move minmax indices to first positions, so they will be applied first as cheapest ones
+            std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            {
+                const auto l_index = useful_indices[l].index;
+                const auto r_index = useful_indices[r].index;
+
+                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+                auto l_index_priority = l_is_minmax ? 1 : 2;
+                auto r_index_priority = r_is_minmax ? 1 : 2;
 
 #if USE_USEARCH
-        // A vector similarity index (if present) is the most selective, hence move it to front
-        bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l.index.get());
-        bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r.index.get());
-        if (l_is_vectorsimilarity)
-            return true;
-        if (r_is_vectorsimilarity)
-            return false;
+                // A vector similarity index (if present) is the most selective, hence move it to front
+                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                if (l_is_vectorsimilarity)
+                    l_index_priority = 0;
+                if (r_is_vectorsimilarity)
+                    r_index_priority = 0;
 #endif
-        if (l_is_minmax)
-            return true; // left is min max but right is not
+                // negated since we want to prioritize coarser indexes
+                const auto neg_l_granularity = -l_index->getGranularity();
+                const auto neg_r_granularity = -r_index->getGranularity();
 
-        return false; // right is min max but left is not
-    });
+                const auto l_size = idx_sizes[l];
+                const auto r_size = idx_sizes[r];
+
+                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+
+            });
+
+        }
+    }
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
@@ -2856,6 +2881,30 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 
         map.add("Projections", std::move(projections_array));
     }
+}
+
+void ReadFromMergeTree::clearParallelReadingExtension()
+{
+    if (!is_parallel_reading_from_replicas)
+        return;
+
+    is_parallel_reading_from_replicas = false;
+    all_ranges_callback.reset();
+    read_task_callback.reset();
+}
+
+std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingExtension()
+{
+    if (!is_parallel_reading_from_replicas)
+        return nullptr;
+
+    chassert(all_ranges_callback.has_value() && read_task_callback.has_value());
+    const auto & client_info = context->getClientInfo();
+    return std::make_shared<ParallelReadingExtension>(
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
 }

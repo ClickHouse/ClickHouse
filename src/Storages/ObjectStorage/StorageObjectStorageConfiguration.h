@@ -11,11 +11,15 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
 class NamedCollection;
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 namespace ErrorCodes
 {
@@ -131,9 +135,9 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
@@ -187,6 +191,17 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
+    virtual SinkToStoragePtr write(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
+    }
+
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
@@ -195,6 +210,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
+
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

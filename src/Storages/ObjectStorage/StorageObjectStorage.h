@@ -144,6 +144,10 @@ public:
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);

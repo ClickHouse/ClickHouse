@@ -599,6 +599,11 @@ namespace ErrorCodes
     If true patch parts are applied on merges
     )", 0) \
     \
+    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
+    The maximum uncompressed size of data in all patch parts in bytes.
+    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+    0 - unlimited.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1300,9 +1305,6 @@ namespace ErrorCodes
     Preferred batch size for background cleanup (points are abstract but 1 point
     is approximately equivalent to 1 inserted block).
     )", 0) \
-    DECLARE(UInt64, cleanup_threads, 128, R"(
-    Threads for cleanup of outdated threads. Only available in ClickHouse Cloud
-    )", 0) \
     DECLARE(UInt64, min_relative_delay_to_close, 300, R"(
     Minimal delay from other replicas to close, stop serving
     requests and not return Ok during status check.
@@ -1880,6 +1882,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period, 30) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE

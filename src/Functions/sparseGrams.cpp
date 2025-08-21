@@ -312,7 +312,7 @@ public:
             {
                 start = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                end = reinterpret_cast<Pos>(&src_data[current_src_offset]) - 1;
+                end = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 impl.set(start, end);
                 while (impl.get(start, end))
                     res_data.push_back(hasher(start, end - start));

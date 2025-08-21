@@ -1,7 +1,4 @@
 CAST
-CRC32
-CRC32IEEE
-CRC64
 DATE
 FQDN
 IPv4CIDRToRange
@@ -51,16 +48,12 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
-appendTrailingCharIfAbsent
 asinh
 atan
 atan2
 atanh
 bar
-base58Decode
-base58Encode
 basename
 blockNumber
 blockSerializedSize
@@ -70,9 +63,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-ceil
-concat
-concatAssumeInjective
 connectionId
 cos
 cosh
@@ -95,10 +85,8 @@ cutWWW
 dateDiff
 dateTime64ToSnowflake
 dateTimeToSnowflake
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
-decodeXMLComponent
 defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
@@ -111,8 +99,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-encodeXMLComponent
-endsWith
 erf
 erfc
 errorCodeToName
@@ -122,10 +108,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
-extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
@@ -137,7 +119,6 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
-floor
 format
 formatReadableQuantity
 formatReadableSize
@@ -372,12 +353,6 @@ right
 rightPad
 rightPadUTF8
 rightUTF8
-round
-roundAge
-roundBankers
-roundDown
-roundDuration
-roundToExp2
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -396,11 +371,6 @@ sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 space
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 substring
@@ -553,7 +523,6 @@ translateUTF8
 trimBoth
 trimLeft
 trimRight
-trunc
 tryBase58Decode
 tumble
 tumbleEnd

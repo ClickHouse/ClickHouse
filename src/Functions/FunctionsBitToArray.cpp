@@ -120,7 +120,6 @@ private:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 writeBitmask<T>(vec_from[i], buf_to);
-                writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
 

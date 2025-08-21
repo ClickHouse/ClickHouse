@@ -33,11 +33,12 @@
 #include <IO/ReadHelpers.h>
 #include <filesystem>
 
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 using namespace DB;
 
@@ -71,7 +72,7 @@ namespace DB::Setting
     extern const SettingsUInt64 output_format_compression_level;
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 using namespace DB;
@@ -234,11 +235,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     }
 }
 
-}
-
-namespace DB
-{
-
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,
@@ -284,7 +280,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -324,7 +320,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;
@@ -350,8 +346,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt32:
         case TypeIndex::Int32:
             return {"int", true};
+        case TypeIndex::UInt64:
         case TypeIndex::Int64:
             return {"long", true};
         case TypeIndex::Float32:
