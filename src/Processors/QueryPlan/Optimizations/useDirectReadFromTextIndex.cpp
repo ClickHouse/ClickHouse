@@ -311,10 +311,10 @@ private:
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(subnode.function_base.get());
         chassert(adaptor);
         const auto function = std::dynamic_pointer_cast<FunctionsStringSearchBase>(adaptor->getFunction());
-        if (function == nullptr)
+        if (function == nullptr || function->info != FunctionsStringSearchBase::Info::Optimizable)
             return false;
-        if (function->getContext() == nullptr)
-            return false;
+
+        chassert(function->getContext() != nullptr);
 
         return true;
     }
