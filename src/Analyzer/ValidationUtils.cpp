@@ -19,13 +19,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_PREWHERE;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int ILLEGAL_PREWHERE;
-    extern const int UNSUPPORTED_METHOD;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
