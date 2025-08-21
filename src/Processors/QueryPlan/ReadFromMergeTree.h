@@ -185,8 +185,8 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
     void registerColumnsChanges(
-        const std::vector<std::string> &removed_columns,
-        const std::vector<std::string> &new_columns);
+        const std::vector<std::string> & removed_columns,
+        const std::vector<std::string> & new_columns);
 
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }

@@ -1,34 +1,27 @@
 #pragma once
 
-#include <algorithm>
 #include <Columns/ColumnVector.h>
 #include <Common/StringSearcher.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <base/defines.h>
-
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
-
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
-
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context_fwd.h>
-
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsStringSearchBase.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IndexContextInfo.h>
-
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/SelectQueryInfo.h>
+#include <base/defines.h>
+
 #include <algorithm>
-#include <Functions/FunctionsStringSearchBase.h>
 
 namespace DB
 {
@@ -201,7 +194,7 @@ public:
         /// Remember that the index_info_shared_lock is a shared mutex hold from here up to function end
         auto [index_context_info, index_info_shared_lock] = context->getIndexInfo();
 
-        const IndexContextInfo::PartInfo &part_info = index_context_info->part_info_vector[part_idx].value();
+        const IndexContextInfo::PartInfo & part_info = index_context_info->part_info_vector[part_idx].value();
         const std::shared_ptr<const PostingsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);
         chassert(cache_in_store);
 

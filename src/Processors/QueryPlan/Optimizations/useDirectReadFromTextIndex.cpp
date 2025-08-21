@@ -34,41 +34,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
-{
-    if (indent == 0)
-        std::println("=== Node: {} ===", node->result_name);
-    else
-        for (int i = 0; i < 3 * indent; ++i)
-            std::print(" ");
-
-    std::print("{} ", static_cast<const void*>(node));
-
-    if (node->function_base)
-        std::print("BaseFunc: {} -> ", node->function_base->getName());
-
-    if (node->function)
-        std::print("ExecutableFunc: {} -> ", node->function->getName());
-
-    std::print(" result {} (compiled: {}) (type: {}) (node type {})",
-        node->result_name,
-        node->is_function_compiled,
-        node->result_type->getName(),
-        static_cast<int>(node->type)
-    );
-
-    if (node->column)
-        std::print(" column {} (id: {})",
-            node->column->getName(),
-            static_cast<int>(node->column->getDataType())
-        );
-
-    std::println("");
-
-    for (const ActionsDAG::Node * subnode : node->children)
-        printHierarchicalActions(subnode, indent + 1);
-}
-
 struct IndexInfo : public IndexSize
 {
     String name;
@@ -114,44 +79,42 @@ std::map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree * re
 
 }
 
-/// This is a wrapper function declared as an ActionsDAG's friend to access its private members.
-/// The function is intended to perform DAG substitution for filter ActionsDAGs when it detects that the filter uses
-/// some text search functions that are optimized to skip IO and text match operations.
+/// This class substitutes filters with text-search functions by new internal functions which skip IO and read less data.
 ///
 /// The substitution is performed in this early optimization step because:
 /// 1, We want to exclude the column information to read as soon as possible
 /// 2. At some point we pretend to take advantage of lazy materialization
 ///
-/// The optimization could be implemented in two variants: function-> function and function-> column We choose the first approach because in
-/// the new function the main cost is the translation from roaring map to an index vector and for bug data sets the translation operation
-/// may be expensive. So, the function -> function approach is more efficient and parallelizable.
+/// The optimization could be implemented in two variants: function -> function and function -> column. We choose the first approach because
+/// in the new function the main cost is the decompression of the compressed posting lists (currently stored as roaring bitmap). So, the
+/// function -> function approach is more efficient and parallelizable.
 ///
-/// For a query like:
-/// select count() from table where hasToken(mytextcolumn, 'myword')
+/// For a query like
+///     SELECT count() FROM table WHERE hasToken(text_col, 'token')
+/// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an optimizable function (according to
+/// isOptimizableFunction), then this class replaces some nodes in the ActionsDAG (and references to them) to generate an
+/// equivalent query
+///     SELECT count() FROM table where _hasToken_index('text_col_idx', 'token', _part_index, _part_offset)
 ///
-/// if: mytextcolumn has an associated text index called mytextcolumn_index
-/// and: hasToken is an optimizable function according with: isOptimizableFunction
-///
-/// this class will replace some nodes in the dag (and the references to them) in order to create an equivalent query
-///
-/// select count() from table where _hasToken_index('mytextcolumn_index', 'myword', _part_index, _part_offset)
-///
-/// The new query will execute in a time fraction of the original one because:
-/// 1. It does not require direct access to mytextcolumn but only to mytextcolumn_index (intended to be much smaller than the text column)
+/// The new query will execute a lot faster the original one because:
+/// 1. It does not require direct access to text_col but only to text_col_idx (intended to be much smaller than the text column)
 /// 2. With no access needed if can totally bypass the cost IO operations
 /// 3. The text index was already read during the granules filter step
 /// 4. Still uses all the parallelization infrastructure out of the box
 ///
-/// The main entry function of this class are the constructor and the optimize function. All the other api is support functionality
+/// The main entry point of this class are the constructor and the replace function. All the other api is support functionality
 /// to ensure that the replacement is possible and correct.
+///
+/// This class is a (C++) friend of ActionsDAG and can therefore access its private members.
 ///
 /// Some of the functions implemented here could be added to ActionsDAG directly, but this wrapper approach simplifies the work by avoiding
 /// conflicts and minimizing coupling between this optimization and ActionsDAG.
-class FunctionReplacerDAG
+class FullTextMatchingFunctionDAGReplacer
 {
 public:
-    FunctionReplacerDAG(ActionsDAG &_dag, const std::map<String, IndexInfo> &columns_to_index_info_)
-        : dag(_dag), columns_to_index_info(columns_to_index_info_)
+    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const std::map<String, IndexInfo> & columns_to_index_info_)
+        : actions_dag(actions_dag_)
+        , columns_to_index_info(columns_to_index_info_)
     {
         /// Check if these nodes are already there.
         /// This may happen if the query uses them explicitly.
@@ -159,78 +122,70 @@ public:
         part_offset_node = tryFindInInputs("_part_offset");
     }
 
+    /// This optimization replaces text-search functions by internal functions.
+    /// Example: hasToken(text_col, 'token') -> hasToken('text_col_idx', 'token', _part_index, _part_offset)
+    ///
+    /// In detail:
+    /// 0. Insert a new node with the replacement function, including extra column nodes.
+    /// 1. Remove the `text_col` column input + node if it is no longer referenced after substitution.
+    /// 2. Update all references to the old function node.
+    /// 3. Remove the old function node.
+    /// 4. Update the output references if needed.
+    ///
+    /// TODO: A much simpler alternative would be to substitute the node inplace (update it's internal information).
+    /// Such approach avoids the latter redirection step. However, ActionDAG::addFunctionImpl is too complex for that ...
+    /// We could modify ::addFunctionImpl, but at the moment I prefer not to touch any code in ActionDAG.
+    std::vector<String> replace()
+    {
+        const std::vector<String> initial_inputs = actions_dag.getRequiredColumnsNames();
+
+        size_t replaced = 0;
+        for (ActionsDAG::Node & node : actions_dag.nodes)
+        {
+            if (!isOptimizableFunction(node))
+                continue;
+
+            if (!hasChildColumnNodeWithTextIndex(node))
+                continue;
+
+            replaced += tryReplaceFunctionNodeInplace(node);
+        }
+        if (replaced == 0)
+            return {};
+
+        actions_dag.removeUnusedActions(true);
+
+        const std::vector<String> final_inputs = actions_dag.getRequiredColumnsNames();
+
+        std::vector<String> removed_inputs;
+        std::ranges::set_difference(initial_inputs, final_inputs, std::back_inserter(removed_inputs));
+
+        chassert(removed_inputs.size() <= replaced);
+
+        return removed_inputs;
+    }
 
     void printDag() const
     {
-        int i = 0;
-        for (const ActionsDAG::Node &subnode : dag.getNodes())
+        for (int i = 0; const ActionsDAG::Node & node : actions_dag.getNodes())
         {
-            std::println("\nNode {}: {}", i++, subnode.result_name);
-            printHierarchicalActions(&subnode, 0);
+            std::println("\nNode {}: {}", i++, node.result_name);
+            printHierarchicalActions(& node, 0);
         }
-        i = 0;
-        for (const ActionsDAG::Node *input : dag.getInputs())
+        for (int i = 0; const ActionsDAG::Node *input : actions_dag.getInputs())
         {
             std::println("\nInput {}: {}", i++, input->result_name);
             printHierarchicalActions(input, 0);
         }
-        i = 0;
-        for (const ActionsDAG::Node *output : dag.getOutputs())
+        for (int i = 0; const ActionsDAG::Node *output : actions_dag.getOutputs())
         {
             std::println("\nOutput {}: {}", i++, output->result_name);
             printHierarchicalActions(output, 0);
         }
-
-    }
-
-    /// This optimization performs a replacement of the text search functions into pure index functions
-    /// i.e hasToken(text_column, "token") -> hasToken("text_column_index", "token", _part_index, _part_offset)
-    /// As expected, the replacement implies:
-    /// 0. Insert a new node with the replacement function (including also the extra column nodes)
-    /// 1. Remove the `text_column` column input+node when if not referenced after the substitution.
-    /// 2. Update all the references to the old function node.
-    /// 3. Remove the old function node
-    /// 4. Update the output references if needed.
-    /// The hardest part of the work is in: replaceFunctionNode
-    /// TODO: Ideally a much simpler alternative would be to substitute inplace the node (update it's internal information)
-    /// Such approach avoids the latter redirection step. However, the addFunctionImpl api is so complex that de-incentivated doing that
-    /// We could modify that function to allow doing that, but at the moment I prefer not to touch any code in that side until this is
-    /// accepted
-    std::vector<String> optimize()
-    {
-        const std::vector<String> initial_inputs = dag.getRequiredColumnsNames();
-
-        size_t replaced = 0;
-        for (ActionsDAG::Node &subnode : dag.nodes)
-        {
-            if (!isOptimizableFunction(subnode))
-                continue;
-
-            if (!hasChildColumnNodeWithTextIndex(subnode))
-                continue;
-
-            replaced += tryReplaceFunctionNodeInplace(subnode);
-        }
-
-        if (replaced > 0)
-        {
-            dag.removeUnusedActions(true);
-
-            const std::vector<String> final_inputs = dag.getRequiredColumnsNames();
-
-            std::vector<String> removed_inputs;
-            std::ranges::set_difference(initial_inputs, final_inputs, std::back_inserter(removed_inputs));
-
-            chassert(removed_inputs.size() <= replaced);
-
-            return removed_inputs;
-        }
-
-        return {};
     }
 
 private:
-    ActionsDAG & dag;
+    ActionsDAG & actions_dag;
     const std::map<String, IndexInfo> & columns_to_index_info;
 
     /// These will be initialized in the constructor if they exist or initialized lazily in the first effective replacement to avoid
@@ -242,7 +197,7 @@ private:
     /// Extract the context from the function. The functions need to store a reference to the context in order to be reemplazable with an
     /// index function. Only some special functions store a reference to the context, and the counterpart api (see:
     /// FunctionsStringSearchBase) was designed for that.
-    static ContextPtr extractFunctionContext(const ActionsDAG::Node &original_function_node)
+    static ContextPtr extractFunctionContext(const ActionsDAG::Node & original_function_node)
     {
         chassert(original_function_node.type == ActionsDAG::ActionType::FUNCTION);
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(original_function_node.function_base.get());
@@ -256,7 +211,7 @@ private:
 
     /// If the column has an index associated in columns_to_index_name, try to get a column for it if already registered, or create a new
     /// one.  If there is no index for the column, then return nullptr
-    const ActionsDAG::Node & tryGetOrCreateIndexColumn(const ActionsDAG::Node &column)
+    const ActionsDAG::Node & tryGetOrCreateIndexColumn(const ActionsDAG::Node & column)
     {
         chassert(column.type == ActionsDAG::ActionType::INPUT);
         chassert(column.result_type->getTypeId() == TypeIndex::String);
@@ -270,14 +225,14 @@ private:
         { /// Check if the associated index column already exist
 
             /// This uses backward iterators because the index column node (if exists already) should be inserted by a previous call of this
-            /// same function.  Which uses dag.addColumn (push_back).
-            const auto index_column_it = std::find_if(dag.nodes.rbegin(), dag.nodes.rend(),
-                [&name](const ActionsDAG::Node &index_column) -> bool
+            /// same function.  Which uses actions_dag.addColumn (push_back).
+            const auto index_column_it = std::find_if(actions_dag.nodes.rbegin(), actions_dag.nodes.rend(),
+                [&name](const ActionsDAG::Node & index_column)
                 {
                     return index_column.result_name == name;
                 });
 
-            if (index_column_it != dag.nodes.rend())
+            if (index_column_it != actions_dag.nodes.rend())
                 return *index_column_it;
         }
 
@@ -289,20 +244,19 @@ private:
         tmp.type = std::make_shared<DataTypeString>();
         tmp.column = tmp.type->createColumnConst(0, cast_type_constant_value);
 
-        return dag.addColumn(tmp);
+        return actions_dag.addColumn(tmp);
     }
 
-    // Equivalent to tryFindInOutputs
+    /// Works similar as ActionsDAG::tryFindInOutputs
     const ActionsDAG::Node * tryFindInInputs(const String & name) const
     {
-        for (const auto & node : dag.inputs)
+        for (const auto & node : actions_dag.inputs)
             if (node->result_name == name)
                 return node;
 
         return nullptr;
     }
 
-    /// Static helpers
     static bool isOptimizableFunction(const ActionsDAG::Node &subnode)
     {
         if (subnode.type != ActionsDAG::ActionType::FUNCTION || !subnode.function_base)
@@ -319,7 +273,42 @@ private:
         return true;
     }
 
-    bool isColumnNodeWithTextIndex(const ActionsDAG::Node *node) const
+    static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
+    {
+        if (indent == 0)
+            std::println("=== Node: {} ===", node->result_name);
+        else
+            for (int i = 0; i < 3 * indent; ++i)
+                std::print(" ");
+
+        std::print("{} ", static_cast<const void*>(node));
+
+        if (node->function_base)
+            std::print("BaseFunc: {} -> ", node->function_base->getName());
+
+        if (node->function)
+            std::print("ExecutableFunc: {} -> ", node->function->getName());
+
+        std::print(" result {} (compiled: {}) (type: {}) (node type {})",
+            node->result_name,
+            node->is_function_compiled,
+            node->result_type->getName(),
+            static_cast<int>(node->type)
+        );
+
+        if (node->column)
+            std::print(" column {} (id: {})",
+                node->column->getName(),
+                static_cast<int>(node->column->getDataType())
+            );
+
+        std::println("");
+
+        for (const ActionsDAG::Node * subnode : node->children)
+            printHierarchicalActions(subnode, indent + 1);
+    }
+
+    bool isColumnNodeWithTextIndex(const ActionsDAG::Node * node) const
     {
         return (node->type == ActionsDAG::ActionType::INPUT
                 && node->result_type->getTypeId() == TypeIndex::String
@@ -327,21 +316,21 @@ private:
                 && columns_to_index_info.contains(node->result_name));
     }
 
-    bool hasChildColumnNodeWithTextIndex(const ActionsDAG::Node &subnode) const
+    bool hasChildColumnNodeWithTextIndex(const ActionsDAG::Node & subnode) const
     {
         return std::ranges::any_of(
             subnode.children,
-            [&](const ActionsDAG::Node *child) -> bool { return isColumnNodeWithTextIndex(child); }
+            [&](const ActionsDAG::Node * child) { return isColumnNodeWithTextIndex(child); }
         );
     }
 
     /// Attempt to add a new node with the replacement function.
     /// This adds also extra input columns if needed.
     /// Returns the number of columns (inputs) replaced with an index name in the new function.
-    int tryReplaceFunctionNodeInplace(ActionsDAG::Node &original_function_node)
+    int tryReplaceFunctionNodeInplace(ActionsDAG::Node & original_function_node)
     {
         chassert(isOptimizableFunction(original_function_node));
-        const ContextPtr context = FunctionReplacerDAG::extractFunctionContext(original_function_node);
+        const ContextPtr context = FullTextMatchingFunctionDAGReplacer::extractFunctionContext(original_function_node);
 
         // TODO: This should go to the virtual function
         const String replacement_function_name = fmt::format("_{}_index", original_function_node.function->getName());
@@ -353,7 +342,7 @@ private:
         /// this code could be a bit simpler.
         ActionsDAG::NodeRawConstPtrs new_children;
         size_t replaced = 0;
-        for (const auto *const child : original_function_node.children)
+        for (const auto * const child : original_function_node.children)
         {
             if (isColumnNodeWithTextIndex(child))
             {
@@ -372,15 +361,15 @@ private:
             /// explicitly uses them. i.e: select _part_index, _part_offset where ...,
             /// or select ... where _part_index > X, or select ... where some_function(_part_offset)
             if (part_index_node == nullptr)
-                part_index_node = &dag.addInput("_part_index", std::make_shared<DataTypeNumber<UInt64>>());
+                part_index_node = &actions_dag.addInput("_part_index", std::make_shared<DataTypeNumber<UInt64>>());
             new_children.push_back(part_index_node);
 
             if (part_offset_node == nullptr)
-                part_offset_node = &dag.addInput("_part_offset", std::make_shared<DataTypeNumber<UInt64>>());
+                part_offset_node = &actions_dag.addInput("_part_offset", std::make_shared<DataTypeNumber<UInt64>>());
             new_children.push_back(part_offset_node);
 
             /// From ActionsDAG::addFunction
-            const ActionsDAG::Node & new_function_node = dag.addFunction(
+            const ActionsDAG::Node & new_function_node = actions_dag.addFunction(
                 FunctionFactory::instance().get(replacement_function_name, context),
                 new_children,
                 original_function_node.result_name);
@@ -388,13 +377,12 @@ private:
             original_function_node = new_function_node;
 
             /// We just added it so, we expect it to be at the end to remove it.
-            chassert(&new_function_node == &dag.nodes.back());
-            dag.nodes.pop_back();
+            chassert(&new_function_node == &actions_dag.nodes.back());
+            actions_dag.nodes.pop_back();
         }
 
         return replaced;
     }
-
 };
 
 /// Text index search queries have this form:
@@ -438,31 +426,28 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
     if (columns_to_index_info.empty())
         return no_layers_updated;
 
-    /// Check if any of the inputs is a column with a text index, else this optimization does not apply
-    bool has_mapped_input = false;
+    /// If the expression contains no columns with a text index as input, do nothing.
+    bool has_input_has_column_with_text_index = false;
     for (const auto * const input : filter_step->getExpression().getInputs())
     {
         const auto index_it = columns_to_index_info.find(input->result_name);
         if (index_it == columns_to_index_info.end())
             continue;
 
-        has_mapped_input = true;
+        has_input_has_column_with_text_index = true;
         break;
     }
-    if (!has_mapped_input)
+    if (!has_input_has_column_with_text_index)
         return no_layers_updated;
 
-    /// Ok, so far we can try to apply the optimization. Let's modify the DAG.
-    FunctionReplacerDAG replacer(filter_step->getExpression(), columns_to_index_info);
+    /// Now try to modify the ActionsDAG.
+    FullTextMatchingFunctionDAGReplacer replacer(filter_step->getExpression(), columns_to_index_info);
 
-    const std::vector<String> removed_inputs = replacer.optimize();
+    const std::vector<String> removed_inputs = replacer.replace();
 
-    replacer.printDag();
+    /// replacer.printDag();
 
-    read_from_mergetree_step->registerColumnsChanges(
-        removed_inputs,
-        {"_part_index", "_part_offset"}
-    );
+    read_from_mergetree_step->registerColumnsChanges(removed_inputs, {"_part_index", "_part_offset"});
 
     return 0;
 }

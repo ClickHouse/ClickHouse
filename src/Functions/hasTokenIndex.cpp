@@ -1,8 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/hasTokenIndex.h>
 
-#include <Common/Volnitsky.h>
-
 namespace DB
 {
 
