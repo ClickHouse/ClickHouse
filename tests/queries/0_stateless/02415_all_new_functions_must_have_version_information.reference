@@ -73,11 +73,6 @@ byteSize
 caseWithExpression
 catboostEvaluate
 cbrt
-compareSubstrings
-concat
-concatAssumeInjective
-concatWithSeparator
-concatWithSeparatorAssumeInjective
 connectionId
 cos
 cosh
@@ -110,10 +105,8 @@ cutWWW
 dateDiff
 dateTime64ToSnowflake
 dateTimeToSnowflake
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
-decodeXMLComponent
 defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
@@ -174,9 +167,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-encodeXMLComponent
-endsWith
-endsWithUTF8
 erf
 erfc
 errorCodeToName
@@ -188,7 +178,6 @@ extract
 extractAll
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
-extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
