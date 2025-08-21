@@ -427,7 +427,8 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
-    return (iceberg_object_info->underlying_format_read_schema_id != relevant_snapshot_schema_id)
+    /// if we need schema evolution or have equality deletes files, we need to read all the columns.
+    return (iceberg_object_info->underlying_format_read_schema_id != relevant_snapshot_schema_id) || (!iceberg_object_info->equality_deletes_objects.empty())
         ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
         : nullptr;
 }
