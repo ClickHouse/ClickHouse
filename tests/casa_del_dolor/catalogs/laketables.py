@@ -9,18 +9,18 @@ from .clickhousetospark import ClickHouseSparkTypeMapper
 
 class TableStorage(Enum):
     Unkown = 0
-    Local = 1
-    S3 = 2
-    Azure = 3
+    S3 = 1
+    Azure = 2
+    Local = 3
 
     @staticmethod
     def storage_from_str(loc: str):
-        if loc.lower() == "local":
-            return TableStorage.Local
         if loc.lower() == "s3":
             return TableStorage.S3
         if loc.lower() == "azure":
             return TableStorage.Azure
+        if loc.lower() == "local":
+            return TableStorage.Local
         return TableStorage.Unkown
 
 
@@ -40,27 +40,24 @@ class TableFormat(Enum):
 
 class LakeCatalogs(Enum):
     NoCatalog = 0
-    Hadoop = 1
-    Glue = 2
-    Hive = 3
-    REST = 4
+    Glue = 1
+    Hive = 2
+    REST = 3
+    Unity = 4
     Nessie = 5
-    Unity = 6
 
     @staticmethod
     def catalog_from_str(loc: str):
-        if loc.lower() == "hadoop":
-            return LakeCatalogs.Hadoop
         if loc.lower() == "glue":
             return LakeCatalogs.Glue
         if loc.lower() == "hive":
             return LakeCatalogs.Hive
         if loc.lower() == "rest":
             return LakeCatalogs.REST
-        if loc.lower() == "nessie":
-            return LakeCatalogs.Nessie
         if loc.lower() == "unity":
             return LakeCatalogs.Unity
+        if loc.lower() == "nessie":
+            return LakeCatalogs.Nessie
         return LakeCatalogs.NoCatalog
 
 

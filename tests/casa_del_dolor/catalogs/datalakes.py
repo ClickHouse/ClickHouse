@@ -118,12 +118,15 @@ def get_spark(
     catalog_format = ""
     all_jars = [
         "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
-        "org.apache.iceberg:iceberg-spark-runtime-3.5_6.12:1.9.2",
-        "org.apache.iceberg:iceberg-spark-extensions-3.5_6.12:1.9.2",
-        "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
+        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
+        "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
+        "org.apache.iceberg:iceberg-aws:1.9.2",
         "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
         "io.delta:delta-spark_2.12:3.3.2",
     ]
+    if format == TableFormat.DeltaLake and catalog == LakeCatalogs.Unity:
+        all_jars.append("io.unitycatalog:unitycatalog-spark_2.12:0.2.0")
+
     nessie_jars = [
         "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.4_2.12:0.76.0",
         "org.projectnessie:nessie-spark-runtime-3.4_2.12:0.76.0",
@@ -136,7 +139,11 @@ def get_spark(
         catalog_format = "org.apache.iceberg.spark.SparkCatalog"
     elif format == TableFormat.DeltaLake:
         catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
-        catalog_format = "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        catalog_format = (
+            "io.unitycatalog.spark.UCSingleCatalog"
+            if catalog == LakeCatalogs.Unity
+            else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
     else:
         raise Exception("Unknown format")
 
@@ -164,31 +171,26 @@ def get_spark(
             )
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
-        builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
-        builder.config("spark.sql.catalogImplementation", "hive")
-        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083")
+        if format == TableFormat.Iceberg:
+            builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
+            )
         # Hive metastore version
         builder.config("spark.sql.hive.metastore.version", "3.1.3")
         builder.config("spark.sql.hive.metastore.jars", "builtin")
-        # Schema handling
-        builder.config("spark.sql.hive.metastore.schema.verification", "false")
-        builder.config("spark.sql.hive.metastore.schema.verification.record", "false")
-        # Partitioning
-        builder.config("spark.sql.sources.partitionOverwriteMode", "dynamic")
-        builder.config("spark.sql.hive.convertMetastoreParquet", "true")
-        builder.config("spark.sql.hive.convertMetastoreOrc", "true")
-        # Glue metastore?
-        builder.config(
-            "spark.hadoop.hive.metastore.client.factory.class",
-            "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
-        )
         builder.enableHiveSupport()
-    elif catalog == LakeCatalogs.REST:
+    elif catalog == LakeCatalogs.REST or (
+        catalog == LakeCatalogs.Unity and format == TableFormat.Iceberg
+    ):
         builder.config(
             f"spark.sql.catalog.{catalog_name}.catalog-impl",
             "org.apache.iceberg.rest.RESTCatalog",
         )
-        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8182")
+        builder.config(
+            f"spark.sql.catalog.{catalog_name}.uri",
+            f"http://localhost:{"8080/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
+        )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.cache-enabled",
             random.choice(["true", "false"]),
@@ -209,6 +211,10 @@ def get_spark(
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
             )
+    elif catalog == LakeCatalogs.Unity and format == TableFormat.DeltaLake:
+        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8080")
+        builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
+        builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
     elif catalog == LakeCatalogs.Nessie:
         builder.config(
             f"spark.sql.catalog.{catalog_name}.catalog-impl",
@@ -216,7 +222,8 @@ def get_spark(
         )
         # builder.config(f"spark.sql.catalog.{catalog_name}.uri", "uri")
         # builder.config(f"spark.sql.catalog.{catalog_name}.ref", "ref")
-    else:
+    elif format == TableFormat.Iceberg:
+        # Something as default for iceberg, nothing needed for delta
         builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
 
     # ============================================================
@@ -244,8 +251,6 @@ def get_spark(
             "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         )
         if catalog == LakeCatalogs.Glue:
-            if format == TableFormat.DeltaLake:
-                builder.config("spark.databricks.delta.catalog.glue.enabled", "true")
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.endpoint", "http://localhost:3000"
             )
@@ -256,8 +261,7 @@ def get_spark(
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.secret-access-key", minio_secret_key
             )
-        elif catalog == LakeCatalogs.Hive:
-            builder.config("spark.hadoop.aws.region", "us-east-1")
+        builder.config("spark.hadoop.aws.region", "us-east-1")
 
         # S3 optimizations
         # builder.config("spark.hadoop.fs.s3a.fast.upload", "true")
