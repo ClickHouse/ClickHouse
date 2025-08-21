@@ -1,9 +1,9 @@
+#include <string>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/Serializations/SerializationTime64.h>
-#include <Common/Exception.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <string>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -11,8 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 static constexpr UInt32 TIME64_MAX_SCALE = 9;
@@ -21,14 +21,10 @@ DataTypeTime64::DataTypeTime64(UInt32 scale_, const std::string & time_zone_name
     : DataTypeDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)
 {
     if (scale_ > TIME64_MAX_SCALE)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "DataTypeTime64 scale {} is too large, maximum is {}", scale_, TIME64_MAX_SCALE);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DataTypeTime64 scale {} is too large, maximum is {}", scale_, TIME64_MAX_SCALE);
 
     if (!time_zone_name.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Specifying timezone for Time64 type is not allowed");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specifying timezone for Time64 type is not allowed");
 }
 
 

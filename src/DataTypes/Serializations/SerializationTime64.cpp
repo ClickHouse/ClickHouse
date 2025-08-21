@@ -15,8 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
+extern const int CANNOT_PARSE_DATETIME;
+extern const int CANNOT_PARSE_NUMBER;
 }
 
 
@@ -30,7 +30,8 @@ SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /
 {
 }
 
-void SerializationTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
+void SerializationTime64::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
     writeTime64Text(value, scale, ostr);
@@ -63,17 +64,30 @@ void SerializationTime64::deserializeWholeText(IColumn & column, ReadBuffer & is
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time64");
 }
 
-void SerializationTime64::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime64::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
 }
 
-static inline void readText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & /*time_zone*/, const DateLUTImpl & /*utc_time_zone*/)
+static inline void readText(
+    Time64 & x,
+    UInt32 scale,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & /*time_zone*/,
+    const DateLUTImpl & /*utc_time_zone*/)
 {
     readTime64Text(x, scale, istr);
 }
 
-static inline bool tryReadText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & /*settings*/, const DateLUTImpl & /*time_zone*/, const DateLUTImpl & /*utc_time_zone*/)
+static inline bool tryReadText(
+    Time64 & x,
+    UInt32 scale,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & /*time_zone*/,
+    const DateLUTImpl & /*utc_time_zone*/)
 {
     return tryReadTime64Text(x, scale, istr);
 }
@@ -104,7 +118,8 @@ bool SerializationTime64::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
     return true;
 }
 
-void SerializationTime64::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime64::serializeTextQuoted(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -145,7 +160,7 @@ void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & i
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse Time64 value as number");
         }
     }
-    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnType &>(column).getData().push_back(x); /// It's important to do this at the end - for exception safety.
 }
 
 bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -161,11 +176,12 @@ bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
         if (!tryReadIntText(x, istr))
             return false;
     }
-    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnType &>(column).getData().push_back(x); /// It's important to do this at the end - for exception safety.
     return true;
 }
 
-void SerializationTime64::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime64::serializeTextJSON(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -204,7 +220,8 @@ bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     return true;
 }
 
-void SerializationTime64::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationTime64::serializeTextCSV(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);

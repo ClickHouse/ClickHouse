@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <DataTypes/DataTypeNumberBase.h>
-#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTime.h>
+#include <Common/DateLUT.h>
 
 class DateLUTImpl;
 
@@ -18,7 +18,6 @@ namespace DB
 class DataTypeTime64 final : public DataTypeDecimalBase<Time64>
 {
 public:
-
     static constexpr int max_value = 63'539; // 999*60 + 59*60+ 59
     using Base = DataTypeDecimalBase<Time64>;
     static constexpr UInt8 default_scale = 3;
@@ -28,7 +27,10 @@ public:
 
     explicit DataTypeTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
-    DataTypeTime64() : DataTypeTime64(default_scale) {}
+    DataTypeTime64()
+        : DataTypeTime64(default_scale)
+    {
+    }
 
     bool hasExplicitTimeZone() const { return false; }
     const DateLUTImpl & getTimeZone() const;
@@ -54,4 +56,3 @@ protected:
 std::string getTimeTimezone(const IDataType & data_type);
 
 }
-
