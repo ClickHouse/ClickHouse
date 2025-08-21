@@ -24,7 +24,7 @@ public:
     static constexpr auto family_name = "Time64";
     static constexpr auto type_id = TypeIndex::Time64;
 
-    explicit DataTypeTime64(UInt32 scale_, const std::string & time_zone_name = "");
+    explicit DataTypeTime64(UInt32 scale_, std::string_view time_zone_name = "");
 
     DataTypeTime64() : DataTypeTime64(default_scale, "") {}
 
@@ -50,4 +50,3 @@ protected:
 std::string getTimeTimezone(const IDataType & data_type);
 
 }
-
