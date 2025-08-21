@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Splitting Strings'
 sidebar_label: 'String splitting'
 slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

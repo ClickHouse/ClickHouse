@@ -3,6 +3,7 @@ description: 'Documentation for Mathematical Functions'
 sidebar_label: 'Mathematical'
 slug: /sql-reference/functions/math-functions
 title: 'Mathematical Functions'
+doc_type: 'reference'
 ---
 
 # Mathematical functions

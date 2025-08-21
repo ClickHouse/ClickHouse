@@ -6,6 +6,7 @@ sidebar_label: 'JSON'
 sidebar_position: 63
 slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
+doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';

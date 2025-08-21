@@ -4,6 +4,7 @@ sidebar_label: 'Quotas'
 sidebar_position: 51
 slug: /operations/quotas
 title: 'Quotas'
+doc_type: 'how-to'
 ---
 
 :::note Quotas in ClickHouse Cloud

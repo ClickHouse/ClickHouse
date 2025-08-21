@@ -4,6 +4,7 @@ sidebar_label: 'Tuple(T1, T2, ...)'
 sidebar_position: 34
 slug: /sql-reference/data-types/tuple
 title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
 ---
 
 # Tuple(T1, T2, ...)

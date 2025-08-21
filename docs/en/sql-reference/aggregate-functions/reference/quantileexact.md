@@ -4,6 +4,7 @@ description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactE
 sidebar_position: 173
 slug: /sql-reference/aggregate-functions/reference/quantileexact
 title: 'quantileExact Functions'
+doc_type: 'reference'
 ---
 
 # quantileExact functions

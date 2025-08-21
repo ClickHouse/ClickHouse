@@ -4,6 +4,7 @@ description: 'Documentation for the JSONLines format'
 keywords: ['JSONLines']
 slug: /interfaces/formats/JSONLines
 title: 'JSONLines'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias                 |

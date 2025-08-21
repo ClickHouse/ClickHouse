@@ -2,6 +2,7 @@
 description: 'Documentation for Http'
 slug: /operations/external-authenticators/http
 title: 'HTTP'
+doc_type: 'how-to'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

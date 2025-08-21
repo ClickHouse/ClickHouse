@@ -3,6 +3,7 @@ description: 'Documentation for arrayJoin function'
 sidebar_label: 'arrayJoin'
 slug: /sql-reference/functions/array-join
 title: 'arrayJoin function'
+doc_type: 'reference'
 ---
 
 # arrayJoin function

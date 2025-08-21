@@ -5,6 +5,7 @@ sidebar_label: 'MySQL'
 sidebar_position: 50
 slug: /engines/database-engines/mysql
 title: 'MySQL'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

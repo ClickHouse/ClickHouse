@@ -6,6 +6,7 @@ sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
 title: 'Kafka'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

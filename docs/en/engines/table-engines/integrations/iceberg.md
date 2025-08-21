@@ -5,6 +5,7 @@ sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
 title: 'Iceberg Table Engine'
+doc_type: 'reference'
 ---
 
 # Iceberg table engine {#iceberg-table-engine}

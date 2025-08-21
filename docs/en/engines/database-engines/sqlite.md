@@ -5,6 +5,7 @@ sidebar_label: 'SQLite'
 sidebar_position: 55
 slug: /engines/database-engines/sqlite
 title: 'SQLite'
+doc_type: 'reference'
 ---
 
 # SQLite

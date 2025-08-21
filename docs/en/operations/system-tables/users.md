@@ -3,6 +3,7 @@ description: 'System table containing a list of user accounts configured on the 
 keywords: ['system table', 'users']
 slug: /operations/system-tables/users
 title: 'system.users'
+doc_type: 'reference'
 ---
 
 # system.users

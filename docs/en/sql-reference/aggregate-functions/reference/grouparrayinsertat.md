@@ -3,6 +3,7 @@ description: 'Inserts a value into the array at the specified position.'
 sidebar_position: 140
 slug: /sql-reference/aggregate-functions/reference/grouparrayinsertat
 title: 'groupArrayInsertAt'
+doc_type: 'reference'
 ---
 
 # groupArrayInsertAt

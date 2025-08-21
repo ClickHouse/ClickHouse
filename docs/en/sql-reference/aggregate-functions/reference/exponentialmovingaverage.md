@@ -4,6 +4,7 @@ description: 'Calculates the exponential moving average of values for the determ
 sidebar_position: 132
 slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
 title: 'exponentialMovingAverage'
+doc_type: 'reference'
 ---
 
 ## exponentialMovingAverage {#exponentialmovingaverage}

@@ -1,3 +1,7 @@
+---
+doc_type: 'how-to'
+---
+
 
 [//]: # (This file is included in FAQ > Troubleshooting)
 

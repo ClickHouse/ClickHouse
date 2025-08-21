@@ -6,6 +6,7 @@ sidebar_label: 's3Cluster'
 sidebar_position: 181
 slug: /sql-reference/table-functions/s3Cluster
 title: 's3Cluster'
+doc_type: 'reference'
 ---
 
 # s3Cluster Table Function

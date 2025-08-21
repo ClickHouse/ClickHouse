@@ -4,6 +4,7 @@ description: 'System table containing information about messages
 keywords: ['system table', 'dead_letter_queue']
 slug: /operations/system-tables/dead_letter_queue
 title: 'system.dead_letter_queue'
+doc_type: 'reference'
 ---
 
 Contains information about messages received via a streaming engine and parsed with errors. Currently implemented for Kafka and RabbitMQ.

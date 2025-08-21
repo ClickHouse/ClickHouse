@@ -5,6 +5,7 @@ sidebar_label: 'Special Data Types'
 sidebar_position: 55
 slug: /sql-reference/data-types/special-data-types/
 title: 'Special Data Types'
+doc_type: 'overview'
 ---
 
 # Special data types

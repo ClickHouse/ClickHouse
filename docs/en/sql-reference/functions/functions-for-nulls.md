@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Nullable Values'
 sidebar_label: 'Nullable'
 slug: /sql-reference/functions/functions-for-nulls
 title: 'Functions for Working with Nullable Values'
+doc_type: 'reference'
 ---
 
 # Functions for working with nullable values

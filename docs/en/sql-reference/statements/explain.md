@@ -4,6 +4,7 @@ sidebar_label: 'EXPLAIN'
 sidebar_position: 39
 slug: /sql-reference/statements/explain
 title: 'EXPLAIN Statement'
+doc_type: 'reference'
 ---
 
 Shows the execution plan of a statement.

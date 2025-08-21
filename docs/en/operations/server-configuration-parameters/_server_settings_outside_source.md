@@ -1,3 +1,7 @@
+---
+doc_type: 'reference'
+---
+
 ## asynchronous_metric_log {#asynchronous_metric_log}
 
 Enabled by default on ClickHouse Cloud deployments.

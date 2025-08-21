@@ -3,6 +3,7 @@ description: 'Documentation for Other Functions'
 sidebar_label: 'Other'
 slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
