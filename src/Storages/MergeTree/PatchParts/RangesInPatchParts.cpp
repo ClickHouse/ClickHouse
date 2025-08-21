@@ -273,8 +273,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
     MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
 
-    /// Caches are stored in the global context, it's ok to take it from storage.
-    auto context = patch_part->storage.getContext();
+    auto context = Context::getGlobalContextInstance();
     auto mark_cache = context->getIndexMarkCache();
     auto uncompressed_cache = context->getIndexUncompressedCache();
 
