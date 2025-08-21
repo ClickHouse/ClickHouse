@@ -31,7 +31,10 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
+namespace
+{
+
+void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
 {
     if (indent == 0)
         std::println("=== Node: {} ===", node->result_name);
@@ -66,9 +69,6 @@ static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
         printHierarchicalActions(subnode, indent + 1);
 }
 
-namespace
-{
-
 struct IndexInfo : public IndexSize
 {
     String name;
@@ -79,6 +79,38 @@ struct IndexInfo : public IndexSize
     {
     }
 };
+
+std::map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree * read_from_mergetree_step)
+{
+    std::map<String, IndexInfo> columns_to_index_infos;
+
+    const StorageMetadataPtr metadata = read_from_mergetree_step->getStorageMetadata();
+    if (!metadata || !metadata->hasSecondaryIndices())
+        return {};
+
+    const IStorage::IndexSizeByName secondary_index_sizes = read_from_mergetree_step->getMergeTreeData().getSecondaryIndexSizes();
+
+    /// Get the list of columns: text_index we use latter and construct the size information needed by Replacer
+    for (const auto & index_description : metadata->getSecondaryIndices())
+    {
+        if (index_description.type != "text")
+            continue;
+
+        auto size_it = secondary_index_sizes.find(index_description.name);
+        if (size_it == secondary_index_sizes.end())
+            continue;
+
+        /// Poor man's detection if the index is not materialized.
+        /// TODO This needs more work because the materialization is per part but here we check per column.
+        if (size_it->second.marks == 0 || size_it->second.data_uncompressed == 0)
+            continue;
+
+        chassert(index_description.column_names.size() == 1);
+        columns_to_index_infos.emplace(index_description.column_names.front(), IndexInfo(index_description.name, size_it->second));
+    }
+
+    return columns_to_index_infos;
+}
 
 }
 
@@ -364,43 +396,6 @@ private:
     }
 
 };
-
-namespace
-{
-
-std::map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree * read_from_mergetree_step)
-{
-    std::map<String, IndexInfo> columns_to_index_infos;
-
-    const StorageMetadataPtr metadata = read_from_mergetree_step->getStorageMetadata();
-    if (!metadata || !metadata->hasSecondaryIndices())
-        return {};
-
-    const IStorage::IndexSizeByName secondary_index_sizes = read_from_mergetree_step->getMergeTreeData().getSecondaryIndexSizes();
-
-    /// Get the list of columns: text_index we use latter and construct the size information needed by Replacer
-    for (const auto & index_description : metadata->getSecondaryIndices())
-    {
-        if (index_description.type != "text")
-            continue;
-
-        auto size_it = secondary_index_sizes.find(index_description.name);
-        if (size_it == secondary_index_sizes.end())
-            continue;
-
-        /// Poor man's detection if the index is not materialized.
-        /// TODO This needs more work because the materialization is per part but here we check per column.
-        if (size_it->second.marks == 0 || size_it->second.data_uncompressed == 0)
-            continue;
-
-        chassert(index_description.column_names.size() == 1);
-        columns_to_index_infos.emplace(index_description.column_names.front(), IndexInfo(index_description.name, size_it->second));
-    }
-
-    return columns_to_index_infos;
-}
-
-}
 
 /// Text index search queries have this form:
 ///     SELECT [...]
