@@ -2146,7 +2146,8 @@ SinkToStoragePtr StorageFile::write(
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
                     "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
-                    " You can configure ClickHouse to create a new file "
+                    " You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting,"
+                    " or you can configure ClickHouse to create a new file "
                     "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
                     path, format_name);
         }

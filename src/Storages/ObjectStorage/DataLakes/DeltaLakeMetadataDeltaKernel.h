@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
@@ -30,6 +31,8 @@ public:
         ContextPtr context);
 
     bool supportsUpdate() const override { return true; }
+
+    bool supportsWrites() const override { return true; }
 
     bool update(const ContextPtr & context) override;
 
@@ -61,9 +64,21 @@ public:
         size_t list_batch_size,
         ContextPtr context) const override;
 
+    DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
+
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
+
 private:
     const LoggerPtr log;
-    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
+    const DeltaLake::KernelHelperPtr kernel_helper;
+    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     mutable std::mutex table_snapshot_mutex;
 };
 

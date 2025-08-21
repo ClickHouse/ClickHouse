@@ -446,6 +446,35 @@ Result:
 
 Enabled by default.
 )", 0) \
+DECLARE(Bool, input_format_json_infer_array_of_dynamic_from_array_of_different_types, true, R"(
+If enabled, during schema inference ClickHouse will use Array(Dynamic) type for JSON arrays with values of different data types.
+
+Example:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┐
+│ a    │ Array(Dynamic) │
+└──────┴────────────────┘
+```
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────────────────────────────┐
+│ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
+└──────┴──────────────────────────────────────────────────────────────────┘
+```
+
+Enabled by default.
+)", 0) \
     DECLARE(Bool, input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects, false, R"(
 Use String type instead of an exception in case of ambiguous paths in JSON objects during named tuples inference
 )", 0) \
@@ -509,6 +538,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
+)", 0) \
+    DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
+When enabled, dots in JSON keys will be escaped during parsing.
 )", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
@@ -902,7 +934,45 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
+This setting determines how nested structures such as Tuples, Maps, and Arrays are displayed within the `data` array when using the JSON output format.
+
+For example, instead of output:
+
+```json
+"data":
+[
+  {
+    "tuple": {"a":1,"b":2,"c":3},
+    "array": [1,2,3],
+    "map": {"a":1,"b":2,"c":3}
+  }
+],
+```
+
+The output will be formatted as:
+
+```json
+"data":
+[
+    {
+        "tuple": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "array": [
+            1,
+            2,
+            3
+        ],
+        "map": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        }
+    }
+],
+```
 
 Enabled by default.
 )", 0) \
@@ -1049,10 +1119,13 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
+    DECLARE(Bool, output_format_parquet_date_as_uint16, false, R"(
+Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit parquet DATE type (read back as Date32).
+)", 0) \
     DECLARE(UInt64, output_format_parquet_max_dictionary_size, 1024 * 1024, R"(
 If dictionary size grows bigger than this many bytes, switch to encoding without dictionary. Set to 0 to disable dictionary encoding.
 )", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(

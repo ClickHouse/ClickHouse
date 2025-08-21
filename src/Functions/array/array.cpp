@@ -184,9 +184,7 @@ private:
             {
                 StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
-                out_chars[cur_out_offset + ref.size] = 0;
-
-                cur_out_offset += ref.size + 1;
+                cur_out_offset += ref.size;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }

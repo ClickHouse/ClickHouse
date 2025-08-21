@@ -1055,9 +1055,9 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
     /// Populate the "_distance" virtual column from the distances we got from vector index
-    auto distance_column = ColumnFloat64::create(part_offsets_auto_column->size(), Float64(999999.99));
-    ColumnFloat64::Container & distance_container = distance_column->getData();
-    Float64 * distances = distance_container.data();
+    auto distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
+    ColumnFloat32::Container & distance_container = distance_column->getData();
+    Float32 * distances = distance_container.data();
 
     /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
@@ -1209,7 +1209,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     fillVirtualColumns(columns, result);
 
     updatePerformanceCounters(num_rows);
-    result.addNumBytesRead(getTotalBytesInColumns(result.columns));
+    result.addNumBytesRead(getTotalBytesInColumns(columns));
 
     return columns;
 }

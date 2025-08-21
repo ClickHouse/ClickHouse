@@ -561,7 +561,7 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
             return {memory, 1};
         }
 
-        size_t sz = self.byteSizeAt(n) + 1 /* null byte */;
+        size_t sz = self.byteSizeAt(n) + 1 /* null map byte */;
         memory = arena.allocContinue(sz, begin);
         *memory = 0;
         self.serializeValueIntoMemory(n, memory + 1);
@@ -662,7 +662,7 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     if (is_null)
     {
         for (size_t i = 0; i < rows; ++i)
-            sizes[i] += !!is_null[i] + !is_null[i] * (element_size + 1 /* null byte */);
+            sizes[i] += 1 + !is_null[i] * element_size;
     }
     else
     {

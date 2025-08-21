@@ -86,6 +86,7 @@ static struct InitFiu
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -110,8 +111,9 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    ONCE(iceberg_writes_cleanup) \
     ONCE(smt_commit_exception_before_op)
-
 
 namespace FailPoints
 {
