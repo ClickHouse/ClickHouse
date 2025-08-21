@@ -308,7 +308,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS_INDEX)
         {
-            // TODO: JAM This is totally arbitrary at the moment. needs polishing
+            // TODO: This is totally arbitrary at the moment. needs polishing
             // rpn_stack.emplace_back(true, true);
             rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, cache_store), true);
         }
@@ -582,7 +582,7 @@ bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunction
     //auto part_argument = function_node.getArgumentAt(2);
     //auto offset_argument = function_node.getArgumentAt(3);
 
-    /// TODO: JAM assert that the column is text
+    /// TODO: assert that the column is text
     Field index_value;
     DataTypePtr index_type;
     if (!index_argument.tryGetConstant(index_value, index_type))
@@ -593,8 +593,8 @@ bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunction
     if (!token_argument.tryGetConstant(token_value, token_type))
         return false;
 
-    // TODO: JAM temporal solution
-    /// TODO: JAM Implement this properly with all the needed checks and filtering
+    // TODO: temporal solution
+    /// TODO: Implement this properly with all the needed checks and filtering
     // This forces the index to be inserted in the useful_indexes set.
     out.function = RPNElement::FUNCTION_EQUALS_INDEX;
     out.gin_query_string = std::make_unique<GinQueryString>();
@@ -700,7 +700,7 @@ std::shared_ptr<const GinQueryString> MergeTreeIndexConditionGin::getGinFilter(c
     const auto it = std::find_if(rpn.begin(), rpn.end(),
         [&token](const RPNElement &element) -> bool
         {
-            // TODO: JAM This condition should check also the `index` argument
+            // TODO: This condition should check also the `index` argument
             return (element.function == RPNElement::FUNCTION_EQUALS_INDEX
                     && element.gin_query_string != nullptr
                     && element.gin_query_string->getQueryString() == token);

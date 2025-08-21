@@ -571,7 +571,7 @@ protected:
     mutable StorageSnapshotCache storage_snapshot_cache;
     mutable std::mutex storage_snapshot_cache_mutex;
 
-    /// TODO: JAM get a better name for this.
+    /// TODO: get a better name for this.
     using IndexContextInfoPtr = std::shared_ptr<const IndexContextInfo>;
     mutable std::shared_mutex index_info_mutex;
     mutable IndexContextInfoPtr index_info;

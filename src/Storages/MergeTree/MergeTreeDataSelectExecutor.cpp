@@ -1788,7 +1788,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         return {ranges, in_read_hints};
     }
 
-    // TODO: JAM check this code.
+    // TODO: check this code.
     // At the moment the code will only work for granularity = 1 because I am not playing with the paddings
     MarkRanges index_ranges;
     for (const auto & range : ranges)
