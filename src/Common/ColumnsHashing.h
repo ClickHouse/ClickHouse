@@ -420,17 +420,8 @@ struct HashMethodSerialized
         if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
             l2_size = ret;
 #endif
-
-        /// `serialized_buffer` should fit in L2 cache to avoid L2 cache misses.
-        if (total_size > l2_size)
-            return false;
-
-        /// Average row size should be small enough to avoid cache misses.
         size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        if (avg_row_size >= 64)
-            return false;
-
-        return true;
+        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
