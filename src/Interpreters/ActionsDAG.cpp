@@ -757,11 +757,11 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    std::unordered_map<const Node *, Node *> copy_map;
+    std::unordered_map<const Node *, const Node *> copy_map;
     return cloneSubDAG(outputs, copy_map, remove_aliases);
 }
 
-ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases)
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases)
 {
     ActionsDAG actions;
 
@@ -1412,11 +1412,11 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 
 ActionsDAG ActionsDAG::clone() const
 {
-    std::unordered_map<const Node *, Node *> old_to_new_nodes;
+    std::unordered_map<const Node *, const Node *> old_to_new_nodes;
     return clone(old_to_new_nodes);
 }
 
-ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const
+ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, const Node *> & old_to_new_nodes) const
 {
     ActionsDAG actions;
 

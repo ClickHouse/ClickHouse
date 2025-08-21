@@ -144,7 +144,7 @@ public:
     JoinExpressionActions(const Block & left_header, const Block & right_header);
     JoinExpressionActions(const Block & left_header, const Block & right_header, ActionsDAG && actions_dag);
 
-    JoinExpressionActions clone(ActionsDAG::NodePtrMap & node_map) const;
+    JoinExpressionActions clone(ActionsDAG::NodeMapping & node_map) const;
 
     JoinActionRef findNode(const String & column_name, bool is_input = false, bool throw_if_not_found = true) const;
 

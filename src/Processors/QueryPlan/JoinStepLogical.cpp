@@ -1181,7 +1181,7 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
 QueryPlanStepPtr JoinStepLogical::clone() const
 {
     auto new_join_operator = join_operator;
-    ActionsDAG::NodePtrMap node_map;
+    ActionsDAG::NodeMapping node_map;
     auto new_expression_actions = expression_actions.clone(node_map);
 
     auto remap = [&](const auto * node)

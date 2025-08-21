@@ -335,7 +335,7 @@ ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
     return getSubDAG(std::views::single(action));
 }
 
-JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodePtrMap & node_map) const
+JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & node_map) const
 {
     auto actions_dag = getActionsDAG()->clone(node_map);
     JoinExpressionActions::Data::NodeToSourceMapping new_expression_sources;

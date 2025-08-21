@@ -276,12 +276,12 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    using NodePtrMap = std::unordered_map<const Node *, Node *>;
-    ActionsDAG clone(NodePtrMap & old_to_new_nodes) const;
+    using NodeMapping = std::unordered_map<const Node *, const Node *>;
+    ActionsDAG clone(NodeMapping & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
-    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases);
+    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
@@ -338,7 +338,6 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAG merge(ActionsDAG && first, ActionsDAG && second);
 
-    using NodeMapping = std::unordered_map<const Node *, const Node *>;
     /// The result is similar to merge(*this, second);
     /// Invariant : no nodes are removed from the first (this) DAG.
     /// So that pointers to nodes are kept valid.
