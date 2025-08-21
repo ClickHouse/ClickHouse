@@ -225,12 +225,9 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 template class FunctionSearchImpl<traits::SearchAnyTraits>;
 template class FunctionSearchImpl<traits::SearchAllTraits>;
 
-FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
-FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-
 REGISTER_FUNCTION(SearchAny)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_searchAny = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
 This function can only be used if setting `allow_experimental_full_text_index` is enabled.
@@ -251,13 +248,13 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax = "searchAny(input, ['needle1', 'needle2', ..., 'needleN'])";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_searchAny = "searchAny(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_searchAny = {
         {"input", "The input column.", {"String", "FixedString"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_searchAny = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_searchAny = {
     {
         "Usage example",
         R"(
@@ -291,16 +288,16 @@ SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_searchAny = {25, 7};
+    FunctionDocumentation::Category category_searchAny = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_searchAny = {description_searchAny, syntax_searchAny, arguments_searchAny, returned_value_searchAny, examples_searchAny, introduced_in_searchAny, category_searchAny};
 
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation);
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation_searchAny);
 }
 
 REGISTER_FUNCTION(SearchAll)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_searchAll = R"(
 Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
 This function can only be used if setting `allow_experimental_full_text_index` is enabled.
@@ -321,13 +318,13 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax = "searchAll(input, ['needle1', 'needle2', ..., 'needleN'])";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_searchAll = "searchAll(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments_searchAll = {
         {"input", "The input column.", {"String", "FixedString"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_searchAll = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_searchAll = {
     {
         "Usage example",
         R"(
@@ -361,10 +358,10 @@ SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_searchAll = {25, 7};
+    FunctionDocumentation::Category category_searchAll = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_searchAll = {description_searchAll, syntax_searchAll, arguments_searchAll, returned_value_searchAll, examples_searchAll, introduced_in_searchAll, category_searchAll};
 
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation);
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation_searchAll);
 }
 }

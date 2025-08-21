@@ -24,7 +24,7 @@ Returns the position (in bytes, starting at 1) of a substring `needle` in a stri
 
 If substring `needle` is empty, these rules apply:
 - if no `start_pos` was specified: return `1`
-- if `start_pos = 0`: return `1`  
+- if `start_pos = 0`: return `1`
 - if `start_pos >= 1` and `start_pos <= length(haystack) + 1`: return `start_pos`
 - otherwise: return `0`
 

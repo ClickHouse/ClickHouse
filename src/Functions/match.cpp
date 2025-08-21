@@ -22,7 +22,7 @@ REGISTER_FUNCTION(Match)
     FunctionDocumentation::Description description = R"(
 Checks if a provided string matches the provided regular expression pattern.
 
-The pattern works under UTF-8 assumptions. The pattern is automatically anchored at both ends (as if the pattern started with '^' and ended with '$'). 
+The pattern works under UTF-8 assumptions. The pattern is automatically anchored at both ends (as if the pattern started with '^' and ended with '$').
 This function uses RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
     )";
     FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
