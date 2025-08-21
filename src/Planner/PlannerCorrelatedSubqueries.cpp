@@ -200,14 +200,14 @@ namespace
 {
 
 void projectCorrelatedColumns(
-    QueryPlan & lhs_plan,
+    QueryPlan & query_plan,
     const ColumnIdentifiers & correlated_column_identifiers)
 {
     ActionsDAG project_only_correlated_columns_actions;
 
     NameSet correlated_column_identifiers_set(correlated_column_identifiers.begin(), correlated_column_identifiers.end());
 
-    const auto & lhs_plan_header = lhs_plan.getCurrentHeader();
+    const auto & lhs_plan_header = query_plan.getCurrentHeader();
 
     auto & outputs = project_only_correlated_columns_actions.getOutputs();
     for (const auto & column : lhs_plan_header->getColumnsWithTypeAndName())
@@ -219,7 +219,7 @@ void projectCorrelatedColumns(
         }
     }
 
-    lhs_plan.addStep(std::make_unique<ExpressionStep>(
+    query_plan.addStep(std::make_unique<ExpressionStep>(
         lhs_plan_header,
         std::move(project_only_correlated_columns_actions)));
 }
