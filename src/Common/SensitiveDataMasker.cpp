@@ -89,6 +89,15 @@ public:
         return m;
     }
 
+    uint64_t applyNoThrow(std::string & data) const
+    {
+        auto m = RE2::GlobalReplace(&data, regexp, replacement);
+#ifndef NDEBUG
+        matches_count += m;
+#endif
+        return m;
+    }
+
     const std::string & getName() const { return name; }
     const std::string & getReplacementString() const { return replacement_string; }
 #ifndef NDEBUG
@@ -187,11 +196,19 @@ void SensitiveDataMasker::addMaskingRule(
 }
 
 
-size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
+size_t SensitiveDataMasker::wipeSensitiveDataThrow(std::string & data) const
 {
     size_t matches = 0;
     for (const auto & rule : all_masking_rules)
         matches += rule->apply(data);
+    return matches;
+}
+
+size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
+{
+    size_t matches = 0;
+    for (const auto & rule : all_masking_rules)
+        matches += rule->applyNoThrow(data);
 
     if (matches)
         ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
