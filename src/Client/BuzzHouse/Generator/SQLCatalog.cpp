@@ -191,7 +191,14 @@ void SQLBase::setTablePath(RandomGenerator & rg)
         }
         bucket_path = next_bucket_path;
     }
-    if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
+    if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
+    {
+        /// Iceberg supports 3 formats
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+
+        file_format = rg.pickRandomly(formats);
+    }
+    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
     {
         /// Set other parameters
         if (isFileEngine() || rg.nextMediumNumber() < 91)
