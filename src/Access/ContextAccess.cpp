@@ -976,12 +976,15 @@ void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const Acce
     if (isGranted(context, flags, parameter))
         return;
 
-    auto access_rights = getAccessRights();
-    auto filters = access_rights->getFilters(parameter);
-    for (const auto & filter : filters)
+    if (!to_check_by_filter.empty())
     {
-        if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-            return;
+        auto access_rights = getAccessRights();
+        auto filters = access_rights->getFilters(parameter);
+        for (const auto & filter : filters)
+        {
+            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+                return;
+        }
     }
 
     checkAccess(context, flags, parameter);
