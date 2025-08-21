@@ -1,6 +1,10 @@
 import logging
 import os
 import random
+import shutil
+import socket
+import subprocess
+import time
 import typing
 import urllib3
 
@@ -369,10 +373,26 @@ class DolorCatalog:
         )
 
 
+def wait_for_port(host, port, timeout=90):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        try:
+            with socket.create_connection((host, port), 1):
+                return True
+        except OSError:
+            time.sleep(0.5)
+    return False
+
+
 class SparkHandler:
-    def __init__(self):
+    def __init__(self, cluster, args):
         self.logger = logging.getLogger(__name__)
+        self.uc_server = None
         self.catalogs = {}
+        self.uc_server_dir = None
+        if args.with_unity is not None:
+            self.uc_server_dir = args.with_unity
+            self.uc_server_run_dir = cluster.instances_dir_name / "ucserver"
 
     def create_minio_bucket(self, cluster, bucket_name: str):
         minio_client = Minio(
@@ -384,6 +404,54 @@ class SparkHandler:
         )
         if not minio_client.bucket_exists(bucket_name):
             minio_client.make_bucket(bucket_name)
+
+    def start_uc_server(self):
+        if self.uc_server is None:
+            if self.uc_server_dir is None:
+                raise RuntimeError(
+                    "with_unity argument with path to unity server dir is required"
+                )
+            java = shutil.which("java")
+            if not java:
+                raise RuntimeError(
+                    "Java not found on PATH. Install JDK 17 and/or set JAVA_HOME."
+                )
+
+            env = os.environ.copy()
+            env["UC_HOST"] = "localhost"
+            env["UC_PORT"] = "8080"
+            env["UC_DIR"] = str(self.uc_server_dir)
+            uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
+            os.makedirs(self.uc_server_run_dir, exist_ok=True)
+            # Start the server
+            self.uc_server = subprocess.Popen(
+                [str(uc_server_bin)],
+                cwd=str(self.uc_server_run_dir),
+                env=env,
+                stdout=self.uc_server_run_dir / "uc_server_bin.log",
+                stderr=self.uc_server_run_dir / "uc_server_bin.err.log",
+                text=True,
+                bufsize=1,
+            )
+            self.logger.info(f"Starting UC server (pid={self.uc_server.pid}) …")
+            if not wait_for_port(env["UC_HOST"], env["UC_PORT"], timeout=120):
+                # Print a few lines of output to help debug
+                try:
+                    for _ in range(50):
+                        line = self.uc_server.stdout.readline()
+                        if not line:
+                            break
+                        self.logger.error(
+                            f"UC server did not start: Here is a line {line}"
+                        )
+                except Exception:
+                    pass
+                raise TimeoutError(
+                    f"UC server did not start on {env["UC_HOST"]}:{env["UC_PORT"]} within timeout"
+                )
+            self.logger.info(
+                f"UC server is accepting connections on http://{env["UC_HOST"]}:{env["UC_PORT"]}"
+            )
 
     def create_database(self, session, catalog_name: str):
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
@@ -477,6 +545,8 @@ class SparkHandler:
                     hive_catalog.create_namespace("test")
             else:
                 raise Exception("Hive catalog not available outside AWS at the moment")
+        elif next_catalog == LakeCatalogs.Unity:
+            self.start_uc_server()
         elif next_catalog == LakeCatalogs.Nessie:
             raise Exception("No Nessie yet")
 
@@ -521,3 +591,6 @@ class SparkHandler:
     def close_sessions(self):
         for _, val in self.catalogs.items():
             val.session.close()
+        if self.uc_server is not None and self.uc_server.poll() is None:
+            self.uc_server.kill()
+            self.uc_server.wait()

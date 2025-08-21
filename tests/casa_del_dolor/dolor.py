@@ -300,7 +300,7 @@ parser.add_argument(
     "--with-hms", action="store_true", help="With Hive catalog for Spark"
 )
 parser.add_argument(
-    "--with-unity", action="store_true", help="With Unity catalog for Spark"
+    "--with-unity", type=pathlib.Path, help="With Unity catalog for Spark, path to Unity dir"
 )
 
 args = parser.parse_args()
@@ -441,7 +441,7 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
-spark_handler = SparkHandler()
+spark_handler = SparkHandler(cluster, args)
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -492,6 +492,7 @@ client = generator.run_generator(servers[0], logger, args)
 
 
 def dolor_cleanup():
+    spark_handler.close_sessions()
     if catalog_server.is_alive():
         catalog_server.stop()
     if client.process.poll() is None:
