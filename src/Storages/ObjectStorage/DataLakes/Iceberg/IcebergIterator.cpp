@@ -73,7 +73,7 @@ using namespace Iceberg;
 namespace
 {
 std::span<const ManifestFileEntry>
-defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects)
+defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete)
 {
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -81,7 +81,9 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
     /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
     /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
     /// ManifestFileEntry has comparator by default which helps to do that.
-    auto beg_it = std::lower_bound(deletes_objects.begin(), deletes_objects.end(), data_object_);
+    auto beg_it = is_equality_delete ?
+        std::upper_bound(deletes_objects.begin(), deletes_objects.end(), data_object_)
+        : std::lower_bound(deletes_objects.begin(), deletes_objects.end(), data_object_);
     auto end_it = std::upper_bound(
         deletes_objects.begin(),
         deletes_objects.end(),
@@ -309,11 +311,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     if (blocking_queue.pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
-        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files))
+        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files))
+        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true))
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
