@@ -5,7 +5,7 @@ sidebar_position: 15
 slug: /development/build-osx
 title: 'Build on macOS for macOS'
 keywords: ['MacOS', 'Mac', 'build']
-doc_type: 'tutorial'
+doc_type: 'explanation'
 ---
 
 # How to Build ClickHouse on macOS for macOS

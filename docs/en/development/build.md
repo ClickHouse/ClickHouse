@@ -4,7 +4,7 @@ sidebar_label: 'Build on Linux'
 sidebar_position: 10
 slug: /development/build
 title: 'How to Build ClickHouse on Linux'
-doc_type: 'tutorial'
+doc_type: 'how-to'
 ---
 
 # How to Build ClickHouse on Linux

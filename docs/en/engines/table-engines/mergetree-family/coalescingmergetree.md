@@ -7,7 +7,7 @@ slug: /engines/table-engines/mergetree-family/coalescingmergetree
 title: 'CoalescingMergeTree'
 keywords: ['CoalescingMergeTree']
 show_related_blogs: true
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # CoalescingMergeTree

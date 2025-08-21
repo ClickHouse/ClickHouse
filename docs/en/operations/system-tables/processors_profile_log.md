@@ -4,7 +4,7 @@ description: 'System table containing profiling information on the processors le
 keywords: ['system table', 'processors_profile_log', 'EXPLAIN PIPELINE']
 slug: /operations/system-tables/processors_profile_log
 title: 'system.processors_profile_log'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

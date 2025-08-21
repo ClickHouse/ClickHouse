@@ -1,5 +1,5 @@
 ---
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 ## asynchronous_metric_log {#asynchronous_metric_log}

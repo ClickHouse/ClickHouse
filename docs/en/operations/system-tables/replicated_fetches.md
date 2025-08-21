@@ -4,7 +4,7 @@ description: 'System table containing information about currently running backgr
 keywords: ['system table', 'replicated_fetches']
 slug: /operations/system-tables/replicated_fetches
 title: 'system.replicated_fetches'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

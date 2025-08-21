@@ -4,7 +4,7 @@ sidebar_label: 'Build on Linux for LoongArch64'
 sidebar_position: 35
 slug: /development/build-cross-loongarch
 title: 'Build on Linux for LoongArch64'
-doc_type: 'tutorial'
+doc_type: 'explanation'
 ---
 
 # Build on Linux for LoongArch64

@@ -5,7 +5,7 @@ sidebar_label: 'Client Libraries'
 sidebar_position: 26
 slug: /interfaces/third-party/client-libraries
 title: 'Client Libraries from Third-party Developers'
-doc_type: 'overview'
+doc_type: 'reference'
 ---
 
 # Client libraries from third-party developers

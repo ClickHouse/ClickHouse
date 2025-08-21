@@ -4,7 +4,7 @@ sidebar_label: 'Session Settings'
 slug: /operations/settings/settings
 toc_max_heading_level: 2
 description: 'Settings which are found in the ``system.settings`` table.'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -10680,18 +10680,6 @@ After this time in seconds entries in the [query cache](../query-cache.md) becom
 Possible values:
 
 - Positive integer >= 0.
-
-## query_condition_cache_selectivity_threshold {#query_condition_cache_selectivity_threshold} 
-
-
-
-<SettingsInfoBlock type="Double" default_value="1" />
-
-
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting."}]}]}/>
-
-Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
 
 ## query_condition_cache_store_conditions_as_plaintext {#query_condition_cache_store_conditions_as_plaintext} 
 

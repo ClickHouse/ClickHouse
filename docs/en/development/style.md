@@ -4,7 +4,7 @@ sidebar_label: 'C++ Style Guide'
 sidebar_position: 70
 slug: /development/style
 title: 'C++ Style Guide'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 # C++ style guide

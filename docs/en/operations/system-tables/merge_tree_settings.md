@@ -3,7 +3,7 @@ description: 'System table containing information about settings for MergeTree t
 keywords: ['system table', 'merge_tree_settings']
 slug: /operations/system-tables/merge_tree_settings
 title: 'system.merge_tree_settings'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 # system.merge_tree_settings

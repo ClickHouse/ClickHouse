@@ -6,7 +6,7 @@ sidebar_label: 'Replicated'
 sidebar_position: 30
 slug: /engines/database-engines/replicated
 title: 'Replicated'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # Replicated

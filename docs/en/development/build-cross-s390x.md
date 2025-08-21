@@ -4,7 +4,7 @@ sidebar_label: 'Build on Linux for s390x (zLinux)'
 sidebar_position: 30
 slug: /development/build-cross-s390x
 title: 'Build on Linux for s390x (zLinux)'
-doc_type: 'tutorial'
+doc_type: 'explanation'
 ---
 
 # Build on Linux for s390x (zLinux)

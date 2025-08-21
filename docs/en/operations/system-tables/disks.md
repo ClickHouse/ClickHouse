@@ -4,7 +4,7 @@ description: 'System table containing information about disks defined in the ser
 keywords: ['system table', 'disks']
 slug: /operations/system-tables/disks
 title: 'system.disks'
-doc_type: 'overview'
+doc_type: 'how-to'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

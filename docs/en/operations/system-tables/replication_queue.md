@@ -5,7 +5,7 @@ description: 'System table containing information about tasks from replication q
 keywords: ['system table', 'replication_queue']
 slug: /operations/system-tables/replication_queue
 title: 'system.replication_queue'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 # system.replication_queue

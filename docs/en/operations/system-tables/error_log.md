@@ -4,7 +4,7 @@ description: 'System table containing the history of error values from table `sy
 keywords: ['system table', 'error_log']
 slug: /operations/system-tables/system-error-log
 title: 'system.error_log'
-doc_type: 'overview'
+doc_type: 'how-to'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

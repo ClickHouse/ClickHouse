@@ -4,7 +4,7 @@ sidebar_label: 'Arrow Flight'
 sidebar_position: 186
 slug: /engines/table-engines/integrations/arrowflight
 title: 'Arrow Flight'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # Arrow Flight

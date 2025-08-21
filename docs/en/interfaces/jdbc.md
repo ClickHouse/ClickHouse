@@ -5,7 +5,7 @@ sidebar_label: 'JDBC Driver'
 sidebar_position: 20
 slug: /interfaces/jdbc
 title: 'JDBC Driver'
-doc_type: 'tutorial'
+doc_type: 'reference'
 ---
 
 # JDBC driver

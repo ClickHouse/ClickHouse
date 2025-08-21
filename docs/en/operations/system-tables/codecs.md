@@ -4,7 +4,7 @@ description: 'System table containing information about codecs
 keywords: ['system table', 'codecs', 'compression']
 slug: /operations/system-tables/codecs
 title: 'system.codecs'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 Contains information about compression and encryption codecs.

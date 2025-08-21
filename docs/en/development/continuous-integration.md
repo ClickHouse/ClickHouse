@@ -4,7 +4,7 @@ sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
-doc_type: 'tutorial'
+doc_type: 'explanation'
 ---
 
 # Continuous Integration (CI)

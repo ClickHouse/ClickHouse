@@ -3,7 +3,7 @@ description: 'System table containing information about quotas.'
 keywords: ['system table', 'quotas', 'quota']
 slug: /operations/system-tables/quotas
 title: 'system.quotas'
-doc_type: 'overview'
+doc_type: 'how-to'
 ---
 
 # system.quotas

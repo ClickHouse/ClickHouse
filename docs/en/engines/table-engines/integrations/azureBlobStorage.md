@@ -4,7 +4,7 @@ sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
 slug: /engines/table-engines/integrations/azureBlobStorage
 title: 'AzureBlobStorage Table Engine'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # AzureBlobStorage table engine

@@ -5,7 +5,7 @@ sidebar_label: 'Hive'
 sidebar_position: 84
 slug: /engines/table-engines/integrations/hive
 title: 'Hive'
-doc_type: 'tutorial'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

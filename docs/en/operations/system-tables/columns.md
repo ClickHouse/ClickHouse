@@ -3,7 +3,7 @@ description: 'System table containing information about columns in all tables'
 keywords: ['system table', 'columns']
 slug: /operations/system-tables/columns
 title: 'system.columns'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 Contains information about columns in all tables.

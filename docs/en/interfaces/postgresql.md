@@ -4,7 +4,7 @@ sidebar_label: 'PostgreSQL Interface'
 sidebar_position: 20
 slug: /interfaces/postgresql
 title: 'PostgreSQL Interface'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # PostgreSQL Interface

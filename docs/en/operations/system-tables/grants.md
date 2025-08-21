@@ -4,7 +4,7 @@ description: 'System table showing which privileges are granted to ClickHouse us
 keywords: ['system table', 'grants']
 slug: /operations/system-tables/grants
 title: 'system.grants'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 Privileges granted to ClickHouse user accounts.

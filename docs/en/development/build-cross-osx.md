@@ -4,7 +4,7 @@ sidebar_label: 'Build on Linux for macOS'
 sidebar_position: 20
 slug: /development/build-cross-osx
 title: 'Build on Linux for macOS'
-doc_type: 'tutorial'
+doc_type: 'explanation'
 ---
 
 # How to Build ClickHouse on Linux for macOS
