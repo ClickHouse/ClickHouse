@@ -1,6 +1,6 @@
 <test>
     <settings>
-        <enable_lightweight_update>1</enable_lightweight_update>
+        <allow_experimental_lightweight_update>1</allow_experimental_lightweight_update>
     </settings>
 
     <create_query>
