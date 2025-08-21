@@ -124,15 +124,17 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     size_t buckets_num_,
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
+    bool use_persistent_processing_nodes_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
+        /* processing_node_path */zk_path_ / getProcessingNodesPath(use_persistent_processing_nodes_) / getNodeName(path_),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
+        use_persistent_processing_nodes_,
         log_)
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
@@ -154,7 +156,7 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
             paths.push_back("buckets/" + toString(i));
         return paths;
     }
-    return {"failed", "processing"};
+    return {"failed", "processed", "processing", "persistent_processing"};
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -343,7 +345,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
         const auto create_processing_path_idx = requests.size();
-        requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
+
+        requests.push_back(
+            zkutil::makeCreateRequest(
+                processing_node_path,
+                node_metadata.toString(),
+                use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
         bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
         if (create_if_not_exists_enabled)
