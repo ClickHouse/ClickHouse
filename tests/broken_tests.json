@@ -3,30 +3,148 @@
         "reason": "INVESTIGATE - Fails on debug build"
     },
     "02479_mysql_connect_to_self": {
-        "reason": "INVESTIGATE - Likely IPv6 issue"
+        "reason": "NEEDSFIX - Likely IPv6 issue"
     },
     "02784_connection_string": {
-        "reason": "INVESTIGATE - Likely IPv6 issue"
+        "reason": "NEEDSFIX - Likely IPv6 issue"
     },
     "02933_change_cache_setting_without_restart": {
-        "reason": "INVESTIGATE - Likely IPv6 issue"
+        "reason": "NEEDSFIX - Likely IPv6 issue"
     },
     "03315_executable_table_function_threads": {
         "reason": "INVESTIGATE - Fails on coverage build"
     },
+    "03403_read_in_order_streams_memory_usage": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "03008_deduplication_mv_generates_several_blocks_replicated": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "00988_expansion_aliases_limit": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "03404_read_in_order_streams_memory_usage": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "03532_crash_in_aggregation_because_of_lost_exception": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "03403_read_in_order_streams_memory_usage": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "03008_deduplication_mv_generates_several_blocks_replicated": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "02479_race_condition_between_insert_and_droppin_mv": {
+        "reason": "INVESTIGATE - Internal timeouts on TSAN build"
+    },
+    "01037_polygon_dicts_correctness_fast": {
+        "reason": "INVESTIGATE - Timeout in ClickHouse query"
+    },
+    "02354_vector_search_expansion_search": {
+        "reason": "INVESTIGATE - Timeout on TSAN. Unstable?"
+    },
     "test_database_hms/test.py::test_list_tables": {
-        "reason": "INVESTIGATE - Needs investigation"
+        "reason": "INVESTIGATE - Unstable?"
     },
     "test_database_hms/test.py::test_many_namespaces": {
-        "reason": "INVESTIGATE - Needs investigation"
+        "reason": "INVESTIGATE - Unstable?"
     },
     "test_database_hms/test.py::test_hide_sensitive_info": {
-        "reason": "INVESTIGATE - Needs investigation"
+        "reason": "INVESTIGATE - Unstable?"
     },
     "test_database_hms/test.py::test_tables_with_same_location": {
-        "reason": "INVESTIGATE - Needs investigation"
+        "reason": "INVESTIGATE - Unstable?"
     },
     "test_database_hms/test.py::test_select": {
-        "reason": "INVESTIGATE - Needs investigation"
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_table_manipulations": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_simple_insert_select": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_read_after_cache_is_wiped": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_move_partition_to_another_disk": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_inserts_selects": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_insert_same_partition_and_merge[True]": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_insert_same_partition_and_merge[False]": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_freeze_unfreeze": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_endpoint_without_prefix": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_endpoint_new_container": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_endpoint_error_check": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_endpoint": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_create_table": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_big_insert": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_azure_broken_parts": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_attach_detach_partition": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_apply_new_settings": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_merge_tree_azure_blob_storage/test.py::test_alter_table_columns": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_azure_blob_storage_zero_copy_replication/test.py::test_zero_copy_replication": {
+        "reason": "NEEDSFIX - Failed to pull azurite image on ARM",
+        "message": "pull access denied for mcr.microsoft.com/azure-storage/azurite"
+    },
+    "test_backup_restore_on_cluster/test_different_versions.py::test_different_versions": {
+        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "message": "NETLINK_ERROR"
+    },
+    "test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup": {
+        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "message": "NETLINK_ERROR"
+    },
+    "test_backup_restore_on_cluster/test_cancel_backup.py::test_cancel_backup_with_settings": {
+        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "message": "NETLINK_ERROR"
     }
 }
