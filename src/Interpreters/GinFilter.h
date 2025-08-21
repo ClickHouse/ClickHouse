@@ -64,7 +64,6 @@ public:
     {
     public:
         QueryString() = default;
-
         QueryString(std::string_view query_string_, const std::vector<String> & search_terms_);
 
         /// Getter
@@ -116,8 +115,6 @@ public:
     size_t memoryUsageBytes() const;
 
 private:
-
-
     /// Row ID ranges which are (segment_id, rowid_start, rowid_end)
     GinSegmentWithRowIdRangeVector rowid_ranges;
 };

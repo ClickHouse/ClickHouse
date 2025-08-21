@@ -207,12 +207,12 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
         {
-            chassert(element.set_gin_query_info.size() == 1);
-            const std::vector<GinFilter::QueryString> & gin_filters = element.set_gin_query_info.front();
+            chassert(element.gin_query_strings_for_set.size() == 1);
+            const std::vector<GinFilter::QueryString> & gin_query_strings = element.gin_query_strings_for_set.front();
             bool exists_in_gin_filter = false;
-            for (const GinFilter::QueryString & gin_query_info : gin_filters)
+            for (const GinFilter::QueryString & gin_query_string : gin_query_strings)
             {
-                if (granule->gin_filter.contains(gin_query_info, cache_store, GinSearchMode::Any))
+                if (granule->gin_filter.contains(gin_query_string, cache_store, GinSearchMode::Any))
                 {
                     exists_in_gin_filter = true;
                     break;
@@ -222,12 +222,12 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
         {
-            chassert(element.set_gin_query_info.size() == 1);
-            const std::vector<GinFilter::QueryString> & gin_filters = element.set_gin_query_info.front();
+            chassert(element.gin_query_strings_for_set.size() == 1);
+            const std::vector<GinFilter::QueryString> & gin_query_strings = element.gin_query_strings_for_set.front();
             bool exists_in_gin_filter = true;
-            for (const GinFilter::QueryString & gin_query_info : gin_filters)
+            for (const GinFilter::QueryString & gin_query_string : gin_query_strings)
             {
-                if (!granule->gin_filter.contains(gin_query_info, cache_store, GinSearchMode::All))
+                if (!granule->gin_filter.contains(gin_query_string, cache_store, GinSearchMode::All))
                 {
                     exists_in_gin_filter = false;
                     break;
@@ -238,7 +238,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_info, cache_store), true);
+            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, cache_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -246,13 +246,13 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN)
         {
-            std::vector<bool> result(element.set_gin_query_info.back().size(), true);
+            std::vector<bool> result(element.gin_query_strings_for_set.back().size(), true);
 
             for (size_t column = 0; column < element.set_key_position.size(); ++column)
             {
-                const auto & gin_filters = element.set_gin_query_info[column];
-                for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filter.contains(gin_filters[row], cache_store);
+                const auto & gin_query_strings = element.gin_query_strings_for_set[column];
+                for (size_t row = 0; row < gin_query_strings.size(); ++row)
+                    result[row] = result[row] && granule->gin_filter.contains(gin_query_strings[row], cache_store);
             }
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
@@ -261,21 +261,21 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
-            if (!element.set_gin_query_info.empty())
+            if (!element.gin_query_strings_for_set.empty())
             {
                 /// Alternative substrings
-                std::vector<bool> result(element.set_gin_query_info.back().size(), true);
+                std::vector<bool> result(element.gin_query_strings_for_set.back().size(), true);
 
-                const auto & gin_filters = element.set_gin_query_info[0];
+                const auto & gin_query_strings = element.gin_query_strings_for_set[0];
 
-                for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
+                for (size_t row = 0; row < gin_query_strings.size(); ++row)
+                    result[row] = granule->gin_filter.contains(gin_query_strings[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
-            else if (element.gin_query_info)
+            else if (element.gin_query_string)
             {
-                rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_info, cache_store), true);
+                rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, cache_store), true);
             }
 
         }
@@ -423,33 +423,33 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (function_name == "notEquals")
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_info);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "equals")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_info);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "searchAny" || function_name == "searchAll")
     {
-        std::vector<GinFilter::QueryString> gin_filters;
+        std::vector<GinFilter::QueryString> gin_query_strings;
         std::vector<String> search_tokens;
         for (const auto & element : const_value.safeGet<Array>())
         {
             if (element.getType() != Field::Types::String)
                 return false;
             const auto & value = element.safeGet<String>();
-            gin_filters.emplace_back(GinFilter::QueryString(value, {value}));
+            gin_query_strings.emplace_back(GinFilter::QueryString(value, {value}));
             search_tokens.push_back(value);
         }
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
-        out.set_gin_query_info = std::vector<std::vector<GinFilter::QueryString>>{std::move(gin_filters)};
+        out.gin_query_strings_for_set = std::vector<std::vector<GinFilter::QueryString>>{std::move(gin_query_strings)};
 
         {
             /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
@@ -477,42 +477,42 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_info);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "startsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_info, true, false);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, true, false);
         return true;
     }
     if (function_name == "endsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_info, false, true);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, false, true);
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_info);
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_query_info = std::make_unique<GinFilter::QueryString>();
+        out.gin_query_string = std::make_unique<GinFilter::QueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_info);
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
@@ -524,23 +524,23 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         if (result.required_substring.empty() && result.alternatives.empty())
             return false;
 
-        /// out.set_gin_query_info means alternatives exist
+        /// out.gin_query_strings_for_set means alternatives exist
         /// out.gin_filter means required_substring exists
         if (!result.alternatives.empty())
         {
-            std::vector<std::vector<GinFilter::QueryString>> gin_filters;
-            gin_filters.emplace_back();
+            std::vector<std::vector<GinFilter::QueryString>> gin_query_strings;
+            gin_query_strings.emplace_back();
             for (const auto & alternative : result.alternatives)
             {
-                gin_filters.back().emplace_back();
-                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
+                gin_query_strings.back().emplace_back();
+                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_query_strings.back().back(), false, false);
             }
-            out.set_gin_query_info = std::move(gin_filters);
+            out.gin_query_strings_for_set = std::move(gin_query_strings);
         }
         else
         {
-            out.gin_query_info = std::make_unique<GinFilter::QueryString>();
-            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.gin_query_info, false, false);
+            out.gin_query_string = std::make_unique<GinFilter::QueryString>();
+            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.gin_query_string, false, false);
         }
 
         return true;
@@ -617,7 +617,7 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
     }
 
     out.set_key_position = std::move(key_position);
-    out.set_gin_query_info = std::move(gin_query_infos);
+    out.gin_query_strings_for_set = std::move(gin_query_infos);
 
     return true;
 }
