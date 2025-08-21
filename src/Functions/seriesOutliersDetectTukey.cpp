@@ -214,7 +214,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
         )"
     },
     {
-        "Custom parameters outlier detection", 
+        "Custom parameters outlier detection",
         "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0",
         R"(
 ┌─print_0──────────────────────────────┐
@@ -226,7 +226,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
     FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeriesAnalysis;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionSeriesOutliersDetectTukey>(documentation);
 }
 }
