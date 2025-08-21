@@ -224,6 +224,7 @@ private:
     static constexpr size_t PART_BITMASK = HISTOGRAM_SIZE - 1;
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
+    static constexpr size_t PREFETCH_DISTANCE = std::max(1UL, 64 / sizeof(Element) / 2);
 
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
@@ -325,9 +326,9 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 size_t pos = extractPart(pass, reader[i]);
-                if (i + 1 < size) [[likely]]
+                if (i + PREFETCH_DISTANCE < size) [[likely]]
                 {
-                    size_t next_pos = extractPart(pass, reader[i + 1]);
+                    size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
                     __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
                 }
 
@@ -354,9 +355,9 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    if (i + 1 < size) [[likely]]
+                    if (i + PREFETCH_DISTANCE < size) [[likely]]
                     {
-                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
                         __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
                     }
 
@@ -368,9 +369,9 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    if (i + 1 < size)
+                    if (i + PREFETCH_DISTANCE < size)
                     {
-                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
                         __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
                     }
 
