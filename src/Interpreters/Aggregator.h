@@ -322,6 +322,11 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
+    /// Indicates whether the aggregation is a simple `sum(integer_column)` with result type UInt64.
+    ///
+    /// If true, we apply simliar optimization as is_simple_count.
+    bool is_simple_sum = false;
+
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
