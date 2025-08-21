@@ -1107,7 +1107,7 @@ Write DateTime values as raw unix timestamp (read back as UInt32), instead of co
     DECLARE(Bool, output_format_parquet_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit parquet DATE type (read back as Date32).
 )", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
