@@ -88,7 +88,7 @@ This is a known behaviour and there are no plans to fix it currently.
     },
     {
         "Example of known behavior for words containing apostrophes or capital letters"
-	"SELECT initcap('John''s cat won''t eat.');"
+        "SELECT initcap('John''s cat won''t eat.');"
         R"(
 ┌─initcap('Joh⋯n\'t eat.')─┐
 │ John'S Cat Won'T Eat.    │
