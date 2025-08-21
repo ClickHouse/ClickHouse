@@ -7053,6 +7053,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
     MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_json_type, true) \
