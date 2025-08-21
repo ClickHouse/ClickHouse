@@ -3814,14 +3814,35 @@ void Context::clearQueryConditionCache() const
 }
 
 
-void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+void Context::setQueryResultCache(
+    size_t max_size_in_bytes,
+    size_t max_entries,
+    size_t max_entry_size_in_bytes,
+    size_t max_entry_size_in_rows,
+    size_t max_disk_size_in_bytes,
+    size_t max_disk_entries,
+    const String & disk_name,
+    const String & path)
 {
+    DiskPtr disk = nullptr;
+    if (!disk_name.empty())
+        disk = getDisk(disk_name);
+
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_result_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+
+    shared->query_result_cache = std::make_shared<QueryResultCache>(
+        max_size_in_bytes,
+        max_entries,
+        max_entry_size_in_bytes,
+        max_entry_size_in_rows,
+        max_disk_size_in_bytes,
+        max_disk_entries,
+        disk,
+        path);
 }
 
 void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3835,7 +3856,9 @@ void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConf
     size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
     size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
     size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    shared->query_result_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    size_t max_disk_size_in_bytes = config.getUInt64("query_cache.max_disk_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_SIZE);
+    size_t max_disk_entries = config.getUInt64("query_cache.max_disk_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_ENTRIES);
+    shared->query_result_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, max_disk_size_in_bytes, max_disk_entries);
 }
 
 QueryResultCachePtr Context::getQueryResultCache() const
@@ -3844,13 +3867,13 @@ QueryResultCachePtr Context::getQueryResultCache() const
     return shared->query_result_cache;
 }
 
-void Context::clearQueryResultCache(const std::optional<String> & tag) const
+void Context::clearQueryResultCache(const std::optional<String> & type, const std::optional<String> & tag) const
 {
     QueryResultCachePtr cache = getQueryResultCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
-        cache->clear(tag);
+        cache->clear(type, tag);
 }
 
 void Context::clearCaches() const

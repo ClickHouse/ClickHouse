@@ -329,8 +329,10 @@
     M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
     M(IndexUncompressedCacheCells, "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
     M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
-    M(QueryCacheBytes, "Total size of the query cache in bytes") \
-    M(QueryCacheEntries, "Total number of entries in the query cache") \
+    M(QueryCacheBytes, "Total memory used by the query cache, in bytes") \
+    M(QueryCacheEntries, "Total number of query cache entries in memory") \
+    M(QueryCacheDiskBytes, "Total disk space used by the query cache, in bytes") \
+    M(QueryCacheDiskEntries, "Total number of query cache entries on disk") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \

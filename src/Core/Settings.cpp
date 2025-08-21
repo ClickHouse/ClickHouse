@@ -4900,6 +4900,22 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, enable_writes_to_query_cache_disk, false, R"(
+If turned on, results of `SELECT` in the [query cache](../query-cache.md) are stored on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_reads_from_query_cache_disk, false, R"(
+If turned on, results of `SELECT` queries in the [query cache](../query-cache.md) are loaded from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
