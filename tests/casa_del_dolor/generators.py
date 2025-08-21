@@ -137,7 +137,7 @@ class BuzzHouseGenerator(Generator):
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
-        if args.with_spark or args.with_glue or args.with_hms or args.with_rest:
+        if args.with_spark or args.with_glue or args.with_hms or args.with_rest or args.with_unity:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "port": catalog_server.port,
@@ -157,6 +157,13 @@ class BuzzHouseGenerator(Generator):
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
                     "port": 8181,
+                    "path": "/v1",
+                }
+            if args.with_unity:
+                buzz_config["dolor"]["unity"] = {
+                    "server_hostname": "localhost",
+                    "port": 8080,
+                    "path": "/api/2.1/unity-catalog"
                 }
 
         with open(self.temp.name, "w") as file2:

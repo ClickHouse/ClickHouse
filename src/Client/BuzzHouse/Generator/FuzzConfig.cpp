@@ -24,13 +24,15 @@ using SettingEntries = std::unordered_map<String, std::function<void(const JSONO
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
 {
     String client_hostname = "localhost";
-    String server_hostname = "localhost";
+    String server_hostname = "";
+    String path = "localhost";
     String region = default_region;
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
+           {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
@@ -45,7 +47,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -66,6 +68,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> glue_catalog;
     std::optional<Catalog> hive_catalog;
     std::optional<Catalog> rest_catalog;
+    std::optional<Catalog> unity_catalog;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
@@ -82,7 +85,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
            {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
            {"hive", [&](const JSONObjectType & value) { hive_catalog = loadCatalog(value, "", 9083); }},
-           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }}};
+           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }},
+           {"unity", [&](const JSONObjectType & value) { unity_catalog = loadCatalog(value, "", 8181); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
@@ -110,7 +114,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
         query_log_file,
         glue_catalog,
         hive_catalog,
-        rest_catalog));
+        rest_catalog,
+        unity_catalog));
 }
 
 static PerformanceMetric

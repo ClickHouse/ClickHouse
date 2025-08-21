@@ -74,20 +74,27 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, region;
+    String client_hostname, server_hostname, path, region;
     uint32_t port;
 
     Catalog()
         : client_hostname("localhost")
         , server_hostname("localhost")
+        , path("")
         , region()
         , port(0)
     {
     }
 
-    Catalog(const String & client_hostname_, const String & server_hostname_, const String & region_, const uint32_t port_)
+    Catalog(
+        const String & client_hostname_,
+        const String & server_hostname_,
+        const String & path_,
+        const String & region_,
+        const uint32_t port_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
+        , path(path_)
         , region(region_)
         , port(port_)
     {
@@ -106,7 +113,7 @@ public:
     uint32_t port, mysql_port;
     String unix_socket, user, password, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
-    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog;
+    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog, unity_catalog;
 
     ServerCredentials()
         : client_hostname("localhost")
@@ -132,7 +139,8 @@ public:
         const std::filesystem::path & query_log_file_,
         const std::optional<Catalog> glue_catalog_,
         const std::optional<Catalog> hive_catalog_,
-        const std::optional<Catalog> rest_catalog_)
+        const std::optional<Catalog> rest_catalog_,
+        const std::optional<Catalog> unity_catalog_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , container(container_)
@@ -148,6 +156,7 @@ public:
         , glue_catalog(glue_catalog_)
         , hive_catalog(hive_catalog_)
         , rest_catalog(rest_catalog_)
+        , unity_catalog(unity_catalog_)
     {
     }
 

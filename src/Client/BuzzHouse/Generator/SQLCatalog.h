@@ -72,7 +72,8 @@ enum class LakeCatalog
     None = 0,
     Glue = 1,
     Hive = 2,
-    REST = 3
+    REST = 3,
+    Unity = 4
 };
 
 struct SQLColumn
@@ -181,6 +182,8 @@ public:
     void setName(Database * db) const { SQLDatabase::setName(db, dname); }
 
     String getName() const { return "d" + std::to_string(dname); }
+
+    String getSparkCatalogName() const;
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
@@ -341,7 +344,7 @@ public:
 
     String getTableName(bool full = true) const;
 
-    String getCatalogName() const;
+    String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg);
 

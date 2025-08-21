@@ -203,14 +203,13 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
-    "--with-postgresql", action="store_true", help="With PostgreSQL integration"
-)
-parser.add_argument("--with-mysql", action="store_true", help="With MySQL integration")
-parser.add_argument(
     "--without-minio",
     action="store_false",
     dest="with_minio",
     help="Without MinIO integration",
+)
+parser.add_argument(
+    "--with-azurite", action="store_true", help="With Azure integration"
 )
 parser.add_argument(
     "--without-zookeeper",
@@ -218,10 +217,11 @@ parser.add_argument(
     dest="with_zookeeper",
     help="Without Zookeeper server",
 )
-parser.add_argument("--with-nginx", action="store_true", help="With Nginx integration")
 parser.add_argument(
-    "--with-azurite", action="store_true", help="With Azure integration"
+    "--with-postgresql", action="store_true", help="With PostgreSQL integration"
 )
+parser.add_argument("--with-mysql", action="store_true", help="With MySQL integration")
+parser.add_argument("--with-nginx", action="store_true", help="With Nginx integration")
 parser.add_argument(
     "--with-sqlite", action="store_true", help="With SQLite integration"
 )
@@ -229,6 +229,9 @@ parser.add_argument(
     "--with-mongodb", action="store_true", help="With MongoDB integration"
 )
 parser.add_argument("--with-redis", action="store_true", help="With Redis integration")
+parser.add_argument(
+    "--with-arrowflight", action="store_true", help="With Arrow flight support"
+)
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -285,19 +288,19 @@ parser.add_argument(
     help="Probability to set keeper server properties",
 )
 parser.add_argument(
-    "--with-glue", action="store_true", help="With AWS Glue catalog for MinIO"
+    "--with-spark", action="store_true", help="With Spark support in Dolor HTTP server"
 )
 parser.add_argument(
-    "--with-rest", action="store_true", help="With Iceberg REST catalog for MinIO"
+    "--with-glue", action="store_true", help="With AWS Glue catalog for Spark"
 )
 parser.add_argument(
-    "--with-hms", action="store_true", help="With Hive catalog for MinIO"
+    "--with-rest", action="store_true", help="With Iceberg REST catalog for Spark"
 )
 parser.add_argument(
-    "--with-arrowflight", action="store_true", help="With Arrow flight support"
+    "--with-hms", action="store_true", help="With Hive catalog for Spark"
 )
 parser.add_argument(
-    "--with-spark", action="store_true", help="With Spark support in the HTTP server"
+    "--with-unity", action="store_true", help="With Unity catalog for Spark"
 )
 
 args = parser.parse_args()
@@ -422,7 +425,9 @@ if args.with_minio:
     os.environ["AWS_SECRET_ACCESS_KEY"] = minio_secret_key
     os.environ["AWS_REGION"] = "us-east-1"
     with open(credentials_file.name, "w") as file:
-        file.write(f"[default]\naws_access_key_id = {minio_access_key}\naws_secret_access_key = {minio_secret_key}\n")
+        file.write(
+            f"[default]\naws_access_key_id = {minio_access_key}\naws_secret_access_key = {minio_secret_key}\n"
+        )
     os.environ["AWS_CONFIG_FILE"] = credentials_file.name
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 if args.with_azurite:

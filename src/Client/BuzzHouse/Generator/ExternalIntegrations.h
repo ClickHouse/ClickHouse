@@ -412,7 +412,9 @@ public:
 
     bool hasRestCatalog() const { return hasDolorConnection() && dolor->sc.rest_catalog.has_value(); }
 
-    bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog(); }
+    bool hasUnityCatalog() const { return hasDolorConnection() && dolor->sc.unity_catalog.has_value(); }
+
+    bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog() || hasUnityCatalog(); }
 
     bool hasAzuriteConnection() const { return azurite != nullptr; }
 

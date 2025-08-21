@@ -19,14 +19,11 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
     if (isDataLakeCatalogDatabase())
     {
-        integration = IntegrationCall::Dolor;
-        format = rg.nextBool() ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
-        storage = LakeStorage::S3; /// What ClickHouse supports now
-
         const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
         const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
-        const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
+        const uint32_t unit_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().unity_catalog.has_value());
+        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + unit_cat;
         chassert(prob_space > 0);
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
@@ -43,7 +40,22 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         {
             catalog = LakeCatalog::REST;
         }
+        else if (unit_cat && (nopt < glue_cat + hive_cat + rest_cat + unit_cat + 1))
+        {
+            catalog = LakeCatalog::Unity;
+        }
+
+        integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
+        format = (catalog == LakeCatalog::REST || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        storage = LakeStorage::S3; /// What ClickHouse supports now
     }
+}
+
+String SQLDatabase::getSparkCatalogName() const
+{
+    chassert(isDataLakeCatalogDatabase());
+    /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+    return format == LakeFormat::DeltaLake ? "spark_catalog" : getName();
 }
 
 bool SQLBase::isNotTruncableEngine() const
@@ -99,7 +111,7 @@ String SQLBase::getTableName(const bool full) const
     return res;
 }
 
-String SQLBase::getCatalogName() const
+String SQLBase::getSparkCatalogName() const
 {
     chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
     if (getLakeCatalog() == LakeCatalog::None)
@@ -148,7 +160,7 @@ void SQLBase::setTablePath(RandomGenerator & rg)
             next_bucket_path = fmt::format(
                 "{}{}{}{}{}t{}/",
                 base,
-                onSpark ? getCatalogName() : "",
+                onSpark ? getSparkCatalogName() : "",
                 onSpark ? "/" : "",
                 onSpark ? "test" : "",
                 onSpark ? "/" : "",
