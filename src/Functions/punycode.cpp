@@ -50,7 +50,7 @@ struct PunycodeEncode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[row] - prev_offset - 1;
+            const size_t value_length = offsets[row] - prev_offset;
 
             const size_t value_utf32_length = ada::idna::utf32_length_from_utf8(value, value_length);
             value_utf32.resize(value_utf32_length);
@@ -62,7 +62,7 @@ struct PunycodeEncode
             if (!ok)
                 value_puny.clear();
 
-            res_data.insert(value_puny.c_str(), value_puny.c_str() + value_puny.size() + 1);
+            res_data.insert(value_puny.data(), value_puny.data() + value_puny.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
@@ -98,7 +98,7 @@ struct PunycodeDecode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[row] - prev_offset - 1;
+            const size_t value_length = offsets[row] - prev_offset;
 
             const std::string_view value_punycode(value, value_length);
             const bool ok = ada::idna::punycode_to_utf32(value_punycode, value_utf32);
@@ -119,7 +119,7 @@ struct PunycodeDecode
             value_utf8.resize(utf8_length);
             ada::idna::utf32_to_utf8(value_utf32.data(), value_utf32.size(), value_utf8.data());
 
-            res_data.insert(value_utf8.c_str(), value_utf8.c_str() + value_utf8.size() + 1);
+            res_data.insert(value_utf8.data(), value_utf8.data() + value_utf8.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
