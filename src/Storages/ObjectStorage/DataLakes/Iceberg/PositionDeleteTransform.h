@@ -8,10 +8,8 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
-
-namespace DB
+namespace DB::Iceberg
 {
-
 class IcebergPositionDeleteTransform : public ISimpleTransform
 {
 public:
@@ -33,7 +31,6 @@ public:
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
-        , relevant_position_deletes_objects(iceberg_object_info_->position_deletes_objects)
     {
         initializeDeleteSources();
     }
@@ -52,7 +49,6 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
-    std::span<const Iceberg::ManifestFileEntry> relevant_position_deletes_objects;
 
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
