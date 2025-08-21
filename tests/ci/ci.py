@@ -913,7 +913,9 @@ def _run_test(job_name: str, run_command: str) -> int:
         if retcode != 0:
             print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
         if process.timeout_exceeded:
-            print(f"Job timed out: [{job_name}] exit code [{retcode}]")
+            print(
+                f"Job timed out: [{job_name}], timeout [{timeout}], exit code [{retcode}]"
+            )
             assert JobReport.exist(), "JobReport real or dummy must be present"
             jr = JobReport.load()
             if jr.dummy:
