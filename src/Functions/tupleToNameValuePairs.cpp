@@ -148,7 +148,7 @@ All values in the tuple should be of the same type.
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionTupleToNameValuePairs>(documentation);
 }
 

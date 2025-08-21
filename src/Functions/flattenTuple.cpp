@@ -93,7 +93,7 @@ SELECT flattenTuple(t) FROM t_flatten_tuple;
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionFlattenTuple>(documentation);
 }
 
