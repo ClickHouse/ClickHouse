@@ -8,6 +8,7 @@ import time
 import typing
 import urllib3
 
+from pathlib import Path
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.rest import RestCatalog
@@ -345,12 +346,12 @@ def get_spark(
     # )
 
     # Random properties
-    # if random.randint(1, 100) <= 70:
-    #    selected_properties = sample_from_dict(
-    #        spark_properties, random.randint(0, len(spark_properties))
-    #    )
-    #    for key, val in selected_properties.items():
-    #        builder.config(key, val())
+    if random.randint(1, 100) <= 70:
+        selected_properties = sample_from_dict(
+            spark_properties, random.randint(0, len(spark_properties))
+        )
+        for key, val in selected_properties.items():
+            builder.config(key, val())
 
     return builder.getOrCreate()
 
@@ -392,7 +393,7 @@ class SparkHandler:
         self.uc_server_dir = None
         if args.with_unity is not None:
             self.uc_server_dir = args.with_unity
-            self.uc_server_run_dir = cluster.instances_dir_name / "ucserver"
+            self.uc_server_run_dir = Path(cluster.instances_dir_name) / "ucserver"
 
     def create_minio_bucket(self, cluster, bucket_name: str):
         minio_client = Minio(
@@ -424,16 +425,18 @@ class SparkHandler:
             uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
             os.makedirs(self.uc_server_run_dir, exist_ok=True)
             # Start the server
-            self.uc_server = subprocess.Popen(
-                [str(uc_server_bin)],
-                cwd=str(self.uc_server_run_dir),
-                env=env,
-                stdout=self.uc_server_run_dir / "uc_server_bin.log",
-                stderr=self.uc_server_run_dir / "uc_server_bin.err.log",
-                text=True,
-                bufsize=1,
-            )
-            self.logger.info(f"Starting UC server (pid={self.uc_server.pid}) …")
+            with open(self.uc_server_run_dir / "uc_server_bin.log", "w") as f1:
+                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w") as f2:
+                    self.uc_server = subprocess.Popen(
+                        [str(uc_server_bin)],
+                        cwd=str(self.uc_server_run_dir),
+                        env=env,
+                        stdout=f1,
+                        stderr=f2,
+                        text=True,
+                        bufsize=1,
+                    )
+            self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
             if not wait_for_port(env["UC_HOST"], env["UC_PORT"], timeout=120):
                 # Print a few lines of output to help debug
                 try:
