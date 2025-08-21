@@ -39,7 +39,7 @@ struct RadixSortAllocator
 {
     static void * allocate(size_t size)
     {
-        return ::operator new(size);
+        return ::operator new(size, std::align_val_t{64});
     }
 
     static void deallocate(void * ptr, size_t size)
@@ -325,20 +325,21 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                size_t pos = extractPart(pass, reader[i]);
+                auto element = reader[i];
+                size_t pos = extractPart(pass, element);
                 if (i + PREFETCH_DISTANCE < size) [[likely]]
                 {
                     size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
-                    __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                    __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                 }
 
                 /// Place the element on the next free position.
                 auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
-                dest = reader[i];
+                dest = element;
 
                 /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
 
                 histograms[pass * HISTOGRAM_SIZE + pos]++;
             }
@@ -354,28 +355,30 @@ private:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
                     if (i + PREFETCH_DISTANCE < size) [[likely]]
                     {
                         size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
-                        __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                        __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                     }
 
-                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(reader[i]);
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(element);
                 }
             }
             else
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
                     if (i + PREFETCH_DISTANCE < size)
                     {
                         size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
-                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                     }
 
-                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(reader[i]);
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(element);
                 }
             }
         }
