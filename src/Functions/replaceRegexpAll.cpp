@@ -38,7 +38,7 @@ As an exception, if a regular expression worked on an empty substring, the repla
 ┌─res──────────────────┐
 │ HHeelllloo112233     │
 └──────────────────────┘
-        )"	    
+        )"
     },
     {
         "Empty substring replacement example",
