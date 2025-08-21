@@ -118,7 +118,46 @@ using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 REGISTER_FUNCTION(ExtractAll)
 {
-    factory.registerFunction<FunctionExtractAll>();
+    FunctionDocumentation::Description description = R"(
+Extracts all fragments of a string using a regular expression.
+If 'haystack' doesn't match the 'pattern' regex, an empty array is returned.
+
+Returns an array of strings consisting of all matches of the regex.
+The behavior depends on whether the regex contains capturing groups:
+- If the regex has no capturing groups, the function returns an array of all matches of the entire regex
+- If the regex has capturing groups, the function returns an array of all matches of the first capturing group
+    )";
+    FunctionDocumentation::Syntax syntax = "extractAll(haystack, pattern)";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "String from which to extract fragments.", {"String"}},
+        {"pattern", "Regular expression, optionally containing capturing groups.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns array of extracted fragments.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Extract all numbers",
+        "SELECT extractAll('hello 123 world 456', '[0-9]+')",
+        R"(
+┌─extractAll('hello 123 world 456', '[0-9]+')─┐
+│ ['123','456']                               │
+└─────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Extract using capturing group",
+        "SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')",
+        R"(
+┌─extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')─┐
+│ ['test','user']                                                    │
+└────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionExtractAll>(documentation);
 }
 
 }

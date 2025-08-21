@@ -230,19 +230,141 @@ FunctionDocumentation::Category category = FunctionDocumentation::Category::Stri
 
 REGISTER_FUNCTION(SearchAny)
 {
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if any needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
+    FunctionDocumentation::Description description = R"(
+Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
+
+This function can only be used if setting `allow_experimental_full_text_index` is enabled.
+
+The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+Each element in the `needle` array is treated as a complete, individual token—no additional tokenization is performed on the needle elements themselves.
+
+**Example**
+
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+
+```sql
+['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
+```
+
+:::note
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "searchAny(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "The input column.", {"String", "FixedString"}},
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']
+        )",
+        R"(
+┌─count()─┐
+│       3 │
+└─────────┘
+        )"
+    },
+    {
+        "Generate needles using the `tokens` function",
+        R"(
+SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
+        )",
+        R"(
+┌─count()─┐
+│       3 │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(documentation);
 }
 
 REGISTER_FUNCTION(SearchAll)
 {
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if all needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
+    FunctionDocumentation::Description description = R"(
+Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
+
+This function can only be used if setting `allow_experimental_full_text_index` is enabled.
+
+The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+Each element in the `needle` array is treated as a complete, individual token—no additional tokenization is performed on the needle elements themselves.
+
+**Example**
+
+To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = 'ngram', ngram_size = 5`), you would provide an array of all the 5-character ngrams:
+
+```sql
+['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
+```
+
+:::note
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "searchAll(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "The input column.", {"String", "FixedString"}},
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Generate needles using the `tokens` function",
+        R"(
+SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(documentation);
 }
 }

@@ -68,7 +68,44 @@ using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
 
 REGISTER_FUNCTION(Extract)
 {
-    factory.registerFunction<FunctionExtract>();
+    FunctionDocumentation::Description description = R"(
+Extracts a fragment of a string using a regular expression.
+If 'haystack' doesn't match the 'pattern' regex, an empty string is returned.
+
+If the regex doesn't contain subpatterns, the function uses the fragment that matches the entire regex.
+Otherwise, it uses the fragment that matches the first subpattern.
+    )";
+    FunctionDocumentation::Syntax syntax = "extract(haystack, pattern)";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "String from which to extract.", {"String"}},
+        {"pattern", "Regular expression, typically containing a capturing group.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns extracted fragment as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Extract domain from email",
+        "SELECT extract('test@clickhouse.com', '.*@(.*)$')",
+        R"(
+┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
+│ clickhouse.com                            │
+└───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "No match returns empty string",
+        "SELECT extract('test@clickhouse.com', 'no_match')",
+        R"(
+┌─extract('test@clickhouse.com', 'no_match')─┐
+│                                            │
+└────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionExtract>(documentation);
 }
 
 }
