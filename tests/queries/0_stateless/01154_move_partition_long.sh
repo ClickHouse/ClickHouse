@@ -124,6 +124,8 @@ drop_part_thread &
 wait
 
 check_replication_consistency "dst_" "count(), sum(p), sum(k), sum(v)"
+
+$CLICKHOUSE_CLIENT -q "SET s3_max_single_read_retries = 10"
 try_sync_replicas "src_" 300
 
 $CLICKHOUSE_CLIENT -q "SELECT table, lost_part_count FROM system.replicas WHERE database=currentDatabase() AND lost_part_count!=0";
