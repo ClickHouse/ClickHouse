@@ -9,25 +9,25 @@ namespace DB
 
 class FunctionsStringSearchBase : public IFunction
 {
-protected:
-    ContextPtr context;
-
 public:
-
-    const enum class Info
+    enum class Info
     {
         None,
         Optimizable,
         Optimized
-    } info;
+    };
+
+    const Info info;
 
     ContextPtr getContext() const { return context; }
 
-    explicit FunctionsStringSearchBase(ContextPtr context_, Info info_)
-        : context(context_)
-        , info(info_)
+    FunctionsStringSearchBase(Info info_, ContextPtr context_)
+        : info(info_)
+        , context(context_)
     {}
 
+protected:
+    ContextPtr context;
 };
 
 }

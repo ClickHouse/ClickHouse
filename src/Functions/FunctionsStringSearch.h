@@ -103,10 +103,10 @@ private:
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionsStringSearch>(_context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionsStringSearch>(context_); }
 
-    explicit FunctionsStringSearch(ContextPtr _context)
-        : FunctionsStringSearchBase(_context, info_val)
+    explicit FunctionsStringSearch(ContextPtr context_)
+        : FunctionsStringSearchBase(info_val, context_)
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {

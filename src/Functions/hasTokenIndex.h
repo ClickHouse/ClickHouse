@@ -145,11 +145,11 @@ public:
     static constexpr auto name = Impl::name;
     using ResultType = typename Impl::ResultType;
 
-    explicit FunctionSearchTextIndex(ContextPtr _context)
-        : FunctionsStringSearchBase(_context, FunctionsStringSearchBase::Info::Optimized)
+    explicit FunctionSearchTextIndex(ContextPtr context_)
+        : FunctionsStringSearchBase(FunctionsStringSearchBase::Info::Optimized, context_)
     {}
 
-    static FunctionPtr create(ContextPtr _context) { return std::make_shared<FunctionSearchTextIndex<Impl>>(_context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSearchTextIndex<Impl>>(context_); }
 
     String getName() const override { return name; }
 
