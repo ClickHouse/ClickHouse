@@ -62,7 +62,39 @@ public:
 
 REGISTER_FUNCTION(FlattenTuple)
 {
-    factory.registerFunction<FunctionFlattenTuple>();
+    FunctionDocumentation::Description description = R"(
+Returns a flattened `output` tuple from a nested and named `input` tuple.
+Elements of the `output` tuple are the paths from the original `input` tuple.
+
+For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`.
+
+`flattenTuple` can be used to select all paths from type `Object` as separate columns.
+)";
+    FunctionDocumentation::Syntax syntax = "flattenTuple(input)";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "Nested named tuple to flatten.", {"Tuple(n1 T1[, n2 T2, ... ])"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an output tuple whose elements are paths from the original input.", {"Tuple"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
+SELECT flattenTuple(t) FROM t_flatten_tuple;
+        )",
+        R"(
+┌─flattenTuple(t)─────────────────┐
+│ ([1, 2], ['a', 'b'], 3, 'c', 4) │
+└─────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionFlattenTuple>(documentation);
 }
 
 }

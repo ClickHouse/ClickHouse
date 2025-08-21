@@ -131,7 +131,25 @@ public:
 
 REGISTER_FUNCTION(TupleToNameValuePairs)
 {
-    factory.registerFunction<FunctionTupleToNameValuePairs>();
+    FunctionDocumentation::Description description = R"(
+Turns a named tuple into an array of `(name, value)` pairs.
+For example, `Tuple(n1 T1, n2 T2, ...)` returns `Array(Tuple('n1', T1), Tuple('n2', T2), ...)`.
+All values in the tuple should be of the same type.
+)";
+    FunctionDocumentation::Syntax syntax = "tupleToNameValuePairs(tuple)";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple", "Named tuple with any types of values.", {"Tuple(n1 T1[, n2 T2, ...])"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with `(name, value)` pairs.", {"Array(Tuple(String, T))"}};
+    FunctionDocumentation::Examples examples = {
+        {"Named tuple", "SELECT tupleToNameValuePairs(tuple(100 AS user_ID, 2502 AS session_ID))", "[('user_ID', 100), ('session_ID', 2502)]"},
+        {"Simple tuple", "SELECT tupleToNameValuePairs(tuple(3, 2, 1))", "[('1', 3), ('2', 2), ('3', 1)]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionTupleToNameValuePairs>(documentation);
 }
 
 }

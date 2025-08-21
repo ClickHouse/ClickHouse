@@ -1575,16 +1575,156 @@ using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTr
 
 REGISTER_FUNCTION(VectorFunctions)
 {
-    factory.registerFunction<FunctionTuplePlus>();
+    /// tuplePlus documentation
+    FunctionDocumentation::Description description_tuplePlus = R"(
+Calculates the sum of corresponding values of two tuples of the same size.
+)";
+    FunctionDocumentation::Syntax syntax_tuplePlus = "tuplePlus(tuple1, tuple2)";
+    FunctionDocumentation::Arguments arguments_tuplePlus = {
+        {"tuple1", "First tuple.", {"Tuple"}},
+        {"tuple2", "Second tuple.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns tuple with the sum.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tuplePlus = {
+        {"Basic usage", "SELECT tuplePlus((1, 2), (2, 3))", "(3,5)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {};
+    FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tuplePlus = {description_tuplePlus, syntax_tuplePlus, arguments_tuplePlus, returned_value_tuplePlus, examples_tuplePlus, introduced_in_tuplePlus, category_tuplePlus};
+    factory.registerFunction<FunctionTuplePlus>(documentation_tuplePlus);
     factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionTupleMinus>();
+    
+    /// tupleMinus documentation
+    FunctionDocumentation::Description description_tupleMinus = R"(
+Calculates the subtraction of corresponding values of two tuples of the same size.
+)";
+    FunctionDocumentation::Syntax syntax_tupleMinus = "tupleMinus(tuple1, tuple2)";
+    FunctionDocumentation::Arguments arguments_tupleMinus = {
+        {"tuple1", "First tuple.", {"Tuple"}},
+        {"tuple2", "Second tuple.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleMinus = {"Returns tuple with the result of subtraction.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleMinus = {
+        {"Basic usage", "SELECT tupleMinus((1, 2), (2, 3))", "(-1,-1)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleMinus = {};
+    FunctionDocumentation::Category category_tupleMinus = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleMinus = {description_tupleMinus, syntax_tupleMinus, arguments_tupleMinus, returned_value_tupleMinus, examples_tupleMinus, introduced_in_tupleMinus, category_tupleMinus};
+    factory.registerFunction<FunctionTupleMinus>(documentation_tupleMinus);
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionTupleMultiply>();
-    factory.registerFunction<FunctionTupleDivide>();
-    factory.registerFunction<FunctionTupleModulo>();
-    factory.registerFunction<FunctionTupleIntDiv>();
-    factory.registerFunction<FunctionTupleIntDivOrZero>();
-    factory.registerFunction<FunctionTupleNegate>();
+    
+    /// tupleMultiply documentation
+    FunctionDocumentation::Description description_tupleMultiply = R"(
+Calculates the multiplication of corresponding values of two tuples of the same size.
+)";
+    FunctionDocumentation::Syntax syntax_tupleMultiply = "tupleMultiply(tuple1, tuple2)";
+    FunctionDocumentation::Arguments arguments_tupleMultiply = {
+        {"tuple1", "First tuple.", {"Tuple"}},
+        {"tuple2", "Second tuple.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleMultiply = {"Returns tuple with the multiplication.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleMultiply = {
+        {"Basic usage", "SELECT tupleMultiply((1, 2), (2, 3))", "(2,6)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleMultiply = {};
+    FunctionDocumentation::Category category_tupleMultiply = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleMultiply = {description_tupleMultiply, syntax_tupleMultiply, arguments_tupleMultiply, returned_value_tupleMultiply, examples_tupleMultiply, introduced_in_tupleMultiply, category_tupleMultiply};
+    factory.registerFunction<FunctionTupleMultiply>(documentation_tupleMultiply);
+    
+    /// tupleDivide documentation
+    FunctionDocumentation::Description description_tupleDivide = R"(
+Calculates the division of corresponding values of two tuples of the same size.
+Note that division by zero will return `inf`.
+)";
+    FunctionDocumentation::Syntax syntax_tupleDivide = "tupleDivide(tuple1, tuple2)";
+    FunctionDocumentation::Arguments arguments_tupleDivide = {
+        {"tuple1", "First tuple.", {"Tuple"}},
+        {"tuple2", "Second tuple.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleDivide = {"Returns tuple with the result of division.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleDivide = {
+        {"Basic usage", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5,0.6666666666666666)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleDivide = {};
+    FunctionDocumentation::Category category_tupleDivide = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleDivide = {description_tupleDivide, syntax_tupleDivide, arguments_tupleDivide, returned_value_tupleDivide, examples_tupleDivide, introduced_in_tupleDivide, category_tupleDivide};
+    factory.registerFunction<FunctionTupleDivide>(documentation_tupleDivide);
+    
+    /// tupleModulo documentation
+    FunctionDocumentation::Description description_tupleModulo = R"(
+Returns a tuple of the moduli (remainders) of division operations of two tuples.
+)";
+    FunctionDocumentation::Syntax syntax_tupleModulo = "tupleModulo(tuple_num, tuple_mod)";
+    FunctionDocumentation::Arguments arguments_tupleModulo = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple"}},
+        {"tuple_mod", "Tuple of modulus values.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleModulo = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleModulo = {
+        {"Basic usage", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0,1,1)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleModulo = {};
+    FunctionDocumentation::Category category_tupleModulo = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleModulo = {description_tupleModulo, syntax_tupleModulo, arguments_tupleModulo, returned_value_tupleModulo, examples_tupleModulo, introduced_in_tupleModulo, category_tupleModulo};
+    factory.registerFunction<FunctionTupleModulo>(documentation_tupleModulo);
+    
+    /// tupleIntDiv documentation
+    FunctionDocumentation::Description description_tupleIntDiv = R"(
+Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
+If either tuple contains non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+An error will be thrown for division by 0.
+)";
+    FunctionDocumentation::Syntax syntax_tupleIntDiv = "tupleIntDiv(tuple_num, tuple_div)";
+    FunctionDocumentation::Arguments arguments_tupleIntDiv = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple"}},
+        {"tuple_div", "Tuple of divisor values.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns tuple of the quotients.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleIntDiv = {
+        {"Basic usage", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3,2,1)"},
+        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2,1,0)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleIntDiv = {};
+    FunctionDocumentation::Category category_tupleIntDiv = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleIntDiv = {description_tupleIntDiv, syntax_tupleIntDiv, arguments_tupleIntDiv, returned_value_tupleIntDiv, examples_tupleIntDiv, introduced_in_tupleIntDiv, category_tupleIntDiv};
+    factory.registerFunction<FunctionTupleIntDiv>(documentation_tupleIntDiv);
+    
+    /// tupleIntDivOrZero documentation
+    FunctionDocumentation::Description description_tupleIntDivOrZero = R"(
+Like tupleIntDiv it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
+It does not throw an error for 0 divisors, but rather returns the quotient as 0.
+If either tuple contains non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+)";
+    FunctionDocumentation::Syntax syntax_tupleIntDivOrZero = "tupleIntDivOrZero(tuple_num, tuple_div)";
+    FunctionDocumentation::Arguments arguments_tupleIntDivOrZero = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple"}},
+        {"tuple_div", "Tuple of divisor values.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns tuple of the quotients. Returns 0 for quotients where the divisor is 0.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleIntDivOrZero = {
+        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0,0,0)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZero = {};
+    FunctionDocumentation::Category category_tupleIntDivOrZero = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleIntDivOrZero = {description_tupleIntDivOrZero, syntax_tupleIntDivOrZero, arguments_tupleIntDivOrZero, returned_value_tupleIntDivOrZero, examples_tupleIntDivOrZero, introduced_in_tupleIntDivOrZero, category_tupleIntDivOrZero};
+    factory.registerFunction<FunctionTupleIntDivOrZero>(documentation_tupleIntDivOrZero);
+    
+    /// tupleNegate documentation
+    FunctionDocumentation::Description description_tupleNegate = R"(
+Calculates the negation of the tuple values.
+)";
+    FunctionDocumentation::Syntax syntax_tupleNegate = "tupleNegate(tuple)";
+    FunctionDocumentation::Arguments arguments_tupleNegate = {
+        {"tuple", "Tuple to negate.", {"Tuple"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleNegate = {"Returns tuple with the result of negation.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleNegate = {
+        {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1,-2)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleNegate = {};
+    FunctionDocumentation::Category category_tupleNegate = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleNegate = {description_tupleNegate, syntax_tupleNegate, arguments_tupleNegate, returned_value_tupleNegate, examples_tupleNegate, introduced_in_tupleNegate, category_tupleNegate};
+    factory.registerFunction<FunctionTupleNegate>(documentation_tupleNegate);
 
     /// addTupleOfIntervals documentation
     FunctionDocumentation::Description description_addTupleOfIntervals = R"(
@@ -1720,11 +1860,105 @@ SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
 
     factory.registerFunction<FunctionTupleSubtractInterval>(documentation_subtractInterval);
 
-    factory.registerFunction<FunctionTupleMultiplyByNumber>();
-    factory.registerFunction<FunctionTupleDivideByNumber>();
-    factory.registerFunction<FunctionTupleModuloByNumber>();
-    factory.registerFunction<FunctionTupleIntDivByNumber>();
-    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
+    /// tupleMultiplyByNumber documentation
+    FunctionDocumentation::Description description_tupleMultiplyByNumber = R"(
+Returns a tuple with all values multiplied by a number.
+)";
+    FunctionDocumentation::Syntax syntax_tupleMultiplyByNumber = "tupleMultiplyByNumber(tuple, number)";
+    FunctionDocumentation::Arguments arguments_tupleMultiplyByNumber = {
+        {"tuple", "Tuple to multiply.", {"Tuple(T)"}},
+        {"number", "Multiplier.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleMultiplyByNumber = {"Returns a tuple with multiplied values.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples_tupleMultiplyByNumber = {
+        {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1, -4.2)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleMultiplyByNumber = {21, 11};
+    FunctionDocumentation::Category category_tupleMultiplyByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleMultiplyByNumber = {description_tupleMultiplyByNumber, syntax_tupleMultiplyByNumber, arguments_tupleMultiplyByNumber, returned_value_tupleMultiplyByNumber, examples_tupleMultiplyByNumber, introduced_in_tupleMultiplyByNumber, category_tupleMultiplyByNumber};
+    factory.registerFunction<FunctionTupleMultiplyByNumber>(documentation_tupleMultiplyByNumber);
+    
+    /// tupleDivideByNumber documentation
+    FunctionDocumentation::Description description_tupleDivideByNumber = R"(
+Returns a tuple with all values divided by a number.
+
+:::note
+Division by zero will return `inf`.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_tupleDivideByNumber = "tupleDivideByNumber(tuple, number)";
+    FunctionDocumentation::Arguments arguments_tupleDivideByNumber = {
+        {"tuple", "Tuple to divide.", {"Tuple(T)"}},
+        {"number", "Divider.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleDivideByNumber = {"Returns a tuple with divided values.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples_tupleDivideByNumber = {
+        {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2, 4)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleDivideByNumber = {21, 11};
+    FunctionDocumentation::Category category_tupleDivideByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleDivideByNumber = {description_tupleDivideByNumber, syntax_tupleDivideByNumber, arguments_tupleDivideByNumber, returned_value_tupleDivideByNumber, examples_tupleDivideByNumber, introduced_in_tupleDivideByNumber, category_tupleDivideByNumber};
+    factory.registerFunction<FunctionTupleDivideByNumber>(documentation_tupleDivideByNumber);
+    
+    /// tupleModuloByNumber documentation
+    FunctionDocumentation::Description description_tupleModuloByNumber = R"(
+Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
+)";
+    FunctionDocumentation::Syntax syntax_tupleModuloByNumber = "tupleModuloByNumber(tuple_num, div)";
+    FunctionDocumentation::Arguments arguments_tupleModuloByNumber = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleModuloByNumber = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleModuloByNumber = {
+        {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleModuloByNumber = {23, 8};
+    FunctionDocumentation::Category category_tupleModuloByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleModuloByNumber = {description_tupleModuloByNumber, syntax_tupleModuloByNumber, arguments_tupleModuloByNumber, returned_value_tupleModuloByNumber, examples_tupleModuloByNumber, introduced_in_tupleModuloByNumber, category_tupleModuloByNumber};
+    factory.registerFunction<FunctionTupleModuloByNumber>(documentation_tupleModuloByNumber);
+    
+    /// tupleIntDivByNumber documentation
+    FunctionDocumentation::Description description_tupleIntDivByNumber = R"(
+Performs integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+If either of the input parameters contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+An error will be thrown for division by 0.
+)";
+    FunctionDocumentation::Syntax syntax_tupleIntDivByNumber = "tupleIntDivByNumber(tuple_num, div)";
+    FunctionDocumentation::Arguments arguments_tupleIntDivByNumber = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivByNumber = {"Returns a tuple of the quotients.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples_tupleIntDivByNumber = {
+        {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2, 1, 0)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivByNumber = {23, 8};
+    FunctionDocumentation::Category category_tupleIntDivByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleIntDivByNumber = {description_tupleIntDivByNumber, syntax_tupleIntDivByNumber, arguments_tupleIntDivByNumber, returned_value_tupleIntDivByNumber, examples_tupleIntDivByNumber, introduced_in_tupleIntDivByNumber, category_tupleIntDivByNumber};
+    factory.registerFunction<FunctionTupleIntDivByNumber>(documentation_tupleIntDivByNumber);
+    
+    /// tupleIntDivOrZeroByNumber documentation
+    FunctionDocumentation::Description description_tupleIntDivOrZeroByNumber = R"(
+Like [`tupleIntDivByNumber`](#tupleIntDivByNumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+It does not throw an error for zero divisors, but rather returns the quotient as zero.
+If either the tuple or div contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+)";
+    FunctionDocumentation::Syntax syntax_tupleIntDivOrZeroByNumber = "tupleIntDivOrZeroByNumber(tuple_num, div)";
+    FunctionDocumentation::Arguments arguments_tupleIntDivOrZeroByNumber = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZeroByNumber = {"Returns a tuple of the quotients with `0` for quotients where the divisor is `0`.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_tupleIntDivOrZeroByNumber = {
+        {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0, 0, 0)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZeroByNumber = {23, 8};
+    FunctionDocumentation::Category category_tupleIntDivOrZeroByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tupleIntDivOrZeroByNumber = {description_tupleIntDivOrZeroByNumber, syntax_tupleIntDivOrZeroByNumber, arguments_tupleIntDivOrZeroByNumber, returned_value_tupleIntDivOrZeroByNumber, examples_tupleIntDivOrZeroByNumber, introduced_in_tupleIntDivOrZeroByNumber, category_tupleIntDivOrZeroByNumber};
+    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>(documentation_tupleIntDivOrZeroByNumber);
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);

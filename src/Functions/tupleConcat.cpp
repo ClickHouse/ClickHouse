@@ -101,7 +101,22 @@ public:
 
 REGISTER_FUNCTION(TupleConcat)
 {
-    factory.registerFunction<FunctionTupleConcat>();
+    FunctionDocumentation::Description description = R"(
+Combines tuples passed as arguments.
+)";
+    FunctionDocumentation::Syntax syntax = "tupleConcat(tuples)";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuples", "Arbitrary number of arguments of Tuple type.", {"Tuple(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing all elements from the input tuples.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT tupleConcat((1, 2), (3, 4), (true, false))", "(1, 2, 3, 4, true, false)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionTupleConcat>(documentation);
 }
 
 }
