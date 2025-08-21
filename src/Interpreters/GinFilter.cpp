@@ -187,17 +187,17 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinFilter::QueryString & gin_string_info, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinFilter::QueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
-    if (gin_string_info.getTerms().empty())
+    if (gin_query_string.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(gin_string_info.getQueryString());
+    GinPostingsCachePtr postings_cache = cache_store.getPostings(gin_query_string.getQueryString());
     if (postings_cache == nullptr)
     {
         GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(gin_string_info.getTerms());
-        cache_store.cache[gin_string_info.getQueryString()] = postings_cache;
+        postings_cache = reader.createPostingsCacheFromTerms(gin_query_string.getTerms());
+        cache_store.cache[gin_query_string.getQueryString()] = postings_cache;
     }
 
     switch (search_mode)

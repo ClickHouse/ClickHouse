@@ -107,7 +107,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const QueryString & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+    bool contains(const QueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
