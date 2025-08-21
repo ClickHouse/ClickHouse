@@ -30,7 +30,7 @@ GinFilter::Parameters::Parameters(
 {
 }
 
-GinFilter::QueryString::QueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
+GinQueryString::GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
     : query_string(query_string_)
     , terms(search_terms_)
 {
@@ -187,7 +187,7 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinFilter::QueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
     if (gin_query_string.getTerms().empty())
         return true;

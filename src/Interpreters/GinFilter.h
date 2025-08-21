@@ -32,6 +32,39 @@ struct GinSegmentWithRowIdRange
 
 using GinSegmentWithRowIdRangeVector = std::vector<GinSegmentWithRowIdRange>;
 
+class GinQueryString
+{
+public:
+    GinQueryString() = default;
+    GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_);
+
+    /// Getter
+    const String & getQueryString() const { return query_string; }
+    const std::vector<String> & getTerms() const { return terms; }
+
+    /// Set the query string of the filter
+    void setQueryString(std::string_view query_string_)
+    {
+        query_string = query_string_;
+    }
+
+    /// Add term which are tokens generated from the query string
+    bool addTerm(std::string_view term)
+    {
+        if (term.length() > FST::MAX_TERM_LENGTH) [[unlikely]]
+            return false;
+
+        terms.push_back(String(term));
+        return true;
+    }
+
+private:
+    /// Query string of the filter
+    String query_string;
+    /// Tokenized terms from query string
+    std::vector<String> terms;
+};
+
 /// GinFilter provides underlying functionalities for building text index and also
 /// it does filtering the unmatched rows according to its query string.
 /// It also builds and uses skipping index which stores (segment_id, rowid_start, rowid_end) triples.
@@ -60,39 +93,6 @@ public:
         bool operator<=>(const Parameters& other) const = default;
     };
 
-    class QueryString
-    {
-    public:
-        QueryString() = default;
-        QueryString(std::string_view query_string_, const std::vector<String> & search_terms_);
-
-        /// Getter
-        const String & getQueryString() const { return query_string; }
-        const std::vector<String> & getTerms() const { return terms; }
-
-        /// Set the query string of the filter
-        void setQueryString(std::string_view query_string_)
-        {
-            query_string = query_string_;
-        }
-
-        /// Add term which are tokens generated from the query string
-        bool addTerm(std::string_view term)
-        {
-            if (term.length() > FST::MAX_TERM_LENGTH) [[unlikely]]
-                return false;
-
-            terms.push_back(String(term));
-            return true;
-        }
-
-    private:
-        /// Query string of the filter
-        String query_string;
-        /// Tokenized terms from query string
-        std::vector<String> terms;
-    };
-
     GinFilter() = default;
 
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
@@ -107,7 +107,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const QueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+    bool contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
