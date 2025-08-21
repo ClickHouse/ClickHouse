@@ -28,7 +28,7 @@ create_table() {
         sparse_col Int64,
         tuple_col Tuple(Int64, Tuple(Int64, Int64)),
     ) ENGINE = MergeTree ORDER BY number_col
-    SETTINGS min_bytes_for_wide_part = 0"
+    SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization=1"
 
     $CLICKHOUSE_CLIENT -q "$query"
 
