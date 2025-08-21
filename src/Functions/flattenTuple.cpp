@@ -74,7 +74,7 @@ For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`.
     FunctionDocumentation::Arguments arguments = {
         {"input", "Nested named tuple to flatten.", {"Tuple(n1 T1[, n2 T2, ... ])"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an output tuple whose elements are paths from the original input.", {"Tuple"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an output tuple whose elements are paths from the original input.", {"Tuple(T)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

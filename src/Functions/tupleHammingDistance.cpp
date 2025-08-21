@@ -164,8 +164,8 @@ SELECT
 )";
     FunctionDocumentation::Syntax syntax = "tupleHammingDistance(t1, t2)";
     FunctionDocumentation::Arguments arguments = {
-        {"t1", "First tuple.", {"Tuple(T)"}},
-        {"t2", "Second tuple.", {"Tuple(T)"}}
+        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the Hamming distance.", {"UInt8/16/32/64"}};
     FunctionDocumentation::Examples examples = {

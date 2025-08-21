@@ -1584,7 +1584,7 @@ Calculates the sum of corresponding values of two tuples of the same size.
         {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the sums of corresponding input tuple arguments.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the sums of corresponding input tuple arguments.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePlus = {
         {"Basic usage", "SELECT tuplePlus((1, 2), (2, 3))", "(3, 5)"}
     };
@@ -1679,7 +1679,7 @@ An error will be thrown for division by 0.
         {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"tuple_div", "Tuple of divisor values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of the quotients.", {"Tuple(Int64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of the quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDiv = {
         {"Basic usage", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3, 2, 1)"},
         {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2, 1, 0)"}
@@ -1697,10 +1697,10 @@ If either tuple contains non-integer values then the result is calculated by rou
 )";
     FunctionDocumentation::Syntax syntax_tupleIntDivOrZero = "tupleIntDivOrZero(tuple_num, tuple_div)";
     FunctionDocumentation::Arguments arguments_tupleIntDivOrZero = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
-        {"tuple_div", "Tuple of divisor values.", {"Tuple(T)"}}
+        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"tuple_div", "Tuple of divisor values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns tuple of the quotients. Returns 0 for quotients where the divisor is 0.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns tuple of the quotients. Returns 0 for quotients where the divisor is 0.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZero = {
         {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0, 0, 0)"}
     };
@@ -1715,9 +1715,9 @@ Calculates the negation of the tuple values.
 )";
     FunctionDocumentation::Syntax syntax_tupleNegate = "tupleNegate(t)";
     FunctionDocumentation::Arguments arguments_tupleNegate = {
-        {"t", "Tuple to negate.", {"Tuple(T)"}}
+        {"t", "Tuple to negate.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleNegate = {"Returns a tuple with the result of negation.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleNegate = {"Returns a tuple with the result of negation.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleNegate = {
         {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1, -2)"}
     };
@@ -1871,10 +1871,10 @@ Returns a tuple with all values multiplied by a number.
 )";
     FunctionDocumentation::Syntax syntax_tupleMultiplyByNumber = "tupleMultiplyByNumber(tuple, number)";
     FunctionDocumentation::Arguments arguments_tupleMultiplyByNumber = {
-        {"tuple", "Tuple to multiply.", {"Tuple(T)"}},
+        {"tuple", "Tuple to multiply.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"number", "Multiplier.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleMultiplyByNumber = {"Returns a tuple with multiplied values.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleMultiplyByNumber = {"Returns a tuple with multiplied values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiplyByNumber = {
         {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1, -4.2)"}
     };
@@ -1893,10 +1893,10 @@ Division by zero will return `inf`.
 )";
     FunctionDocumentation::Syntax syntax_tupleDivideByNumber = "tupleDivideByNumber(tuple, number)";
     FunctionDocumentation::Arguments arguments_tupleDivideByNumber = {
-        {"tuple", "Tuple to divide.", {"Tuple(T)"}},
+        {"tuple", "Tuple to divide.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"number", "Divider.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleDivideByNumber = {"Returns a tuple with divided values.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleDivideByNumber = {"Returns a tuple with divided values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivideByNumber = {
         {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2, 4)"}
     };
@@ -1911,10 +1911,10 @@ Returns a tuple of the moduli (remainders) of division operations of a tuple and
 )";
     FunctionDocumentation::Syntax syntax_tupleModuloByNumber = "tupleModuloByNumber(tuple_num, div)";
     FunctionDocumentation::Arguments arguments_tupleModuloByNumber = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleModuloByNumber = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleModuloByNumber = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModuloByNumber = {
         {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
     };
@@ -1931,10 +1931,10 @@ An error will be thrown for division by 0.
 )";
     FunctionDocumentation::Syntax syntax_tupleIntDivByNumber = "tupleIntDivByNumber(tuple_num, div)";
     FunctionDocumentation::Arguments arguments_tupleIntDivByNumber = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivByNumber = {"Returns a tuple of the quotients.", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivByNumber = {"Returns a tuple of the quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivByNumber = {
         {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
         {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2, 1, 0)"}
@@ -1952,10 +1952,10 @@ If either the tuple or div contain non-integer values then the result is calcula
 )";
     FunctionDocumentation::Syntax syntax_tupleIntDivOrZeroByNumber = "tupleIntDivOrZeroByNumber(tuple_num, div)";
     FunctionDocumentation::Arguments arguments_tupleIntDivOrZeroByNumber = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple(T)"}},
+        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
         {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZeroByNumber = {"Returns a tuple of the quotients with `0` for quotients where the divisor is `0`.", {"Tuple"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZeroByNumber = {"Returns a tuple of the quotients with `0` for quotients where the divisor is `0`.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZeroByNumber = {
         {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
         {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0, 0, 0)"}
