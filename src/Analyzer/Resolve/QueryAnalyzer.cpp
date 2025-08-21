@@ -6023,9 +6023,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     expandGroupByAll(query_node_typed);
 
+    validateFromClause(query_node);
     validateFilters(query_node);
     validateAggregates(query_node, {.group_by_use_nulls = scope.group_by_use_nulls});
-    validateFromClause(query_node);
 
     for (const auto & column : projection_columns)
     {

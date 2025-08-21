@@ -46,6 +46,9 @@ void validateTreeSize(const QueryTreeNodePtr & node,
   */
 void validateCorrelatedSubqueries(const QueryTreeNodePtr & node);
 
+/**
+  * Validate that if correlated subquery appears in the FROM clause then it uses columns from outer query.
+  */
 void validateFromClause(const QueryTreeNodePtr & node);
 
 /** Compare node with group by key node.
