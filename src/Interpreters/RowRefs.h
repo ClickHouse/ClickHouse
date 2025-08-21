@@ -21,7 +21,7 @@ struct RowRef
     const Columns * columns = nullptr;
     SizeT row_num = 0;
 
-    RowRef() = default;
+    RowRef() { } /// NOLINT
     RowRef(const Columns * columns_, size_t row_num_)
         : columns(columns_)
         , row_num(static_cast<SizeT>(row_num_))
@@ -46,17 +46,17 @@ struct RowRefList : RowRef
 
         bool full() const { return size == MAX_SIZE; }
 
-        Batch * insert(RowRef && row_ref, Arena & pool)
+        Batch * insert(const RowRef & row_ref, Arena & pool)
         {
             if (full())
             {
                 auto * batch = pool.alloc<Batch>();
-                *batch = Batch(this);
-                batch->insert(std::move(row_ref), pool);
+                new (batch) Batch(this);
+                batch->insert(row_ref, pool);
                 return batch;
             }
 
-            row_refs[size] = std::move(row_ref);
+            row_refs[size] = row_ref;
             ++size;
             return this;
         }
@@ -114,7 +114,7 @@ struct RowRefList : RowRef
         size_t position;
     };
 
-    RowRefList() {} /// NOLINT
+    RowRefList() { } /// NOLINT
     RowRefList(const Columns * columns_, size_t row_num_) : RowRef(columns_, row_num_), rows(1) {}
     RowRefList(const Columns * columns_, size_t row_start_, size_t rows_) : RowRef(columns_, row_start_), rows(static_cast<SizeT>(rows_)) {}
 
@@ -129,14 +129,14 @@ struct RowRefList : RowRef
     }
 
     /// insert element after current one
-    void insert(RowRef && row_ref, Arena & pool)
+    void insert(const RowRef & row_ref, Arena & pool)
     {
         if (!next)
         {
             next = pool.alloc<Batch>();
-            *next = Batch(nullptr);
+            new (next) Batch(nullptr);
         }
-        next = next->insert(std::move(row_ref), pool);
+        next = next->insert(row_ref, pool);
         ++rows;
     }
 
