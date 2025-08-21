@@ -357,7 +357,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Float64:
             return {"double", true};
         case TypeIndex::Date32:
-            return "date";
+            return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
             return {"timestamp", true};
