@@ -385,6 +385,7 @@ void extendSchemaForPartitions(
     }
 }
 
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -473,49 +474,40 @@ void generateManifestFile(
 
         if (data_file_statistics)
         {
+            auto set_fields = [&]<typename T, typename U>(
+                                  const std::vector<std::pair<size_t, T>> & statistics, const std::string & field_name, U && dump_function)
             {
-                auto statistics = data_file_statistics->getColumnSizes();
-                auto & data_file_record = data_file.field(Iceberg::f_column_sizes);
+                auto & data_file_record = data_file.field(field_name);
                 data_file_record.selectBranch(1);
-                auto & column_sizes = data_file_record.value<avro::GenericArray>();
-                auto schema_element = column_sizes.schema()->leafAt(0);
-                for (const auto [field_id, column_size] : statistics)
+                auto & record_values = data_file_record.value<avro::GenericArray>();
+                auto schema_element = record_values.schema()->leafAt(0);
+                for (const auto & [field_id, value] : statistics)
                 {
                     avro::GenericDatum record_datum(schema_element);
-                    auto& record = record_datum.value<avro::GenericRecord>();
+                    auto & record = record_datum.value<avro::GenericRecord>();
                     record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = static_cast<Int32>(column_size);
-                    column_sizes.value().push_back(record_datum);
+                    record.field(Iceberg::f_value) = dump_function(field_id, value);
+                    record_values.value().push_back(record_datum);
                 }
-            }
+            };
+
+            auto statistics = data_file_statistics->getColumnSizes();
+            set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int32>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
-            auto set_fields = [&] (const std::vector<std::pair<size_t, Field>> & statistics, const std::string & field_name)
-            {
-                auto & data_file_record = data_file.field(field_name);
-                data_file_record.selectBranch(1);
-                auto & bounds = data_file_record.value<avro::GenericArray>();
-                auto schema_element = bounds.schema()->leafAt(0);
-                for (const auto & [field_id, lower_value] : statistics)
-                {
-                    avro::GenericDatum record_datum(schema_element);
-                    auto& record = record_datum.value<avro::GenericRecord>();
-                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = dumpFieldToBytes(lower_value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]);
-                    bounds.value().push_back(record_datum);
-                }
-            };
+            auto dump_fields = [&](size_t field_id, Field value)
+            { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
             auto lower_statistics = data_file_statistics->getLowerBounds();
             if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
-                set_fields(lower_statistics, Iceberg::f_lower_bounds);
+                set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
             auto upper_statistics = data_file_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
-                set_fields(upper_statistics, Iceberg::f_upper_bounds);
+                set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
         }
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (summary->has(Iceberg::f_added_records))
@@ -1089,30 +1081,31 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
+Range getExtremeRangeFromColumn(const ColumnPtr & column)
+{
+    Field min_val;
+    Field max_val;
+    column->getExtremes(min_val, max_val);
+    return Range(min_val, true, max_val, true);
+}
+
 void DataFileStatistics::update(const Chunk & chunk)
 {
     size_t num_columns = chunk.getNumColumns();
     if (column_sizes.empty())
     {
-        column_sizes.resize(num_columns);
+        column_sizes.resize(num_columns, 0);
         for (size_t i = 0; i < num_columns; ++i)
         {
-            Field min_val;
-            Field max_val;
-            chunk.getColumns()[i]->getExtremes(min_val, max_val);
-            Range range(min_val, true, max_val, true);
-            ranges.push_back(std::move(range));
+            ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
         }
     }
 
+    chassert(ranges.size() == num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
     {
-        column_sizes[i] += chunk.getColumns()[i]->byteSize();
-        Field min_val;
-        Field max_val;
-        chunk.getColumns()[i]->getExtremes(min_val, max_val);
-
-        ranges[i] = uniteRanges(ranges[i], Range(min_val, true, max_val, true));
+        ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(chunk.getColumns()[i]));
     }
 }
 
