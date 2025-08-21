@@ -56,7 +56,7 @@ struct ITokenExtractor
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
     /// Updates GIN filter from exact-match string filter value
-    virtual void stringToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const = 0;
+    virtual void stringToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const = 0;
 
     /// Updates GIN filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
@@ -64,19 +64,19 @@ struct ITokenExtractor
     virtual void substringToGinFilter(
         const char * data,
         size_t length,
-        GinFilter::StringInfo & gin_filter_string_info,
+        GinFilter::QueryString & gin_filter_string_info,
         bool /*is_prefix*/,
         bool /*is_suffix*/) const
     {
         stringToGinFilter(data, length, gin_filter_string_info);
     }
 
-    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const
+    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const
     {
         stringToGinFilter(data, length, gin_filter_string_info);
     }
 
-    virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const = 0;
+    virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const = 0;
 
     virtual bool supportsStringLike() const = 0;
 };
@@ -115,7 +115,7 @@ class ITokenExtractorHelper : public ITokenExtractor
             bloom_filter.add(token.c_str(), token.size());
     }
 
-    void stringToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const override
+    void stringToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const override
     {
         gin_filter_string_info.setQueryString({data, length});
         const auto & tokens = getTokensView(data, length);
@@ -123,7 +123,7 @@ class ITokenExtractorHelper : public ITokenExtractor
             gin_filter_string_info.addTerm(token);
     }
 
-    void stringPaddedToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const override
+    void stringPaddedToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const override
     {
         gin_filter_string_info.setQueryString({data, length});
 
@@ -135,7 +135,7 @@ class ITokenExtractorHelper : public ITokenExtractor
             gin_filter_string_info.addTerm({data + token_start, token_len});
     }
 
-    void stringLikeToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info) const override
+    void stringLikeToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info) const override
     {
         gin_filter_string_info.setQueryString({data, length});
 
@@ -177,7 +177,7 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter_string_info, bool is_prefix, bool is_suffix) const override;
+    void substringToGinFilter(const char * data, size_t length, GinFilter::QueryString & gin_filter_string_info, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 };

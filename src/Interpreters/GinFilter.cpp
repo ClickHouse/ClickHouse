@@ -30,7 +30,7 @@ GinFilter::Parameters::Parameters(
 {
 }
 
-GinFilter::StringInfo::StringInfo(std::string_view query_string_, const std::vector<String> & search_terms_)
+GinFilter::QueryString::QueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
     : query_string(query_string_)
     , terms(search_terms_)
 {
@@ -77,6 +77,11 @@ void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UI
         }
     }
     rowid_ranges.push_back({segment_id, rowid_start, rowid_end});
+}
+
+void GinFilter::clear()
+{
+    rowid_ranges.clear();
 }
 
 namespace
@@ -182,17 +187,17 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinFilter::StringInfo & string_info, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinFilter::QueryString & gin_string_info, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
-    if (string_info.getTerms().empty())
+    if (gin_string_info.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(string_info.getQueryString());
+    GinPostingsCachePtr postings_cache = cache_store.getPostings(gin_string_info.getQueryString());
     if (postings_cache == nullptr)
     {
         GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(string_info.getTerms());
-        cache_store.cache[string_info.getQueryString()] = postings_cache;
+        postings_cache = reader.createPostingsCacheFromTerms(gin_string_info.getTerms());
+        cache_store.cache[gin_string_info.getQueryString()] = postings_cache;
     }
 
     switch (search_mode)
@@ -202,6 +207,12 @@ bool GinFilter::contains(const GinFilter::StringInfo & string_info, PostingsCach
         case GinSearchMode::All:
             return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_cache);
     }
+}
+
+
+size_t GinFilter::memoryUsageBytes() const
+{
+    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
 }
 
 }

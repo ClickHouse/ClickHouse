@@ -101,16 +101,16 @@ private:
         };
 
         RPNElement( /// NOLINT
-            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinFilter::StringInfo> && gin_string_info_ = nullptr)
-                : function(function_), gin_string_info(std::move(gin_string_info_)) {}
+            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinFilter::QueryString> && gin_query_info_ = nullptr)
+                : function(function_), gin_query_info(std::move(gin_query_info_)) {}
 
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinFilter::StringInfo> gin_string_info;
+        std::unique_ptr<GinFilter::QueryString> gin_query_info;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<std::vector<GinFilter::StringInfo>> set_gin_string_info;
+        std::vector<std::vector<GinFilter::QueryString>> set_gin_query_info;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;
