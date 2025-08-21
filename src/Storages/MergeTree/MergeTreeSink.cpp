@@ -4,7 +4,6 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
 
@@ -77,9 +76,6 @@ void MergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
-    if (!storage_snapshot->object_columns.empty())
-        convertDynamicColumnsToTuples(block, storage_snapshot);
-
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;

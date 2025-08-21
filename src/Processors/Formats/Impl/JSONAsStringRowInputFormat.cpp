@@ -170,7 +170,7 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
     const auto & type = header_->getByPosition(0).type;
-    if (!isObject(type) && !isObjectDeprecated(type))
+    if (!isObject(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Input format JSONAsObject is only suitable for tables with a single column of type JSON but the column type is {}",
             type->getName());
@@ -190,7 +190,7 @@ Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
 
 JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings_) : settings(settings_)
 {
-    if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
+    if (!settings.json.allow_json_type)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Cannot infer the data structure in JSONAsObject format because experimental JSON type is not allowed. Set setting "
