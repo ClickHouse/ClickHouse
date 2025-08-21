@@ -74,7 +74,7 @@ struct TranslateImpl
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
-            const UInt8 * src_end = data.data() + offsets[i] - 1;
+            const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
             {
@@ -94,11 +94,6 @@ struct TranslateImpl
                 ++src;
             }
 
-            /// Technically '\0' can be mapped into other character,
-            ///  so we need to process '\0' delimiter separately
-            *dst = 0;
-            ++dst;
-            ++data_size;
             res_offsets[i] = data_size;
         }
 
@@ -222,14 +217,14 @@ struct TranslateUTF8Impl
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
-            const UInt8 * src_end = data.data() + offsets[i] - 1;
+            const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
             {
-                /// Maximum length of UTF-8 sequence is 4 bytes + 1 zero byte
-                if (data_size + 5 > res_data.size())
+                /// Maximum length of UTF-8 sequence is 4 bytes
+                if (data_size + 4 > res_data.size())
                 {
-                    res_data.resize(data_size * 2 + 5);
+                    res_data.resize(data_size * 2 + 4);
                     dst = res_data.data() + data_size;
                 }
 
@@ -286,12 +281,6 @@ struct TranslateUTF8Impl
                 data_size += src_len;
             }
 
-            /// Technically '\0' can be mapped into other character,
-            ///  so we need to process '\0' delimiter separately
-            *dst = 0;
-            ++dst;
-
-            ++data_size;
             res_offsets[i] = data_size;
         }
 

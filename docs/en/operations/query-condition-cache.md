@@ -21,7 +21,7 @@ The second approach may return stale results (as the query cache is transactiona
 
 The query condition cache provides an elegant solution for both problems.
 It is based on the idea that evaluating a filter condition (e.g., `WHERE col = 'xyz'`) on the same data will always return the same results.
-More specifically, the query condition cache remembers for each each evaluated filter and each granule (= a block of 8192 rows by default) if no row in the granule satisfy the filter condition.
+More specifically, the query condition cache remembers for each evaluated filter and each granule (= a block of 8192 rows by default) if no row in the granule satisfy the filter condition.
 The information is recorded as a single bit: a 0 bit represents that no row matches the filter whereas a 1 bit means that at least one matching row exists.
 In the former case, ClickHouse may skip the corresponding granule during filter evaluation, in the latter case, the granule must be loaded and evaluated.
 

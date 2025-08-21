@@ -146,7 +146,6 @@ Plan getPlan(
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file);
-                data_object_info->sequence_number = data_file.added_sequence_number;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
@@ -176,7 +175,7 @@ Plan getPlan(
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->sequence_number <= delete_file.added_sequence_number)
-                data_file->data_object_info->position_deletes_objects.push_back(delete_file);
+                data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
     plan.history = std::move(snapshots_info);
@@ -264,6 +263,18 @@ void writeMetadataFiles(
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(configuration->getRawPath().path, columns_description, nullptr);
+
+    auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    Poco::JSON::Object::Ptr current_schema;
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i));
+            break;
+        }
+    }
 
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
@@ -362,6 +373,7 @@ void writeMetadataFiles(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
+                ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
                 std::vector(data_filenames.begin(), data_filenames.end()),
                 snapshot,
                 configuration->format,
