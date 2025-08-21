@@ -1,7 +1,4 @@
 CAST
-CRC32
-CRC32IEEE
-CRC64
 DATE
 FQDN
 IPv4CIDRToRange
@@ -51,16 +48,12 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-alphaTokens
 and
-appendTrailingCharIfAbsent
 asinh
 atan
 atan2
 atanh
 bar
-base58Decode
-base58Encode
 basename
 blockNumber
 blockSerializedSize
@@ -121,9 +114,6 @@ exp10
 exp2
 extract
 extractAll
-extractAllGroupsHorizontal
-extractAllGroupsVertical
-extractGroups
 extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
@@ -388,11 +378,6 @@ sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 space
-splitByChar
-splitByNonAlpha
-splitByRegexp
-splitByString
-splitByWhitespace
 sqrt
 startsWith
 substring
