@@ -91,7 +91,32 @@ public:
 
 REGISTER_FUNCTION(H3GetResolution)
 {
-    factory.registerFunction<FunctionH3GetResolution>();
+    FunctionDocumentation::Description description = R"(
+Defines the resolution of the given [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetResolution(h3index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the resolution of the index with range `[0, 15]` if the index is valid, otherwise returns a random value.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get resolution of H3 index",
+            "SELECT h3GetResolution(639821929606596015) AS resolution",
+            R"(
+┌─resolution─┐
+│         14 │
+└────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetResolution>(documentation);
 }
 
 }

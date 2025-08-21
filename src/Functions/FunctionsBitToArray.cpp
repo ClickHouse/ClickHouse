@@ -120,7 +120,6 @@ private:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 writeBitmask<T>(vec_from[i], buf_to);
-                writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
 
@@ -341,9 +340,96 @@ public:
 
 REGISTER_FUNCTION(BitToArray)
 {
-    factory.registerFunction<FunctionBitPositionsToArray>();
-    factory.registerFunction<FunctionBitmaskToArray>();
-    factory.registerFunction<FunctionBitmaskToList>();
+    FunctionDocumentation::Description bitPositionsToArray_description = R"(
+This function returns the positions (in ascending order) of the 1 bits in the binary representation of an unsigned integer.
+Signed input integers are first casted to an unsigned integer.
+    )";
+    FunctionDocumentation::Syntax bitPositionsToArray_syntax = "bitPositionsToArray(arg)";
+    FunctionDocumentation::Arguments bitPositionsToArray_arguments = {
+        {"arg", "An integer value.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue bitPositionsToArray_returned_value = {"Returns an array with the ascendingly ordered positions of 1 bits in the binary representation of the input.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples bitPositionsToArray_examples =
+    {
+        {
+            "Single bit set",
+            "SELECT bitPositionsToArray(toInt8(1)) AS bit_positions",
+            R"(
+┌─bit_positions─┐
+│ [0]           │
+└───────────────┘
+            )"
+        },
+        {
+            "All bits set",
+            "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
+            R"(
+┌─bit_positions─────────────┐
+│ [0, 1, 2, 3, 4, 5, 6, 7]  │
+└───────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn bitPositionsToArray_introduced_in = {21, 7};
+    FunctionDocumentation::Category bitPositionsToArray_category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
+
+    FunctionDocumentation::Description bitmaskToArray_description = R"(
+This function decomposes an integer into a sum of powers of two.
+The powers of two are returned as an ascendingly ordered array.
+    )";
+    FunctionDocumentation::Syntax bitmaskToArray_syntax = "bitmaskToArray(num)";
+    FunctionDocumentation::Arguments bitmaskToArray_arguments = {{"num", "An integer value.", {"(U)Int*"}}};
+    FunctionDocumentation::ReturnedValue bitmaskToArray_returned_value = {"Returns an array with the ascendingly ordered powers of two which sum up to the input number.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples bitmaskToArray_examples = {
+        {
+            "Basic example",
+            "SELECT bitmaskToArray(50) AS powers_of_two",
+            R"(
+┌─powers_of_two───┐
+│ [2, 16, 32]     │
+└─────────────────┘
+            )"
+        },
+        {
+            "Single power of two",
+            "SELECT bitmaskToArray(8) AS powers_of_two",
+            R"(
+┌─powers_of_two─┐
+│ [8]           │
+└───────────────┘
+            )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn bitmaskToArray_introduced_in = {1, 1};
+    FunctionDocumentation::Category bitmaskToArray_category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
+
+    FunctionDocumentation::Description bitmaskToList_description = R"(
+Like bitmaskToArray but returns the powers of two as a comma-separated string.
+    )";
+    FunctionDocumentation::Syntax bitmaskToList_syntax = "bitmaskToList(num)";
+    FunctionDocumentation::Arguments bitmaskToList_arguments = {
+        {"num", "An integer value.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue bitmaskToList_returned_value = {"Returns a string containing comma-separated powers of two.", {"String"}};
+    FunctionDocumentation::Examples bitmaskToList_examples = {
+        {
+            "Basic example", "SELECT bitmaskToList(50) AS powers_list",
+            R"(
+┌─powers_list───┐
+│ 2, 16, 32     │
+└───────────────┘
+           )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn bitmaskToList_introduced_in = {1, 1};
+    FunctionDocumentation::Category bitmaskToList_category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation bitmaskToList_documentation = {bitmaskToList_description, bitmaskToList_syntax, bitmaskToList_arguments, bitmaskToList_returned_value, bitmaskToList_examples, bitmaskToList_introduced_in, bitmaskToList_category};
+
+    factory.registerFunction<FunctionBitPositionsToArray>(bitPositionsToArray_documentation);
+    factory.registerFunction<FunctionBitmaskToArray>(bitmaskToArray_documentation);
+    factory.registerFunction<FunctionBitmaskToList>(bitmaskToList_documentation);
 }
 
 }

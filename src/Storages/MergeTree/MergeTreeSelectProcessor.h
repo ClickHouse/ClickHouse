@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/Chunk.h>
 
 #include <boost/core/noncopyable.hpp>
@@ -45,6 +46,9 @@ public:
     sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
+    size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
+    MergeTreeAllRangesCallback getAllRangesCallback() const { return all_callback; }
+    MergeTreeReadTaskCallback getReadTaskCallback() const { return callback; }
 
 private:
     MergeTreeAllRangesCallback all_callback;
@@ -116,6 +120,8 @@ private:
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 

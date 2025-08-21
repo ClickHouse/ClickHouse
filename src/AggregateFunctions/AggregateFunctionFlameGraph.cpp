@@ -101,7 +101,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
+    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -183,20 +183,19 @@ struct AggregateFunctionFlameGraphTree
     }
 };
 
-static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
+static void insertData(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
 {
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + length + 1;
+    const size_t new_size = old_size + length;
 
     chars.resize(new_size);
     if (length)
         memcpy(chars.data() + old_size, pos, length);
-    chars[old_size + length] = 0;
     offsets.push_back(new_size);
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
-static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const std::string & str)
+static void fillColumn(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const std::string & str)
 {
     size_t start = 0;
     size_t end = 0;
@@ -217,17 +216,17 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
-static void dumpFlameGraph(
+static void dumpFlameGraphImpl(
     const AggregateFunctionFlameGraphTree::Traces & traces,
-    DB::PaddedPODArray<UInt8> & chars,
-    DB::PaddedPODArray<UInt64> & offsets)
+    PaddedPODArray<UInt8> & chars,
+    PaddedPODArray<UInt64> & offsets)
 {
-    DB::WriteBufferFromOwnString out;
+    WriteBufferFromOwnString out;
 
     std::unordered_map<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
     for (const auto & trace : traces)
@@ -246,9 +245,9 @@ static void dumpFlameGraph(
             if (const auto * symbol = symbol_index.findSymbol(ptr))
                 writeString(demangle(symbol->name), out);
             else
-                DB::writePointerHex(ptr, out);
+                writePointerHex(ptr, out);
 #else
-            DB::writePointerHex(ptr, out);
+            writePointerHex(ptr, out);
 #endif
         }
 
@@ -465,11 +464,11 @@ struct AggregateFunctionFlameGraphData
     }
 
     void dumpFlameGraph(
-        DB::PaddedPODArray<UInt8> & chars,
-        DB::PaddedPODArray<UInt64> & offsets,
+        PaddedPODArray<UInt8> & chars,
+        PaddedPODArray<UInt64> & offsets,
         size_t max_depth, size_t min_bytes) const
     {
-        DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
+        dumpFlameGraphImpl(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
 

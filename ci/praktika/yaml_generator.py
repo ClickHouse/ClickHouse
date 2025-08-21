@@ -312,7 +312,7 @@ class PullRequestPushYamlGen:
 
             if_expression = ""
             if (
-                self.workflow_config.enable_cache
+                self.workflow_config.config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
@@ -341,7 +341,7 @@ class PullRequestPushYamlGen:
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
                     )
                 )
-            if self.workflow_config.enable_cache:
+            if self.workflow_config.config._enabled_workflow_config():
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
                         WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(

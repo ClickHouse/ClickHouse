@@ -85,11 +85,9 @@ private:
                 T a = data[i];
                 s = fmt::sprintf(format, static_cast<NearestFieldType<T>>(a));
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;
@@ -109,11 +107,9 @@ private:
                 auto a = concrete_column->getDataAt(i).toView();
                 s = fmt::sprintf(format, a);
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;

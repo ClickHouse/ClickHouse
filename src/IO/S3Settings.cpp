@@ -115,4 +115,18 @@ std::optional<S3Settings> S3SettingsByEndpoint::getSettings(
     return {};
 }
 
+void S3Settings::serialize(WriteBuffer & os, ContextPtr context) const
+{
+    auth_settings.serialize(os, context);
+    request_settings.serialize(os, context);
+}
+
+S3Settings S3Settings::deserialize(ReadBuffer & is, ContextPtr context)
+{
+    S3Settings result;
+    result.auth_settings = S3::S3AuthSettings::deserialize(is, context);
+    result.request_settings = S3::S3RequestSettings::deserialize(is, context);
+    return result;
+}
+
 }

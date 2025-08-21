@@ -30,7 +30,7 @@ TEST(FST, SimpleTest)
     std::vector<UInt8> buffer;
     {
         DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-        DB::FST::FstBuilder builder(wbuf);
+        DB::FST::Builder builder(wbuf);
 
         for (auto & [term, output] : indexed_data)
             builder.add(term, output);
@@ -64,7 +64,7 @@ TEST(FST, TestForLongTerms)
     std::vector<UInt8> buffer;
     {
         DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-        DB::FST::FstBuilder builder(wbuf);
+        DB::FST::Builder builder(wbuf);
 
         builder.add(term1, output1);
         builder.add(term2, output2);
@@ -88,7 +88,7 @@ TEST(FST, TestForLongTerms)
 
     std::vector<UInt8> buffer3;
     DB::WriteBufferFromVector<std::vector<UInt8>> wbuf3(buffer3);
-    DB::FST::FstBuilder builder3(wbuf3);
+    DB::FST::Builder builder3(wbuf3);
 
     EXPECT_THROW(builder3.add(term3, output3), DB::Exception);
 }

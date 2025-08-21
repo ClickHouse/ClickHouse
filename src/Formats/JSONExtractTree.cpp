@@ -371,7 +371,6 @@ public:
                 WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
-            chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
         else
@@ -815,8 +814,22 @@ public:
         switch (element.type())
         {
             case ElementType::DOUBLE:
+            {
+                // Try to preserve precision by converting to string first
+                // This avoids floating-point precision loss during decimal conversion
+                String str_value = jsonElementToString<JSONParser>(element, format_settings);
+                auto rb = ReadBufferFromMemory{str_value};
+
+                if (SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
+                {
+                    break;
+                }
+
+                // Fallback to original conversion if string parsing fails
+                // This ensures backward compatibility and robustness
                 value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
                 break;
+            }
             case ElementType::UINT64:
                 value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale);
                 break;
@@ -1733,7 +1746,12 @@ private:
                 }
 
                 auto types_copy = types;
-                transformInferredJSONTypesIfNeeded(types_copy, format_settings, &json_inference_info);
+                /// Disable read_numbers_as_strings in json settings to avoid
+                /// inferring array with numbers and strings as Array(String) here.
+                /// It will be done later if needed in transformFinal*.
+                auto format_settings_copy = format_settings;
+                format_settings_copy.json.read_numbers_as_strings = false;
+                transformInferredJSONTypesIfNeeded(types_copy, format_settings_copy, &json_inference_info);
 
                 if (checkIfTypesAreEqual(types_copy))
                     return std::make_shared<DataTypeArray>(types_copy.back());
@@ -1864,7 +1882,10 @@ private:
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
-                path += key;
+                if (insert_settings.escape_dots_in_json_keys)
+                    path += escapeDotInJSONKey(String(key));
+                else
+                    path += key;
 
                 if (!visited_keys.insert(key).second)
                 {

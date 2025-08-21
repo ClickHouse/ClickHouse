@@ -341,6 +341,7 @@ MainThreadStatus::MainThreadStatus()
 
 MainThreadStatus::~MainThreadStatus()
 {
+    reset();
     /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
     /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
     /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open

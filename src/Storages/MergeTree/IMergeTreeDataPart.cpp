@@ -36,8 +36,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
+#include <Common/thread_local_rng.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -101,6 +103,11 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+namespace FailPoints
+{
+    extern const char remove_merge_tree_part_delay[];
+}
+
 namespace
 {
 
@@ -125,6 +132,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     size_t minmax_idx_size = minmax_column_types.size();
 
     hyperrectangle.reserve(minmax_idx_size);
+    FormatSettings format_settings;
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], part.checksums) + ".idx";
@@ -132,9 +140,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file, {});
+        serialization->deserializeBinary(min_val, *file, format_settings);
         Field max_val;
-        serialization->deserializeBinary(max_val, *file, {});
+        serialization->deserializeBinary(max_val, *file, format_settings);
 
         // NULL_LAST
         if (min_val.isNull())
@@ -666,6 +674,15 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    if (is_removed)
+        return;
+
+    fiu_do_on(FailPoints::remove_merge_tree_part_delay,
+    {
+        std::chrono::milliseconds sleep_time{1300 + thread_local_rng() % 200};
+        std::this_thread::sleep_for(sleep_time);
+    });
+
     chassert(assertHasValidVersionMetadata());
     std::string path;
 
@@ -720,6 +737,8 @@ void IMergeTreeDataPart::removeIfNeeded()
         {
             LOG_TRACE(storage.log, "Removed part from old location {}", path);
         }
+
+        is_removed = true;
     }
     catch (...)
     {
@@ -1083,10 +1102,11 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     for (size_t j = 0; j < key_size; ++j)
         key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
 
+    FormatSettings format_settings;
     for (size_t i = 0; i < marks_count; ++i)
     {
         for (size_t j = 0; j < key_size; ++j)
-            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
+            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
     }
 
     optimizeIndexColumns(marks_count, loaded_index);
@@ -1624,26 +1644,30 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
 void IMergeTreeDataPart::loadTTLInfos()
 {
-    if (auto in = readFileIfExists("ttl.txt"))
+    auto metadata_snapshot = getMetadataSnapshot();
+    if (metadata_snapshot->hasAnyTTL())
     {
-        assertString("ttl format version: ", *in);
-        size_t format_version;
-        readText(format_version, *in);
-        assertChar('\n', *in);
-
-        if (format_version == 1)
+        if (auto in = readFileIfExists("ttl.txt"))
         {
-            try
+            assertString("ttl format version: ", *in);
+            size_t format_version;
+            readText(format_version, *in);
+            assertChar('\n', *in);
+
+            if (format_version == 1)
             {
-                ttl_infos.read(*in);
+                try
+                {
+                    ttl_infos.read(*in);
+                }
+                catch (const JSONException &)
+                {
+                    throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
+                }
             }
-            catch (const JSONException &)
-            {
-                throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
-            }
+            else
+                throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
         }
-        else
-            throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
     }
 }
 
@@ -2624,7 +2648,13 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
     MergeTreeReaderSettings settings;
+    /// We need to read only prefixes, so no data will be read.
+    /// Use read settings without prefetches/filesystem cache/etc.
+    settings.read_settings = getReadSettingsForMetadata();
     settings.can_read_part_without_marks = true;
+    /// Use prefixes deserialization thread pool to read prefixes faster.
+    /// In JSON type there might be hundreds of small files that needs to be read.
+    settings.use_prefixes_deserialization_thread_pool = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

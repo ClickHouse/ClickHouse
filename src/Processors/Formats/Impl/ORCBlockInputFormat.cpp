@@ -140,6 +140,7 @@ void ORCBlockInputFormat::prepareReader()
         "ORC",
         format_settings,
         std::nullopt,
+        std::nullopt,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -208,7 +209,8 @@ void registerInputFormatORC(FormatFactory & factory)
            const FormatSettings & settings,
            const ReadSettings & read_settings,
            bool is_remote_fs,
-           FormatParserGroupPtr parser_group)
+           FormatParserSharedResourcesPtr,
+           FormatFilterInfoPtr format_filter_info)
         {
             InputFormatPtr res;
             if (settings.orc.use_fast_decoder)
@@ -218,7 +220,8 @@ void registerInputFormatORC(FormatFactory & factory)
                 const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
                 const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
-                res = std::make_shared<NativeORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, parser_group);
+                res = std::make_shared<NativeORCBlockInputFormat>(
+                    buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }
             else
                 res = std::make_shared<ORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);

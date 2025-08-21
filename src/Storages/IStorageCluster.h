@@ -40,7 +40,7 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter_actions_dag,
         const ContextPtr & context,
-        size_t number_of_replicas) const = 0;
+        ClusterPtr cluster) const = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 

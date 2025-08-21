@@ -6,6 +6,7 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -48,14 +49,19 @@ public:
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    void commit() override // NOLINT
+    void commit(const TransactionCommitOptionsVariant & options = NoCommitOptions{}) override // NOLINT
     {
-        delegate_transaction->commit();
+        delegate_transaction->commit(options);
     }
 
     void undo() override
     {
         delegate_transaction->undo();
+    }
+
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
+    {
+        return delegate_transaction->tryCommit(options);
     }
 
     ~DiskEncryptedTransaction() override = default;
@@ -246,7 +252,6 @@ public:
         auto wrapped_path = wrappedPath(src_path);
         delegate_transaction->truncateFile(wrapped_path, target_size);
     }
-
 
 private:
 

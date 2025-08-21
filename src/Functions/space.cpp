@@ -76,7 +76,7 @@ public:
         checkRepeatTime(times);
 
         res_offsets.resize(input_rows_count);
-        res_chars.resize(input_rows_count * (times + 1));
+        res_chars.resize(input_rows_count * times);
 
         size_t pos = 0;
 
@@ -84,10 +84,6 @@ public:
         {
             memset(res_chars.begin() + pos, space, times);
             pos += times;
-
-            *(res_chars.begin() + pos) = '\0';
-            pos += 1;
-
             res_offsets[i] = pos;
         }
 
@@ -119,13 +115,10 @@ public:
             checkRepeatTime(times);
 
             if (pos + times + 1 > res_chars.size())
-                res_chars.resize(std::max(2 * res_chars.size(), static_cast<size_t>(pos + times + 1)));
+                res_chars.resize(std::max(2 * res_chars.size(), static_cast<size_t>(pos + times)));
 
             memset(res_chars.begin() + pos, space, times);
             pos += times;
-
-            *(res_chars.begin() + pos) = '\0';
-            pos += 1;
 
             res_offsets[i] = pos;
         }

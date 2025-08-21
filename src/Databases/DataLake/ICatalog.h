@@ -2,9 +2,11 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Common/SettingsChanges.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
+#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
@@ -109,6 +111,16 @@ private:
 };
 
 
+struct CatalogSettings
+{
+    String storage_endpoint;
+    String aws_access_key_id;
+    String aws_secret_access_key;
+    String region;
+
+    DB::SettingsChanges allChanged() const;
+};
+
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
 class ICatalog
@@ -150,6 +162,21 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
+
+    /// Creates new table in catalog.
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Updates metadata in catalog.
+    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+
+    /// Drop table from catalog.
+    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+
+    /// Does the catalog support transactions or anything like that?
+    /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
+    /// So the REST catalog is transactional.
+    /// The Glue catalog does not support such operation.
+    virtual bool isTransactional() const { return false; }
 
 protected:
     /// Name of the warehouse,

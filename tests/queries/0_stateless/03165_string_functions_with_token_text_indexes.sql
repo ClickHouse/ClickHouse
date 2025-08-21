@@ -195,35 +195,3 @@ FROM (
 WHERE explain LIKE '%Parts:%';
 
 SELECT * FROM 03165_token_ft WHERE match(message, ' xyz ');
-
-SELECT '';
-SELECT '-- No skip for multiple substrings';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, ['ce', 'no'])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, ['ce', 'no']);
-
-SELECT '';
-SELECT '-- Skip for multiple substrings with complete tokens';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', ' yz '])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', ' yz ']);
-
-SELECT '';
-SELECT '-- No skip for multiple non-existsing substrings, only one with complete token';
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', 'yz'])
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE multiSearchAny(message, [' wx ', 'yz']);

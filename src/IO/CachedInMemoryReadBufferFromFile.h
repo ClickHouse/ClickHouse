@@ -21,10 +21,7 @@ public:
     String getInfoForLog() override;
     bool isSeekCheap() override;
 
-    /// Should we override isContentCached to do a cache lookup? It would save ThreadPoolRemoteFSReader
-    /// the overhead of passing the task to another thread and back, but will add overhead of doing
-    /// cache lookup twice.
-    /// bool isContentCached(size_t offset, size_t size) override;
+    bool isContentCached(size_t offset, size_t size) override;
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
