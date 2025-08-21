@@ -22,13 +22,11 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     /// It is also used to create a filter for the data object in the position delete transform.
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_);
 
-    bool hasPositionDeleteTransformer() const override { return !position_deletes_objects.empty(); }
-
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) override;
+        ContextPtr context_);
 
     void addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object)
     {
