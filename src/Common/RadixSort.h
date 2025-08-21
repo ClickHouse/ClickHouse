@@ -39,7 +39,7 @@ struct RadixSortAllocator
 {
     static void * allocate(size_t size)
     {
-        return ::operator new(size, std::align_val_t{64});
+        return ::operator new(size);
     }
 
     static void deallocate(void * ptr, size_t size)
