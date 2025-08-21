@@ -527,7 +527,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        LOG_DEBUG(log, "header1 {}", initial_header.dumpStructure());
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
             Block sample_header;
@@ -537,7 +536,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
         }
-        LOG_DEBUG(log, "header2 {}", initial_header.dumpStructure());
 
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
