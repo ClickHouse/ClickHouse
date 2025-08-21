@@ -3227,7 +3227,7 @@ public:
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>()) : std::make_shared<DataTypeTime64>(scale);
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
             else
                 res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
