@@ -6,8 +6,6 @@ slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Vector Search'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Exact and approximate vector search
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
@@ -67,15 +65,15 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate vector search {#approximate-nearest-neighbor-search}
+Further example datasets that use approximate vector search:
+- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
 
-<BetaBadge/>
+## Approximate vector search {#approximate-nearest-neighbor-search}
 
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
-Vector similarity indexes are currently beta.
-To enable them, please first run `SET enable_vector_similarity_index = 1`.
+Vector similarity indexes are available in ClickHouse version 25.8 and higher.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 

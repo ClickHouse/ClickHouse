@@ -12,7 +12,6 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -52,7 +51,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
-
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
@@ -144,6 +142,19 @@ public:
         current_metadata->checkMutationIsPossible(commands);
     }
 
+    void checkAlterIsPossible(const AlterCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkAlterIsPossible(commands);
+    }
+
+    void alter(const AlterCommands & params, ContextPtr context) override
+    {
+        assertInitialized();
+        current_metadata->alter(params, context);
+
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -164,16 +175,16 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, data_path);
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, data_path);
+        return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
@@ -252,6 +263,24 @@ public:
         return current_metadata->getColumnMapper();
     }
 
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        return current_metadata->write(
+            sample_block,
+            table_id,
+            object_storage,
+            shared_from_this(),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
+            context,
+            catalog);
+    }
+
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override
     {
 #if USE_AWS_S3 && USE_AVRO
@@ -288,6 +317,12 @@ public:
 
 #endif
         return nullptr;
+    }
+
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
 private:

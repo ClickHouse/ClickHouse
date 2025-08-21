@@ -16,6 +16,7 @@ struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class Pipe;
+class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
@@ -58,6 +59,7 @@ struct UsefulSkipIndexes
 
     std::vector<DataSkippingIndexAndCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
+    std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
 /// This step is created to read from MergeTree* table.
@@ -81,6 +83,7 @@ public:
     {
         IndexType type;
         std::string name = {};
+        std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
@@ -257,6 +260,11 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
+
+    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
+    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
+    void clearParallelReadingExtension();
+    std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:
     MergeTreeReaderSettings reader_settings;

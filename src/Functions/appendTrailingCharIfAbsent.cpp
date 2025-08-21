@@ -119,7 +119,31 @@ private:
 
 REGISTER_FUNCTION(AppendTrailingCharIfAbsent)
 {
-    factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
+    FunctionDocumentation::Description description = R"(
+Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
+)";
+    FunctionDocumentation::Syntax syntax = "appendTrailingCharIfAbsent(s, c)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}},
+        {"c", "Character to append if absent.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns string `s` with character `c` appended if `s` does not end with `c`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT appendTrailingCharIfAbsent('https://example.com', '/');",
+        R"(
+┌─appendTraili⋯.com', '/')─┐
+│ https://example.com/     │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionAppendTrailingCharIfAbsent>(documentation);
 }
 
 }
