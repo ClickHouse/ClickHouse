@@ -110,7 +110,7 @@ size_t NativeWriter::write(const Block & block)
 
     /// Additional information about the block.
     if (client_revision > 0)
-        block.info.write(ostr, client_revision);
+        block.info.write(ostr);
 
     block.checkNumberOfRows();
 
