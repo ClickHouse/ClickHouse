@@ -11,6 +11,8 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -208,6 +210,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
+
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
