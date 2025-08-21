@@ -209,7 +209,7 @@ public:
         const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(index_context_info->skip_indexes, index_name);
 
         const size_t index_granularity = index_helper->index.granularity;
-        const std::shared_ptr<const GinFilter> filter = gin_filter_condition->getGinFilter(token);
+        const std::shared_ptr<const GinQueryString> gin_query_string = gin_filter_condition->getGinFilter(token);
 
         const DataPartPtr part = part_info.data_part;
 
@@ -296,7 +296,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
             const std::vector<UInt32> matching_rows
-                = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get(), subranges);
+                = granule_gin->gin_filter.getIndices(gin_query_string.get(), cache_in_store.get(), subranges);
 
             if (!matching_rows.empty())
                 postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData());

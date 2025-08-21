@@ -17,7 +17,7 @@
 namespace DB
 {
 
-GinFilterParameters::GinFilterParameters(
+GinFilter::Parameters::Parameters(
     String tokenizer_,
     UInt64 segment_digestion_threshold_bytes_,
     double bloom_filter_false_positive_rate_,
@@ -31,7 +31,7 @@ GinFilterParameters::GinFilterParameters(
 {
 }
 
-GinFilter::GinFilter(std::string_view query_string_, const std::vector<String> & search_terms_)
+GinQueryString::GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
     : query_string(query_string_)
     , terms(search_terms_)
 {
@@ -82,8 +82,6 @@ void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UI
 
 void GinFilter::clear()
 {
-    query_string.clear();
-    terms.clear();
     rowid_ranges.clear();
 }
 
@@ -190,12 +188,12 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
-    if (filter.getTerms().empty())
+    if (gin_query_string.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getOrRetrievePostings(filter);
+    GinPostingsCachePtr postings_cache = cache_store.getOrRetrievePostings(gin_query_string);
 
     switch (search_mode)
     {
@@ -206,32 +204,26 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
     }
 }
 
+
 size_t GinFilter::memoryUsageBytes() const
 {
-    size_t memory_usage = 0;
-
-    for (const auto & term : terms)
-        memory_usage += term.capacity();
-    memory_usage += query_string.capacity();
-    memory_usage += rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
-
-    return memory_usage;
+    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
 }
 
 std::vector<uint32_t> GinFilter::getIndices(
-    const GinFilter *filter,
-    const PostingsCacheForStore *cache_store,
-    const MarkRanges &ranges) const
+    const GinQueryString * gin_query_string,
+    const PostingsCacheForStore * cache_store,
+    const MarkRanges & ranges) const
 {
     chassert(!ranges.empty());
 
-    if (filter->getTerms().empty())
+    if (gin_query_string->getTerms().empty())
         return {};
 
     const UInt32 full_start = ranges.front().begin + 1;
     const UInt32 full_end = ranges.back().end + 1;
 
-    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
+    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*gin_query_string);
     if (postings_cache == nullptr || postings_cache->empty())
         return {};
 

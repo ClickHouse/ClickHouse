@@ -941,22 +941,22 @@ PostingsCacheForStore::PostingsCacheForStore(const String & name, DataPartStorag
     chassert(store);
 }
 
-GinPostingsCachePtr PostingsCacheForStore::getCachedPostings(const GinFilter & filter) const
+GinPostingsCachePtr PostingsCacheForStore::getCachedPostings(const GinQueryString & gin_query_string) const
 {
-    if (auto it = cache.find(filter.getQueryString()); it != cache.end())
+    if (auto it = cache.find(gin_query_string.getQueryString()); it != cache.end())
         return it->second;
 
     return nullptr;
 }
 
-GinPostingsCachePtr PostingsCacheForStore::getOrRetrievePostings(const GinFilter & filter) const
+GinPostingsCachePtr PostingsCacheForStore::getOrRetrievePostings(const GinQueryString & gin_query_string) const
 {
-    if (auto cached_posting = this->getCachedPostings(filter))
+    if (auto cached_posting = this->getCachedPostings(gin_query_string))
         return cached_posting;
 
     GinIndexStoreDeserializer reader(store);
-    GinPostingsCachePtr postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
-    const auto [place, inserted] = cache.emplace(filter.getQueryString(), std::move(postings_cache));
+    GinPostingsCachePtr postings_cache = reader.createPostingsCacheFromTerms(gin_query_string.getTerms());
+    const auto [place, inserted] = cache.emplace(gin_query_string.getQueryString(), std::move(postings_cache));
     chassert(inserted);
 
     return place->second;

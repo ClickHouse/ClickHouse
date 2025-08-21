@@ -72,6 +72,10 @@ DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
 DEFINE_ICEBERG_FIELD(properties);
 DEFINE_ICEBERG_FIELD(owner);
+DEFINE_ICEBERG_FIELD(column_sizes);
+DEFINE_ICEBERG_FIELD(lower_bounds);
+DEFINE_ICEBERG_FIELD(upper_bounds);
+
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
