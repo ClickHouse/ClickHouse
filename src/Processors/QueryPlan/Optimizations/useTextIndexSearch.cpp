@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Functions/FunctionFactory.h>
 
@@ -21,7 +22,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <__format/format_functions.h>
 #include <base/defines.h>
-#include "Storages/IStorage.h"
 #include <algorithm>
 #include <memory>
 #include <format>
