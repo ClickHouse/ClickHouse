@@ -50,7 +50,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
-#include <boost/algorithm/string/join.hpp>
 
 namespace ProfileEvents
 {
