@@ -280,7 +280,7 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
             bloom_filter.add(data + token_start, token_len);
 }
 
-void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
+void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter::StringInfo & gin_filter, bool is_prefix, bool is_suffix) const
 {
     gin_filter.setQueryString({data, length});
 
